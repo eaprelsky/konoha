@@ -33,6 +33,10 @@ server.tool(
   },
   async ({ id, name, capabilities, roles }) => {
     const result = await api("POST", "/agents/register", { id, name, capabilities, roles });
+    // auto-heartbeat every 5 minutes
+    setInterval(() => {
+      api("POST", `/agents/${id}/heartbeat`).catch(() => {});
+    }, 5 * 60 * 1000);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 );

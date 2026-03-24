@@ -4,7 +4,7 @@ const REGISTRY_KEY = "konoha:registry";
 const BUS_STREAM = "konoha:bus";
 const AGENT_STREAM_PREFIX = "konoha:agent:";
 const CHANNEL_STREAM_PREFIX = "konoha:channel:";
-const HEARTBEAT_TTL = 60; // seconds
+const HEARTBEAT_TTL = 600; // seconds (10 minutes)
 
 export interface Agent {
   id: string;
