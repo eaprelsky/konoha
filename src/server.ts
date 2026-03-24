@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
+import { streamSSE } from "hono/streaming";
 import {
   registerAgent,
   unregisterAgent,
@@ -9,6 +10,7 @@ import {
   readMessages,
   readHistory,
   listChannels,
+  createSubscriber,
 } from "./redis";
 
 const API_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
@@ -74,6 +76,33 @@ app.get("/messages/:agentId/history", async (c) => {
   const count = parseInt(c.req.query("count") || "20");
   const messages = await readHistory(agentId, count);
   return c.json(messages);
+});
+
+// --- SSE Stream ---
+
+app.get("/messages/:agentId/stream", async (c) => {
+  const agentId = c.req.param("agentId");
+  return streamSSE(c, async (stream) => {
+    const sub = createSubscriber(agentId, (msg) => {
+      stream.writeSSE({
+        event: "message",
+        data: JSON.stringify(msg),
+      });
+    });
+
+    // keep-alive ping every 30s
+    const keepAlive = setInterval(() => {
+      stream.writeSSE({ event: "ping", data: "" });
+    }, 30000);
+
+    stream.onAbort(() => {
+      clearInterval(keepAlive);
+      sub.close();
+    });
+
+    // block until client disconnects
+    await new Promise(() => {});
+  });
 });
 
 // --- Channels ---

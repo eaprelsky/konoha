@@ -135,6 +135,66 @@ server.tool(
   }
 );
 
+server.tool(
+  "konoha_listen",
+  "Listen for new messages in real-time via SSE. Blocks for the specified duration and returns all messages received.",
+  {
+    agentId: z.string().describe("Your agent ID"),
+    seconds: z.number().optional().default(10).describe("How many seconds to listen (max 60)"),
+  },
+  async ({ agentId, seconds }) => {
+    const duration = Math.min(seconds, 60) * 1000;
+    const messages: any[] = [];
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), duration);
+
+    try {
+      const res = await fetch(`${API_URL}/messages/${agentId}/stream`, {
+        headers: { "Authorization": `Bearer ${API_TOKEN}` },
+        signal: controller.signal,
+      });
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ") && line.length > 6) {
+              try {
+                const msg = JSON.parse(line.slice(6));
+                if (msg.from) messages.push(msg);
+              } catch {}
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      if (e.name !== "AbortError") throw e;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!messages.length) {
+      return { content: [{ type: "text", text: `Listened for ${seconds}s. No new messages.` }] };
+    }
+
+    const formatted = messages.map((m: any) =>
+      `[${m.timestamp}] ${m.from} → ${m.to}: ${m.text}`
+    ).join("\n");
+    return { content: [{ type: "text", text: `Received ${messages.length} message(s):\n${formatted}` }] };
+  }
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

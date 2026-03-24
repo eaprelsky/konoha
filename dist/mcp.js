@@ -28476,6 +28476,56 @@ server.tool("konoha_history", "Read message history for an agent or channel", {
 `);
   return { content: [{ type: "text", text: formatted }] };
 });
+server.tool("konoha_listen", "Listen for new messages in real-time via SSE. Blocks for the specified duration and returns all messages received.", {
+  agentId: exports_external.string().describe("Your agent ID"),
+  seconds: exports_external.number().optional().default(10).describe("How many seconds to listen (max 60)")
+}, async ({ agentId, seconds }) => {
+  const duration3 = Math.min(seconds, 60) * 1000;
+  const messages = [];
+  const controller = new AbortController;
+  const timeout = setTimeout(() => controller.abort(), duration3);
+  try {
+    const res = await fetch(`${API_URL}/messages/${agentId}/stream`, {
+      headers: { Authorization: `Bearer ${API_TOKEN}` },
+      signal: controller.signal
+    });
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder;
+    let buffer = "";
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done)
+          break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(`
+`);
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (line.startsWith("data: ") && line.length > 6) {
+            try {
+              const msg = JSON.parse(line.slice(6));
+              if (msg.from)
+                messages.push(msg);
+            } catch {}
+          }
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError")
+      throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!messages.length) {
+    return { content: [{ type: "text", text: `Listened for ${seconds}s. No new messages.` }] };
+  }
+  const formatted = messages.map((m) => `[${m.timestamp}] ${m.from} \u2192 ${m.to}: ${m.text}`).join(`
+`);
+  return { content: [{ type: "text", text: `Received ${messages.length} message(s):
+${formatted}` }] };
+});
 async function main() {
   const transport = new StdioServerTransport;
   await server.connect(transport);

@@ -94,6 +94,8 @@ export async function listAgents(onlineOnly = false): Promise<Agent[]> {
   return agents;
 }
 
+const NOTIFY_PREFIX = "konoha:notify:";
+
 export async function sendMessage(msg: Message): Promise<string> {
   const entry: Record<string, string> = {
     from: msg.from,
@@ -115,6 +117,7 @@ export async function sendMessage(msg: Message): Promise<string> {
     for (const agent of agents) {
       if (agent.id !== msg.from) {
         await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(entry));
       }
     }
   } else if (msg.to.startsWith("role:")) {
@@ -124,11 +127,13 @@ export async function sendMessage(msg: Message): Promise<string> {
     for (const agent of agents) {
       if (agent.roles.includes(role) && agent.id !== msg.from) {
         await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(entry));
       }
     }
   } else {
     // direct message
     await redis.xadd(AGENT_STREAM_PREFIX + msg.to, "*", ...Object.entries(entry).flat());
+    await redis.publish(NOTIFY_PREFIX + msg.to, JSON.stringify(entry));
   }
 
   // channel routing
@@ -193,6 +198,33 @@ export async function readHistory(target: string, count = 20): Promise<Message[]
 export async function listChannels(): Promise<string[]> {
   const keys = await redis.keys(CHANNEL_STREAM_PREFIX + "*");
   return keys.map(k => k.replace(CHANNEL_STREAM_PREFIX, ""));
+}
+
+export function createSubscriber(agentId: string, onMessage: (msg: Message) => void): { close: () => void } {
+  const sub = createRedis();
+  const channel = NOTIFY_PREFIX + agentId;
+  sub.subscribe(channel);
+  sub.on("message", (_ch: string, data: string) => {
+    try {
+      const obj = JSON.parse(data);
+      const msg: Message = {
+        from: obj.from,
+        to: obj.to,
+        type: obj.type || "message",
+        text: obj.text,
+        channel: obj.channel,
+        replyTo: obj.replyTo,
+        timestamp: obj.timestamp,
+      };
+      onMessage(msg);
+    } catch {}
+  });
+  return {
+    close: () => {
+      sub.unsubscribe(channel);
+      sub.disconnect();
+    },
+  };
 }
 
 function fieldsToMessage(id: string, fields: string[]): Message {
