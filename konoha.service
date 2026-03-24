@@ -1,0 +1,15 @@
+[Unit]
+Description=Konoha Agent Bus
+After=network.target redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/konoha
+EnvironmentFile=/home/ubuntu/.agent-env
+ExecStart=/home/ubuntu/.bun/bin/bun run src/server.ts
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
