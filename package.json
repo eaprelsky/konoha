@@ -1,0 +1,18 @@
+{
+  "name": "konoha",
+  "version": "0.1.0",
+  "description": "Multi-agent communication bus",
+  "scripts": {
+    "dev": "bun run --watch src/server.ts",
+    "start": "bun run src/server.ts",
+    "mcp": "bun run src/mcp.ts"
+  },
+  "dependencies": {
+    "hono": "^4",
+    "ioredis": "^5",
+    "@modelcontextprotocol/sdk": "^1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
