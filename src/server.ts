@@ -84,15 +84,14 @@ app.get("/messages/:agentId/stream", async (c) => {
   const agentId = c.req.param("agentId");
   return streamSSE(c, async (stream) => {
     const sub = createSubscriber(agentId, (msg) => {
-      stream.writeSSE({
-        event: "message",
-        data: JSON.stringify(msg),
-      });
+      try {
+        stream.writeSSE({ event: "message", data: JSON.stringify(msg) });
+      } catch { sub.close(); }
     });
 
-    // keep-alive ping every 30s
     const keepAlive = setInterval(() => {
-      stream.writeSSE({ event: "ping", data: "" });
+      try { stream.writeSSE({ event: "ping", data: "" }); }
+      catch { clearInterval(keepAlive); sub.close(); }
     }, 30000);
 
     stream.onAbort(() => {
@@ -100,7 +99,6 @@ app.get("/messages/:agentId/stream", async (c) => {
       sub.close();
     });
 
-    // block until client disconnects
     await new Promise(() => {});
   });
 });

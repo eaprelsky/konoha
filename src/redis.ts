@@ -27,7 +27,11 @@ export interface Message {
 }
 
 function createRedis(): Redis {
-  return new Redis({ host: "127.0.0.1", port: 6379, maxRetriesPerRequest: 3 });
+  const r = new Redis({ host: "127.0.0.1", port: 6379, maxRetriesPerRequest: 3, lazyConnect: false });
+  r.on("error", (err) => {
+    console.error("[Redis error]", err.message);
+  });
+  return r;
 }
 
 export const redis = createRedis();
@@ -201,9 +205,10 @@ export async function listChannels(): Promise<string[]> {
 }
 
 export function createSubscriber(agentId: string, onMessage: (msg: Message) => void): { close: () => void } {
-  const sub = createRedis();
+  const sub = new Redis({ host: "127.0.0.1", port: 6379, maxRetriesPerRequest: 3 });
+  sub.on("error", () => {}); // swallow errors, subscriber is disposable
   const channel = NOTIFY_PREFIX + agentId;
-  sub.subscribe(channel);
+  sub.subscribe(channel).catch(() => {});
   sub.on("message", (_ch: string, data: string) => {
     try {
       const obj = JSON.parse(data);
