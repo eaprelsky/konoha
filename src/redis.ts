@@ -63,12 +63,16 @@ export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat
   return full;
 }
 
-export async function unregisterAgent(id: string): Promise<void> {
-  const data = await redis.hget(REGISTRY_KEY, id);
-  if (data) {
-    const agent: Agent = JSON.parse(data);
-    agent.status = "offline";
-    await redis.hset(REGISTRY_KEY, id, JSON.stringify(agent));
+export async function unregisterAgent(id: string, hard = false): Promise<void> {
+  if (hard) {
+    await redis.hdel(REGISTRY_KEY, id);
+  } else {
+    const data = await redis.hget(REGISTRY_KEY, id);
+    if (data) {
+      const agent: Agent = JSON.parse(data);
+      agent.status = "offline";
+      await redis.hset(REGISTRY_KEY, id, JSON.stringify(agent));
+    }
   }
 }
 

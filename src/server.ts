@@ -38,7 +38,8 @@ app.post("/agents/register", async (c) => {
 
 app.delete("/agents/:id", async (c) => {
   const id = c.req.param("id");
-  await unregisterAgent(id);
+  const hard = c.req.query("hard") === "true";
+  await unregisterAgent(id, hard);
   return c.json({ ok: true });
 });
 
