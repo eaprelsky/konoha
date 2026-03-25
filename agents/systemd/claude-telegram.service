@@ -1,0 +1,15 @@
+[Unit]
+Description=Claude Code Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.agent-env
+WorkingDirectory=/home/ubuntu/claude-telegram-bot
+ExecStart=/home/ubuntu/claude-telegram-bot/venv/bin/python /home/ubuntu/claude-telegram-bot/bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

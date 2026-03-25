@@ -1,0 +1,52 @@
+# =============================================================================
+# Agent Environment Variables — TEMPLATE
+# Copy to ~/.agent-env and fill in your values
+# Source before running: source ~/.agent-env
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Claude Code (required)
+# ---------------------------------------------------------------------------
+# Your Anthropic API key — get from https://console.anthropic.com
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Claude model to use
+CLAUDE_MODEL=claude-sonnet-4-6
+
+# ---------------------------------------------------------------------------
+# Telegram Bot (required for Naruto / bot channel)
+# ---------------------------------------------------------------------------
+# Bot token from @BotFather — create a bot and copy the token
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+
+# Your Telegram user ID — get from @userinfobot
+TELEGRAM_OWNER_ID=your_telegram_user_id_here
+
+# ---------------------------------------------------------------------------
+# Konoha Agent Bus (required)
+# ---------------------------------------------------------------------------
+# Secret token shared between all agents — generate any random string
+# Example: openssl rand -hex 32
+KONOHA_TOKEN=your_konoha_secret_token_here
+
+# Konoha HTTP API port (default: 3200)
+KONOHA_PORT=3200
+
+# Which agent is this session (naruto or sasuke)
+KONOHA_AGENT_ID=naruto
+
+# Full URL of Konoha bus
+KONOHA_URL=http://127.0.0.1:3200
+
+# ---------------------------------------------------------------------------
+# HTTP Proxy (optional — set if your server uses a proxy)
+# ---------------------------------------------------------------------------
+# Comment out if no proxy needed
+# https_proxy=http://127.0.0.1:8118
+# http_proxy=http://127.0.0.1:8118
+# no_proxy=127.0.0.1,localhost
+
+# ---------------------------------------------------------------------------
+# Optional: Paperclip port override
+# ---------------------------------------------------------------------------
+# PAPERCLIP_PORT=3100
