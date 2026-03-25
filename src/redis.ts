@@ -15,6 +15,13 @@ export interface Agent {
   lastHeartbeat: number;
 }
 
+export interface Attachment {
+  name: string;        // original filename
+  path: string;        // absolute path in shared storage
+  mime?: string;        // MIME type
+  size?: number;        // bytes
+}
+
 export interface Message {
   id?: string;
   from: string;
@@ -24,6 +31,7 @@ export interface Message {
   text: string;
   replyTo?: string;
   timestamp?: string;
+  attachments?: Attachment[];
 }
 
 function createRedis(): Redis {
@@ -114,6 +122,9 @@ export async function sendMessage(msg: Message): Promise<string> {
   };
   if (msg.channel) entry.channel = msg.channel;
   if (msg.replyTo) entry.replyTo = msg.replyTo;
+  if (msg.attachments && msg.attachments.length > 0) {
+    entry.attachments = JSON.stringify(msg.attachments);
+  }
 
   // publish to bus stream (for broadcast/logging)
   const id = await redis.xadd(BUS_STREAM, "*", ...Object.entries(entry).flat());
@@ -216,6 +227,10 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
   sub.on("message", (_ch: string, data: string) => {
     try {
       const obj = JSON.parse(data);
+      let attachments: Attachment[] | undefined;
+      if (obj.attachments) {
+        try { attachments = typeof obj.attachments === 'string' ? JSON.parse(obj.attachments) : obj.attachments; } catch {}
+      }
       const msg: Message = {
         from: obj.from,
         to: obj.to,
@@ -224,6 +239,7 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
         channel: obj.channel,
         replyTo: obj.replyTo,
         timestamp: obj.timestamp,
+        attachments,
       };
       onMessage(msg);
     } catch {}
@@ -241,6 +257,10 @@ function fieldsToMessage(id: string, fields: string[]): Message {
   for (let i = 0; i < fields.length; i += 2) {
     obj[fields[i]] = fields[i + 1];
   }
+  let attachments: Attachment[] | undefined;
+  if (obj.attachments) {
+    try { attachments = JSON.parse(obj.attachments); } catch {}
+  }
   return {
     id,
     from: obj.from,
@@ -250,5 +270,6 @@ function fieldsToMessage(id: string, fields: string[]): Message {
     channel: obj.channel,
     replyTo: obj.replyTo,
     timestamp: obj.timestamp,
+    attachments,
   };
 }

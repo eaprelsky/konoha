@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { streamSSE } from "hono/streaming";
+import { mkdirSync, writeFileSync, existsSync, statSync } from "fs";
+import { join, extname } from "path";
 import {
   registerAgent,
   unregisterAgent,
@@ -11,7 +13,11 @@ import {
   readHistory,
   listChannels,
   createSubscriber,
+  type Attachment,
 } from "./redis";
+
+const ATTACHMENTS_DIR = "/opt/shared/attachments";
+mkdirSync(ATTACHMENTS_DIR, { recursive: true });
 
 const API_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 const PORT = parseInt(process.env.KONOHA_PORT || "3100");
@@ -22,6 +28,7 @@ const app = new Hono();
 app.use("/agents/*", bearerAuth({ token: API_TOKEN }));
 app.use("/messages/*", bearerAuth({ token: API_TOKEN }));
 app.use("/channels/*", bearerAuth({ token: API_TOKEN }));
+app.use("/attachments/*", bearerAuth({ token: API_TOKEN }));
 
 // health
 app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
@@ -59,10 +66,52 @@ app.get("/agents", async (c) => {
 
 app.post("/messages", async (c) => {
   const body = await c.req.json();
-  const { from, to, type = "message", text, channel, replyTo } = body;
+  const { from, to, type = "message", text, channel, replyTo, attachments } = body;
   if (!from || !to || !text) return c.json({ error: "from, to, text required" }, 400);
-  const id = await sendMessage({ from, to, type, text, channel, replyTo });
+  // validate attachment paths exist
+  const validAttachments: Attachment[] = [];
+  if (Array.isArray(attachments)) {
+    for (const att of attachments) {
+      if (att.path && existsSync(att.path)) {
+        const st = statSync(att.path);
+        validAttachments.push({
+          name: att.name || att.path.split("/").pop() || "file",
+          path: att.path,
+          mime: att.mime,
+          size: att.size || st.size,
+        });
+      }
+    }
+  }
+  const id = await sendMessage({ from, to, type, text, channel, replyTo, attachments: validAttachments.length > 0 ? validAttachments : undefined });
   return c.json({ id });
+});
+
+// --- File Upload ---
+
+app.post("/attachments", async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File | null;
+  const from = formData.get("from") as string | null;
+  if (!file || !from) return c.json({ error: "file and from required" }, 400);
+
+  const ts = Date.now();
+  const ext = extname(file.name) || "";
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storedName = `${from}-${ts}${ext ? ext : ""}`;
+  const storedPath = join(ATTACHMENTS_DIR, storedName);
+
+  const buf = Buffer.from(await file.arrayBuffer());
+  writeFileSync(storedPath, buf);
+
+  const attachment: Attachment = {
+    name: file.name,
+    path: storedPath,
+    mime: file.type || undefined,
+    size: buf.length,
+  };
+
+  return c.json({ attachment }, 201);
 });
 
 app.get("/messages/:agentId", async (c) => {
