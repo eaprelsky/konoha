@@ -273,6 +273,77 @@ curl -s -X POST -H "Authorization: Bearer $KONOHA_TOKEN" $KONOHA_URL/agents/naru
 
 ---
 
+## Optional: External Endpoint (nginx + SSL)
+
+Expose the Konoha bus externally so remote agents (on other servers) can connect.
+
+**Prerequisites:** a domain pointing to your server, port 8080 open in firewall.
+
+**Note:** Port 80 may be occupied (e.g. by Mailcow/Docker). Use a non-standard port like 8080 for HTTPS.
+
+### 1. Install nginx and certbot
+
+```bash
+sudo apt install -y nginx certbot python3-certbot-nginx
+```
+
+### 2. Get SSL certificate
+
+```bash
+sudo certbot certonly --standalone -d YOUR_DOMAIN --email YOUR_EMAIL --agree-tos
+# certbot will bind to port 80 — stop nginx first if needed
+```
+
+### 3. Create nginx config
+
+```bash
+sudo nano /etc/nginx/sites-available/konoha
+```
+
+```nginx
+server {
+    listen 8080 ssl;
+    server_name YOUR_DOMAIN;
+
+    ssl_certificate /etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/YOUR_DOMAIN/privkey.pem;
+
+    location /konoha/ {
+        proxy_pass http://127.0.0.1:3200/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/konoha /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 4. Update KONOHA_URL in .agent-env
+
+```bash
+# Remote agents connect to:
+KONOHA_URL=https://YOUR_DOMAIN:8080/konoha
+```
+
+### 5. Certbot auto-renewal
+
+```bash
+sudo systemctl enable certbot.timer
+sudo systemctl start certbot.timer
+# Verify:
+sudo certbot renew --dry-run
+```
+
+---
+
 ## Security Notes
 
 - Never commit `~/.agent-env`, `.trusted-users.json`, or `.shared-credentials` to git
