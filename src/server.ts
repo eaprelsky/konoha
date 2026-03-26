@@ -24,6 +24,14 @@ import {
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
 mkdirSync(ATTACHMENTS_DIR, { recursive: true });
 
+// Prevent ioredis disconnect errors from crashing the process
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException] swallowed:", err.message);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection] swallowed:", reason);
+});
+
 const ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 const PORT = parseInt(process.env.KONOHA_PORT || "3100");
 

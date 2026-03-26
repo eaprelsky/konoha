@@ -325,8 +325,8 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
   });
   return {
     close: () => {
-      sub.unsubscribe(channel);
-      sub.disconnect();
+      try { sub.unsubscribe(channel).catch(() => {}); } catch {}
+      try { sub.disconnect(); } catch {}
     },
   };
 }
