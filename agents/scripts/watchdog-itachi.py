@@ -5,7 +5,7 @@ Connects to REMOTE Konoha bus and delivers messages to local terminal.
 
 Installation on WSL:
   pip3 install -r requirements.txt  (none needed, uses stdlib + curl)
-  export KONOHA_URL=http://AGENT_MACHINE_IP:3200
+  export KONOHA_URL=https://agent.eaprelsky.ru
   export KONOHA_TOKEN=<your_token>
   python3 watchdog-itachi.py
 
@@ -16,7 +16,7 @@ Delivery modes (auto-detected):
   2. No tmux → print message + bell to stderr so it appears in terminal
 
 Config via env vars:
-  KONOHA_URL     — Konoha bus URL (default: http://AGENT_MACHINE_IP:3200)
+  KONOHA_URL     — Konoha bus URL (default: https://agent.eaprelsky.ru)
   KONOHA_TOKEN   — auth token
   ITACHI_AGENT   — agent ID on Konoha (default: itachi)
   ITACHI_TMUX    — tmux session name (default: itachi)
@@ -32,7 +32,7 @@ import sys
 import time
 
 # ── Config ──────────────────────────────────────────────────────────────────
-KONOHA_URL   = os.environ.get("KONOHA_URL",  "http://AGENT_MACHINE_IP:3200")
+KONOHA_URL   = os.environ.get("KONOHA_URL",  "https://agent.eaprelsky.ru")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 AGENT_ID     = os.environ.get("ITACHI_AGENT", "itachi")
 TMUX_SESSION = os.environ.get("ITACHI_TMUX",  "itachi")
@@ -248,7 +248,7 @@ async def main() -> None:
     if not KONOHA_TOKEN:
         print("ERROR: KONOHA_TOKEN env var not set", file=sys.stderr)
         print("Usage:", file=sys.stderr)
-        print("  export KONOHA_URL=http://AGENT_MACHINE_IP:3200", file=sys.stderr)
+        print("  export KONOHA_URL=https://agent.eaprelsky.ru", file=sys.stderr)
         print("  export KONOHA_TOKEN=<token>", file=sys.stderr)
         print("  python3 watchdog-itachi.py", file=sys.stderr)
         sys.exit(1)

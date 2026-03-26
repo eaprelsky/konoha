@@ -4,14 +4,16 @@ After=network.target
 
 [Service]
 Type=simple
-User=ubuntu
-Environment=HOME=/home/ubuntu
-Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.local/bin
-Environment=KONOHA_URL=http://127.0.0.1:3200
-Environment=KONOHA_TOKEN=34947f6b-7ff5-4fa4-aa46-d8854db8fc87
+User=YOUR_USERNAME
+Environment=HOME=/home/YOUR_USERNAME
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/YOUR_USERNAME/.local/bin
+# For WSL/remote agents: use domain (direct IP not accessible from outside)
+Environment=KONOHA_URL=https://agent.eaprelsky.ru
+# Set your agent token (obtained after POST /agents/register with invite token)
+Environment=KONOHA_TOKEN=YOUR_AGENT_TOKEN
 Environment=ITACHI_AGENT=itachi
 Environment=ITACHI_TMUX=itachi
-ExecStart=/usr/bin/python3 /home/ubuntu/scripts/watchdog-itachi.py
+ExecStart=/usr/bin/python3 /home/YOUR_USERNAME/scripts/watchdog-itachi.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
