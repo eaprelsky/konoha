@@ -1,9 +1,20 @@
 # Konoha Bus — API Reference
 
-All endpoints except `/health` require Bearer token authentication:
+## Authentication
+
+Konoha uses two types of tokens:
+
+| Token | How to get | Permissions |
+|-------|-----------|-------------|
+| **Admin token** (`KONOHA_TOKEN`) | Set via env var at server startup | Full access — read any inbox, manage all agents, create invites |
+| **Agent token** | Returned by `POST /agents/register` | Own inbox only — read own messages, send own heartbeat, send messages |
+
+All endpoints except `/health` and `POST /agents/register` require Bearer token authentication:
 ```
-Authorization: Bearer $KONOHA_TOKEN
+Authorization: Bearer $TOKEN
 ```
+
+`POST /agents/register` accepts either the admin token or a one-time invite token (see below).
 
 Base URL: `http://127.0.0.1:3200`
 
@@ -22,12 +33,32 @@ Response:
 
 ## Agents
 
+### POST /agents/invite *(admin only)*
+
+Generate a one-time invite token for registering a new agent. The token expires in 1 hour and is invalidated immediately after use.
+
+```bash
+curl -X POST -H "Authorization: Bearer $KONOHA_TOKEN" \
+  http://127.0.0.1:3200/agents/invite
+```
+
+Response (201):
+```json
+{
+  "token": "inv-99b83b3a-8b17-4c99-8507-7d08340269c5",
+  "expiresAt": "2026-03-26T11:25:12.266Z"
+}
+```
+
 ### POST /agents/register
 
 Register a new agent or update existing registration. Sets status to `online`.
 
+Requires either the **admin token** or a valid **invite token** (one-time use, expires after registration).
+
 ```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" \
+# With admin token
+curl -X POST -H "Authorization: Bearer $KONOHA_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "id": "naruto",
@@ -35,6 +66,12 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
     "roles": ["orchestrator"],
     "capabilities": ["orchestration", "telegram-bot", "code"]
   }' \
+  http://127.0.0.1:3200/agents/register
+
+# With invite token (one-time)
+curl -X POST -H "Authorization: Bearer inv-99b83b3a-..." \
+  -H "Content-Type: application/json" \
+  -d '{"id": "new-agent", "name": "New Agent"}' \
   http://127.0.0.1:3200/agents/register
 ```
 
@@ -46,9 +83,12 @@ Response (201):
   "capabilities": ["orchestration", "telegram-bot", "code"],
   "roles": ["orchestrator"],
   "status": "online",
-  "lastHeartbeat": 1774441043909
+  "lastHeartbeat": 1774441043909,
+  "token": "dc3ea480-c9cc-4656-94b1-72f14b6c4068"
 }
 ```
+
+> **`token`** — the agent's personal token for subsequent API calls. Store as `KONOHA_AGENT_TOKEN`. Each re-registration rotates the token.
 
 ### POST /agents/:id/heartbeat
 
@@ -112,7 +152,7 @@ Response: `{"id": "1774441021897-0"}`
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| from | yes | Sender agent ID |
+| from | admin only | Sender agent ID. **Ignored for agent tokens** — sender is set from the token identity automatically (prevents impersonation). |
 | to | yes | Recipient: agent ID, `"all"`, or `"role:<role>"` |
 | text | yes | Message text |
 | type | no | Message type (default: `message`) |

@@ -14,17 +14,57 @@ Multi-agent communication bus for autonomous Claude Code agents. Redis-backed me
 
 ## Quick Start
 
+### Bus only (HTTP server)
+
+Deploy this if you just need the message bus for agents to communicate over HTTP/REST.
+
 ```bash
 bun install
-
-# Start the HTTP server
 KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run src/server.ts
-
-# Or start the MCP server (for Claude Code integration)
-KONOHA_TOKEN=your-secret bun run src/mcp.ts
 ```
 
-Requires Redis running on localhost:6379.
+### Bus + MCP server (Claude Code integration)
+
+Deploy this on each agent machine so Claude Code agents can use `konoha_*` tools directly.
+
+```bash
+# 1. Start the HTTP bus (once, shared)
+KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run src/server.ts
+
+# 2. Add MCP server to Claude Code settings (.mcp.json):
+# {
+#   "mcpServers": {
+#     "konoha": {
+#       "command": "bun",
+#       "args": ["run", "/path/to/konoha/src/mcp.ts"],
+#       "env": {
+#         "KONOHA_URL": "http://127.0.0.1:3200",
+#         "KONOHA_TOKEN": "your-secret"
+#       }
+#     }
+#   }
+# }
+```
+
+Requires Redis on localhost:6379.
+
+### Registration flow
+
+```bash
+# 1. Admin creates a one-time invite token
+curl -X POST -H "Authorization: Bearer $KONOHA_TOKEN" \
+  http://127.0.0.1:3200/agents/invite
+# → {"token": "inv-<uuid>", "expiresAt": "..."}
+
+# 2. New agent registers with the invite token, receives its own token
+curl -X POST -H "Authorization: Bearer inv-<uuid>" \
+  -d '{"id":"my-agent","name":"My Agent"}' \
+  http://127.0.0.1:3200/agents/register
+# → {"id":"my-agent", ..., "token": "<agent-uuid>"}
+
+# 3. Agent uses its token for all subsequent calls
+export KONOHA_AGENT_TOKEN=<agent-uuid>
+```
 
 ## Architecture
 
@@ -61,20 +101,21 @@ See [docs/architecture.md](docs/architecture.md) for details.
 
 ## API Quick Reference
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /health | Health check |
-| POST | /agents/register | Register an agent |
-| DELETE | /agents/:id | Unregister an agent |
-| POST | /agents/:id/heartbeat | Send heartbeat |
-| GET | /agents | List agents |
-| POST | /messages | Send a message (with optional attachments) |
-| GET | /messages/:agentId | Read new messages |
-| GET | /messages/:agentId/history | Read message history |
-| GET | /messages/:agentId/stream | SSE real-time stream |
-| POST | /attachments | Upload a file |
-| GET | /channels | List active channels |
-| GET | /channels/:name/history | Channel message history |
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /health | none | Health check |
+| POST | /agents/invite | admin | Issue one-time invite token (1h TTL) |
+| POST | /agents/register | admin or invite token | Register an agent, returns per-agent token |
+| DELETE | /agents/:id | admin | Unregister an agent |
+| POST | /agents/:id/heartbeat | own agent or admin | Send heartbeat |
+| GET | /agents | any | List agents |
+| POST | /messages | any | Send a message (`from` auto-set from token) |
+| GET | /messages/:agentId | own agent or admin | Read new messages |
+| GET | /messages/:agentId/history | any | Read message history |
+| GET | /messages/:agentId/stream | any | SSE real-time stream |
+| POST | /attachments | any | Upload a file |
+| GET | /channels | any | List active channels |
+| GET | /channels/:name/history | any | Channel message history |
 
 ## MCP Tools
 
