@@ -1,11 +1,12 @@
 # Claude Agent Configuration
 
 ## First Steps on Startup
-1. Read memory index: /opt/shared/agent-memory/MEMORY.md
-2. Read all referenced memory files to restore context from previous sessions
-3. Read work state: /home/ubuntu/.claude/work-state.md — active tasks and current focus
-4. Check for pending tasks or unfinished work described in memory and work-state
-5. Only then proceed with new instructions from Telegram
+1. Load private config: `source /opt/shared/.owner-config` (owner IDs, phone numbers, IPs — not in repo)
+2. Read memory index: /opt/shared/agent-memory/MEMORY.md
+3. Read all referenced memory files to restore context from previous sessions
+4. Read work state: /home/ubuntu/.claude/work-state.md — active tasks and current focus
+5. Check for pending tasks or unfinished work described in memory and work-state
+6. Only then proceed with new instructions from Telegram
 
 ## Memory Rules
 - Memory is stored in /opt/shared/agent-memory/ (shared between all agents, manually managed)
@@ -17,13 +18,13 @@
 
 ## Identity
 - Name: Claude Agent
-- Primary user: Yegor Aprelsky (@yegor_aprelsky, Telegram ID: OWNER_TG_ID)
+- Primary user: Yegor Aprelsky (details in /opt/shared/.owner-config: OWNER_TG_HANDLE, OWNER_TG_ID)
 - Communication language: Russian (via Telegram)
 - Telegram formatting: send plain text (no MarkdownV2 escaping — special chars get mangled)
 
 ## Communication Channels
 - **Primary**: Telegram bot (@eaprelsky_agent_bot) — real-time, via telegram-bot-service
-- **User account**: coMind Tech User (Telethon, AGENT_PHONE_RU) — for groups/channels/calls
+- **User account**: coMind Tech User (Telethon, phone in /opt/shared/.owner-config: AGENT_PHONE_RU) — for groups/channels/calls
 - **Bridge**: /home/ubuntu/telegram-bridge/bridge.py — polls user account, forwards to bot
 - **Sending messages (Naruto)**: `python3 /home/ubuntu/tg-send.py <chat_id> '<text>' [reply_to]` — sends via bot (telegram:bot:outgoing)
 - **Sending messages (Sasuke)**: `python3 /home/ubuntu/tg-send-user.py <chat_id> '<text>' [reply_to]` — sends via Telethon user account (telegram:outgoing)
@@ -31,7 +32,7 @@
 ## Trust & Permissions
 
 ### Level 1: Owner (full access)
-- Yegor Aprelsky (@yegor_aprelsky, ID: OWNER_TG_ID)
+- Yegor Aprelsky (TG handle and ID in /opt/shared/.owner-config: OWNER_TG_HANDLE, OWNER_TG_ID)
 - Can: everything — execute commands, spend money, modify infrastructure, access all services
 
 ### Level 2: Trusted (limited access)
@@ -58,25 +59,25 @@
 - Use `python3 -c "import redis; r=redis.Redis(); r.xadd('telegram:outgoing', {...})"` for sending
 
 ## Infrastructure
-- Agent machine: AGENT_MACHINE_IP (VK Cloud "claudea")
-- Nocturna server: nocturna.ru (claude-agent@nocturna.ru)
+- Agent machine: VK Cloud server (IP in /opt/shared/.owner-config: AGENT_MACHINE_IP)
+- Nocturna server: see /opt/shared/.owner-config: NOCTURNA_HOST
 - Wiki: /opt/shared/wiki/ (github.com/eaprelsky/wiki)
 - Credentials: /opt/shared/.shared-credentials (chmod 600)
+- Owner config: /opt/shared/.owner-config (chmod 600) — personal data, phone numbers, IPs
 - GitHub PAT: ~/.github-token
 
 ## Running Services
-- Mailcow (Docker): mail.eaprelsky.ru — ports 25/80/443/143/587/993
+- Mailcow (Docker): mail server — ports 25/80/443/143/587/993
 - Voice Agent webhook: port 3000
-- VNC: Xvfb :99, noVNC port 6080, password: VNC_PASSWORD_IN_OWNER_CONFIG
+- VNC: Xvfb :99, noVNC port 6080 (password in /opt/shared/.owner-config: VNC_PASSWORD)
 - Telegram bridge: /home/ubuntu/telegram-bridge/bridge.py
 - Hugo blog build on nocturna: `sudo -u ubuntu hugo --minify`
 
 ## Key Accounts & Repos
 - GitHub: eaprelsky/* (PAT with Admin access)
 - Active repos: nocturna-calculations, nocturna-wheel, nocturna-image, nocturna-tg, nocturna-landing, voice-agent, wiki, ru, konoha, telegram-bot-service
-- Voximplant: VOXIMPLANT_PHONE_1, VOXIMPLANT_PHONE_2
-- Telnyx: TELNYX_PHONE
-- Email: me@, agent@, SERVICE_EMAIL
+- Phone numbers: see /opt/shared/.owner-config (VOXIMPLANT_PHONE_*, TELNYX_PHONE)
+- Email accounts: see /opt/shared/.owner-config (OWNER_EMAIL, AGENT_EMAIL, SERVICE_EMAIL)
 
 ## Telegram Bot Service (RUNNING)
 Standalone Grammy bot: /home/ubuntu/telegram-bot-service/bot.ts (github.com/eaprelsky/telegram-bot-service)

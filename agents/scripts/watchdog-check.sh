@@ -7,7 +7,7 @@ source /home/ubuntu/.agent-env 2>/dev/null
 
 KONOHA_URL="${KONOHA_URL:-http://127.0.0.1:3200}"
 KONOHA_HEADERS=(-s -H "Authorization: Bearer $KONOHA_TOKEN")
-OWNER_CHAT_ID="${OWNER_CHAT_ID:-OWNER_TG_ID}"
+OWNER_CHAT_ID="${OWNER_CHAT_ID:-${OWNER_TG_ID}}"
 STATE_FILE="/tmp/konoha-agent-statuses.json"
 OFFLINE_SINCE_FILE="/tmp/konoha-offline-since.json"
 OFFLINE_THRESHOLD=150  # seconds before heartbeat is considered stale

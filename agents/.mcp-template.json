@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "konoha": {
+      "command": "bun",
+      "args": ["run", "/home/ubuntu/konoha/src/mcp.ts"],
+      "env": {
+        "KONOHA_URL": "http://127.0.0.1:3200",
+        "KONOHA_TOKEN": "<set KONOHA_TOKEN from /home/ubuntu/.agent-env>",
+        "no_proxy": "127.0.0.1,localhost"
+      }
+    }
+  }
+}

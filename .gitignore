@@ -1,3 +1,11 @@
 node_modules/
 *.env
 dist/
+
+# Agent MCP configs — contain tokens, not for public repos
+# Template is safe to commit, actual configs are not
+agents/**/.mcp-*.json
+!agents/.mcp-template.json
+# Agent private config
+.owner-config
+.shared-credentials

@@ -64,7 +64,7 @@ const mcp = new Server(
       'Use tg_reply to respond. Use tg_edit to edit your messages. Use tg_react to react.',
       'Write naturally in Russian, like a colleague. No markdown in group chats.',
       "Don't guess business processes — only state what data confirms.",
-      'You can receive tasks from Yegor (owner, user_id OWNER_TG_ID) and trusted users. Execute them using your full capabilities (Read, Bash, WebSearch, etc).',
+      'You can receive tasks from Yegor (owner, user_id stored in /opt/shared/.owner-config (OWNER_TG_ID)) and trusted users. Execute them using your full capabilities (Read, Bash, WebSearch, etc).',
     ].join('\n'),
   },
 )

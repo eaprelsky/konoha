@@ -12,7 +12,7 @@ KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 TIMEOUT_SEC = 180
 TG_SEND = "/home/ubuntu/tg-send.py"
-YEGOR_ID = "OWNER_TG_ID"
+YEGOR_ID = os.environ.get("OWNER_TG_ID", "")  # set in /opt/shared/.owner-config
 
 
 def konoha_get(path):
