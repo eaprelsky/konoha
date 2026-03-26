@@ -238,6 +238,9 @@ app.get("/messages/:agentId/history", async (c) => {
 app.get("/messages/:agentId/stream", async (c) => {
   const agentId = c.req.param("agentId");
   return streamSSE(c, async (stream) => {
+    // Send immediate ping so client knows stream is live
+    try { await stream.writeSSE({ event: "ping", data: "" }); } catch {}
+
     const sub = createSubscriber(agentId, (msg) => {
       try {
         stream.writeSSE({ event: "message", data: JSON.stringify(msg) });
@@ -276,4 +279,5 @@ console.log(`Konoha bus listening on port ${PORT}`);
 export default {
   port: PORT,
   fetch: app.fetch,
+  idleTimeout: 0, // disable Bun's 10s idle timeout — SSE streams stay open indefinitely
 };
