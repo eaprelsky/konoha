@@ -1,17 +1,19 @@
 # Claude Agent Configuration
 
 ## First Steps on Startup
-1. Read memory index: /home/ubuntu/.claude/projects/-/memory/MEMORY.md
+1. Read memory index: /opt/shared/agent-memory/MEMORY.md
 2. Read all referenced memory files to restore context from previous sessions
-3. Check for pending tasks or unfinished work described in memory
-4. Only then proceed with new instructions from Telegram
+3. Read work state: /home/ubuntu/.claude/work-state.md — active tasks and current focus
+4. Check for pending tasks or unfinished work described in memory and work-state
+5. Only then proceed with new instructions from Telegram
 
 ## Memory Rules
-- Always update memory when fixing bugs or making progress on issues
-- When a bug is fixed, update the relevant changelog in memory
+- Memory is stored in /opt/shared/agent-memory/ (shared between all agents, manually managed)
+- Auto-memory is DISABLED — do NOT use the built-in auto-memory system
+- Update memory files manually when fixing bugs, making key decisions, or learning new context
+- When a bug is fixed, update the relevant file in /opt/shared/agent-memory/
 - Before requesting a session restart, save all current context to memory
-- Track all changes to key files (server.ts, bus.py, etc.) in changelog memory files
-- Read changelogs BEFORE editing key files to avoid circular changes
+- Read memory files BEFORE editing key files to avoid circular changes
 
 ## Identity
 - Name: Claude Agent
@@ -165,18 +167,22 @@ Channel plugin: /home/ubuntu/telethon-mcp/channel-server.ts
 - Supports attachments: POST /attachments (file upload), messages with attachments[] field
 - Shared file storage: /opt/shared/attachments/
 
-## Message Polling
+## Message Delivery (Event-Driven Watchdogs)
+
+Agents receive messages via systemd watchdog services — no /loop polling needed.
 
 ### Naruto (Agent #1, bot)
-- On startup: `/loop 1m check_messages` — reads message-queue.jsonl (written by telegram-bot-service)
-- Also: `/loop 1m check_konoha` — reads Konoha bus messages for naruto
+- **Watchdog**: `claude-watchdog-naruto.service` (always running)
+  - Watches `~/.claude/channels/telegram/message-queue.jsonl`
+  - Watches Konoha SSE `/messages/naruto/stream`
+- **Do NOT run /loop check_messages or check_konoha** — watchdog handles both
 
 ### Sasuke (Agent #2, user account)
-- On startup: `/loop 1m check_bus_and_konoha` — reads BOTH:
-  - `telegram:incoming` Redis stream via consumer group `sasuke`, consumer `sasuke-worker`
-  - Konoha bus messages for sasuke (konoha_read)
-- IMPORTANT: Sasuke reads `telegram:incoming` (Telethon user account), NOT `telegram:bot:incoming` (that's Naruto's)
-- Jobs are session-only — need to be re-created after each restart
+- **Watchdog**: `claude-watchdog-sasuke.service` (always running)
+  - Watches `telegram:incoming` Redis stream (consumer group `sasuke`)
+  - Watches Konoha SSE `/messages/sasuke/stream`
+- IMPORTANT: Sasuke reads `telegram:incoming` (Telethon user account), NOT `telegram:bot:incoming`
+- **Do NOT run /loop check_bus_and_konoha** — watchdog handles both
 
 ## Callsigns (Internal)
 - Naruto (Наруто) — Claude Agent #1, this session, bot-based, orchestrator
