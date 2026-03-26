@@ -193,43 +193,92 @@ export async function sendMessage(msg: Message): Promise<string> {
   return id;
 }
 
-export async function readMessages(agentId: string, count = 10): Promise<Message[]> {
-  const stream = AGENT_STREAM_PREFIX + agentId;
+// Ensure a consumer group exists on a stream.
+// For fan-out: each (agentId, consumer) pair gets its own group so all consumers receive all messages.
+async function ensureGroup(stream: string, group: string): Promise<void> {
+  try {
+    await redis.xgroup("CREATE", stream, group, "0", "MKSTREAM");
+  } catch (e: any) {
+    if (!e.message?.includes("BUSYGROUP")) throw e;
+  }
+}
 
-  // read unacknowledged + new
-  const pending = await redis.xreadgroup(
-    "GROUP", agentId, agentId, "COUNT", count, "STREAMS", stream, "0"
-  ) as [string, [string, string[]][]][] | null;
+// Read messages for an agent. If consumer is provided, uses a per-consumer group (fan-out).
+// Auto-acks after delivery. For explicit ack control, use readMessagesPending + ackMessages.
+export async function readMessages(agentId: string, count = 10, consumer?: string): Promise<Message[]> {
+  const stream = AGENT_STREAM_PREFIX + agentId;
+  // Fan-out: each unique consumer gets its own group starting from "0" so it sees all messages.
+  // Without consumer param: legacy behavior — group = agentId, consumer = agentId (competing).
+  const group = consumer ? `${agentId}:${consumer}` : agentId;
+  const consumerName = consumer || agentId;
+
+  await ensureGroup(stream, group);
 
   const messages: Message[] = [];
+
+  // 1. Re-deliver pending (unacked from previous poll)
+  const pending = await redis.xreadgroup(
+    "GROUP", group, consumerName, "COUNT", count, "STREAMS", stream, "0"
+  ) as [string, [string, string[]][]][] | null;
 
   if (pending) {
     for (const [, entries] of pending) {
       for (const [id, fields] of entries) {
         if (!fields || fields.length === 0) continue;
-        const msg = fieldsToMessage(id, fields);
-        messages.push(msg);
-        await redis.xack(stream, agentId, id);
+        messages.push(fieldsToMessage(id, fields));
+        await redis.xack(stream, group, id);
       }
     }
   }
 
-  // read new messages
-  const fresh = await redis.xreadgroup(
-    "GROUP", agentId, agentId, "COUNT", count, "STREAMS", stream, ">"
-  ) as [string, [string, string[]][]][] | null;
+  // 2. Read new messages
+  const remaining = count - messages.length;
+  if (remaining > 0) {
+    const fresh = await redis.xreadgroup(
+      "GROUP", group, consumerName, "COUNT", remaining, "STREAMS", stream, ">"
+    ) as [string, [string, string[]][]][] | null;
 
-  if (fresh) {
-    for (const [, entries] of fresh) {
-      for (const [id, fields] of entries) {
-        const msg = fieldsToMessage(id, fields);
-        messages.push(msg);
-        await redis.xack(stream, agentId, id);
+    if (fresh) {
+      for (const [, entries] of fresh) {
+        for (const [id, fields] of entries) {
+          messages.push(fieldsToMessage(id, fields));
+          await redis.xack(stream, group, id);
+        }
       }
     }
   }
 
   return messages;
+}
+
+// Read pending (unacknowledged) messages without auto-ack.
+export async function readMessagesPending(agentId: string, consumer: string, count = 10): Promise<Message[]> {
+  const stream = AGENT_STREAM_PREFIX + agentId;
+  const group = `${agentId}:${consumer}`;
+  await ensureGroup(stream, group);
+
+  const pending = await redis.xreadgroup(
+    "GROUP", group, consumer, "COUNT", count, "STREAMS", stream, "0"
+  ) as [string, [string, string[]][]][] | null;
+
+  const messages: Message[] = [];
+  if (pending) {
+    for (const [, entries] of pending) {
+      for (const [id, fields] of entries) {
+        if (!fields || fields.length === 0) continue;
+        messages.push(fieldsToMessage(id, fields));
+      }
+    }
+  }
+  return messages;
+}
+
+// Explicitly acknowledge messages for a consumer.
+export async function ackMessages(agentId: string, consumer: string, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const stream = AGENT_STREAM_PREFIX + agentId;
+  const group = `${agentId}:${consumer}`;
+  return redis.xack(stream, group, ...ids);
 }
 
 export async function readHistory(target: string, count = 20): Promise<Message[]> {

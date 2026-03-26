@@ -10,6 +10,8 @@ import {
   listAgents,
   sendMessage,
   readMessages,
+  readMessagesPending,
+  ackMessages,
   readHistory,
   listChannels,
   createSubscriber,
@@ -188,8 +190,40 @@ app.get("/messages/:agentId", async (c) => {
     return c.json({ error: "Forbidden: can only read your own inbox" }, 403);
   }
   const count = parseInt(c.req.query("count") || "10");
-  const messages = await readMessages(agentId, count);
+  // Optional consumer param for fan-out: each consumer sees all messages independently
+  const consumer = c.req.query("consumer") || undefined;
+  const messages = await readMessages(agentId, count, consumer);
   return c.json(messages);
+});
+
+// GET pending messages without auto-ack (requires ?consumer=xxx)
+app.get("/messages/:agentId/pending", async (c) => {
+  const agentId = c.req.param("agentId");
+  const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
+  if (!caller.isAdmin && caller.agentId !== agentId) {
+    return c.json({ error: "Forbidden: can only read your own inbox" }, 403);
+  }
+  const consumer = c.req.query("consumer");
+  if (!consumer) return c.json({ error: "consumer query param required" }, 400);
+  const count = parseInt(c.req.query("count") || "10");
+  const messages = await readMessagesPending(agentId, consumer, count);
+  return c.json(messages);
+});
+
+// POST ack: acknowledge specific message IDs for a consumer
+app.post("/messages/:agentId/ack", async (c) => {
+  const agentId = c.req.param("agentId");
+  const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
+  if (!caller.isAdmin && caller.agentId !== agentId) {
+    return c.json({ error: "Forbidden: can only ack your own messages" }, 403);
+  }
+  const body = await c.req.json();
+  const { consumer, ids } = body;
+  if (!consumer || !Array.isArray(ids) || ids.length === 0) {
+    return c.json({ error: "consumer and ids[] required" }, 400);
+  }
+  const acked = await ackMessages(agentId, consumer, ids);
+  return c.json({ acked });
 });
 
 app.get("/messages/:agentId/history", async (c) => {
