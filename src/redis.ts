@@ -3,6 +3,8 @@ import { randomUUID } from "crypto";
 
 const REGISTRY_KEY = "konoha:registry";
 const TOKENS_KEY = "konoha:tokens"; // token → agentId
+const INVITES_KEY = "konoha:invites"; // invite token → expiry (stored as Redis key with TTL)
+const INVITE_TTL = 3600; // seconds (1 hour)
 const BUS_STREAM = "konoha:bus";
 const AGENT_STREAM_PREFIX = "konoha:agent:";
 const CHANNEL_STREAM_PREFIX = "konoha:channel:";
@@ -84,6 +86,19 @@ export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat
 
 export async function getAgentIdByToken(token: string): Promise<string | null> {
   return redis.hget(TOKENS_KEY, token);
+}
+
+export async function createInvite(): Promise<{ token: string; expiresAt: string }> {
+  const token = "inv-" + randomUUID();
+  await redis.set(`${INVITES_KEY}:${token}`, "1", "EX", INVITE_TTL);
+  const expiresAt = new Date(Date.now() + INVITE_TTL * 1000).toISOString();
+  return { token, expiresAt };
+}
+
+export async function consumeInvite(token: string): Promise<boolean> {
+  const key = `${INVITES_KEY}:${token}`;
+  const deleted = await redis.del(key);
+  return deleted === 1;
 }
 
 export async function unregisterAgent(id: string, hard = false): Promise<void> {

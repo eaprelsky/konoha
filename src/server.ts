@@ -14,6 +14,8 @@ import {
   listChannels,
   createSubscriber,
   getAgentIdByToken,
+  createInvite,
+  consumeInvite,
   type Attachment,
 } from "./redis";
 
@@ -55,7 +57,15 @@ async function requireAdmin(c: any, next: any) {
 }
 
 // Apply auth to all protected routes
-app.use("/agents/*", requireAuth);
+// /agents/register is handled inline (invite token logic, no middleware)
+app.use("/agents/invite", requireAdmin);
+app.use("/agents/:id/heartbeat", requireAuth);
+app.use("/agents/:id", (c, next) => {
+  // /agents/register has its own auth — skip middleware for it
+  if (c.req.path === "/agents/register") return next();
+  return requireAuth(c, next);
+});
+app.use("/agents", requireAuth);
 app.use("/messages/*", requireAuth);
 app.use("/channels/*", requireAuth);
 app.use("/attachments/*", requireAuth);
@@ -65,7 +75,25 @@ app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() })
 
 // --- Agents ---
 
+// Issue a one-time invite token (admin only)
+app.post("/agents/invite", async (c) => {
+  const invite = await createInvite();
+  return c.json(invite, 201);
+});
+
+// Register: requires admin token OR a valid (one-time) invite token
 app.post("/agents/register", async (c) => {
+  const auth = c.req.header("Authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return c.json({ error: "Unauthorized" }, 401);
+
+  const isAdmin = token === ADMIN_TOKEN;
+  if (!isAdmin) {
+    // Try invite token
+    const valid = await consumeInvite(token);
+    if (!valid) return c.json({ error: "Unauthorized: invalid or expired invite token" }, 401);
+  }
+
   const body = await c.req.json();
   const { id, name, capabilities = [], roles = [] } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
