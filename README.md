@@ -14,18 +14,18 @@ Multi-agent communication bus for autonomous Claude Code agents. Redis-backed me
 
 ## Quick Start
 
-### Bus only (HTTP server)
+### Option 1: Bus only (HTTP server, no agents)
 
-Deploy this if you just need the message bus for agents to communicate over HTTP/REST.
+Use this if you just need the message bus for agents to communicate over HTTP/REST. No agent setup required — agents can call the API directly with curl or any HTTP client.
 
 ```bash
 bun install
 KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run src/server.ts
 ```
 
-### Bus + MCP server (Claude Code integration)
+### Option 2: Bus + MCP server (Claude Code integration, no agents)
 
-Deploy this on each agent machine so Claude Code agents can use `konoha_*` tools directly.
+Use this on each agent machine so Claude Code sessions can use `konoha_*` tools directly. This is the HTTP bus (Option 1) plus an MCP server that exposes Konoha tools inside Claude Code — no agent processes are required.
 
 ```bash
 # 1. Start the HTTP bus (once, shared)
@@ -47,6 +47,10 @@ KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run src/server.ts
 ```
 
 Requires Redis on localhost:6379.
+
+### Option 3: Full stack (Bus + MCP + agents)
+
+Use this when running multiple named Claude Code agents (e.g. Naruto, Sasuke, Mirai) that need to discover each other, exchange files, and route messages by agent ID. Combines Options 1 and 2 with agent registration and heartbeat-based presence tracking. See the [Registration flow](#registration-flow) below and [Architecture](docs/architecture.md) for the full setup.
 
 ### Registration flow
 
@@ -71,25 +75,25 @@ export KONOHA_AGENT_TOKEN=<agent-uuid>
 See [docs/architecture.md](docs/architecture.md) for details.
 
 ```
-+-----------+     +-----------+     +-----------+
-|  Naruto   |     |  Sasuke   |     |  Itachi   |
-|  (Agent)  |     |  (Agent)  |     |  (Agent)  |
-+-----+-----+     +-----+-----+     +-----+-----+
-      |                 |                 |
-      |   HTTP / MCP    |   HTTP / MCP    |
-      v                 v                 v
-+--------------------------------------------+
-|            Konoha Bus (Hono)               |
-|  +----------+  +----------------------+   |
-|  | Registry |  | /opt/shared/         |   |
-|  | (Redis)  |  |   attachments/       |   |
-|  +----------+  +----------------------+   |
-|        |                                   |
-|  +-----v------+                            |
-|  |   Redis    |                            |
-|  |  Streams   |                            |
-|  +------------+                            |
-+--------------------------------------------+
++-----------+   +-----------+   +-----------+   +-----------+
+|  Naruto   |   |  Sasuke   |   |  Itachi   |   |  Mirai    |
+| (Agent #1)|   | (Agent #2)|   | (Agent #3)|   | (Agent #4)|
++-----+-----+   +-----+-----+   +-----+-----+   +-----+-----+
+      |               |               |               |
+      |         HTTP / MCP            |         HTTP / MCP
+      v               v               v               v
++----------------------------------------------------------+
+|                  Konoha Bus (Hono)                       |
+|  +----------+  +----------------------------------+      |
+|  | Registry |  | /opt/shared/attachments/         |      |
+|  | (Redis)  |  | (shared file storage)            |      |
+|  +----------+  +----------------------------------+      |
+|        |                                                  |
+|  +-----v------+                                          |
+|  |   Redis    |                                          |
+|  |  Streams   |                                          |
+|  +------------+                                          |
++----------------------------------------------------------+
 ```
 
 ## Documentation
