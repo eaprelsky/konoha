@@ -1,0 +1,21 @@
+[Unit]
+Description=Watchdog for Itachi (Claude Agent) — Konoha SSE → tmux/terminal
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.local/bin
+Environment=KONOHA_URL=http://127.0.0.1:3200
+Environment=KONOHA_TOKEN=34947f6b-7ff5-4fa4-aa46-d8854db8fc87
+Environment=ITACHI_AGENT=itachi
+Environment=ITACHI_TMUX=itachi
+ExecStart=/usr/bin/python3 /home/ubuntu/scripts/watchdog-itachi.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
