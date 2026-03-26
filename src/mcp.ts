@@ -3,18 +3,26 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 const API_URL = process.env.KONOHA_URL || "http://127.0.0.1:3100";
-const API_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
+const ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 
-async function api(method: string, path: string, body?: any): Promise<any> {
+// Per-agent token received after registration; falls back to admin token
+let agentToken: string | null = process.env.KONOHA_AGENT_TOKEN || null;
+
+async function api(method: string, path: string, body?: any, token?: string): Promise<any> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
-      "Authorization": `Bearer ${API_TOKEN}`,
+      "Authorization": `Bearer ${token || ADMIN_TOKEN}`,
       "Content-Type": "application/json",
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   return res.json();
+}
+
+// Use per-agent token if available, otherwise fall back to admin token
+function agentApi(method: string, path: string, body?: any): Promise<any> {
+  return api(method, path, body, agentToken || ADMIN_TOKEN);
 }
 
 const server = new McpServer({
@@ -33,9 +41,13 @@ server.tool(
   },
   async ({ id, name, capabilities, roles }) => {
     const result = await api("POST", "/agents/register", { id, name, capabilities, roles });
+    // store per-agent token for subsequent calls
+    if (result.token) {
+      agentToken = result.token;
+    }
     // auto-heartbeat every 5 minutes
     setInterval(() => {
-      api("POST", `/agents/${id}/heartbeat`).catch(() => {});
+      agentApi("POST", `/agents/${id}/heartbeat`).catch(() => {});
     }, 5 * 60 * 1000);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
@@ -53,7 +65,7 @@ server.tool(
     replyTo: z.string().optional().describe("Message ID this is a reply to"),
   },
   async ({ from, to, text, type, channel, replyTo }) => {
-    const result = await api("POST", "/messages", { from, to, text, type, channel, replyTo });
+    const result = await agentApi("POST", "/messages", { from, to, text, type, channel, replyTo });
     return { content: [{ type: "text", text: `Sent. ID: ${result.id}` }] };
   }
 );
@@ -66,7 +78,7 @@ server.tool(
     count: z.number().optional().default(10).describe("Max messages to read"),
   },
   async ({ agentId, count }) => {
-    const messages = await api("GET", `/messages/${agentId}?count=${count}`);
+    const messages = await agentApi("GET", `/messages/${agentId}?count=${count}`);
     if (!messages.length) {
       return { content: [{ type: "text", text: "No new messages." }] };
     }
@@ -115,7 +127,7 @@ server.tool(
     agentId: z.string().describe("Your agent ID"),
   },
   async ({ agentId }) => {
-    await api("POST", `/agents/${agentId}/heartbeat`);
+    await agentApi("POST", `/agents/${agentId}/heartbeat`);
     return { content: [{ type: "text", text: "Heartbeat sent." }] };
   }
 );
@@ -155,7 +167,7 @@ server.tool(
 
     try {
       const res = await fetch(`${API_URL}/messages/${agentId}/stream`, {
-        headers: { "Authorization": `Bearer ${API_TOKEN}` },
+        headers: { "Authorization": `Bearer ${agentToken || ADMIN_TOKEN}` },
         signal: controller.signal,
       });
 

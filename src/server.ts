@@ -13,22 +13,52 @@ import {
   readHistory,
   listChannels,
   createSubscriber,
+  getAgentIdByToken,
   type Attachment,
 } from "./redis";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
 mkdirSync(ATTACHMENTS_DIR, { recursive: true });
 
-const API_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
+const ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 const PORT = parseInt(process.env.KONOHA_PORT || "3100");
 
 const app = new Hono();
 
-// auth
-app.use("/agents/*", bearerAuth({ token: API_TOKEN }));
-app.use("/messages/*", bearerAuth({ token: API_TOKEN }));
-app.use("/channels/*", bearerAuth({ token: API_TOKEN }));
-app.use("/attachments/*", bearerAuth({ token: API_TOKEN }));
+// Resolve caller identity from Bearer token.
+// Returns { isAdmin: true } for master token, or { isAdmin: false, agentId } for per-agent token.
+// Returns null if token is missing or invalid.
+async function resolveAuth(c: any): Promise<{ isAdmin: boolean; agentId: string | null } | null> {
+  const auth = c.req.header("Authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
+  if (token === ADMIN_TOKEN) return { isAdmin: true, agentId: null };
+  const agentId = await getAgentIdByToken(token);
+  if (!agentId) return null;
+  return { isAdmin: false, agentId };
+}
+
+// Middleware: require any valid auth (admin or agent token)
+async function requireAuth(c: any, next: any) {
+  const caller = await resolveAuth(c);
+  if (!caller) return c.json({ error: "Unauthorized" }, 401);
+  c.set("caller", caller);
+  await next();
+}
+
+// Middleware: require admin token only
+async function requireAdmin(c: any, next: any) {
+  const caller = await resolveAuth(c);
+  if (!caller || !caller.isAdmin) return c.json({ error: "Forbidden: admin token required" }, 403);
+  c.set("caller", caller);
+  await next();
+}
+
+// Apply auth to all protected routes
+app.use("/agents/*", requireAuth);
+app.use("/messages/*", requireAuth);
+app.use("/channels/*", requireAuth);
+app.use("/attachments/*", requireAuth);
 
 // health
 app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
@@ -52,6 +82,10 @@ app.delete("/agents/:id", async (c) => {
 
 app.post("/agents/:id/heartbeat", async (c) => {
   const id = c.req.param("id");
+  const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
+  if (!caller.isAdmin && caller.agentId !== id) {
+    return c.json({ error: "Forbidden: can only send heartbeat for yourself" }, 403);
+  }
   await heartbeat(id);
   return c.json({ ok: true });
 });
@@ -66,7 +100,11 @@ app.get("/agents", async (c) => {
 
 app.post("/messages", async (c) => {
   const body = await c.req.json();
-  const { from, to, type = "message", text, channel, replyTo, attachments } = body;
+  const { to, type = "message", text, channel, replyTo, attachments } = body;
+  const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
+
+  // Determine sender: admin can specify from, agent token sets from automatically
+  const from: string = caller.isAdmin ? (body.from || "admin") : caller.agentId!;
   if (!from || !to || !text) return c.json({ error: "from, to, text required" }, 400);
   // validate attachment paths exist
   const validAttachments: Attachment[] = [];
@@ -116,6 +154,11 @@ app.post("/attachments", async (c) => {
 
 app.get("/messages/:agentId", async (c) => {
   const agentId = c.req.param("agentId");
+  const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
+  // Non-admin agents can only read their own inbox
+  if (!caller.isAdmin && caller.agentId !== agentId) {
+    return c.json({ error: "Forbidden: can only read your own inbox" }, 403);
+  }
   const count = parseInt(c.req.query("count") || "10");
   const messages = await readMessages(agentId, count);
   return c.json(messages);

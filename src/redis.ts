@@ -1,6 +1,8 @@
 import Redis from "ioredis";
+import { randomUUID } from "crypto";
 
 const REGISTRY_KEY = "konoha:registry";
+const TOKENS_KEY = "konoha:tokens"; // token → agentId
 const BUS_STREAM = "konoha:bus";
 const AGENT_STREAM_PREFIX = "konoha:agent:";
 const CHANNEL_STREAM_PREFIX = "konoha:channel:";
@@ -13,6 +15,7 @@ export interface Agent {
   roles: string[];
   status: "online" | "offline";
   lastHeartbeat: number;
+  token?: string; // returned on registration, not stored in registry
 }
 
 export interface Attachment {
@@ -45,13 +48,21 @@ function createRedis(): Redis {
 export const redis = createRedis();
 export const redisSub = createRedis(); // separate connection for blocking reads
 
-export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat">): Promise<Agent> {
-  const full: Agent = {
+export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat" | "token">): Promise<Agent> {
+  const stored: Agent = {
     ...agent,
     status: "online",
     lastHeartbeat: Date.now(),
   };
-  await redis.hset(REGISTRY_KEY, agent.id, JSON.stringify(full));
+  await redis.hset(REGISTRY_KEY, agent.id, JSON.stringify(stored));
+
+  // generate and store per-agent token (delete old token for this agent first)
+  const oldTokenData = await redis.hgetall(TOKENS_KEY);
+  for (const [tok, aid] of Object.entries(oldTokenData)) {
+    if (aid === agent.id) await redis.hdel(TOKENS_KEY, tok);
+  }
+  const agentToken = randomUUID();
+  await redis.hset(TOKENS_KEY, agentToken, agent.id);
 
   // ensure consumer group exists for this agent
   const agentStream = AGENT_STREAM_PREFIX + agent.id;
@@ -68,7 +79,11 @@ export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat
     if (!e.message?.includes("BUSYGROUP")) throw e;
   }
 
-  return full;
+  return { ...stored, token: agentToken };
+}
+
+export async function getAgentIdByToken(token: string): Promise<string | null> {
+  return redis.hget(TOKENS_KEY, token);
 }
 
 export async function unregisterAgent(id: string, hard = false): Promise<void> {
