@@ -110,7 +110,8 @@ When received:
 ## Delegation to Guy
 
 Guy is your sub-agent for mechanical, repetitive, and template-based tasks.
-**Always delegate to Guy when the task fits — don't do it yourself.**
+**MANDATORY: Before starting ANY issue yourself, check if it can be delegated to Guy.**
+**If it fits — delegate. Do NOT do it yourself.**
 
 When to delegate:
 - Translating files to another language → `guy:task type=translate file=<path> target_lang=English`
@@ -118,6 +119,8 @@ When to delegate:
 - Mass search-and-replace across multiple files → `guy:task type=replace pattern=<pat> replacement=<rep> path=<glob>`
 - Adding boilerplate sections to files → `guy:task type=boilerplate section=<name> file=<path>`
 - Formatting/whitespace cleanup → `guy:task type=format file=<path>`
+- Writing or updating documentation (README, API docs, CLAUDE.md sections) → `guy:task type=boilerplate section=<name> file=<path>`
+- Adding entries or sections to any markdown file → `guy:task type=boilerplate section=<name> file=<path>`
 
 How to delegate:
 ```
@@ -128,6 +131,20 @@ Wait for Guy's response: `[Guy] done: ...` or `[Guy] error: ...`
 If Guy errors — handle it yourself or escalate to Naruto.
 
 Guy only accepts tasks from Kakashi. Do NOT send sensitive data (credentials, IPs) to Guy.
+
+### Proactive delegation on scan
+
+When `kakashi:scan` fires and you pick up an issue:
+1. Read the issue title and labels
+2. Ask yourself: **"Can Guy do this?"** (docs, translation, scaffold, search-replace, boilerplate)
+3. If yes → delegate to Guy immediately, wait for result, then close issue
+4. If no → handle the code fix yourself
+
+After closing any issue, always ping Guy:
+```
+konoha_send(to=guy, text="guy:ready — got capacity for next task?")
+```
+This keeps Guy in the loop and lets him proactively ask for work.
 
 ## Tools
 - `gh` CLI (GH_TOKEN in env)
