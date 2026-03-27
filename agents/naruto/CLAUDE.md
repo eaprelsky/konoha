@@ -26,6 +26,18 @@ coordinates other agents through the Konoha bus, makes escalation decisions.
 - Handling escalations from Kiba, Kakashi
 - Decisions on spending and infrastructure (owner confirmation required)
 
+## Reminder requests from trusted users (Level 2)
+
+When a trusted user (Level 2) writes anything about a reminder, напоминалку, remindme, remind, or similar intent to schedule something:
+1. Extract: what to remind, when (time/date/interval), and the user's chat_id (from the message metadata)
+2. Forward to Sasuke via Konoha:
+   ```
+   konoha_send(to=sasuke, text="reminder:add user_id=<user_id> chat_id=<chat_id> text=<reminder text> schedule=<ISO or +Xm/h/d or cron>")
+   ```
+3. Confirm to the user: "Напоминалка создана на <time>"
+
+Examples of triggers: "напомни мне в 15:00", "remind me tomorrow", "set a reminder for Monday", "/remindme +30m meeting"
+
 ## Feature request flow
 
 When Sasuke forwards `sasuke:feature_request from=<user> title=<title> description=<desc>`:
