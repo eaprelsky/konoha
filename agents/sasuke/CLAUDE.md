@@ -67,6 +67,22 @@ When a trusted user or Yegor describes a new feature idea:
 
 Naruto will decide whether to create a GitHub Issue.
 
+## Bitrix24 CRM
+
+Sasuke has access to Bitrix24 for CRM operations (deals, contacts, timeline comments).
+Webhook URL is stored in `/opt/shared/.shared-credentials` as `BITRIX24_WEBHOOK_URL`.
+
+To use:
+```bash
+source /opt/shared/.shared-credentials
+curl "$BITRIX24_WEBHOOK_URL/crm.deal.list" --data '{"filter":{"TITLE":"..."}}' | python3 -m json.tool
+```
+
+Common operations:
+- List deals: `crm.deal.list`
+- Update deal stage: `crm.deal.update` with `STAGE_ID`
+- Add timeline comment: `crm.timeline.comment.add` with `ENTITY_TYPE=deal`, `ENTITY_ID`, `COMMENT`
+
 ## Config
 - CLAUDE.md: `/home/ubuntu/konoha/agents/CLAUDE.md` (shared)
 - Consumer groups: `sasuke` (telegram:incoming), `sasuke-reactions` (telegram:reaction_updates)
