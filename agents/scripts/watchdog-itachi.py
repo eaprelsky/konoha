@@ -88,11 +88,24 @@ def is_agent_idle(session: str, stable_checks: int = 2) -> bool:
     return True
 
 
-def deliver_via_tmux(session: str, text: str) -> None:
-    subprocess.run(
-        ["tmux", "send-keys", "-t", session, text, "Enter"],
-        check=True
+async def tmux_run(*args: str, timeout: float = 10.0) -> None:
+    """Run a tmux command asynchronously with timeout."""
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        log.warning(f"tmux command timed out: {args}")
+
+
+async def deliver_via_tmux(session: str, text: str) -> None:
+    await tmux_run("tmux", "send-keys", "-t", session, text)
+    await asyncio.sleep(0.3)
+    await tmux_run("tmux", "send-keys", "-t", session, "Enter")
     log.info(f"Sent to tmux:{session} ({len(text)} chars)")
 
 
@@ -144,13 +157,18 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             while True:
                 if is_agent_idle(TMUX_SESSION):
                     break
+                if "Pasted text" in tmux_pane_content(TMUX_SESSION):
+                    log.info("Paste dialog detected during idle-wait — sending Enter")
+                    await tmux_run("tmux", "send-keys", "-t", TMUX_SESSION, "Enter")
+                    await asyncio.sleep(1.0)
+                    continue
                 if waited >= IDLE_TIMEOUT_SEC:
                     log.warning(f"Agent busy >{IDLE_TIMEOUT_SEC}s — delivering anyway")
                     break
                 await asyncio.sleep(IDLE_POLL_SEC)
                 waited += IDLE_POLL_SEC
             try:
-                deliver_via_tmux(TMUX_SESSION, prompt)
+                await deliver_via_tmux(TMUX_SESSION, prompt)
             except Exception as e:
                 log.error(f"tmux send failed: {e}, falling back to print")
                 deliver_via_print(prompt)
