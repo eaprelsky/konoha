@@ -110,12 +110,12 @@ def check_tmux_sessions() -> list[str]:
                 if should_alert(key):
                     alerts.append(f"kiba:alert tmux=missing session={session}")
             else:
-                # Check for stuck [Pasted text] dialog in the session
+                # Check for stuck paste mode via pane_in_mode (not text grep — avoids false positives)
                 try:
-                    pane = subprocess.check_output(
-                        ["tmux", "capture-pane", "-pt", session], timeout=3
-                    ).decode("utf-8", errors="replace")
-                    if "Pasted text" in pane:
+                    mode = subprocess.check_output(
+                        ["tmux", "display-message", "-pt", session, "#{pane_in_mode}"], timeout=3
+                    ).decode("utf-8", errors="replace").strip()
+                    if mode == "1":
                         key = f"tmux:{session}:pasted"
                         if should_alert(key):
                             alerts.append(f"kiba:alert tmux=stuck_paste session={session}")

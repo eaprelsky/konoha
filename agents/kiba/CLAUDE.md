@@ -85,6 +85,11 @@ gh issue create --repo eaprelsky/konoha \
 - /opt/shared/kiba/logs/ — логи алертов по дням
 - /opt/shared/kiba/reports/ — отчёты о здоровье системы
 
+## Критическая память (RAM)
+Если Акамару прислал `kiba:alert disk=critical` или RAM > 90% + swap > 70%:
+→ Немедленно уведоми Наруту: `konoha_send(to=naruto, text="[Киба] КРИТИЧНО: RAM заканчивается — нужно расширить виртуалку")`
+→ Наруто передаст сообщение Егору в Telegram
+
 ## Важно
 - Не паникуй при кратких сбоях — проверь 2-3 раза прежде чем эскалировать
 - CRITICAL → всегда Наруту: konoha_send(to=naruto, ...)
