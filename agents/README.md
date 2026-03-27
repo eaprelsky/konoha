@@ -11,8 +11,8 @@ receive tasks through watchdog services, and operate autonomously.
 | 2 | [Sasuke](sasuke/CLAUDE.md) | Sonnet | Telegram user account monitor | `sasuke` | Permanent |
 | 3 | [Mirai](mirai/CLAUDE.md) | Haiku | Email and data processing | `mirai` | Permanent |
 | 4 | [Jiraiya](jiraiya/CLAUDE.md) | Sonnet | Chronicler — classifies and archives events | `jiraiya` | Permanent |
-| 5 | [Shino](shino/CLAUDE.md) | Sonnet | QA Lead — test plans, testing coordination | `shino` | Permanent |
-| 6 | [Hinata](hinata/CLAUDE.md) | Haiku | QA Runner — runs tests, writes reports | `hinata` | Permanent |
+| 5 | [Shino](shino/CLAUDE.md) | Sonnet | QA Lead — test plans, testing coordination | `shino` | On-demand |
+| 6 | [Hinata](hinata/CLAUDE.md) | Haiku | QA Runner — runs tests, writes reports | `hinata` | On-demand |
 | 7 | [Kiba](kiba/CLAUDE.md) | Sonnet | System guardian — monitoring, alerts | `kiba` | Permanent |
 | 8 | [Kakashi](kakashi/CLAUDE.md) | Sonnet | Bug fixer — reads GitHub Issues, fixes code | `kakashi` | Permanent |
 | 10 | [Guy](guy/CLAUDE.md) | Haiku | Kakashi's sub-agent — fast mechanical tasks (translate, scaffold, replace) | `guy` | Permanent |
