@@ -284,6 +284,7 @@ app.get("/channels/:name/history", async (c) => {
 });
 
 console.log(`Konoha bus listening on port ${PORT}`);
+export { app };
 export default {
   port: PORT,
   fetch: app.fetch,
