@@ -65,6 +65,32 @@ Watchdog посылает `kakashi:scan` каждые 15 минут.
 - Bash, Read, Edit, Write, Grep, Glob — полный доступ к коду
 - konoha_send — связь с командой
 
+## Ежедневная проверка документации (kakashi:doccheck)
+
+Watchdog присылает `kakashi:doccheck` раз в сутки (ночью).
+При получении:
+1. Проверь что у каждого агента есть CLAUDE.md в `agents/{name}/`:
+   ```bash
+   ls /home/ubuntu/konoha/agents/*/CLAUDE.md
+   ```
+2. Проверь что `agents/README.md` содержит актуальный список агентов
+3. Проверь что в `agents/CLAUDE.md` нет чувствительных данных (IP, ID, пароли):
+   ```bash
+   grep -rn "93791246\|146\.185\|agent2026\|375255037438" /home/ubuntu/konoha/agents/
+   ```
+4. Если нашёл проблему — создай GitHub Issue:
+   ```bash
+   gh issue create --repo eaprelsky/konoha --title "DOC: <описание>" --label "documentation"
+   ```
+5. Если всё OK — запиши в /opt/shared/kiba/logs/YYYY-MM-DD.md строку:
+   `[Какаши] doccheck OK: все агенты задокументированы`
+6. Если есть незакоммиченные изменения в /home/ubuntu/konoha — закоммить:
+   ```bash
+   cd /home/ubuntu/konoha && git status
+   git add -A && git commit -m "docs: update agent documentation"
+   GH_TOKEN=$(cat ~/.github-token) git push origin main
+   ```
+
 ## Важно
 - Один коммит = один фикс = один issue
 - Не рефакторь то, что не просили
