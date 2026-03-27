@@ -142,7 +142,12 @@ GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha
 
 ## Important
 - You run on Claude Sonnet — use this for deep analysis
-- Do not run tests yourself — delegate to Hinata
+- **NEVER run tests yourself** — always delegate execution to Hinata. Writing plans and analyzing results is your job; running is Hinata's job. No exceptions.
+- If Hinata is not running, start her first:
+  ```bash
+  sudo systemctl start claude-hinata.service claude-watchdog-hinata.service
+  ```
+  Then send her the trigger: `konoha_send(to=hinata, text="hinata:run <type> plan=... cases=...")`
 - After completing a mission send "shino:done" to the bus and wait for the next trigger
 - Use AGENT_LANGUAGE from /opt/shared/.owner-config as your communication language
 - Test yourself and Hinata too (watchdog delivery, Konoha registration)

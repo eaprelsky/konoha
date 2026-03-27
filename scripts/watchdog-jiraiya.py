@@ -76,7 +76,8 @@ def is_agent_idle(session: str, stable_checks: int = 2) -> bool:
 
 # ── tmux send ────────────────────────────────────────────────────────────────
 
-async def tmux_run(*args: str, timeout: float = 10.0) -> None:
+async def tmux_run(*args: str, timeout: float = 10.0) -> bool:
+    """Run a tmux command. Returns True on success, False on timeout (#51)."""
     proc = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.DEVNULL,
@@ -84,27 +85,41 @@ async def tmux_run(*args: str, timeout: float = 10.0) -> None:
     )
     try:
         await asyncio.wait_for(proc.wait(), timeout=timeout)
+        return True
     except asyncio.TimeoutError:
         proc.kill()
-        log.warning(f"tmux command timed out: {args}")
+        log.warning(f"tmux command timed out: {' '.join(str(a) for a in args)}")
+        return False
 
 
 async def tmux_send(session: str, text: str) -> None:
     # Collapse newlines to spaces — multi-line text triggers Claude Code [Pasted text] dialog
     text = text.replace("\n", " ").replace("\r", " ")
+    # Capture pane content BEFORE send to detect delivery confirmation (#50)
+    content_before = tmux_pane_content(session)
     # send-keys without -l: simulates typing (no paste mode, no [Pasted text] indicator)
-    await tmux_run("tmux", "send-keys", "-t", session, text)
+    ok = await tmux_run("tmux", "send-keys", "-t", session, text, timeout=5.0)
+    if not ok:
+        log.error(f"send-keys timed out for {session} — skipping delivery")
+        return
     await asyncio.sleep(0.3)
-    await tmux_run("tmux", "send-keys", "-t", session, "Enter")
+    await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
     log.info(f"Sent prompt to {session} ({len(text)} chars)")
     await asyncio.sleep(2.0)  # give agent more time to start processing
     for attempt in range(3):
+        content_after = tmux_pane_content(session)
+        if content_after != content_before:
+            log.info(f"Delivery confirmed: pane content changed after send")
+            break  # pane changed — agent received the message (#50)
         if not is_agent_idle(session, stable_checks=2):
+            break  # agent is processing — good
+        log.warning(f"Pane unchanged and agent idle (attempt {attempt+1}), resending full prompt")
+        ok = await tmux_run("tmux", "send-keys", "-t", session, text, timeout=5.0)
+        if not ok:
+            log.error(f"Resend attempt {attempt+1} timed out for {session}")
             break
-        log.warning(f"Agent still idle after send (attempt {attempt+1}), resending full prompt")
-        await tmux_run("tmux", "send-keys", "-t", session, text)
         await asyncio.sleep(0.3)
-        await tmux_run("tmux", "send-keys", "-t", session, "Enter")
+        await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
         await asyncio.sleep(2.0)
 
 
