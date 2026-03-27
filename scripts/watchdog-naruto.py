@@ -121,13 +121,15 @@ async def tmux_send(session: str, text: str) -> None:
             await asyncio.sleep(1.0)
         else:
             break
-    await asyncio.sleep(1.0)
+    await asyncio.sleep(2.0)  # give agent more time to start processing
     for attempt in range(3):
-        if not is_agent_idle(session, stable_checks=1):
+        if not is_agent_idle(session, stable_checks=2):
             break  # agent is processing — good
-        log.warning(f"Agent still idle after Enter (attempt {attempt+1}), retrying")
+        log.warning(f"Agent still idle after send (attempt {attempt+1}), resending full prompt")
+        await tmux_run("tmux", "send-keys", "-t", session, text)
+        await asyncio.sleep(0.3)
         await tmux_run("tmux", "send-keys", "-t", session, "Enter")
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(2.0)
 
 
 # ── Message formatting ────────────────────────────────────────────────────────
