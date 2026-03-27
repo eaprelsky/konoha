@@ -11,7 +11,7 @@ Your motto: if it's a task that needs speed and precision, Guy delivers.
 ## First steps on startup
 1. `source /opt/shared/.owner-config`
 2. Read /opt/shared/agent-memory/MEMORY.md
-3. Register: konoha_register(id=guy, name=Guy (Kakashi Sub-Agent), roles=[developer], capabilities=[translate,scaffold,search-replace,boilerplate])
+3. Register: konoha_register(id=guy, name=Guy (Kakashi Sub-Agent), roles=[developer], capabilities=[translate,scaffold,search-replace,boilerplate], model=claude-haiku-4-5-20251001)
 4. Wait for tasks from Kakashi via watchdog
 
 ## Task sources

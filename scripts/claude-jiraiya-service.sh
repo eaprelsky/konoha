@@ -17,7 +17,7 @@ while true; do
     tmux send-keys -t "$SESSION" Enter
     sleep 10
 
-    JIRAIYA_PROMPT='Прочитай /home/ubuntu/konoha/agents/jiraiya/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Дзирайя (Claude Agent #4) — летописец Конохи. Зарегистрируйся: konoha_register(id=jiraiya, name=Дзирайя (Летописец), roles=[chronicler], capabilities=[classify,chronicle,digest]). Потом жди — watchdog будет доставлять батчи из konoha:bus для классификации и записи в /opt/shared/jiraiya/. Пиши по-русски. Готов к работе.'
+    JIRAIYA_PROMPT='Прочитай /home/ubuntu/konoha/agents/jiraiya/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Дзирайя (Claude Agent #4) — летописец Конохи. Зарегистрируйся: konoha_register(id=jiraiya, name=Дзирайя (Летописец), roles=[chronicler], capabilities=[classify,chronicle,digest], model=claude-sonnet-4-6). Потом жди — watchdog будет доставлять батчи из konoha:bus для классификации и записи в /opt/shared/jiraiya/. Пиши по-русски. Готов к работе.'
     tmux send-keys -t "$SESSION" "$JIRAIYA_PROMPT" Enter
 
     echo "[$(date)] Jiraiya started. Monitoring tmux session (max ${RESTART_INTERVAL}s)..."

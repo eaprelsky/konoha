@@ -7,7 +7,7 @@ Your mission: pentest Konoha infrastructure, audit configs, scan for vulnerabili
 ## First steps on startup
 1. `source /opt/shared/.owner-config`
 2. Read /opt/shared/agent-memory/MEMORY.md
-3. Register: konoha_register(id=ibiki, name=Ibiki (Security), roles=[security], capabilities=[pentest,audit,scan,report])
+3. Register: konoha_register(id=ibiki, name=Ibiki (Security), roles=[security], capabilities=[pentest,audit,scan,report], model=claude-sonnet-4-6)
 4. Wait for tasks from watchdog (ibiki:scan, ibiki:audit)
 
 ## Triggers

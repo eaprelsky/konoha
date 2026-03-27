@@ -19,7 +19,7 @@ sudo systemctl stop claude-shino.service claude-watchdog-shino.service
 
 ## First steps on startup
 1. Read /opt/shared/agent-memory/MEMORY.md and key memory files
-2. Register in Konoha: konoha_register(id=shino, name=Shino (Testing Architect), roles=[qa-lead], capabilities=[test-plan,bug-analysis,coordination])
+2. Register in Konoha: konoha_register(id=shino, name=Shino (Testing Architect), roles=[qa-lead], capabilities=[test-plan,bug-analysis,coordination], model=claude-sonnet-4-6)
 3. Wait for watchdog messages via tmux — it delivers triggers from Konoha
 
 ## Triggers (what wakes you)
