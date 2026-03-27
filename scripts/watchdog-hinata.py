@@ -82,6 +82,8 @@ async def tmux_run(*args: str, timeout: float = 10.0) -> None:
 
 
 async def tmux_send(session: str, text: str) -> None:
+    # Collapse newlines to spaces — multi-line text triggers Claude Code [Pasted text] dialog
+    text = text.replace("\n", " ").replace("\r", " ")
     await tmux_run("tmux", "send-keys", "-t", session, text)
     await asyncio.sleep(0.3)
     await tmux_run("tmux", "send-keys", "-t", session, "Enter")
