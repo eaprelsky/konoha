@@ -1,25 +1,25 @@
-# Команда агентов Конохи
+# Konoha Agent Team
 
-Многоагентная система на базе Claude Code. Агенты общаются через [Коноха-шину](../README.md),
-получают задачи через watchdog-сервисы и работают автономно.
+Multi-agent system built on Claude Code. Agents communicate via the [Konoha bus](../README.md),
+receive tasks through watchdog services, and operate autonomously.
 
-## Состав команды
+## Team Roster
 
-| # | Агент | Модель | Роль | tmux | Статус |
-|---|-------|--------|------|------|--------|
-| 1 | [Наруто](naruto/CLAUDE.md) | Sonnet | Главный оркестратор, Telegram бот | `naruto` | Постоянный |
-| 2 | [Саске](sasuke/CLAUDE.md) | Sonnet | Telegram user account монитор | `sasuke` | Постоянный |
-| 3 | [Мирай](mirai/CLAUDE.md) | Haiku | Email и данные | `mirai` | Постоянный |
-| 4 | [Дзирайя](jiraiya/CLAUDE.md) | Sonnet | Летописец — классифицирует и архивирует события | `jiraiya` | Постоянный |
-| 5 | [Шино](shino/CLAUDE.md) | Sonnet | QA Lead — тест-планы, координация тестирования | `shino` | Постоянный |
-| 6 | [Хината](hinata/CLAUDE.md) | Haiku | QA Runner — прогон тестов, отчёты | `hinata` | Постоянный |
-| 7 | [Киба](kiba/CLAUDE.md) | Sonnet | Страж системы — мониторинг, алерты | `kiba` | Постоянный |
-| 8 | [Какаши](kakashi/CLAUDE.md) | Sonnet | Баг-фиксер — читает GitHub Issues, чинит код | `kakashi` | Постоянный |
-| — | [Итачи](itachi/CLAUDE.md) | Sonnet+ | Локальный агент WSL (на машине владельца) | `itachi` | Опциональный |
-| — | Шикамару | Opus | Советник владельца (Windows Claude Desktop, без тулзов) | — | Внешний |
-| — | Акамару | Python | Автономный мониторинг (не Claude, скрипт) | — | Постоянный |
+| # | Agent | Model | Role | tmux | Status |
+|---|-------|-------|------|------|--------|
+| 1 | [Naruto](naruto/CLAUDE.md) | Sonnet | Main orchestrator, Telegram bot | `naruto` | Permanent |
+| 2 | [Sasuke](sasuke/CLAUDE.md) | Sonnet | Telegram user account monitor | `sasuke` | Permanent |
+| 3 | [Mirai](mirai/CLAUDE.md) | Haiku | Email and data processing | `mirai` | Permanent |
+| 4 | [Jiraiya](jiraiya/CLAUDE.md) | Sonnet | Chronicler — classifies and archives events | `jiraiya` | Permanent |
+| 5 | [Shino](shino/CLAUDE.md) | Sonnet | QA Lead — test plans, testing coordination | `shino` | Permanent |
+| 6 | [Hinata](hinata/CLAUDE.md) | Haiku | QA Runner — runs tests, writes reports | `hinata` | Permanent |
+| 7 | [Kiba](kiba/CLAUDE.md) | Sonnet | System guardian — monitoring, alerts | `kiba` | Permanent |
+| 8 | [Kakashi](kakashi/CLAUDE.md) | Sonnet | Bug fixer — reads GitHub Issues, fixes code | `kakashi` | Permanent |
+| — | [Itachi](itachi/CLAUDE.md) | Sonnet+ | Local WSL agent (on owner's machine) | `itachi` | Optional |
+| — | Shikamaru | Opus | Owner's advisor (Windows Claude Desktop, no tools) | — | External |
+| — | Akamaru | Python | Autonomous health monitoring (not Claude, a script) | — | Permanent |
 
-## Архитектура доставки сообщений
+## Message Delivery Architecture
 
 ```
 Telegram Bot API ──► message-queue.jsonl ──► watchdog-naruto ──► tmux naruto
@@ -29,36 +29,36 @@ GitHub Issues ──► watchdog-kakashi ──► tmux kakashi
 Akamaru alerts ──► Konoha ──► watchdog-kiba ──► tmux kiba
 ```
 
-## Коноха-шина
+## Konoha Bus
 
-- HTTP API: `http://127.0.0.1:3200` (локально), `https://agent.eaprelsky.ru` (внешний)
-- Агент получает сообщения через SSE: `GET /messages/{id}/stream`
-- Агент отправляет: `POST /messages` `{"from": "id", "to": "id", "text": "..."}`
-- MCP инструменты: `konoha_send`, `konoha_read`, `konoha_agents`, `konoha_register`
+- HTTP API: `http://127.0.0.1:3200` (local), `https://agent.eaprelsky.ru` (external)
+- Agents receive messages via SSE: `GET /messages/{id}/stream`
+- Agents send messages: `POST /messages` `{"from": "id", "to": "id", "text": "..."}`
+- MCP tools: `konoha_send`, `konoha_read`, `konoha_agents`, `konoha_register`
 
-## Хранилище
+## Shared Storage
 
-| Путь | Назначение |
-|------|-----------|
-| `/opt/shared/agent-memory/` | Общая память всех агентов (38+ файлов) |
-| `/opt/shared/jiraiya/` | Летопись: media/, internal/, private/ |
+| Path | Purpose |
+|------|---------|
+| `/opt/shared/agent-memory/` | Shared agent memory (38+ files) |
+| `/opt/shared/jiraiya/` | Chronicle: media/, internal/, private/ |
 | `/opt/shared/shino/` | QA: plans/, reports/, bugs/ |
-| `/opt/shared/kiba/` | Мониторинг: logs/, reports/ |
-| `/opt/shared/attachments/` | Файлы из Telegram |
+| `/opt/shared/kiba/` | Monitoring: logs/, reports/ |
+| `/opt/shared/attachments/` | Files from Telegram |
 
-## Systemd сервисы
+## Systemd Services
 
-Каждый постоянный агент имеет два сервиса:
-- `claude-{agent}.service` — запускает Claude Code в tmux
-- `claude-watchdog-{agent}.service` — доставляет события агенту
+Each permanent agent has two services:
+- `claude-{agent}.service` — starts Claude Code in tmux
+- `claude-watchdog-{agent}.service` — delivers events to the agent
 
-Дополнительно: `akamaru.service` — автономный мониторинг здоровья системы.
+Additionally: `akamaru.service` — autonomous system health monitoring.
 
-## Добавление нового агента
+## Adding a New Agent
 
-1. Создай `agents/{name}/CLAUDE.md` с описанием роли
-2. Создай `agents/{name}/.mcp-{name}.json` по шаблону `agents/.mcp-template.json`
-3. Создай `scripts/claude-{name}-service.sh` и `scripts/watchdog-{name}.py`
-4. Создай systemd unit-файлы и включи их
-5. Добавь агента в эту таблицу
-6. Добавь сессию в `WATCHED_SESSIONS` в `scripts/akamaru.py`
+1. Create `agents/{name}/CLAUDE.md` with the agent's role description
+2. Create `agents/{name}/.mcp-{name}.json` using `agents/.mcp-template.json` as template
+3. Create `scripts/claude-{name}-service.sh` and `scripts/watchdog-{name}.py`
+4. Create systemd unit files and enable them
+5. Add the agent to the table above
+6. Add the session to `WATCHED_SESSIONS` in `scripts/akamaru.py`

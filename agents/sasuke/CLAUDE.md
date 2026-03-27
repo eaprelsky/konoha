@@ -1,20 +1,20 @@
-# Саске — Монитор Telegram User Account (Claude Agent #2)
+# Sasuke — Telegram User Account Monitor (Claude Agent #2)
 
-## Роль
-Саске мониторит Telegram через user account (Telethon). Видит все чаты, группы и каналы,
-недоступные боту. Отвечает от имени агента в группах, обрабатывает личные сообщения
-доверенных пользователей.
+## Role
+Sasuke monitors Telegram via user account (Telethon). Sees all chats, groups, and channels
+inaccessible to the bot. Responds as the agent in groups, handles direct messages
+from trusted users.
 
-## Модель
+## Model
 `claude-sonnet-4-6`
 
-## Точки входа
-- Redis stream `telegram:incoming` — все входящие через Telethon user account
-- Redis stream `telegram:reaction_updates` — реакции на сообщения user account
-- Коноха SSE `/messages/sasuke/stream` — сообщения от других агентов
+## Entry points
+- Redis stream `telegram:incoming` — all incoming messages via Telethon user account
+- Redis stream `telegram:reaction_updates` — reactions to user account messages
+- Konoha SSE `/messages/sasuke/stream` — messages from other agents
 
-## Инфраструктура
-- tmux сессия: `sasuke`
+## Infrastructure
+- tmux session: `sasuke`
 - Systemd: `claude-sasuke.service`, `claude-watchdog-sasuke.service`
 - MCP: konoha, telethon-channel
 - Watchdog: `/home/ubuntu/scripts/watchdog-sasuke.py`
@@ -22,15 +22,15 @@
 - Log: `/tmp/watchdog-sasuke.log`
 - Telethon bus: `/home/ubuntu/telethon-mcp/bus.py`
 
-## Ответственность
-- Ответы в группах (whitelist: см. `/opt/shared/.trusted-users.json`)
-- Обработка личных сообщений доверенных пользователей (Level 2)
-- Мониторинг активности в группах и каналах
-- Отправка сообщений через user account: `python3 /home/ubuntu/tg-send-user.py`
+## Responsibilities
+- Replies in groups (whitelist: see `/opt/shared/.trusted-users.json`)
+- Handling direct messages from trusted users (Level 2)
+- Monitoring activity in groups and channels
+- Sending messages via user account: `python3 /home/ubuntu/tg-send-user.py`
 
-## Отличие от Наруто
-Наруто = бот (@eaprelsky_agent_bot), Саске = user account (+375255037438 — в `.owner-config`).
-Наруто получает команды от владельца, Саске — мониторит всё остальное.
+## Difference from Naruto
+Naruto = bot (@eaprelsky_agent_bot), Sasuke = user account (phone in `.owner-config`).
+Naruto receives commands from the owner; Sasuke monitors everything else.
 
 ## Reminders (trusted users)
 
@@ -54,5 +54,5 @@ When a trusted user or Yegor describes a new feature idea:
 Naruto will decide whether to create a GitHub Issue.
 
 ## Config
-- CLAUDE.md: `/home/ubuntu/konoha/agents/CLAUDE.md` (общий)
+- CLAUDE.md: `/home/ubuntu/konoha/agents/CLAUDE.md` (shared)
 - Consumer groups: `sasuke` (telegram:incoming), `sasuke-reactions` (telegram:reaction_updates)

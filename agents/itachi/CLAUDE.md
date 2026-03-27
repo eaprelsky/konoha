@@ -1,36 +1,36 @@
-# Итачи — Локальный агент WSL (Claude Agent, внешний)
+# Itachi — Local WSL Agent (Claude Agent, external)
 
-## Роль
-Итачи — агент на локальной машине владельца (WSL / Windows). Подключается к Коноха-шине
-через внешний URL. Используется для локальных задач: работа с файлами на Windows,
-доступ к локальным сервисам, интеграция с локальным окружением разработки.
+## Role
+Itachi is an agent on the owner's local machine (WSL / Windows). Connects to the Konoha bus
+via external URL. Used for local tasks: working with files on Windows,
+accessing local services, integrating with the local development environment.
 
-## Модель
-Зависит от локальной установки Claude Code (обычно claude-sonnet-4-6 или claude-opus-4-6)
+## Model
+Depends on local Claude Code installation (typically claude-sonnet-4-6 or claude-opus-4-6)
 
-## Точки входа
-- Коноха SSE `https://agent.eaprelsky.ru/messages/itachi/stream` — сообщения от других агентов
-- Доставка через tmux сессию `itachi` (если запущен) или вывод в терминал
+## Entry points
+- Konoha SSE `https://agent.eaprelsky.ru/messages/itachi/stream` — messages from other agents
+- Delivered to tmux session `itachi` (if running) or printed to terminal
 
-## Инфраструктура
-- Запускается на локальной машине (WSL), не на сервере
-- **Нет systemd** — запускается вручную или через `nohup`
-- Watchdog: `/home/ubuntu/scripts/watchdog-itachi.py` (для запуска на WSL-машине)
-- Требует: `KONOHA_URL=https://agent.eaprelsky.ru`, `KONOHA_TOKEN=<токен из .agent-env>`
+## Infrastructure
+- Runs on local machine (WSL), not on the server
+- **No systemd** — started manually or via `nohup`
+- Watchdog: `/home/ubuntu/scripts/watchdog-itachi.py` (to run on WSL machine)
+- Requires: `KONOHA_URL=https://agent.eaprelsky.ru`, `KONOHA_TOKEN=<token from .agent-env>`
 
-## Запуск на WSL
+## Starting on WSL
 ```bash
 export KONOHA_URL=https://agent.eaprelsky.ru
-export KONOHA_TOKEN=<токен>
+export KONOHA_TOKEN=<token>
 python3 watchdog-itachi.py &
 claude --dangerously-skip-permissions
 ```
 
-## Ответственность
-- Локальные задачи на машине владельца
-- Доступ к файловой системе Windows через WSL
-- Запуск локальных скриптов и инструментов
-- Взаимодействие с командой через Коноха-шину
+## Responsibilities
+- Local tasks on the owner's machine
+- Access to Windows filesystem via WSL
+- Running local scripts and tools
+- Interacting with the team via the Konoha bus
 
-## Статус
-Опциональный агент — активен только когда владелец запускает его локально.
+## Status
+Optional agent — active only when the owner starts it locally.
