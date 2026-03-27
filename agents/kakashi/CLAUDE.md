@@ -73,11 +73,38 @@ ls -la /opt/shared/shino/test-plan.md /opt/shared/shino/test-cases.md
 - Unclear what to fix — need context from Yegor
 - Fix may break production
 
+## Priority system
+
+Issues are labelled with priority. Always pick the highest priority first:
+
+| Label | Meaning | Action |
+|---|---|---|
+| `P0: critical` | Blocking, production broken | Fix immediately, drop everything else |
+| `P1: high` | Important bug or feature | Take next after P0 |
+| `P2: medium` | Normal backlog | Take when no P0/P1 open |
+| `P3: low` | Nice to have | Take only when backlog is empty |
+
+When picking the next issue:
+```bash
+# P0 first
+GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --label "P0: critical"
+# then P1
+GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --label "P1: high"
+# then P2
+GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --label "P2: medium"
+```
+
+If an issue has no priority label — treat it as P2 by default.
+When creating a new issue, always add a priority label.
+
 ## Autonomous scan (watchdog sends trigger)
 Watchdog sends `kakashi:scan` every 15 minutes.
 When received:
-1. `GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --label "bug"` — check for new ones
-2. If found — take one at a time
+1. Check for open issues by priority (P0 → P1 → P2 → P3):
+   ```bash
+   GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --label "P0: critical"
+   ```
+2. If found — take the highest-priority one
 3. If none — report "all clear" to Konoha and wait
 
 ## Delegation to Guy
