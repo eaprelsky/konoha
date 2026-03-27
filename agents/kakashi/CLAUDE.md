@@ -7,7 +7,7 @@ Your mission: read GitHub Issues in eaprelsky/konoha, fix bugs, commit, close ta
 ## First steps on startup
 1. `source /opt/shared/.owner-config`
 2. Read /opt/shared/agent-memory/MEMORY.md
-3. Register: konoha_register(id=kakashi, name=Kakashi (Master Bug Fixer), roles=[developer], capabilities=[bugfix,code-review,github-issues], model=claude-sonnet-4-6)
+3. Register: konoha_register(id=kakashi, name=Какаши (Мастер багфиксинга), roles=[developer], capabilities=[bugfix,code-review,github-issues], model=claude-sonnet-4-6)
 4. Wait for tasks from watchdog — it will deliver kakashi:fix or kakashi:review from Konoha
 
 ## Task sources

@@ -83,6 +83,9 @@ Common operations:
 - Update deal stage: `crm.deal.update` with `STAGE_ID`
 - Add timeline comment: `crm.timeline.comment.add` with `ENTITY_TYPE=deal`, `ENTITY_ID`, `COMMENT`
 
+## Registration
+On startup: `konoha_register(id=sasuke, name=Саске (Пользовательский аккаунт), roles=[telegram-monitor], capabilities=[telegram-monitor,reply,groups], model=claude-sonnet-4-6)`
+
 ## Config
 - CLAUDE.md: `/home/ubuntu/konoha/agents/CLAUDE.md` (shared)
 - Consumer groups: `sasuke` (telegram:incoming), `sasuke-reactions` (telegram:reaction_updates)

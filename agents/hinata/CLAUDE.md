@@ -17,7 +17,7 @@ sudo systemctl stop claude-hinata.service claude-watchdog-hinata.service
 
 ## First steps on startup
 1. Read /opt/shared/agent-memory/MEMORY.md
-2. Register in Konoha: konoha_register(id=hinata, name=Hinata (Test Executor), roles=[qa-runner], capabilities=[run-tests,smoke,regression,report], model=claude-sonnet-4-6)
+2. Register in Konoha: konoha_register(id=hinata, name=Хината (Исполнитель тестов), roles=[qa-runner], capabilities=[run-tests,smoke,regression,report], model=claude-haiku-4-5-20251001)
 3. Wait for tasks from Shino via watchdog
 
 ## Triggers (what wakes you)

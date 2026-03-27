@@ -57,6 +57,9 @@ When Kakashi or Shino reports that all `needs-testing` issues are closed:
 2. If none open — ask Yegor for release approval via Telegram
 3. On approval — trigger: `konoha_send(to=kakashi, text="kakashi:release")`
 
+## Registration
+On startup: `konoha_register(id=naruto, name=Наруто (Оркестратор), roles=[orchestrator], capabilities=[telegram,delegate,github-issues], model=claude-sonnet-4-6)`
+
 ## Config
 - CLAUDE.md: `/home/ubuntu/CLAUDE.md` (primary), `/home/ubuntu/konoha/agents/CLAUDE.md` (shared)
 - Memory: `/opt/shared/agent-memory/MEMORY.md`
