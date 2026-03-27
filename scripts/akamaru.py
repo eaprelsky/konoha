@@ -247,7 +247,7 @@ def check_disk() -> list[str]:
     return alerts
 
 
-async def check_konoha() -> list[str]:
+async def check_konoha(paused: set[str] = frozenset()) -> list[str]:
     """Check Konoha HTTP API and agent heartbeats."""
     alerts = []
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
@@ -281,6 +281,9 @@ async def check_konoha() -> list[str]:
                         ts = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
                         age = now - ts.timestamp()
                         if age > HEARTBEAT_ALERT:
+                            if aid in paused:
+                                log.debug(f"Skipping heartbeat alert for paused agent: {aid}")
+                                continue
                             key = f"agent:{aid}:offline"
                             if should_alert(key):
                                 alerts.append(f"kiba:alert agent={aid} offline={int(age//60)}min")
@@ -348,7 +351,7 @@ async def main() -> None:
         tmux_alerts = await loop.run_in_executor(None, lambda: check_tmux_sessions(paused))
         redis_alerts = await loop.run_in_executor(None, check_redis)
         disk_alerts  = await loop.run_in_executor(None, check_disk)
-        konoha_alerts = await check_konoha()
+        konoha_alerts = await check_konoha(paused)
 
         alerts = svc_alerts + tmux_alerts + redis_alerts + disk_alerts + konoha_alerts
 
