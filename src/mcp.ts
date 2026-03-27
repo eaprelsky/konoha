@@ -20,9 +20,24 @@ async function api(method: string, path: string, body?: any, token?: string): Pr
   return res.json();
 }
 
-// Use per-agent token if available, otherwise fall back to admin token
-function agentApi(method: string, path: string, body?: any): Promise<any> {
-  return api(method, path, body, agentToken || ADMIN_TOKEN);
+// Use per-agent token if available, otherwise fall back to admin token.
+// If the agent token is stale (401 Unauthorized), invalidate it and retry with admin token.
+async function agentApi(method: string, path: string, body?: any): Promise<any> {
+  const token = agentToken || ADMIN_TOKEN;
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401 && agentToken) {
+    // Agent token is stale (e.g. re-registration replaced it); clear it and retry with admin token
+    agentToken = null;
+    return api(method, path, body, ADMIN_TOKEN);
+  }
+  return res.json();
 }
 
 const server = new McpServer({
@@ -67,6 +82,9 @@ server.tool(
   },
   async ({ from, to, text, type, channel, replyTo }) => {
     const result = await agentApi("POST", "/messages", { from, to, text, type, channel, replyTo });
+    if (result.error || !result.id) {
+      return { content: [{ type: "text", text: `Error sending message: ${result.error || JSON.stringify(result)}` }] };
+    }
     return { content: [{ type: "text", text: `Sent. ID: ${result.id}` }] };
   }
 );
