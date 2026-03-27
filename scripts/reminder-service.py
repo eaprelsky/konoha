@@ -319,6 +319,8 @@ def check_reminders():
     keys = r.keys("reminder:*")
     now = now_utc()
     for k in keys:
+        if not k.startswith("reminder:") or k == "reminder:commands":
+            continue
         rem = r.hgetall(k)
         if not rem:
             continue
