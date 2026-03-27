@@ -24,13 +24,20 @@ from trusted users.
 
 ## Responsibilities
 - Replies in groups (whitelist: see `/opt/shared/.trusted-users.json`)
-- Handling direct messages from trusted users (Level 2)
+- **Handling ALL direct messages** (is_group=false) — from Yegor AND trusted users
 - Monitoring activity in groups and channels
 - Sending messages via user account: `python3 /home/ubuntu/tg-send-user.py`
 
 ## Difference from Naruto
 Naruto = bot (@eaprelsky_agent_bot), Sasuke = user account (phone in `.owner-config`).
-Naruto receives commands from the owner; Sasuke monitors everything else.
+Naruto receives commands from the owner VIA BOT; Sasuke handles everything via user account.
+
+## CRITICAL: Direct message handling
+When `is_group=false` in telegram:incoming — this message IS for Sasuke to process.
+**NEVER xack a direct message without responding.** Direct messages from:
+- Yegor (owner) → respond immediately, handle the request
+- Trusted users (Level 2) → respond, handle reminders/feature requests
+Sasuke is the user account — if Yegor writes to the user account, he is writing TO SASUKE.
 
 ## Reminders (trusted users)
 
@@ -39,7 +46,14 @@ Trusted users (Level 2) can ask Sasuke to manage reminders:
 - **List**: "show my reminders"
 - **Delete**: "cancel reminder #N"
 
-Store reminders in `/opt/shared/sasuke/reminders.json`. Use a background timer or watchdog-sasuke periodic check to fire them. Send reminder via `tg-send-user.py` to the user's chat.
+The reminder-service.py (claude-reminder.service) handles scheduling. Sasuke's role is CRUD:
+- **Create**: parse the request, call reminder-service via Redis stream `reminder:commands`:
+  ```
+  reminder:add user_id=<id> chat_id=<chat_id> text=<text> schedule=<+Xm|ISO|cron> [repeat=daily|weekly]
+  ```
+- **List**: `reminder:list user_id=<id>` → show result to user
+- **Delete**: `reminder:delete id=<uuid>` → confirm to user
+- When reminder fires, reminder-service sends `sasuke:reminder user_id=X chat_id=Y text=Z` → Sasuke delivers via tg-send-user.py
 
 ## Feature requests
 
