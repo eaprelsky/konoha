@@ -25,9 +25,8 @@ from datetime import datetime, timezone
 KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 
-CHECK_INTERVAL        = 60   # seconds between full checks
-HEARTBEAT_ALERT       = 600  # seconds (10 min) without heartbeat → alert
-MSG_QUEUE_IDLE_THRESHOLD = 600  # seconds (10 min): alert if message arrived after last heartbeat and is >10 min old
+CHECK_INTERVAL  = 60   # seconds between full checks
+HEARTBEAT_ALERT = 600  # seconds (10 min) without heartbeat → alert
 DISK_WARN_PCT   = 85
 DISK_CRIT_PCT   = 90
 
@@ -39,7 +38,6 @@ WATCHED_SERVICES = [
     "claude-shino.service",
     "claude-hinata.service",
     "claude-kiba.service",
-    "claude-guy.service",
     "claude-watchdog-naruto.service",
     "claude-watchdog-sasuke.service",
     "claude-watchdog-mirai.service",
@@ -47,21 +45,32 @@ WATCHED_SERVICES = [
     "claude-watchdog-shino.service",
     "claude-watchdog-hinata.service",
     "claude-watchdog-kiba.service",
-    "claude-watchdog-guy.service",
+    "claude-ibiki.service",
+    "claude-watchdog-ibiki.service",
 ]
 
-WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "guy"]
-WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "guy"]
+WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki"]
+WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki"]
 
-PAUSED_SERVICES_FILE = "/opt/shared/kiba/paused-services.txt"
+COMPACTING_TIMEOUT = 600   # 10 min non-idle with compacting text → alert (#39)
+STUCK_TIMEOUT      = 900   # 15 min non-idle without any Claude activity → alert
+
+# Per-session idle tracking: {session: last_seen_idle_monotonic}
+_last_idle: dict[str, float] = {}
 
 LOG_FILE = "/tmp/akamaru.log"
+
+class _FlushFileHandler(logging.FileHandler):
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE),
+        _FlushFileHandler(LOG_FILE),
         logging.StreamHandler(),
     ],
 )
@@ -70,18 +79,6 @@ log = logging.getLogger(__name__)
 # Track previously alerted problems to avoid spam
 _alerted: dict[str, float] = {}
 ALERT_COOLDOWN = 300  # 5 min between repeat alerts for same issue
-
-
-def load_paused_services() -> set[str]:
-    """Read /opt/shared/kiba/paused-services.txt — services to suppress alerts for."""
-    try:
-        with open(PAUSED_SERVICES_FILE) as f:
-            return {line.strip() for line in f if line.strip() and not line.startswith("#")}
-    except FileNotFoundError:
-        return set()
-    except Exception as e:
-        log.warning(f"Could not read paused-services file: {e}")
-        return set()
 
 
 def should_alert(key: str) -> bool:
@@ -97,11 +94,7 @@ def should_alert(key: str) -> bool:
 
 def check_services() -> list[str]:
     alerts = []
-    paused = load_paused_services()
     for svc in WATCHED_SERVICES:
-        if svc in paused:
-            log.debug(f"Skipping paused service: {svc}")
-            continue
         try:
             r = subprocess.run(
                 ["systemctl", "is-active", svc],
@@ -140,6 +133,41 @@ def check_tmux_sessions() -> list[str]:
                         key = f"tmux:{session}:pasted"
                         if should_alert(key):
                             alerts.append(f"kiba:alert tmux=stuck_paste session={session}")
+                except Exception:
+                    pass
+
+                # Detect compacting loop / stuck agent (#39)
+                try:
+                    pane = subprocess.check_output(
+                        ["tmux", "capture-pane", "-pt", session], timeout=3
+                    ).decode("utf-8", errors="replace")
+                    lines = [l.strip() for l in pane.strip().split("\n")]
+                    is_idle = any(
+                        (l == "❯" or l == "❯\xa0" or l.startswith("❯ ") or l.startswith("❯\xa0"))
+                        and "Pasted text" not in l
+                        for l in lines[-6:]
+                    )
+                    now_mono = time.monotonic()
+                    if is_idle:
+                        _last_idle[session] = now_mono
+                    else:
+                        last_idle = _last_idle.get(session, now_mono)
+                        non_idle_secs = now_mono - last_idle
+                        is_compacting = any("ompacting" in l for l in lines[-10:])
+                        if is_compacting and non_idle_secs >= COMPACTING_TIMEOUT:
+                            key = f"tmux:{session}:compacting"
+                            if should_alert(key):
+                                mins = int(non_idle_secs // 60)
+                                alerts.append(
+                                    f"kiba:alert agent={session} compacting_loop duration={mins}min"
+                                )
+                        elif not is_compacting and non_idle_secs >= STUCK_TIMEOUT:
+                            key = f"tmux:{session}:stuck"
+                            if should_alert(key):
+                                mins = int(non_idle_secs // 60)
+                                alerts.append(
+                                    f"kiba:alert agent={session} stuck duration={mins}min"
+                                )
                 except Exception:
                     pass
     except Exception as e:
@@ -202,7 +230,6 @@ async def check_konoha() -> list[str]:
                 alerts.append("kiba:alert konoha=down")
             return alerts
 
-        online_agents: list[dict] = []
         try:
             agents_data = json.loads(stdout)
             agents = agents_data if isinstance(agents_data, list) else agents_data.get("agents", [])
@@ -221,81 +248,16 @@ async def check_konoha() -> list[str]:
                             key = f"agent:{aid}:offline"
                             if should_alert(key):
                                 alerts.append(f"kiba:alert agent={aid} offline={int(age//60)}min")
-                        else:
-                            online_agents.append(agent)
                     except Exception:
                         pass
-                else:
-                    # Fallback: use lastHeartbeat (ms epoch) if lastSeen not present
-                    last_hb_ms = agent.get("lastHeartbeat")
-                    if last_hb_ms and (now - last_hb_ms / 1000) <= HEARTBEAT_ALERT:
-                        online_agents.append(agent)
         except json.JSONDecodeError:
             pass
-
-        # Check message queues for online agents
-        queue_alerts = await check_message_queues(online_agents, env)
-        alerts.extend(queue_alerts)
 
     except asyncio.TimeoutError:
         if should_alert("konoha:down"):
             alerts.append("kiba:alert konoha=timeout")
     except Exception as e:
         log.warning(f"Error checking Konoha: {e}")
-    return alerts
-
-
-async def check_message_queues(agents: list[dict], env: dict) -> list[str]:
-    """Alert if an online agent has messages that arrived after its last heartbeat and are >10 min old.
-
-    Heuristic: if the latest message in an agent's history arrived AFTER the agent's last heartbeat
-    AND is older than MSG_QUEUE_IDLE_THRESHOLD, the agent may have missed it (SSE connection dropped,
-    session in bad state, or watchdog failed to deliver).
-    """
-    alerts = []
-    now = time.time()
-
-    for agent in agents:
-        aid = agent.get("id", "")
-        last_hb_ms = agent.get("lastHeartbeat")
-        if not last_hb_ms:
-            continue
-        last_heartbeat = last_hb_ms / 1000  # ms → seconds
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "curl", "-s", "--max-time", "5",
-                "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
-                f"{KONOHA_URL}/messages/{aid}/history?count=1",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-                env=env,
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
-            messages = json.loads(stdout)
-            if not messages or not isinstance(messages, list):
-                continue
-
-            latest = messages[-1]
-            ts_str = latest.get("timestamp", "")
-            if not ts_str:
-                continue
-
-            msg_ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
-            msg_age = now - msg_ts
-
-            # Alert if: latest message arrived after last heartbeat AND is older than threshold
-            if msg_ts > last_heartbeat and msg_age > MSG_QUEUE_IDLE_THRESHOLD:
-                key = f"agent:{aid}:idle_queue"
-                if should_alert(key):
-                    alerts.append(
-                        f"kiba:alert agent={aid} idle_with_messages"
-                        f" msg_age={int(msg_age // 60)}min"
-                    )
-
-        except Exception as e:
-            log.warning(f"check_message_queues: error checking {aid}: {e}")
-
     return alerts
 
 
@@ -344,7 +306,7 @@ async def main() -> None:
         alerts: list[str] = []
 
         # Run sync checks in thread pool to avoid blocking
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         svc_alerts  = await loop.run_in_executor(None, check_services)
         tmux_alerts = await loop.run_in_executor(None, check_tmux_sessions)
         redis_alerts = await loop.run_in_executor(None, check_redis)

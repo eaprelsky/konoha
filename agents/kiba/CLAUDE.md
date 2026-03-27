@@ -20,6 +20,8 @@ Watchdog will deliver alerts in the format:
 - `kiba:alert agent=<id> offline=<N>min` — agent not sending heartbeat
 - `kiba:alert tmux=missing session=<name>` — tmux session is gone
 - `kiba:alert agent=<id> idle_with_messages msg_age=<N>min` — agent is online but has unprocessed messages
+- `kiba:alert agent=<id> compacting_loop duration=<N>min` — agent stuck in Claude Code compacting loop (non-idle >10min with compacting text visible)
+- `kiba:alert agent=<id> stuck duration=<N>min` — agent non-idle >15min (no compacting text — may be hung)
 - `kiba:healthcheck` — scheduled health check
 
 ## Workflow
@@ -41,6 +43,17 @@ To resume monitoring: remove the line.
    - INFO: log to /opt/shared/kiba/logs/YYYY-MM-DD.md
    - WARNING: create GitHub Issue (label: monitoring), notify Naruto
    - CRITICAL: notify Naruto immediately, attempt fix if possible
+
+### compacting_loop / stuck alert (#39)
+When `kiba:alert agent=<id> compacting_loop duration=Nmin` arrives:
+1. Notify Naruto immediately: `konoha_send(to=naruto, text="[Kiba] Agent <id> stuck in compacting loop Nmin — restarting")`
+2. Restart the agent service: `sudo systemctl restart claude-<id>.service`
+3. Log to /opt/shared/kiba/logs/YYYY-MM-DD.md
+
+When `kiba:alert agent=<id> stuck duration=Nmin` arrives (no compacting text):
+1. Capture pane: `tmux capture-pane -pt <id> | tail -20`
+2. Notify Naruto: `konoha_send(to=naruto, text="[Kiba] Agent <id> stuck Nmin — pane content: ...")`
+3. Let Naruto decide whether to restart
 
 ### idle_with_messages alert
 When `kiba:alert agent=<id> idle_with_messages` arrives:
