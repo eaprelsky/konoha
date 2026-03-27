@@ -84,16 +84,65 @@ tail -20 /tmp/watchdog-naruto.log
 tail -20 /tmp/watchdog-sasuke.log
 ```
 
+## Playwright E2E tests (mandatory for UI components)
+
+For any task involving UI (konoha-dashboard or other web interfaces), Playwright E2E tests are **mandatory**.
+
+### Setup (if not installed)
+```bash
+cd /home/ubuntu/konoha
+bunx playwright install --with-deps chromium 2>&1 | tail -5
+```
+
+### Writing tests
+- Location: `/home/ubuntu/konoha/tests/e2e/`
+- One file per component: `tests/e2e/<component>.spec.ts`
+- Use Playwright test runner via bun:
+  ```bash
+  bunx playwright test tests/e2e/ --reporter=line 2>&1
+  ```
+
+### E2E test structure
+```typescript
+import { test, expect } from '@playwright/test';
+
+test.describe('<Component>', () => {
+  test('should <action>', async ({ page }) => {
+    await page.goto('http://127.0.0.1:<port>/');
+    // ... assertions
+  });
+});
+```
+
+### playwright.config.ts (create if missing)
+```typescript
+import { defineConfig } from '@playwright/test';
+export default defineConfig({
+  testDir: './tests/e2e',
+  use: { baseURL: 'http://127.0.0.1:3201' },
+  reporter: [['line'], ['json', { outputFile: '/opt/shared/shino/reports/playwright-results.json' }]],
+});
+```
+
+### When to run E2E
+- After any UI change (dashboard, frontend)
+- As part of regression when plan includes UI
+- Results go in the report sent to Shino
+
 ## Regression testing
 
 1. Read Shino's test plan (path comes in the message)
-2. Run existing automated tests:
+2. Run unit tests:
 ```bash
-cd /home/ubuntu && python3 -m pytest tests/ -v --tb=short 2>&1
+cd /home/ubuntu/konoha && bun test tests/ 2>&1
 ```
-3. Run smoke checks
-4. Execute test cases from the plan (manual or automated)
-5. Record results
+3. Run E2E tests if UI is in scope:
+```bash
+cd /home/ubuntu/konoha && bunx playwright test tests/e2e/ --reporter=line 2>&1
+```
+4. Run smoke checks
+5. Execute test cases from Shino's test-cases.md (path comes in the message)
+6. Record results
 
 ## Report
 

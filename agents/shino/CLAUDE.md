@@ -44,27 +44,55 @@ Triggered by Kakashi after every bug fix or feature. When received:
 5. Create a GitHub Issue for any documentation gaps found (label: `documentation`)
 6. Report to Naruto: `konoha_send(to=naruto, text="[Shino] doccheck done")`
 
+## MANDATORY: Before any testing
+
+**Before starting any test run (smoke, regression, or component audit), you MUST:**
+
+1. Write a test plan to `/opt/shared/shino/test-plan.md`:
+   ```markdown
+   # Test Plan — <component/scope> — YYYY-MM-DD
+   ## Scope
+   ## Approach
+   ## Test cases (list)
+   ## Pass criteria
+   ## Out of scope
+   ```
+2. Write test cases to `/opt/shared/shino/test-cases.md`:
+   ```markdown
+   # Test Cases — <component/scope> — YYYY-MM-DD
+   ## TC-01: <title>
+   - Input / Action:
+   - Expected result:
+   - Severity: Critical / High / Medium / Low
+   ...
+   ```
+
+**Testing is NOT considered complete until both files exist and are up to date.**
+Send paths to Hinata along with the test trigger so she can reference them.
+
 ## Workflow
 
 ### Smoke testing
-1. Write a mini test plan: what to check, pass criteria
-2. Send to Hinata: konoha_send(to=hinata, text="hinata:run smoke plan=...")
+1. Write `test-plan.md` and `test-cases.md` (see MANDATORY above)
+2. Send to Hinata: `konoha_send(to=hinata, text="hinata:run smoke plan=/opt/shared/shino/test-plan.md cases=/opt/shared/shino/test-cases.md")`
 3. Wait for Hinata's report (delivered via watchdog)
 4. Analyze results
 5. If bugs found — create files in /opt/shared/shino/bugs/
-6. Send summary to Naruto: konoha_send(to=naruto, text="[Shino] Smoke: X passed, Y failed")
+6. Send summary to Naruto: `konoha_send(to=naruto, text="[Shino] Smoke: X passed, Y failed. Plan: /opt/shared/shino/test-plan.md")`
 
 ### Regression testing
-1. Write full test plan → /opt/shared/shino/plans/YYYY-MM-DD-regression.md
-2. Send to Hinata: konoha_send(to=hinata, text="hinata:run regression plan=/opt/shared/shino/plans/...")
-3. Wait for report
-4. Analyze, record bugs, write summary
+1. Write `test-plan.md` and `test-cases.md` (see MANDATORY above)
+2. Also save versioned copy: `/opt/shared/shino/plans/YYYY-MM-DD-regression.md`
+3. Send to Hinata: `konoha_send(to=hinata, text="hinata:run regression plan=/opt/shared/shino/test-plan.md cases=/opt/shared/shino/test-cases.md")`
+4. Wait for report
+5. Analyze, record bugs, write summary
 
 ### Writing a test plan
 1. Study the component: read code, CLAUDE.md, logs
-2. Write test plan to /opt/shared/shino/plans/YYYY-MM-DD-<component>.md
-3. Include: scope, test cases (positive/negative/edge), acceptance criteria
-4. Notify Naruto when plan is ready
+2. Write `test-plan.md` and `test-cases.md` per MANDATORY above
+3. Also save versioned copy: `/opt/shared/shino/plans/YYYY-MM-DD-<component>.md`
+4. Include: scope, test cases (positive/negative/edge), acceptance criteria
+5. Notify Naruto when plan is ready
 
 ### Bug analysis
 - Each bug: /opt/shared/shino/bugs/YYYY-MM-DD-<id>.md

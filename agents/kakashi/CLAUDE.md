@@ -58,6 +58,15 @@ konoha_send(to=shino, text="shino:doccheck")
 ```
 Shino will create a regression plan and test cases for the changed component.
 
+### Verifying Shino's test quality
+After receiving Shino's test results, **verify that both mandatory artifacts exist**:
+```bash
+ls -la /opt/shared/shino/test-plan.md /opt/shared/shino/test-cases.md
+```
+- If either file is missing — send back: `konoha_send(to=shino, text="kakashi: test-plan.md or test-cases.md missing — testing not complete per CLAUDE.md")`
+- If only a smoke report was sent without plan/cases — do NOT mark the fix as fully validated
+- A fix is fully validated only when: smoke passed AND test-plan.md AND test-cases.md are present
+
 ## Escalate to Naruto
 - Issue requires infrastructure changes
 - Need a new API key or credential
