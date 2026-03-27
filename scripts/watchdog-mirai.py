@@ -106,6 +106,16 @@ async def tmux_send(session: str, text: str) -> None:
     await tmux_run("tmux", "send-keys", "-t", session, "Enter")
     log.info(f"Sent prompt to {session} ({len(text)} chars)")
     # Verify agent started processing (prompt disappeared); retry Enter if stuck
+
+    # Dismiss [Pasted text] confirmation dialog if it appeared
+    for _ in range(5):
+        content = tmux_pane_content(session)
+        if "Pasted text" in content:
+            log.warning(f"[Pasted text] dialog detected in {session} — sending Enter to confirm")
+            await tmux_run("tmux", "send-keys", "-t", session, "Enter")
+            await asyncio.sleep(1.0)
+        else:
+            break
     await asyncio.sleep(1.0)
     for attempt in range(3):
         if not is_agent_idle(session, stable_checks=1):
