@@ -52,6 +52,21 @@ WATCHED_SERVICES = [
 WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki"]
 WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki"]
 
+PAUSED_FILE = "/opt/shared/kiba/paused-services.txt"
+
+
+def load_paused() -> set[str]:
+    """Load paused service/session names from file. Returns empty set on error."""
+    try:
+        with open(PAUSED_FILE) as f:
+            return {line.strip() for line in f if line.strip()}
+    except FileNotFoundError:
+        return set()
+    except Exception as e:
+        log.warning(f"Error reading paused-services: {e}")
+        return set()
+
+
 COMPACTING_TIMEOUT = 600   # 10 min non-idle with compacting text → alert (#39)
 STUCK_TIMEOUT      = 900   # 15 min non-idle without any Claude activity → alert
 
@@ -92,9 +107,11 @@ def should_alert(key: str) -> bool:
 
 # ── Check functions ───────────────────────────────────────────────────────────
 
-def check_services() -> list[str]:
+def check_services(paused: set[str] = frozenset()) -> list[str]:
     alerts = []
     for svc in WATCHED_SERVICES:
+        if svc in paused:
+            continue
         try:
             r = subprocess.run(
                 ["systemctl", "is-active", svc],
@@ -110,7 +127,7 @@ def check_services() -> list[str]:
     return alerts
 
 
-def check_tmux_sessions() -> list[str]:
+def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
     alerts = []
     try:
         r = subprocess.run(
@@ -119,6 +136,8 @@ def check_tmux_sessions() -> list[str]:
         )
         active = set(r.stdout.strip().split("\n")) if r.returncode == 0 else set()
         for session in WATCHED_SESSIONS:
+            if session in paused:
+                continue
             if session not in active:
                 key = f"tmux:{session}"
                 if should_alert(key):
@@ -168,6 +187,24 @@ def check_tmux_sessions() -> list[str]:
                                 alerts.append(
                                     f"kiba:alert agent={session} stuck duration={mins}min"
                                 )
+
+                    # Detect permission prompt freeze (#69)
+                    PERMISSION_PATTERNS = [
+                        "Do you want to proceed",
+                        "Allow this action",
+                        "Bash command",
+                        "Write to",
+                        "Edit file",
+                        "(Y/n)",
+                        "(y/N)",
+                    ]
+                    pane_text = "\n".join(lines[-15:])
+                    if any(p in pane_text for p in PERMISSION_PATTERNS):
+                        key = f"tmux:{session}:permission_prompt"
+                        if should_alert(key):
+                            alerts.append(
+                                f"kiba:alert agent={session} frozen=permission_prompt action_hint=approve_or_deny"
+                            )
                 except Exception:
                     pass
     except Exception as e:
@@ -307,8 +344,9 @@ async def main() -> None:
 
         # Run sync checks in thread pool to avoid blocking
         loop = asyncio.get_running_loop()
-        svc_alerts  = await loop.run_in_executor(None, check_services)
-        tmux_alerts = await loop.run_in_executor(None, check_tmux_sessions)
+        paused = load_paused()
+        svc_alerts  = await loop.run_in_executor(None, lambda: check_services(paused))
+        tmux_alerts = await loop.run_in_executor(None, lambda: check_tmux_sessions(paused))
         redis_alerts = await loop.run_in_executor(None, check_redis)
         disk_alerts  = await loop.run_in_executor(None, check_disk)
         konoha_alerts = await check_konoha()
