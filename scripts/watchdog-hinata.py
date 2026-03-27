@@ -133,6 +133,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 break
             if waited >= IDLE_TIMEOUT_SEC:
                 log.warning(f"Agent {TMUX_SESSION} busy >{IDLE_TIMEOUT_SEC}s — dropping {len(pending)} msgs")
+                await send_freeze_alert(TMUX_SESSION, waited, len(pending))
                 pending.clear()
                 break
             await asyncio.sleep(IDLE_POLL_SEC)
@@ -145,6 +146,31 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             except Exception as e:
                 log.error(f"tmux send failed: {e}")
             pending.clear()
+
+async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
+    """Alert Kiba when agent has been unresponsive past IDLE_TIMEOUT_SEC."""
+    payload = json.dumps({
+        "from": f"watchdog-{session}",
+        "to": "kiba",
+        "text": f"kiba:alert agent={session} frozen timeout={int(waited)}s msgs_dropped={n_msgs}",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-s", "-X", "POST",
+            "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+            "-H", "Content-Type: application/json",
+            "-d", payload,
+            f"{KONOHA_URL}/messages",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=env,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=10)
+        log.warning(f"Freeze alert sent to kiba: agent={session} waited={int(waited)}s")
+    except Exception as e:
+        log.error(f"Failed to send freeze alert: {e}")
 
 
 # ── Debouncer ─────────────────────────────────────────────────────────────────
