@@ -15,6 +15,7 @@ receive tasks through watchdog services, and operate autonomously.
 | 6 | [Hinata](hinata/CLAUDE.md) | Haiku | QA Runner — runs tests, writes reports | `hinata` | Permanent |
 | 7 | [Kiba](kiba/CLAUDE.md) | Sonnet | System guardian — monitoring, alerts | `kiba` | Permanent |
 | 8 | [Kakashi](kakashi/CLAUDE.md) | Sonnet | Bug fixer — reads GitHub Issues, fixes code | `kakashi` | Permanent |
+| 10 | [Guy](guy/CLAUDE.md) | Haiku | Kakashi's sub-agent — fast mechanical tasks (translate, scaffold, replace) | `guy` | Permanent |
 | — | [Itachi](itachi/CLAUDE.md) | Sonnet+ | Local WSL agent (on owner's machine) | `itachi` | Optional |
 | — | Shikamaru | Opus | Owner's advisor (Windows Claude Desktop, no tools) | — | External |
 | — | Akamaru | Python | Autonomous health monitoring (not Claude, a script) | — | Permanent |

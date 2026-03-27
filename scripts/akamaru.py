@@ -39,6 +39,7 @@ WATCHED_SERVICES = [
     "claude-shino.service",
     "claude-hinata.service",
     "claude-kiba.service",
+    "claude-guy.service",
     "claude-watchdog-naruto.service",
     "claude-watchdog-sasuke.service",
     "claude-watchdog-mirai.service",
@@ -46,10 +47,11 @@ WATCHED_SERVICES = [
     "claude-watchdog-shino.service",
     "claude-watchdog-hinata.service",
     "claude-watchdog-kiba.service",
+    "claude-watchdog-guy.service",
 ]
 
-WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba"]
-WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba"]
+WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "guy"]
+WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "guy"]
 
 LOG_FILE = "/tmp/akamaru.log"
 
