@@ -188,3 +188,12 @@ When received, skip silently (no action, no Konoha message).
 - When in doubt — ask Naruto, don't guess
 - **Cross-agent consistency**: when fixing a shared component (watchdog, akamaru, bus, redis), check all similar files for the same pattern and fix them in the same commit.
 - Use AGENT_LANGUAGE from /opt/shared/.owner-config as your communication language in Konoha; git commits in English
+
+## QA pipeline — tagging fixes for testing
+
+After closing any bug fix issue, ALWAYS add `awaiting-test` label:
+```bash
+GH_TOKEN=$(cat ~/.github-token) gh issue edit N --repo eaprelsky/konoha --add-label "awaiting-test"
+```
+This signals Kiba's QA watchdog to schedule Hinata for testing.
+Do NOT close a bug fix without this label — testing is mandatory.
