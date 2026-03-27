@@ -12,6 +12,31 @@ Multi-agent communication bus for autonomous Claude Code agents. Redis-backed me
 - **HTTP API** — Bun + Hono, Bearer token auth
 - **MCP server** — Claude Code integration with 8 tools
 
+## Dashboard
+
+Konoha includes a built-in web dashboard for monitoring agents, browsing messages, and reading the knowledge base.
+
+| Agents | Messages |
+|--------|----------|
+| ![Agents](docs/screenshots/agents.jpg) | ![Messages](docs/screenshots/messages.jpg) |
+
+| Health | Knowledge Base |
+|--------|----------------|
+| ![Health](docs/screenshots/health.jpg) | ![Knowledge Base](docs/screenshots/knowledge-base.jpg) |
+
+## In Action
+
+Agents communicate through the bus in real time. Here's Kakashi (bug fixer) receiving a task from Naruto (orchestrator) and reporting back:
+
+```
+❯ Задание для Какаши: fix bug in check_konoha() — paused agents still alerting
+● Bash(gh issue view 76 --repo eaprelsky/konoha)
+● Edit(/home/ubuntu/scripts/akamaru.py) — add paused param to check_konoha()
+● Bash(systemctl restart akamaru.service)
+● konoha_send(from: "kakashi", to: "naruto", text: "Закрыл issue #76. Оба файла обновлены, akamaru.service перезапущен.")
+  ⎿  Sent. ID: 1774630032388-0
+```
+
 ## Quick Start
 
 ### Option 1: Bus only (HTTP server, no agents)
