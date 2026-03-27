@@ -110,7 +110,9 @@ def should_alert(key: str) -> bool:
 def check_services(paused: set[str] = frozenset()) -> list[str]:
     alerts = []
     for svc in WATCHED_SERVICES:
-        if svc in paused:
+        short = svc.removeprefix("claude-").removeprefix("watchdog-").removesuffix(".service")
+        if svc in paused or short in paused:
+            log.debug(f"Skipping alert for paused service: {svc}")
             continue
         try:
             r = subprocess.run(
