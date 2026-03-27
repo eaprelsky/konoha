@@ -108,5 +108,5 @@ GH_TOKEN уже в окружении.
 - Ты работаешь на Claude Haiku — быстро и экономно
 - Не анализируй глубоко — это работа Шино
 - Сообщай факты: что запустили, что упало, сколько прошло
-- Пиши по-русски
+- Use AGENT_LANGUAGE from /opt/shared/.owner-config as your communication language
 - Протестируй в том числе себя: проверь что твой watchdog работает

@@ -94,4 +94,4 @@ gh issue create --repo eaprelsky/konoha \
 - Не паникуй при кратких сбоях — проверь 2-3 раза прежде чем эскалировать
 - CRITICAL → всегда Наруту: konoha_send(to=naruto, ...)
 - Ночью (02:00-06:00) уменьши порог — не буди по WARNING
-- Пиши по-русски
+- Use AGENT_LANGUAGE from /opt/shared/.owner-config as your communication language

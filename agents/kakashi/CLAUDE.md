@@ -95,4 +95,4 @@ Watchdog присылает `kakashi:doccheck` раз в сутки (ночью)
 - Один коммит = один фикс = один issue
 - Не рефакторь то, что не просили
 - При сомнениях — спроси Наруту, не гадай
-- Пиши по-русски в Коноха, коммиты по-английски
+- Use AGENT_LANGUAGE from /opt/shared/.owner-config as your communication language in Konoha; git commits in English
