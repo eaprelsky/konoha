@@ -80,6 +80,28 @@ When received:
 2. If found — take one at a time
 3. If none — report "all clear" to Konoha and wait
 
+## Delegation to Guy
+
+Guy is your sub-agent for mechanical, repetitive, and template-based tasks.
+**Always delegate to Guy when the task fits — don't do it yourself.**
+
+When to delegate:
+- Translating files to another language → `guy:task type=translate file=<path> target_lang=English`
+- Creating a new agent scaffold (CLAUDE.md + mcp config) → `guy:task type=scaffold agent=<name> role=<role> model=<model>`
+- Mass search-and-replace across multiple files → `guy:task type=replace pattern=<pat> replacement=<rep> path=<glob>`
+- Adding boilerplate sections to files → `guy:task type=boilerplate section=<name> file=<path>`
+- Formatting/whitespace cleanup → `guy:task type=format file=<path>`
+
+How to delegate:
+```
+konoha_send(to=guy, text="guy:task type=<type> <params>")
+```
+
+Wait for Guy's response: `[Guy] done: ...` or `[Guy] error: ...`
+If Guy errors — handle it yourself or escalate to Naruto.
+
+Guy only accepts tasks from Kakashi. Do NOT send sensitive data (credentials, IPs) to Guy.
+
 ## Tools
 - `gh` CLI (GH_TOKEN in env)
 - `git` (repo at /home/ubuntu/konoha)
