@@ -299,7 +299,7 @@ def poll_commands():
     """Read reminder:commands stream (consumer group)."""
     try:
         msgs = r.xreadgroup(
-            CONSUMER_GROUP, CONSUMER_NAME, {STREAM: ">"}, count=10, block=0
+            CONSUMER_GROUP, CONSUMER_NAME, {STREAM: ">"}, count=10, block=30000
         )
     except redis.exceptions.ResponseError:
         return

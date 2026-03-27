@@ -6,6 +6,7 @@ After=network.target redis.service
 Type=simple
 User=ubuntu
 ExecStart=/home/ubuntu/scripts/claude-ibiki-service.sh
+ExecStop=/usr/bin/tmux kill-session -t ibiki
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
