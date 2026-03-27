@@ -26,6 +26,10 @@ IDLE_POLL_SEC    = 2.0
 IDLE_TIMEOUT_SEC = 600  # 10 min — tasks should be fast
 SSE_MAX_BACKOFF  = 60
 
+# SESSION_ONLINE/OFFLINE are system noise — never deliver to agent
+NOISE_TEXT_PREFIXES = ("SESSION_ONLINE:", "SESSION_OFFLINE:")
+NOISE_TEXT_CONTAINS = ("going offline (session end)",)
+
 LOG_FILE = f"/tmp/watchdog-{AGENT_ID}.log"
 
 logging.basicConfig(
@@ -37,6 +41,15 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+
+def is_session_noise(data: dict) -> bool:
+    """Return True for SESSION_ONLINE/OFFLINE noise events that should be dropped."""
+    text = data.get("text", "")
+    return (
+        any(text.startswith(p) for p in NOISE_TEXT_PREFIXES) or
+        any(s in text for s in NOISE_TEXT_CONTAINS)
+    )
 
 
 # ── Idle detection ───────────────────────────────────────────────────────────
@@ -230,6 +243,9 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
                     try:
                         data = json.loads(payload)
                         log.info(f"SSE event from {data.get('from','?')}: {data.get('text','')[:60]}")
+                        if is_session_noise(data):
+                            log.debug(f"Skipping SESSION noise: {data.get('text','')[:50]}")
+                            continue
                         await raw_queue.put({"source": "konoha", "data": data})
                     except json.JSONDecodeError:
                         pass
