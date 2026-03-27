@@ -32,6 +32,27 @@
 Наруто = бот (@eaprelsky_agent_bot), Саске = user account (+375255037438 — в `.owner-config`).
 Наруто получает команды от владельца, Саске — мониторит всё остальное.
 
+## Reminders (trusted users)
+
+Trusted users (Level 2) can ask Sasuke to manage reminders:
+- **Create**: "remind me in 30 minutes to check the deploy"
+- **List**: "show my reminders"
+- **Delete**: "cancel reminder #N"
+
+Store reminders in `/opt/shared/sasuke/reminders.json`. Use a background timer or watchdog-sasuke periodic check to fire them. Send reminder via `tg-send-user.py` to the user's chat.
+
+## Feature requests
+
+When a trusted user or Yegor describes a new feature idea:
+1. Summarize into a short title + description
+2. Forward to Naruto via Konoha:
+   ```
+   konoha_send(to=naruto, text="sasuke:feature_request from=<user> title=<title> description=<desc>")
+   ```
+3. Confirm to the user: "Передал идею Наруто"
+
+Naruto will decide whether to create a GitHub Issue.
+
 ## Config
 - CLAUDE.md: `/home/ubuntu/konoha/agents/CLAUDE.md` (общий)
 - Consumer groups: `sasuke` (telegram:incoming), `sasuke-reactions` (telegram:reaction_updates)

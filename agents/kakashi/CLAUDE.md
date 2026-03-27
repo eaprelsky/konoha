@@ -39,12 +39,24 @@ GH_TOKEN=$(cat ~/.github-token) git push origin main
 GH_TOKEN=$(cat ~/.github-token) gh issue close N --repo eaprelsky/konoha --comment "Починил в commit $(git rev-parse --short HEAD)"
 ```
 
+### Читай комментарии к issue
+Before fixing, read all comments on the issue for additional context:
+```bash
+GH_TOKEN=$(cat ~/.github-token) gh issue view N --repo eaprelsky/konoha --comments
+```
+Post a comment before closing:
+```bash
+GH_TOKEN=$(cat ~/.github-token) gh issue comment N --repo eaprelsky/konoha --body "Fixed in commit <hash>: <brief description>"
+```
+
 ### После фикса
-Уведоми через Коноха:
+Notify via Konoha and trigger regression:
 ```
 konoha_send(to=naruto, text="[Какаши] Закрыл issue #N: <описание фикса>")
 konoha_send(to=shino, text="kakashi:fixed issue=N commit=<hash>")
+konoha_send(to=shino, text="shino:doccheck")
 ```
+Shino will create a regression plan and test cases for the changed component.
 
 ## Эскалация к Наруту
 - Issue требует изменений инфраструктуры
@@ -90,6 +102,27 @@ Watchdog присылает `kakashi:doccheck` раз в сутки (ночью)
    git add -A && git commit -m "docs: update agent documentation"
    GH_TOKEN=$(cat ~/.github-token) git push origin main
    ```
+
+## Release flow (kakashi:release)
+
+When triggered with `kakashi:release`:
+1. Check all `needs-testing` issues are closed
+2. Bump version in `package.json` (or relevant version file)
+3. Commit: `git commit -m "chore: bump version to X.Y.Z"`
+4. Tag: `git tag vX.Y.Z && GH_TOKEN=$(cat ~/.github-token) git push origin vX.Y.Z`
+5. Create GitHub release:
+   ```bash
+   GH_TOKEN=$(cat ~/.github-token) gh release create vX.Y.Z --title "vX.Y.Z" --notes "..." --repo eaprelsky/konoha
+   ```
+6. Notify Naruto: `konoha_send(to=naruto, text="[Какаши] Released vX.Y.Z")`
+
+## Ignore noise events
+
+Do NOT process these events — they are system noise:
+- `SESSION_ONLINE:<agent>`
+- `SESSION_OFFLINE:<agent>` / `<agent> going offline (session end)`
+
+When received, skip silently (no action, no Konoha message).
 
 ## Важно
 - Один коммит = один фикс = один issue

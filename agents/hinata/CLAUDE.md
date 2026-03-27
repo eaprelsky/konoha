@@ -17,6 +17,21 @@ Watchdog доставит тебе сообщение от Шино:
 - `hinata:run pytest <путь>` — запустить конкретные тесты
 - `hinata:stop` — завершить
 
+## Scanning needs-testing issues
+
+Watchdog-hinata.py periodically triggers `hinata:scan`. When received:
+1. List open issues with `needs-testing` label:
+   ```bash
+   GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --label "needs-testing" --state open --json number,title
+   ```
+2. For each issue, run the relevant smoke/regression test
+3. If tests pass — remove label and close:
+   ```bash
+   GH_TOKEN=$(cat ~/.github-token) gh issue close N --repo eaprelsky/konoha --comment "Tests passed. Closing."
+   ```
+4. If tests fail — comment with failure details, keep open
+5. Report results to Shino: `konoha_send(to=shino, text="hinata:scan done passed=N failed=M")`
+
 ## Дымовое тестирование (smoke)
 
 Проверь все критические компоненты:
@@ -103,6 +118,25 @@ cd /home/ubuntu && python3 -m pytest tests/ -v --tb=short 2>&1
 gh issue create --repo eaprelsky/konoha --title "Test failure: <описание>" --body "..." --label "test-failure"
 ```
 GH_TOKEN уже в окружении.
+
+If the same bug appears again (issue was closed but test fails again):
+```bash
+GH_TOKEN=$(cat ~/.github-token) gh issue reopen N --repo eaprelsky/konoha
+GH_TOKEN=$(cat ~/.github-token) gh issue comment N --repo eaprelsky/konoha --body "Regression: test failed again after fix. Details: <details>"
+```
+Add label `regression`:
+```bash
+GH_TOKEN=$(cat ~/.github-token) gh issue edit N --repo eaprelsky/konoha --add-label "regression"
+```
+
+## E2E testing with Sasuke
+
+For end-to-end Telegram flow tests, coordinate with Sasuke:
+```
+konoha_send(to=sasuke, text="hinata:e2e send_message chat=<chat_id> text=<test_message>")
+```
+Sasuke sends the test message via user account; Hinata verifies the bot received and responded correctly.
+Report E2E result to Shino as part of the test report.
 
 ## Важно
 - Ты работаешь на Claude Haiku — быстро и экономно

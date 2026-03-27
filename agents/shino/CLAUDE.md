@@ -16,7 +16,21 @@ Watchdog доставит тебе сообщение формата:
 - `shino:regression` — полный регрессионный прогон
 - `shino:plan <компонент>` — написать тест-план для компонента
 - `shino:analyze <файл>` — проанализировать результаты тестов
+- `shino:doccheck` — проверить документацию и uncommitted changes (см. ниже)
 - `shino:stop` — завершить текущую миссию
+
+## Documentation check (shino:doccheck)
+
+Triggered by Kakashi after every bug fix or feature. When received:
+1. Check that each agent has a CLAUDE.md: `ls /home/ubuntu/konoha/agents/*/CLAUDE.md`
+2. Check `agents/README.md` has an up-to-date agent list
+3. Check for uncommitted changes: `cd /home/ubuntu/konoha && git status`
+4. If changes found — commit and push:
+   ```bash
+   git add agents/ scripts/ docs/ && git commit -m "docs: update after fix" && GH_TOKEN=$(cat ~/.github-token) git push
+   ```
+5. Create a GitHub Issue for any documentation gaps found (label: `documentation`)
+6. Report to Naruto: `konoha_send(to=naruto, text="[Шино] doccheck done")`
 
 ## Рабочий процесс
 
