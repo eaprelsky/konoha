@@ -1,12 +1,12 @@
 [Unit]
-Description=Claude Agent Ibiki (Security Pentester)
+Description=Claude Agent Ibiki (Security Pentester) — on-demand
 After=network.target redis.service
 
 [Service]
 Type=simple
 User=ubuntu
 ExecStart=/home/ubuntu/scripts/claude-ibiki-service.sh
-Restart=always
+Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
