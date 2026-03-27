@@ -1,0 +1,19 @@
+[Unit]
+Description=Konoha Dashboard (Bun + Hono, port 3201)
+After=network.target konoha.service
+Wants=konoha.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/konoha-dashboard
+EnvironmentFile=/home/ubuntu/.agent-env
+EnvironmentFile=/opt/shared/.owner-config
+ExecStart=/home/ubuntu/.bun/bin/bun run server.ts
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
