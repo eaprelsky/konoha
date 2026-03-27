@@ -24,10 +24,20 @@ Watchdog will deliver alerts in the format:
 
 ## Workflow
 
+### Paused services (suppress alerts)
+Before escalating any service alert, check `/opt/shared/kiba/paused-services.txt`:
+```bash
+cat /opt/shared/kiba/paused-services.txt
+```
+If the service is listed there — **ignore the alert silently** (it is intentionally stopped).
+To pause a service: add its name (one per line) to that file.
+To resume monitoring: remove the line.
+
 ### On alert
-1. Diagnose: check logs, status, root cause
-2. Determine severity: INFO / WARNING / CRITICAL
-3. Act:
+1. **Check paused-services.txt first** — skip if service is listed there
+2. Diagnose: check logs, status, root cause
+3. Determine severity: INFO / WARNING / CRITICAL
+4. Act:
    - INFO: log to /opt/shared/kiba/logs/YYYY-MM-DD.md
    - WARNING: create GitHub Issue (label: monitoring), notify Naruto
    - CRITICAL: notify Naruto immediately, attempt fix if possible

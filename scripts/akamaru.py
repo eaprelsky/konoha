@@ -53,6 +53,8 @@ WATCHED_SERVICES = [
 WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "guy"]
 WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "guy"]
 
+PAUSED_SERVICES_FILE = "/opt/shared/kiba/paused-services.txt"
+
 LOG_FILE = "/tmp/akamaru.log"
 
 logging.basicConfig(
@@ -70,6 +72,18 @@ _alerted: dict[str, float] = {}
 ALERT_COOLDOWN = 300  # 5 min between repeat alerts for same issue
 
 
+def load_paused_services() -> set[str]:
+    """Read /opt/shared/kiba/paused-services.txt — services to suppress alerts for."""
+    try:
+        with open(PAUSED_SERVICES_FILE) as f:
+            return {line.strip() for line in f if line.strip() and not line.startswith("#")}
+    except FileNotFoundError:
+        return set()
+    except Exception as e:
+        log.warning(f"Could not read paused-services file: {e}")
+        return set()
+
+
 def should_alert(key: str) -> bool:
     now = time.time()
     last = _alerted.get(key, 0)
@@ -83,7 +97,11 @@ def should_alert(key: str) -> bool:
 
 def check_services() -> list[str]:
     alerts = []
+    paused = load_paused_services()
     for svc in WATCHED_SERVICES:
+        if svc in paused:
+            log.debug(f"Skipping paused service: {svc}")
+            continue
         try:
             r = subprocess.run(
                 ["systemctl", "is-active", svc],
