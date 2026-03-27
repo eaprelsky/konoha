@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timezone
 import subprocess
 import time
@@ -40,17 +41,32 @@ IDLE_POLL_SEC    = 2.0   # how often to check if agent is idle
 IDLE_TIMEOUT_SEC = 300   # give up waiting after 5 min (agent hung?)
 SSE_MAX_BACKOFF  = 60    # seconds
 
+HEALTH_STUCK_TIMEOUT = 90   # seconds: if msg received but not delivered → self-restart
+
+# ── Delivery state tracker (for health monitor) ───────────────────────────────
+_health: dict = {
+    "last_received_at": 0.0,   # monotonic time when last msg entered raw_queue
+    "last_delivered_at": 0.0,  # monotonic time when last batch was sent to tmux
+}
+
 # SESSION_ONLINE/OFFLINE are system noise — never deliver to agent
 NOISE_TEXT_PREFIXES = ("SESSION_ONLINE:", "SESSION_OFFLINE:")
 NOISE_TEXT_CONTAINS = ("going offline (session end)",)
 
 LOG_FILE = f"/tmp/watchdog-{AGENT_ID}.log"
 
+class _FlushFileHandler(logging.FileHandler):
+    """FileHandler that flushes after each record — prevents log buffering on restart."""
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE),
+        _FlushFileHandler(LOG_FILE),
         logging.StreamHandler(),
     ],
 )
@@ -220,6 +236,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             try:
                 prompt = format_batch(pending)
                 await tmux_send(TMUX_SESSION, prompt)
+                _health["last_delivered_at"] = asyncio.get_event_loop().time()
             except Exception as e:
                 log.error(f"tmux send failed: {e}")
             pending.clear()
@@ -309,6 +326,7 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
                         if is_session_noise(data):
                             log.debug(f"Skipping SESSION noise: {data.get('text','')[:50]}")
                             continue
+                        _health["last_received_at"] = asyncio.get_event_loop().time()
                         await raw_queue.put({"source": "konoha", "data": data})
                     except json.JSONDecodeError:
                         pass
@@ -380,6 +398,7 @@ async def telegram_redis_watcher(raw_queue: asyncio.Queue) -> None:
                                 await r.xack(TG_STREAM, TG_GROUP, msg_id)
                                 continue
                             log.info(f"TG Redis msg from {user}: {text[:60]}")
+                            _health["last_received_at"] = asyncio.get_event_loop().time()
                             await raw_queue.put({"source": "telegram", "data": fields})
                             await r.xack(TG_STREAM, TG_GROUP, msg_id)
                         except Exception as e:
@@ -440,6 +459,7 @@ async def reaction_redis_watcher(raw_queue: asyncio.Queue) -> None:
                             user = fields.get("user", "?")
                             new_r = fields.get("new_reaction", "")
                             log.info(f"Reaction from {user}: {new_r}")
+                            _health["last_received_at"] = asyncio.get_event_loop().time()
                             await raw_queue.put({"source": "reaction", "data": fields})
                             await r.xack(REACTION_STREAM, REACTION_GROUP, msg_id)
                         except Exception as e:
@@ -483,6 +503,28 @@ async def heartbeat_loop() -> None:
             log.warning(f"Heartbeat failed: {e}")
         await asyncio.sleep(300)  # every 5 min
 
+# ── Health monitor ────────────────────────────────────────────────────────────
+
+async def health_monitor() -> None:
+    """
+    Detects stuck delivery: if a message was received but not delivered within
+    HEALTH_STUCK_TIMEOUT seconds, log error and exit (systemd Restart=always will
+    restart the watchdog cleanly).
+    """
+    await asyncio.sleep(30)  # grace period on startup
+    while True:
+        await asyncio.sleep(30)
+        now = asyncio.get_event_loop().time()
+        last_rx = _health["last_received_at"]
+        last_tx = _health["last_delivered_at"]
+        if last_rx > 0 and (now - last_rx) > HEALTH_STUCK_TIMEOUT and last_tx < last_rx:
+            log.error(
+                f"Health monitor: message received {now - last_rx:.0f}s ago but not delivered "
+                f"(last_rx={last_rx:.0f}, last_tx={last_tx:.0f}) — restarting watchdog"
+            )
+            sys.exit(1)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
@@ -501,6 +543,7 @@ async def main() -> None:
         debouncer(raw_queue, batched_queue),
         send_loop(batched_queue),
         heartbeat_loop(),
+        health_monitor(),
     )
 
 

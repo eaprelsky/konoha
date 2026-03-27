@@ -32,11 +32,18 @@ NOISE_TEXT_CONTAINS = ("going offline (session end)",)
 
 LOG_FILE = f"/tmp/watchdog-{AGENT_ID}.log"
 
+class _FlushFileHandler(logging.FileHandler):
+    """FileHandler that flushes after each record — prevents log buffering on restart."""
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE),
+        _FlushFileHandler(LOG_FILE),
         logging.StreamHandler(),
     ],
 )
