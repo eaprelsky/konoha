@@ -140,11 +140,6 @@ When `kakashi:scan` fires and you pick up an issue:
 3. If yes → delegate to Guy immediately, wait for result, then close issue
 4. If no → handle the code fix yourself
 
-After closing any issue, always ping Guy:
-```
-konoha_send(to=guy, text="guy:ready — got capacity for next task?")
-```
-This keeps Guy in the loop and lets him proactively ask for work.
 
 ## Tools
 - `gh` CLI (GH_TOKEN in env)
