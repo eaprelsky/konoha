@@ -231,7 +231,7 @@ async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
 
 async def debouncer(raw_queue: asyncio.Queue, batched_queue: asyncio.Queue) -> None:
     """Accumulate events for DEBOUNCE_WINDOW seconds, then pass as a batch."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     while True:
         msg = await raw_queue.get()   # wait for first event
         batch = [msg]

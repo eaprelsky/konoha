@@ -216,7 +216,7 @@ async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
 # ── Debouncer ─────────────────────────────────────────────────────────────────
 
 async def debouncer(raw_queue: asyncio.Queue, batched_queue: asyncio.Queue) -> None:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     while True:
         msg = await raw_queue.get()
         batch = [msg]
