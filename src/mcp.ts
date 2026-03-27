@@ -38,9 +38,10 @@ server.tool(
     name: z.string().describe("Human-readable agent name"),
     capabilities: z.array(z.string()).optional().describe("List of capabilities"),
     roles: z.array(z.string()).optional().describe("Roles for role-based routing (e.g. 'monitor', 'coder')"),
+    model: z.string().optional().describe("Model name the agent runs on (e.g. 'claude-sonnet-4-6')"),
   },
-  async ({ id, name, capabilities, roles }) => {
-    const result = await api("POST", "/agents/register", { id, name, capabilities, roles });
+  async ({ id, name, capabilities, roles, model }) => {
+    const result = await api("POST", "/agents/register", { id, name, capabilities, roles, model });
     // store per-agent token for subsequent calls
     if (result.token) {
       agentToken = result.token;

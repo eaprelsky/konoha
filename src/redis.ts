@@ -15,6 +15,7 @@ export interface Agent {
   name: string;
   capabilities: string[];
   roles: string[];
+  model?: string;
   status: "online" | "offline";
   lastHeartbeat: number;
   token?: string; // returned on registration, not stored in registry

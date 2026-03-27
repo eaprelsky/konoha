@@ -105,9 +105,9 @@ app.post("/agents/register", async (c) => {
   }
 
   const body = await c.req.json();
-  const { id, name, capabilities = [], roles = [] } = body;
+  const { id, name, capabilities = [], roles = [], model } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
-  const agent = await registerAgent({ id, name, capabilities, roles });
+  const agent = await registerAgent({ id, name, capabilities, roles, ...(model ? { model } : {}) });
   return c.json(agent, 201);
 });
 
