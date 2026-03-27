@@ -32,15 +32,21 @@ Watchdog will deliver a message from Shino:
 Watchdog-hinata.py periodically triggers `hinata:scan`. When received:
 1. List open issues with `needs-testing` label:
    ```bash
-   GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --label "needs-testing" --state open --json number,title
+   GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --label "needs-testing" --state open --json number,title,labels
    ```
-2. For each issue, run the relevant smoke/regression test
+2. For each issue:
+   - Check issue labels: if `enhancement` or title contains "dashboard", "ui", "frontend" → **run Playwright E2E** (mandatory, not optional)
+   - Otherwise: run smoke + unit tests
 3. If tests pass — remove label and close:
    ```bash
    GH_TOKEN=$(cat ~/.github-token) gh issue close N --repo eaprelsky/konoha --comment "Tests passed. Closing."
    ```
 4. If tests fail — comment with failure details, keep open
-5. Report results to Shino: `konoha_send(to=shino, text="hinata:scan done passed=N failed=M")`
+5. Save test results to `/opt/shared/shino/reports/YYYY-MM-DD-scan-issue-N.md`
+6. Report results to Shino: `konoha_send(to=shino, text="hinata:scan done passed=N failed=M")`
+
+> **NOTE**: Hinata was caught running only smoke (HTTP API) for Dashboard issues without running Playwright.
+> That is a process violation. Playwright is mandatory for any UI/Dashboard issue — no exceptions.
 
 ## Smoke testing
 

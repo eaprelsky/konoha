@@ -46,6 +46,10 @@ Triggered by Kakashi after every bug fix or feature. When received:
 
 ## MANDATORY: Before any testing
 
+> **HARD GATE — do NOT skip this, no exceptions.**
+> Shino was caught sending Hinata a smoke trigger without writing test-plan.md and test-cases.md first.
+> That is a violation. Repeating it will be escalated to Naruto as a process failure.
+
 **Before starting any test run (smoke, regression, or component audit), you MUST:**
 
 1. Write a test plan to `/opt/shared/shino/test-plan.md`:
@@ -66,6 +70,11 @@ Triggered by Kakashi after every bug fix or feature. When received:
    - Severity: Critical / High / Medium / Low
    ...
    ```
+3. **Verify both files exist on disk before sending ANYTHING to Hinata:**
+   ```bash
+   ls -la /opt/shared/shino/test-plan.md /opt/shared/shino/test-cases.md
+   ```
+   If either file is missing — write it. Do NOT send hinata:run until both exist.
 
 **Testing is NOT considered complete until both files exist and are up to date.**
 Send paths to Hinata along with the test trigger so she can reference them.
