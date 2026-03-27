@@ -25,8 +25,9 @@ from datetime import datetime, timezone
 KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 
-CHECK_INTERVAL  = 60   # seconds between full checks
-HEARTBEAT_ALERT = 600  # seconds (10 min) without heartbeat → alert
+CHECK_INTERVAL        = 60   # seconds between full checks
+HEARTBEAT_ALERT       = 600  # seconds (10 min) without heartbeat → alert
+MSG_QUEUE_IDLE_THRESHOLD = 600  # seconds (10 min): alert if message arrived after last heartbeat and is >10 min old
 DISK_WARN_PCT   = 85
 DISK_CRIT_PCT   = 90
 
@@ -181,6 +182,7 @@ async def check_konoha() -> list[str]:
                 alerts.append("kiba:alert konoha=down")
             return alerts
 
+        online_agents: list[dict] = []
         try:
             agents_data = json.loads(stdout)
             agents = agents_data if isinstance(agents_data, list) else agents_data.get("agents", [])
@@ -199,16 +201,81 @@ async def check_konoha() -> list[str]:
                             key = f"agent:{aid}:offline"
                             if should_alert(key):
                                 alerts.append(f"kiba:alert agent={aid} offline={int(age//60)}min")
+                        else:
+                            online_agents.append(agent)
                     except Exception:
                         pass
+                else:
+                    # Fallback: use lastHeartbeat (ms epoch) if lastSeen not present
+                    last_hb_ms = agent.get("lastHeartbeat")
+                    if last_hb_ms and (now - last_hb_ms / 1000) <= HEARTBEAT_ALERT:
+                        online_agents.append(agent)
         except json.JSONDecodeError:
             pass
+
+        # Check message queues for online agents
+        queue_alerts = await check_message_queues(online_agents, env)
+        alerts.extend(queue_alerts)
 
     except asyncio.TimeoutError:
         if should_alert("konoha:down"):
             alerts.append("kiba:alert konoha=timeout")
     except Exception as e:
         log.warning(f"Error checking Konoha: {e}")
+    return alerts
+
+
+async def check_message_queues(agents: list[dict], env: dict) -> list[str]:
+    """Alert if an online agent has messages that arrived after its last heartbeat and are >10 min old.
+
+    Heuristic: if the latest message in an agent's history arrived AFTER the agent's last heartbeat
+    AND is older than MSG_QUEUE_IDLE_THRESHOLD, the agent may have missed it (SSE connection dropped,
+    session in bad state, or watchdog failed to deliver).
+    """
+    alerts = []
+    now = time.time()
+
+    for agent in agents:
+        aid = agent.get("id", "")
+        last_hb_ms = agent.get("lastHeartbeat")
+        if not last_hb_ms:
+            continue
+        last_heartbeat = last_hb_ms / 1000  # ms → seconds
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "-s", "--max-time", "5",
+                "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                f"{KONOHA_URL}/messages/{aid}/history?count=1",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=env,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+            messages = json.loads(stdout)
+            if not messages or not isinstance(messages, list):
+                continue
+
+            latest = messages[-1]
+            ts_str = latest.get("timestamp", "")
+            if not ts_str:
+                continue
+
+            msg_ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
+            msg_age = now - msg_ts
+
+            # Alert if: latest message arrived after last heartbeat AND is older than threshold
+            if msg_ts > last_heartbeat and msg_age > MSG_QUEUE_IDLE_THRESHOLD:
+                key = f"agent:{aid}:idle_queue"
+                if should_alert(key):
+                    alerts.append(
+                        f"kiba:alert agent={aid} idle_with_messages"
+                        f" msg_age={int(msg_age // 60)}min"
+                    )
+
+        except Exception as e:
+            log.warning(f"check_message_queues: error checking {aid}: {e}")
+
     return alerts
 
 
