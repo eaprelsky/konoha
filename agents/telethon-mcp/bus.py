@@ -25,8 +25,8 @@ client = TelegramClient(SESSION, 2040, 'b18441a1ff607e10a989891a5462e627')
 
 @client.on(events.Raw)
 async def on_raw(event):
-    from telethon.tl.types import UpdateMessageReaction, ReactionEmoji
-    if not isinstance(event, UpdateMessageReaction):
+    from telethon.tl.types import UpdateBotMessageReaction, ReactionEmoji
+    if not isinstance(event, UpdateBotMessageReaction):
         return
     try:
         peer = event.peer
