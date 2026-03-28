@@ -15,6 +15,9 @@ import time
 import redis.asyncio as aioredis
 
 # ── Config ──────────────────────────────────────────────────────────────────
+KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
+KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
+
 AGENT_ID      = "jiraiya"
 TMUX_SESSION  = "jiraiya"
 
