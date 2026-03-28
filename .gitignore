@@ -10,4 +10,4 @@ agents/**/.mcp-*.json
 .owner-config
 .shared-credentials
 scripts/__pycache__/
-scripts/__pycache__/
+agents/**/__pycache__/

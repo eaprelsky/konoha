@@ -64,7 +64,7 @@ const mcp = new Server(
       'Use tg_reply to respond. Use tg_edit to edit your messages. Use tg_react to react.',
       'Write naturally in Russian, like a colleague. No markdown in group chats.',
       "Don't guess business processes — only state what data confirms.",
-      'You can receive tasks from Yegor (owner, user_id stored in /opt/shared/.owner-config (OWNER_TG_ID)) and trusted users. Execute them using your full capabilities (Read, Bash, WebSearch, etc).',
+      'You can receive tasks from Yegor (owner, user_id 93791246) and trusted users. Execute them using your full capabilities (Read, Bash, WebSearch, etc).',
     ].join('\n'),
   },
 )
@@ -108,6 +108,18 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           chat_id: { type: 'string', description: 'Chat ID' },
           msg_id: { type: 'string', description: 'Message ID' },
           emoji: { type: 'string', description: 'Emoji (e.g. 👍 ❤ 🔥)', default: '👍' },
+        },
+        required: ['chat_id', 'msg_id'],
+      },
+    },
+    {
+      name: 'tg_delete',
+      description: 'Delete a message. Can only delete your own messages; deleting others\' messages will return an error.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          chat_id: { type: 'string', description: 'Chat ID' },
+          msg_id: { type: 'string', description: 'Message ID to delete' },
         },
         required: ['chat_id', 'msg_id'],
       },
@@ -193,10 +205,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     return { content: [{ type: 'text', text: lines.join('\n') }] };
   }
 
-  if (name === 'tg_edit' || name === 'tg_react') {
+  if (name === 'tg_edit' || name === 'tg_react' || name === 'tg_delete') {
     const cmdMap: Record<string, string> = {
       tg_edit: 'edit',
       tg_react: 'react',
+      tg_delete: 'delete',
       tg_history: 'history',
     }
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
