@@ -25,8 +25,9 @@ client = TelegramClient(SESSION, 2040, 'b18441a1ff607e10a989891a5462e627')
 
 @client.on(events.Raw)
 async def on_raw(event):
-    from telethon.tl.types import UpdateBotMessageReaction, ReactionEmoji
-    if not isinstance(event, UpdateBotMessageReaction):
+    # UpdateMessageReactions fires on user accounts (aggregate only, no actor)
+    from telethon.tl.types import UpdateMessageReactions, ReactionEmoji
+    if not isinstance(event, UpdateMessageReactions):
         return
     try:
         peer = event.peer
@@ -34,27 +35,23 @@ async def on_raw(event):
                    getattr(peer, 'chat_id', None) or
                    getattr(peer, 'user_id', None))
 
-        def extract_emoji(reactions):
-            if not reactions:
+        def extract_counts(reactions_obj):
+            if not reactions_obj:
                 return []
             result = []
-            for r in reactions:
-                reaction = getattr(r, 'reaction', None)
+            for rc in (reactions_obj.results or []):
+                reaction = getattr(rc, 'reaction', None)
+                count = getattr(rc, 'count', 0)
                 if isinstance(reaction, ReactionEmoji):
-                    result.append(reaction.emoticon)
+                    result.append({'emoji': reaction.emoticon, 'count': count})
                 elif reaction is not None and hasattr(reaction, 'document_id'):
-                    result.append(f'custom:{reaction.document_id}')
+                    result.append({'emoji': f'custom:{reaction.document_id}', 'count': count})
             return result
-
-        actor = getattr(event, 'actor', None)
-        actor_id = str(getattr(actor, 'user_id', 0) if actor else 0)
 
         data = {
             'chat_id': str(chat_id),
             'msg_id': str(event.msg_id),
-            'actor_id': actor_id,
-            'new_reaction': json.dumps(extract_emoji(getattr(event, 'new_reactions', []))),
-            'old_reaction': json.dumps(extract_emoji(getattr(event, 'old_reactions', []))),
+            'reactions': json.dumps(extract_counts(event.reactions)),
             'timestamp': datetime.utcnow().isoformat(),
         }
 
@@ -62,7 +59,7 @@ async def on_raw(event):
         await rd.xadd('telegram:reaction_updates', data, maxlen=500)
         await rd.aclose()
 
-        print(f'REACT [{chat_id}] msg={event.msg_id} actor={actor_id} new={data["new_reaction"]}', flush=True)
+        print(f'REACT [{chat_id}] msg={event.msg_id} reactions={data["reactions"]}', flush=True)
     except Exception as e:
         print(f'REACT ERR: {e}', flush=True)
 
