@@ -134,7 +134,7 @@ async def call_tool(name: str, arguments: dict):
 
         return [TextContent(type="text", text="\n".join(result) if result else "No chats found.")]
 
-    elif name in ("tg_edit", "tg_react", "tg_history", "tg_leave_chat", "tg_get_reactions"):
+    elif name in ("tg_edit", "tg_react", "tg_history", "tg_leave_chat", "tg_get_reactions", "tg_delete"):
         import uuid
         request_id = str(uuid.uuid4())[:8]
 
@@ -144,6 +144,7 @@ async def call_tool(name: str, arguments: dict):
             "tg_history": "history",
             "tg_leave_chat": "leave",
             "tg_get_reactions": "get_reactions",
+            "tg_delete": "delete",
         }
 
         cmd_data = {"command": cmd_map[name], "request_id": request_id}
@@ -263,6 +264,18 @@ async def list_tools_extended():
                 "properties": {
                     "chat_id": {"type": "string", "description": "Chat ID"},
                     "msg_id": {"type": "string", "description": "Message ID"}
+                },
+                "required": ["chat_id", "msg_id"]
+            }
+        ),
+        Tool(
+            name="tg_delete",
+            description="Delete a message sent via the Telethon user account.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "chat_id": {"type": "string", "description": "Chat ID"},
+                    "msg_id": {"type": "string", "description": "Message ID to delete"}
                 },
                 "required": ["chat_id", "msg_id"]
             }

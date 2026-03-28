@@ -165,6 +165,13 @@ async def commands_loop():
                             import json
                             await rd.set(f'telegram:result:{request_id}', json.dumps({'data': 'ok'}), ex=60)
 
+                        elif cmd == 'delete':
+                            chat_id = int(data['chat_id'])
+                            msg_id = int(data['msg_id'])
+                            await client.delete_messages(chat_id, [msg_id])
+                            import json
+                            await rd.set(f'telegram:result:{request_id}', json.dumps({'data': 'ok'}), ex=60)
+
                         elif cmd == 'react':
                             from telethon.tl.functions.messages import SendReactionRequest
                             from telethon.tl.types import ReactionEmoji
