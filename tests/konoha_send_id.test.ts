@@ -8,8 +8,10 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
 
-const TEST_ADMIN_TOKEN = "test-admin-token-issue74";
-process.env.KONOHA_TOKEN = TEST_ADMIN_TOKEN;
+// Read the token that the server module will use — don't override it,
+// because server.ts captures KONOHA_TOKEN at module-load time and Bun
+// caches the module across test files.
+const TEST_ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 process.env.KONOHA_PORT = "0";
 
 const { app } = await import("../src/server");
