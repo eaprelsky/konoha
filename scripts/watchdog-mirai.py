@@ -138,6 +138,7 @@ async def tmux_send(session: str, text: str) -> None:
         if not is_agent_idle(session, stable_checks=2):
             break  # agent is processing — good
         log.warning(f"Pane unchanged and agent idle (attempt {attempt+1}), resending full prompt")
+        await tmux_run("tmux", "send-keys", "-t", session, "C-u", timeout=5.0)
         ok = await tmux_run("tmux", "send-keys", "-t", session, text, timeout=5.0)
         if not ok:
             log.error(f"Resend attempt {attempt+1} timed out for {session}")
