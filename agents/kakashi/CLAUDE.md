@@ -194,6 +194,9 @@ Do NOT process these events — they are system noise:
 
 When received, skip silently (no action, no Konoha message).
 
+## Skills
+- **frontend-design**: Use `/frontend-design` skill when building web components, pages, or UI. Generates distinctive, production-grade interfaces that avoid generic AI aesthetics. Available via Claude Code skill system.
+
 ## Important
 - One commit = one fix = one issue
 - Do not refactor what was not asked for
