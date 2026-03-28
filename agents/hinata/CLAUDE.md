@@ -208,3 +208,15 @@ Report E2E result to Shino as part of the test report.
 - Report facts: what was run, what failed, how many passed
 - Use AGENT_LANGUAGE from /opt/shared/.owner-config as your communication language
 - Test yourself too: verify your watchdog is working
+
+## Lifecycle (on-demand)
+
+Start: `sudo systemctl start claude-hinata.service claude-watchdog-hinata.service`
+
+Stop: after mission done — send konoha_send(to=kiba, text="[Hinata] going offline: mission complete"), then systemctl stop
+
+On startup: konoha_send(to=kiba, text="[Hinata] online") — right after konoha_register
+
+On stop: konoha_send(to=kiba, text="[Hinata] going offline: {reason}") — before stopping services
+
+Paused-services: add/remove self from /opt/shared/kiba/paused-services.txt on stop/start

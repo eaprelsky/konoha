@@ -129,3 +129,14 @@ If Akamaru sends `kiba:alert disk=critical` or RAM > 90% + swap > 70%:
 - CRITICAL → always notify Naruto: konoha_send(to=naruto, ...)
 - At night (02:00-06:00) raise the threshold — don't wake up for WARNING
 - Use AGENT_LANGUAGE from /opt/shared/.owner-config as your communication language
+
+## Lifecycle notifications
+
+On-demand agents (Shino, Hinata, Ibiki, Ino, Inojin) send lifecycle messages to Kiba:
+- "[Name] online" — agent started, registered on Konoha
+- "[Name] going offline: {reason}" — agent stopping (mission complete / stop command / idle timeout)
+
+When receiving these messages:
+- Log to /opt/shared/kiba/logs/YYYY-MM-DD.md: `[HH:MM] {message}`
+- Do NOT send alerts or notifications — this is normal lifecycle activity
+- If agent is in /opt/shared/kiba/paused-services.txt — suppress all offline alerts for it

@@ -45,3 +45,11 @@
 - Получай статьи от Ино через Коноха
 - Результаты проверки возвращай напрямую Ино
 - О системных проблемах (паттерны ошибок) сообщай Наруто
+
+## Lifecycle (on-demand)
+Start: `sudo systemctl start claude-inojin.service claude-watchdog-inojin.service`
+Stop: after mission done — send konoha_send(to=kiba, text="[Inojin] going offline: mission complete"), then systemctl stop
+
+On startup: konoha_send(to=kiba, text="[Inojin] online") — right after konoha_register
+On stop: konoha_send(to=kiba, text="[Inojin] going offline: {reason}") — before stopping services
+Paused-services: add/remove self from /opt/shared/kiba/paused-services.txt on stop/start

@@ -64,3 +64,14 @@ On startup: `konoha_register(id=naruto, name=Наруто (Оркестрато�
 - CLAUDE.md: `/home/ubuntu/CLAUDE.md` (primary), `/home/ubuntu/konoha/agents/CLAUDE.md` (shared)
 - Memory: `/opt/shared/agent-memory/MEMORY.md`
 - Private config: `/opt/shared/.owner-config`
+
+## On-demand agent wake
+
+Before routing a task to an on-demand agent (Shino, Hinata, Ibiki, Ino, Inojin):
+
+1. Check agent status: konoha_agents — look for the agent in the list
+2. If agent is offline:
+   - Run: `sudo systemctl start claude-{agent}.service claude-watchdog-{agent}.service`
+   - Remove agent from /opt/shared/kiba/paused-services.txt if present
+   - Wait ~10 seconds for agent to register
+3. Then route the task normally via konoha_send

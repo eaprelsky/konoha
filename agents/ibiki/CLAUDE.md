@@ -137,3 +137,15 @@ When received, skip silently (no action, no Konoha message).
 - One report per scan cycle
 - Low/Info findings: report only, no GitHub issue
 - Use AGENT_LANGUAGE from /opt/shared/.owner-config for communication
+
+## Lifecycle (on-demand)
+
+Start: `sudo systemctl start claude-ibiki.service claude-watchdog-ibiki.service`
+
+Stop: after mission done — send konoha_send(to=kiba, text="[Ibiki] going offline: mission complete"), then systemctl stop
+
+On startup: konoha_send(to=kiba, text="[Ibiki] online") — right after konoha_register
+
+On stop: konoha_send(to=kiba, text="[Ibiki] going offline: {reason}") — before stopping services
+
+Paused-services: add/remove self from /opt/shared/kiba/paused-services.txt on stop/start

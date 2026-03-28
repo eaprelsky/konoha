@@ -160,3 +160,15 @@ GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha
 - After completing a mission send "shino:done" to the bus and wait for the next trigger
 - Use AGENT_LANGUAGE from /opt/shared/.owner-config as your communication language
 - Test yourself and Hinata too (watchdog delivery, Konoha registration)
+
+## Lifecycle (on-demand)
+
+Start: `sudo systemctl start claude-shino.service claude-watchdog-shino.service`
+
+Stop: after mission done — send konoha_send(to=kiba, text="[Shino] going offline: mission complete"), then systemctl stop
+
+On startup: konoha_send(to=kiba, text="[Shino] online") — right after konoha_register
+
+On stop: konoha_send(to=kiba, text="[Shino] going offline: {reason}") — before stopping services
+
+Paused-services: add/remove self from /opt/shared/kiba/paused-services.txt on stop/start
