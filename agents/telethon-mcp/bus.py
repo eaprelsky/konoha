@@ -14,7 +14,7 @@ os.makedirs(WIKI_DIR, exist_ok=True)
 
 # Sync redis for stream group creation only
 sr = sync_redis.Redis(host='localhost', port=6379, decode_responses=True)
-for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:commands', 'telegram:reaction_updates']:
+for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:commands']:
     try:
         sr.xgroup_create(s, 'claude-agents', id='0', mkstream=True)
     except:
@@ -22,46 +22,6 @@ for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:co
 sr.close()
 
 client = TelegramClient(SESSION, 2040, 'b18441a1ff607e10a989891a5462e627')
-
-@client.on(events.Raw)
-async def on_raw(event):
-    # UpdateMessageReactions fires on user accounts (aggregate only, no actor)
-    from telethon.tl.types import UpdateMessageReactions, ReactionEmoji
-    if not isinstance(event, UpdateMessageReactions):
-        return
-    try:
-        peer = event.peer
-        chat_id = (getattr(peer, 'channel_id', None) or
-                   getattr(peer, 'chat_id', None) or
-                   getattr(peer, 'user_id', None))
-
-        def extract_counts(reactions_obj):
-            if not reactions_obj:
-                return []
-            result = []
-            for rc in (reactions_obj.results or []):
-                reaction = getattr(rc, 'reaction', None)
-                count = getattr(rc, 'count', 0)
-                if isinstance(reaction, ReactionEmoji):
-                    result.append({'emoji': reaction.emoticon, 'count': count})
-                elif reaction is not None and hasattr(reaction, 'document_id'):
-                    result.append({'emoji': f'custom:{reaction.document_id}', 'count': count})
-            return result
-
-        data = {
-            'chat_id': str(chat_id),
-            'msg_id': str(event.msg_id),
-            'reactions': json.dumps(extract_counts(event.reactions)),
-            'timestamp': datetime.utcnow().isoformat(),
-        }
-
-        rd = aioredis.Redis(host='localhost', port=6379, decode_responses=True)
-        await rd.xadd('telegram:reaction_updates', data, maxlen=500)
-        await rd.aclose()
-
-        print(f'REACT [{chat_id}] msg={event.msg_id} reactions={data["reactions"]}', flush=True)
-    except Exception as e:
-        print(f'REACT ERR: {e}', flush=True)
 
 
 @client.on(events.NewMessage)
