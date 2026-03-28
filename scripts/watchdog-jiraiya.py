@@ -178,14 +178,26 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             continue
 
         waited = 0.0
+        pasted_text_wait = 0.0  # track consecutive seconds [Pasted text] dialog is stuck (#93)
         while True:
             if is_agent_idle(TMUX_SESSION):
+                pasted_text_wait = 0.0
                 break
             if waited >= IDLE_TIMEOUT_SEC:
                 log.warning(f"Agent {TMUX_SESSION} busy >{IDLE_TIMEOUT_SEC}s — dropping {len(pending)} msgs")
                 await send_freeze_alert(TMUX_SESSION, waited, len(pending))
                 pending.clear()
                 break
+            # If [Pasted text] dialog is stuck >30s, send Enter to dismiss it (#93)
+            pane = tmux_pane_content(TMUX_SESSION)
+            if any("Pasted text" in line for line in pane.strip().split("\n")[-8:]):
+                pasted_text_wait += IDLE_POLL_SEC
+                if pasted_text_wait >= 30.0:
+                    log.info("Detected stuck [Pasted text] dialog in monitoring loop — sending Enter (#93)")
+                    await tmux_run("tmux", "send-keys", "-t", TMUX_SESSION, "Enter", timeout=5.0)
+                    pasted_text_wait = 0.0
+            else:
+                pasted_text_wait = 0.0
             await asyncio.sleep(IDLE_POLL_SEC)
             waited += IDLE_POLL_SEC
 
