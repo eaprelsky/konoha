@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude Agent Inojin (Nocturna Marketing) — on-demand
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/scripts/claude-inojin-service.sh
+ExecStop=/usr/bin/tmux kill-session -t inojin
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
