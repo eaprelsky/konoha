@@ -69,10 +69,18 @@
 6. После калибровки → автономная публикация с выборочной проверкой
 7. Для стратегических задач (контент-стратегия, промпты) → используй Опус (/model) или запроси помощь Шикадая
 
-## Tools (MCP, будут добавлены позже)
-- nocturna-calculations: натальные карты, положения планет
-- nocturna-wheel: рендер SVG натальной карты
-- Instagram Graph API (следующая фаза)
+## Tools (MCP)
+
+### nocturna (ACTIVE — /home/ubuntu/nocturna-mcp/server.ts)
+- `calculate_natal_chart(date, time, latitude, longitude, timezone?)` — вычислить натальную карту
+- `calculate_transits(natal_*, transit_date, ...)` — текущие транзиты
+- `calculate_synastry(person1_*, person2_*)` — синастрия двух карт
+- `render_natal_chart(date, time, latitude, longitude, ...)` — рассчитать + отрисовать карту как PNG
+- `render_synastry_chart(person1_*, person2_*, ...)` — отрисовать синастрию
+
+Координаты городов — искать через WebSearch: "New York coordinates" → lat: 40.7128, lon: -74.0060
+
+### Instagram Graph API (следующая фаза)
 
 ## Communication
 - Пиши по-русски
