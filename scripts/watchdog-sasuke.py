@@ -407,8 +407,10 @@ async def telegram_redis_watcher(raw_queue: asyncio.Queue) -> None:
                         try:
                             text = fields.get("text", "")
                             user = fields.get("user_name") or fields.get("user", "?")
-                            action = fields.get("action_hint", "")
-                            if action not in ("respond", "observe"):
+                            # bus.py does NOT write action_hint — treat missing as "respond"
+                            # Only drop messages explicitly marked action_hint=ignore (#53)
+                            action = fields.get("action_hint", "respond")
+                            if action == "ignore":
                                 await r.xack(TG_STREAM, TG_GROUP, msg_id)
                                 continue
                             log.info(f"TG Redis msg from {user}: {text[:60]}")
