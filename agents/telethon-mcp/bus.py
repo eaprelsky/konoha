@@ -14,7 +14,7 @@ os.makedirs(WIKI_DIR, exist_ok=True)
 
 # Sync redis for stream group creation only
 sr = sync_redis.Redis(host='localhost', port=6379, decode_responses=True)
-for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:commands']:
+for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:commands', 'telegram:reaction_updates']:
     try:
         sr.xgroup_create(s, 'claude-agents', id='0', mkstream=True)
     except:
@@ -22,6 +22,50 @@ for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:co
 sr.close()
 
 client = TelegramClient(SESSION, 2040, 'b18441a1ff607e10a989891a5462e627')
+
+@client.on(events.Raw)
+async def on_raw(event):
+    from telethon.tl.types import UpdateMessageReaction, ReactionEmoji
+    if not isinstance(event, UpdateMessageReaction):
+        return
+    try:
+        peer = event.peer
+        chat_id = (getattr(peer, 'channel_id', None) or
+                   getattr(peer, 'chat_id', None) or
+                   getattr(peer, 'user_id', None))
+
+        def extract_emoji(reactions):
+            if not reactions:
+                return []
+            result = []
+            for r in reactions:
+                reaction = getattr(r, 'reaction', None)
+                if isinstance(reaction, ReactionEmoji):
+                    result.append(reaction.emoticon)
+                elif reaction is not None and hasattr(reaction, 'document_id'):
+                    result.append(f'custom:{reaction.document_id}')
+            return result
+
+        actor = getattr(event, 'actor', None)
+        actor_id = str(getattr(actor, 'user_id', 0) if actor else 0)
+
+        data = {
+            'chat_id': str(chat_id),
+            'msg_id': str(event.msg_id),
+            'actor_id': actor_id,
+            'new_reaction': json.dumps(extract_emoji(getattr(event, 'new_reactions', []))),
+            'old_reaction': json.dumps(extract_emoji(getattr(event, 'old_reactions', []))),
+            'timestamp': datetime.utcnow().isoformat(),
+        }
+
+        rd = aioredis.Redis(host='localhost', port=6379, decode_responses=True)
+        await rd.xadd('telegram:reaction_updates', data, maxlen=500)
+        await rd.aclose()
+
+        print(f'REACT [{chat_id}] msg={event.msg_id} actor={actor_id} new={data["new_reaction"]}', flush=True)
+    except Exception as e:
+        print(f'REACT ERR: {e}', flush=True)
+
 
 @client.on(events.NewMessage)
 async def on_message(event):
@@ -118,7 +162,7 @@ async def outgoing_loop():
                             sent = await client.send_file(chat_id, file_path, caption=text or None, reply_to=reply_to)
                             print(f'OUT FILE [{chat_id}]: {file_path}', flush=True)
                         else:
-                            sent = await client.send_message(chat_id, text, reply_to=reply_to, link_preview=False)
+                            sent = await client.send_message(chat_id, text, reply_to=reply_to, link_preview=False, parse_mode=None)
                             print(f'OUT [{chat_id}]: {text[:40]}', flush=True)
                         await rd.xack('telegram:outgoing', 'claude-agents', msg_id)
                     except Exception as e:
@@ -194,6 +238,39 @@ async def commands_loop():
                             import json
                             await rd.set(f'telegram:result:{request_id}', json.dumps({'data': '\n'.join(contacts_info) or 'no contacts'}), ex=120)
 
+                        elif cmd == 'join_channel':
+                            from telethon.tl.functions.channels import JoinChannelRequest
+                            channel = data['channel']
+                            entity = await client.get_entity(channel)
+                            await client(JoinChannelRequest(entity))
+                            import json
+                            await rd.set(f'telegram:result:{request_id}', json.dumps({'data': f'joined {channel}'}), ex=60)
+
+                        elif cmd == 'list_dialogs':
+                            limit = int(data.get('limit', 50))
+                            dialogs = await client.get_dialogs(limit=limit)
+                            lines = []
+                            for d in dialogs:
+                                name = getattr(d.entity, 'title', None) or getattr(d.entity, 'first_name', '') or 'Unknown'
+                                eid = d.entity.id
+                                etype = type(d.entity).__name__
+                                lines.append(f'{eid} [{etype}] {name}')
+                            import json
+                            await rd.set(f'telegram:result:{request_id}', json.dumps({'data': '\n'.join(lines)}), ex=60)
+
+                        elif cmd == 'get_entity':
+                            entity_id = data['entity']
+                            try:
+                                entity_id = int(entity_id)
+                            except (ValueError, TypeError):
+                                pass
+                            entity = await client.get_entity(entity_id)
+                            import json
+                            name = getattr(entity, 'title', None) or getattr(entity, 'first_name', '') or 'Unknown'
+                            eid = entity.id
+                            etype = type(entity).__name__
+                            await rd.set(f'telegram:result:{request_id}', json.dumps({'data': f'{eid} [{etype}] {name}'}), ex=60)
+
                         else:
                             import json
                             await rd.set(f'telegram:result:{request_id}', json.dumps({'data': f'unknown command: {cmd}'}), ex=60)
@@ -214,8 +291,22 @@ async def main():
     await client.connect()
     me = await client.get_me()
     print(f'Bus v4 (async redis): {me.first_name} (ID: {me.id})', flush=True)
-    asyncio.create_task(outgoing_loop())
-    asyncio.create_task(commands_loop())
+
+    out_task = asyncio.create_task(outgoing_loop())
+    cmd_task = asyncio.create_task(commands_loop())
+
+    async def task_watchdog():
+        nonlocal out_task, cmd_task
+        while True:
+            await asyncio.sleep(5)
+            if out_task.done():
+                print('WATCHDOG: outgoing_loop died, restarting', flush=True)
+                out_task = asyncio.create_task(outgoing_loop())
+            if cmd_task.done():
+                print('WATCHDOG: commands_loop died, restarting', flush=True)
+                cmd_task = asyncio.create_task(commands_loop())
+
+    asyncio.create_task(task_watchdog())
     await client.run_until_disconnected()
 
 asyncio.run(main())
