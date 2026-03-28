@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude Agent Guy (Developer #10)
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/scripts/claude-guy-service.sh
+ExecStop=/usr/bin/tmux kill-session -t guy
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
