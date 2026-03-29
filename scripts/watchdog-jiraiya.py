@@ -332,6 +332,29 @@ async def bus_watcher(raw_queue: asyncio.Queue) -> None:
             backoff = min(backoff * 2, 30)
 
 
+# ── Heartbeat ─────────────────────────────────────────────────────────────────
+
+async def heartbeat_loop() -> None:
+    """Send heartbeat to Konoha every 5 minutes to keep agent online."""
+    url = f"{KONOHA_URL}/agents/{AGENT_ID}/heartbeat"
+    env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+    while True:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "-s", "-X", "POST",
+                "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                url,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=env,
+            )
+            await proc.wait()
+            log.debug("Heartbeat sent")
+        except Exception as e:
+            log.warning(f"Heartbeat failed: {e}")
+        await asyncio.sleep(300)  # every 5 min
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
@@ -345,6 +368,7 @@ async def main() -> None:
         debouncer(raw_queue, batched_queue),
         send_loop(batched_queue),
         digest_loop(batched_queue),
+        heartbeat_loop(),
     )
 
 
