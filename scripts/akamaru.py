@@ -121,6 +121,24 @@ def should_alert(key: str) -> bool:
     return False
 
 
+def is_alert_suppressed(alert: str, paused: set[str]) -> bool:
+    """Return True if the alert involves a paused agent (#100).
+
+    Defense-in-depth: individual check functions already filter by paused,
+    but this catch-all at send time ensures nothing slips through if the file
+    was missing when load_paused() ran.
+    """
+    for agent in paused:
+        if (
+            f"agent={agent}" in alert or
+            f"session={agent}" in alert or
+            f"service=claude-{agent}" in alert or
+            f"service=claude-watchdog-{agent}" in alert
+        ):
+            return True
+    return False
+
+
 # ── Check functions ───────────────────────────────────────────────────────────
 
 def check_services(paused: set[str] = frozenset()) -> list[str]:
@@ -412,6 +430,11 @@ async def main() -> None:
         konoha_alerts   = await check_konoha(paused)
 
         alerts = svc_alerts + tmux_alerts + orphan_alerts + redis_alerts + disk_alerts + konoha_alerts
+
+        # Re-read paused at send time (defense-in-depth: file may have been created
+        # after the check pass, or an individual check may have missed the filter)
+        paused = load_paused()
+        alerts = [a for a in alerts if not is_alert_suppressed(a, paused)]
 
         if alerts:
             log.warning(f"Found {len(alerts)} alert(s): {alerts}")
