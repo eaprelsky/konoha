@@ -1,0 +1,15 @@
+[Unit]
+Description=Claude Agent Kakashi (Bug Fixer)
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/scripts/claude-kakashi-service.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

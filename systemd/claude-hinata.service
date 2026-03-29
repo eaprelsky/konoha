@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude Agent Hinata (QA Runner) — on-demand
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/scripts/claude-hinata-service.sh
+ExecStop=/usr/bin/tmux kill-session -t hinata
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

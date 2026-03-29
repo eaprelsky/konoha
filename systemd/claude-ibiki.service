@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude Agent Ibiki (Security Pentester) — on-demand
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/scripts/claude-ibiki-service.sh
+ExecStop=/usr/bin/tmux kill-session -t ibiki
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

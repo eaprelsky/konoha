@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude Watchdog Ino (Konoha SSE → tmux)
+After=network.target redis.service claude-ino.service
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.agent-env
+ExecStart=/usr/bin/python3 /home/ubuntu/scripts/watchdog-ino.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

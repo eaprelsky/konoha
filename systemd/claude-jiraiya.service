@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude Jiraiya (Agent #4 - Chronicler)
+After=network.target redis-server.service konoha.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/scripts/claude-jiraiya-service.sh
+Restart=always
+RestartSec=15
+Environment=HOME=/home/ubuntu
+Environment=KONOHA_AGENT_ID=jiraiya
+Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.local/bin
+
+[Install]
+WantedBy=multi-user.target

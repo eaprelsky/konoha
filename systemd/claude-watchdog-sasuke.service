@@ -1,0 +1,19 @@
+[Unit]
+Description=Watchdog for Sasuke (Claude Agent #2) — Telegram Redis stream + Konoha SSE → tmux
+After=network.target redis-server.service konoha.service
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.agent-env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/ubuntu/scripts/watchdog-sasuke.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.local/bin
+
+[Install]
+WantedBy=multi-user.target

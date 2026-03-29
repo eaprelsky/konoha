@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude Agent Shino (QA Lead) — on-demand
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/scripts/claude-shino-service.sh
+ExecStop=/usr/bin/tmux kill-session -t shino
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

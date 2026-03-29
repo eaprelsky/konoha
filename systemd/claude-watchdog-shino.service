@@ -1,0 +1,17 @@
+[Unit]
+Description=Claude Watchdog Shino (Konoha SSE → tmux)
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.agent-env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/ubuntu/scripts/watchdog-shino.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

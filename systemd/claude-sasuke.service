@@ -1,0 +1,16 @@
+[Unit]
+Description=Claude Sasuke (Agent #2 - Telegram Monitor)
+After=network.target redis-server.service telegram-bus.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/scripts/claude-sasuke-service.sh
+Restart=always
+RestartSec=10
+Environment=HOME=/home/ubuntu
+Environment=KONOHA_AGENT_ID=sasuke
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.local/bin
+
+[Install]
+WantedBy=multi-user.target

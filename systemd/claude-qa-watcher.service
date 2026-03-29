@@ -1,0 +1,19 @@
+[Unit]
+Description=QA Watcher — polls GitHub for awaiting-test issues → pings Hinata
+After=network.target konoha.service
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.agent-env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/ubuntu/scripts/qa-watcher.py
+Restart=on-failure
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.npm-global/bin:/home/ubuntu/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.local/bin
+
+[Install]
+WantedBy=multi-user.target

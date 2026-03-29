@@ -1,0 +1,16 @@
+[Unit]
+Description=Akamaru — Konoha System Health Monitor
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.agent-env
+ExecStart=/usr/bin/python3 /home/ubuntu/scripts/akamaru.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

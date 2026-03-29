@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram Bot Service (Grammy, eaprelsky_agent_bot)
+After=network.target redis-server.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/telegram-bot-service
+ExecStart=/home/ubuntu/scripts/telegram-bot-service.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=Claude Chat Agent (Telegram Monitor)
+After=network.target redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/scripts/claude-chat-service.sh
+Restart=always
+RestartSec=10
+Environment=HOME=/home/ubuntu
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.local/bin
+
+[Install]
+WantedBy=multi-user.target
