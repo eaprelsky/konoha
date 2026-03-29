@@ -11,3 +11,4 @@ agents/**/.mcp-*.json
 .shared-credentials
 scripts/__pycache__/
 agents/**/__pycache__/
+tests/__pycache__/
