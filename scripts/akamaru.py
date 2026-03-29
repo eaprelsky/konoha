@@ -49,8 +49,24 @@ WATCHED_SERVICES = [
     "claude-watchdog-ibiki.service",
 ]
 
-WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki"]
-WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki"]
+WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki", "ino", "inojin"]
+WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki", "ino", "inojin"]
+
+# For each agent: watchdog service that MUST be running when the tmux session is alive (#98)
+AGENT_WATCHDOGS = {
+    "naruto":  "claude-watchdog-naruto.service",
+    "sasuke":  "claude-watchdog-sasuke.service",
+    "mirai":   "claude-watchdog-mirai.service",
+    "jiraiya": "claude-watchdog-jiraiya.service",
+    "shino":   "claude-watchdog-shino.service",
+    "hinata":  "claude-watchdog-hinata.service",
+    "kiba":    "claude-watchdog-kiba.service",
+    "ibiki":   "claude-watchdog-ibiki.service",
+    "ino":     "claude-watchdog-ino.service",
+    "inojin":  "claude-watchdog-inojin.service",
+    "guy":     "claude-watchdog-guy.service",
+    "kakashi": "claude-watchdog-kakashi.service",
+}
 
 PAUSED_FILE = "/opt/shared/kiba/paused-services.txt"
 
@@ -213,6 +229,45 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
     return alerts
 
 
+def check_orphaned_sessions(paused: set[str] = frozenset()) -> list[str]:
+    """Alert when agent tmux session is alive but watchdog service is inactive (#98).
+
+    Scenario: watchdog stopped (e.g. OOM killer, manual stop) but agent tmux was later
+    restarted without the watchdog. Agent receives no Konoha messages silently.
+    """
+    alerts = []
+    try:
+        r = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True, text=True, timeout=5
+        )
+        active_sessions = set(r.stdout.strip().split("\n")) if r.returncode == 0 else set()
+
+        for agent, watchdog_svc in AGENT_WATCHDOGS.items():
+            if agent in paused or watchdog_svc in paused:
+                continue
+            if agent not in active_sessions:
+                continue  # session not running — normal for on-demand agents, skip
+            # Session alive — watchdog must also be active
+            try:
+                r = subprocess.run(
+                    ["systemctl", "is-active", watchdog_svc],
+                    capture_output=True, text=True, timeout=5
+                )
+                status = r.stdout.strip()
+                if status not in ("active", "activating"):
+                    key = f"orphan:{agent}:watchdog_dead"
+                    if should_alert(key):
+                        alerts.append(
+                            f"kiba:alert agent={agent} watchdog=dead session=alive"
+                        )
+            except Exception as e:
+                log.warning(f"Error checking watchdog status for {agent}: {e}")
+    except Exception as e:
+        log.warning(f"Error in check_orphaned_sessions: {e}")
+    return alerts
+
+
 def check_redis() -> list[str]:
     try:
         r = subprocess.run(
@@ -349,13 +404,14 @@ async def main() -> None:
         # Run sync checks in thread pool to avoid blocking
         loop = asyncio.get_running_loop()
         paused = load_paused()
-        svc_alerts  = await loop.run_in_executor(None, lambda: check_services(paused))
-        tmux_alerts = await loop.run_in_executor(None, lambda: check_tmux_sessions(paused))
-        redis_alerts = await loop.run_in_executor(None, check_redis)
-        disk_alerts  = await loop.run_in_executor(None, check_disk)
-        konoha_alerts = await check_konoha(paused)
+        svc_alerts      = await loop.run_in_executor(None, lambda: check_services(paused))
+        tmux_alerts     = await loop.run_in_executor(None, lambda: check_tmux_sessions(paused))
+        orphan_alerts   = await loop.run_in_executor(None, lambda: check_orphaned_sessions(paused))
+        redis_alerts    = await loop.run_in_executor(None, check_redis)
+        disk_alerts     = await loop.run_in_executor(None, check_disk)
+        konoha_alerts   = await check_konoha(paused)
 
-        alerts = svc_alerts + tmux_alerts + redis_alerts + disk_alerts + konoha_alerts
+        alerts = svc_alerts + tmux_alerts + orphan_alerts + redis_alerts + disk_alerts + konoha_alerts
 
         if alerts:
             log.warning(f"Found {len(alerts)} alert(s): {alerts}")

@@ -22,6 +22,7 @@ Watchdog will deliver alerts in the format:
 - `kiba:alert agent=<id> idle_with_messages msg_age=<N>min` — agent is online but has unprocessed messages
 - `kiba:alert agent=<id> compacting_loop duration=<N>min` — agent stuck in Claude Code compacting loop (non-idle >10min with compacting text visible)
 - `kiba:alert agent=<id> stuck duration=<N>min` — agent non-idle >15min (no compacting text — may be hung)
+- `kiba:alert agent=<id> watchdog=dead session=alive` — agent tmux session alive but watchdog service inactive (orphaned session — agent receives no messages)
 - `kiba:healthcheck` — scheduled health check
 
 ## Workflow
@@ -62,6 +63,13 @@ When `kiba:alert agent=<id> idle_with_messages` arrives:
 3. If messages look like tasks (type=task) — nudge the agent via Konoha:
    `konoha_send(to=<id>, text="kiba: you have unprocessed messages, please check your queue")`
 4. If agent doesn't respond in 5 min — escalate to Naruto
+
+### watchdog=dead session=alive alert (#98)
+When `kiba:alert agent=<id> watchdog=dead session=alive` arrives:
+1. Restart the watchdog service: `sudo systemctl restart claude-watchdog-<id>.service`
+2. Verify it's running: `systemctl is-active claude-watchdog-<id>.service`
+3. Log: `[HH:MM] Restarted watchdog for <id> — was dead while session alive`
+4. Notify Naruto: `konoha_send(to=naruto, text="[Kiba] Restarted watchdog-<id>: session was alive but watchdog dead")`
 
 ### Scheduled health check (kiba:healthcheck)
 Check everything and write a report:
