@@ -105,7 +105,7 @@ When received:
    GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --label "P0: critical"
    ```
 2. If found — take the highest-priority one
-3. If none — report "all clear" to Konoha and wait
+3. If none — wait silently (do NOT send any message to Konoha or Naruto — "all clear" spam fills their context)
 
 ## Delegation to Guy
 
