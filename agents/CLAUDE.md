@@ -177,6 +177,9 @@ Agents receive messages via systemd watchdog services — no /loop polling neede
   - Watches `~/.claude/channels/telegram/message-queue.jsonl`
   - Watches Konoha SSE `/messages/naruto/stream`
 - **Do NOT run /loop check_messages or check_konoha** — watchdog handles both
+- **CRITICAL: Do NOT manually read message-queue.jsonl on startup** — watchdog tracks last delivered
+  message_id in `/tmp/watchdog-naruto-last-tg-id`. Reading the queue directly will re-deliver
+  already-processed messages and cause duplicate replies.
 
 ### Sasuke (Agent #2, user account)
 - **Watchdog**: `claude-watchdog-sasuke.service` (always running)
