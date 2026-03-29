@@ -1,6 +1,8 @@
 [Unit]
 Description=Claude Sasuke (Agent #2 - Telegram Monitor)
 After=network.target redis-server.service telegram-bus.service
+Wants=claude-watchdog-sasuke.service
+After=claude-watchdog-sasuke.service
 
 [Service]
 Type=simple

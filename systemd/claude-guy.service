@@ -1,6 +1,8 @@
 [Unit]
 Description=Claude Agent Guy (Developer #10)
 After=network.target redis.service
+Wants=claude-watchdog-guy.service
+After=claude-watchdog-guy.service
 
 [Service]
 Type=simple

@@ -1,6 +1,8 @@
 [Unit]
 Description=Claude Naruto (Agent #1 - Bot/Orchestrator)
 After=network.target redis-server.service
+Wants=claude-watchdog-naruto.service
+After=claude-watchdog-naruto.service
 
 [Service]
 Type=simple

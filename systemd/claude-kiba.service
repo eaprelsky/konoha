@@ -1,6 +1,8 @@
 [Unit]
 Description=Claude Agent Kiba (System Guardian)
 After=network.target redis.service
+Wants=claude-watchdog-kiba.service
+After=claude-watchdog-kiba.service
 
 [Service]
 Type=simple

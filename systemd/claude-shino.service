@@ -1,6 +1,8 @@
 [Unit]
 Description=Claude Agent Shino (QA Lead) — on-demand
 After=network.target redis.service
+Wants=claude-watchdog-shino.service
+After=claude-watchdog-shino.service
 
 [Service]
 Type=simple

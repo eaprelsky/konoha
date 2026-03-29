@@ -1,6 +1,8 @@
 [Unit]
 Description=Claude Mirai (Agent #3 - Email/Data Processor)
 After=network.target redis-server.service
+Wants=claude-watchdog-mirai.service
+After=claude-watchdog-mirai.service
 
 [Service]
 Type=simple

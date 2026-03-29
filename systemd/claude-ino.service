@@ -1,6 +1,8 @@
 [Unit]
 Description=Claude Agent Ino (Nocturna Marketing) — on-demand
 After=network.target redis.service
+Wants=claude-watchdog-ino.service
+After=claude-watchdog-ino.service
 
 [Service]
 Type=simple

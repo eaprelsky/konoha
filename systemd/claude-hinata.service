@@ -1,6 +1,8 @@
 [Unit]
 Description=Claude Agent Hinata (QA Runner) — on-demand
 After=network.target redis.service
+Wants=claude-watchdog-hinata.service
+After=claude-watchdog-hinata.service
 
 [Service]
 Type=simple

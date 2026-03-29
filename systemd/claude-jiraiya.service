@@ -1,6 +1,8 @@
 [Unit]
 Description=Claude Jiraiya (Agent #4 - Chronicler)
 After=network.target redis-server.service konoha.service
+Wants=claude-watchdog-jiraiya.service
+After=claude-watchdog-jiraiya.service
 
 [Service]
 Type=simple
