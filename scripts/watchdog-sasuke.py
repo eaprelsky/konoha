@@ -126,7 +126,7 @@ async def tmux_run(*args: str, timeout: float = 10.0) -> bool:
         return False
 
 
-async def tmux_send(session: str, text: str) -> None:
+async def tmux_send(session: str, text: str) -> bool:
     # Collapse newlines to spaces — multi-line text triggers Claude Code [Pasted text] dialog
     text = text.replace("\n", " ").replace("\r", " ")
     # Capture pane content BEFORE send to detect delivery confirmation (#50)
@@ -135,7 +135,7 @@ async def tmux_send(session: str, text: str) -> None:
     ok = await tmux_run("tmux", "send-keys", "-t", session, text, timeout=5.0)
     if not ok:
         log.error(f"send-keys timed out for {session} — skipping delivery")
-        return
+        return False
     await asyncio.sleep(0.3)
     await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
     log.info(f"Sent prompt to {session} ({len(text)} chars)")
@@ -166,6 +166,7 @@ async def tmux_send(session: str, text: str) -> None:
         await asyncio.sleep(0.3)
         await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
         await asyncio.sleep(2.0)
+    return True
 
 
 # ── Message formatting ────────────────────────────────────────────────────────
