@@ -447,24 +447,52 @@ async def telegram_queue_watcher(raw_queue: asyncio.Queue) -> None:
 
 # ── Telegram reaction-queue.jsonl watcher ─────────────────────────────────────
 
+SEEN_REACTIONS_FILE = Path(f"/tmp/watchdog-{AGENT_ID}-seen-reactions.json")
+MAX_SEEN_REACTIONS = 500  # cap to prevent unbounded growth
+
+
+def _load_seen_reactions() -> set:
+    """Load persisted set of seen reaction signatures."""
+    if SEEN_REACTIONS_FILE.exists():
+        try:
+            return set(tuple(x) for x in json.loads(SEEN_REACTIONS_FILE.read_text()))
+        except Exception:
+            pass
+    return set()
+
+
+def _save_seen_reactions(seen: set) -> None:
+    try:
+        SEEN_REACTIONS_FILE.write_text(json.dumps(list(seen)))
+    except Exception as e:
+        log.warning(f"Could not persist seen reactions: {e}")
+
+
 async def reaction_queue_watcher(raw_queue: asyncio.Queue) -> None:
-    """Watch reaction-queue.jsonl and deliver new reactions."""
-    last_id_file = Path(f"/tmp/watchdog-{AGENT_ID}-last-react-ts")
+    """Watch reaction-queue.jsonl and deliver new reactions.
 
-    last_ts = ""
-    if last_id_file.exists():
-        last_ts = last_id_file.read_text().strip()
+    Deduplicates by (message_id, new_reaction, user) so the same reaction
+    is never delivered twice, even if appended to the file multiple times
+    with different timestamps (#108).
+    """
+    seen: set = _load_seen_reactions()
 
-    # Seed from current end of file
-    if not last_ts and REACTION_QUEUE.exists():
+    # On first run with empty seen set, seed from current file end to avoid
+    # replaying historical reactions on restart.
+    if not seen and REACTION_QUEUE.exists():
         try:
             lines = REACTION_QUEUE.read_text().strip().splitlines()
-            if lines:
-                last_ts = json.loads(lines[-1]).get("ts", "")
-                last_id_file.write_text(last_ts)
-                log.info(f"Seeded last reaction ts={last_ts}")
+            for line in lines:
+                try:
+                    r = json.loads(line)
+                    sig = (str(r.get("message_id", "")), r.get("new_reaction", ""), r.get("user", ""))
+                    seen.add(sig)
+                except Exception:
+                    pass
+            _save_seen_reactions(seen)
+            log.info(f"Seeded seen reactions: {len(seen)} entries")
         except Exception as e:
-            log.warning(f"Could not seed reaction ts: {e}")
+            log.warning(f"Could not seed seen reactions: {e}")
 
     while True:
         try:
@@ -474,21 +502,23 @@ async def reaction_queue_watcher(raw_queue: asyncio.Queue) -> None:
 
             lines = REACTION_QUEUE.read_text().strip().splitlines()
             new_reactions = []
-            new_last_ts = last_ts
             for line in lines:
                 try:
                     r = json.loads(line)
-                    ts = r.get("ts", "")
-                    if ts > last_ts and r.get("new_reaction"):
+                    if not r.get("new_reaction"):
+                        continue
+                    sig = (str(r.get("message_id", "")), r.get("new_reaction", ""), r.get("user", ""))
+                    if sig not in seen:
                         new_reactions.append(r)
-                        if ts > new_last_ts:
-                            new_last_ts = ts
+                        seen.add(sig)
                 except Exception:
                     pass
 
             if new_reactions:
-                last_ts = new_last_ts
-                last_id_file.write_text(last_ts)
+                # Trim seen set to cap memory usage
+                if len(seen) > MAX_SEEN_REACTIONS:
+                    seen = set(list(seen)[-MAX_SEEN_REACTIONS:])
+                _save_seen_reactions(seen)
                 for r in new_reactions:
                     emoji = r.get("new_reaction", "?")
                     user = r.get("user", "?")

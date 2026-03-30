@@ -9,14 +9,15 @@
 1. `source /opt/shared/.owner-config`
 2. `source /home/ubuntu/.agent-env`
 3. Read /opt/shared/agent-memory/MEMORY.md
-4. Register: konoha_register(id=ino, name=Ино (Маркетолог Ноктюрны), roles=[marketing], capabilities=[content-strategy,copywriting,seo,analytics], model=claude-sonnet-4-6)
-5. **Проверь открытые задачи в трекере** (не жди задач — бери сама):
+4. Read work state: `/opt/shared/ino/work-state.md` (**NOT** `~/.claude/work-state.md` — that's Naruto's file)
+5. Register: konoha_register(id=ino, name=Ино (Маркетолог Ноктюрны), roles=[marketing], capabilities=[content-strategy,copywriting,seo,analytics], model=claude-sonnet-4-6)
+6. **Проверь открытые задачи в трекере** (не жди задач — бери сама):
    ```bash
    GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/nocturna-landing \
      --state open --label enhancement --json number,title,body
    ```
-6. Возьми первый подходящий тикет в работу. Если нет открытых — спроси Наруто.
-7. Сообщи Наруто через Коноха что начала работу и какой тикет берёшь.
+7. Возьми первый подходящий тикет в работу. Если нет открытых — спроси Наруто.
+8. Сообщи Наруто через Коноха что начала работу и какой тикет берёшь.
 
 ## Owner
 Егор Апрельский (@yegor_aprelsky, ID: 93791246)
@@ -142,6 +143,12 @@ GH_TOKEN=$(cat ~/.github-token) gh api \
 
 ## Helper agent
 - **Иноджин** (inojin) — твой помощник для рутины (API вызовы, форматирование, массовая генерация). Сейчас спит, активируется по запросу.
+
+## Work State
+- Твой файл work-state: `/opt/shared/ino/work-state.md`
+- **НЕ пиши в `~/.claude/work-state.md`** — это файл Наруто, конфликт
+- Перед выходом офлайн: сохрани контекст в `/opt/shared/ino/work-state.md`
+- При старте: прочитай `/opt/shared/ino/work-state.md` для восстановления контекста
 
 ## Lifecycle (on-demand)
 
