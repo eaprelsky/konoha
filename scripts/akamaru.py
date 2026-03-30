@@ -69,6 +69,12 @@ AGENT_WATCHDOGS = {
 }
 
 PAUSED_FILE = "/opt/shared/kiba/paused-services.txt"
+OFFLINE_AGENTS_FILE = "/opt/shared/kiba/offline-agents.txt"
+LIFECYCLE_POLL_INTERVAL = 10  # seconds between lifecycle message polls
+
+# In-memory suppression list for agents that announced going offline.
+# Backed by OFFLINE_AGENTS_FILE for persistence across restarts.
+_offline_agents: set[str] = set()
 
 
 def load_paused() -> set[str]:
@@ -81,6 +87,122 @@ def load_paused() -> set[str]:
     except Exception as e:
         log.warning(f"Error reading paused-services: {e}")
         return set()
+
+
+def load_offline_agents() -> set[str]:
+    """Load agents that announced going offline. Returns empty set on error."""
+    try:
+        with open(OFFLINE_AGENTS_FILE) as f:
+            return {line.strip() for line in f if line.strip()}
+    except FileNotFoundError:
+        return set()
+    except Exception as e:
+        log.warning(f"Error reading offline-agents: {e}")
+        return set()
+
+
+def save_offline_agents(agents: set[str]) -> None:
+    """Persist offline agents list to file."""
+    try:
+        os.makedirs(os.path.dirname(OFFLINE_AGENTS_FILE), exist_ok=True)
+        with open(OFFLINE_AGENTS_FILE, "w") as f:
+            for agent in sorted(agents):
+                f.write(agent + "\n")
+    except Exception as e:
+        log.warning(f"Error saving offline-agents: {e}")
+
+
+import re as _re
+
+def _extract_agent_from_lifecycle(text: str, sender: str) -> str | None:
+    """Extract agent name from a lifecycle message text or sender."""
+    # SESSION_OFFLINE:agentname or SESSION_ONLINE:agentname
+    m = _re.search(r"SESSION_(?:OFFLINE|ONLINE):(\w+)", text, _re.IGNORECASE)
+    if m:
+        return m.group(1).lower()
+    # "agentname going offline"
+    m = _re.search(r"(\w+)\s+going\s+offline", text, _re.IGNORECASE)
+    if m:
+        candidate = m.group(1).lower()
+        if candidate in WATCHED_AGENTS:
+            return candidate
+    # fall back to sender field
+    if sender and sender.lower() in WATCHED_AGENTS:
+        return sender.lower()
+    return None
+
+
+def _is_online_event(text: str) -> bool:
+    """Return True if the message signals an agent coming online."""
+    lo = text.lower()
+    return (
+        "session_online:" in lo or
+        "lifecycle=online" in lo or
+        "going online" in lo
+    )
+
+
+def _is_offline_event(text: str) -> bool:
+    """Return True if the message signals an agent going offline."""
+    lo = text.lower()
+    return (
+        "going offline" in lo or
+        "session_offline:" in lo or
+        "session end" in lo
+    )
+
+
+async def watch_lifecycle() -> None:
+    """Poll /messages/akamaru for lifecycle events and maintain offline suppression list.
+
+    Uses a dedicated consumer group 'lifecycle' so messages are not consumed
+    from the main watchdog consumer.  Runs as a background asyncio task.
+    """
+    global _offline_agents
+    env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+
+    while True:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "-s", "--max-time", "5",
+                "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                f"{KONOHA_URL}/messages/akamaru?count=20&consumer=lifecycle",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env=env,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode == 0 and stdout:
+                try:
+                    messages = json.loads(stdout)
+                    if not isinstance(messages, list):
+                        messages = messages.get("messages", [])
+                    changed = False
+                    for msg in messages:
+                        text   = msg.get("text", "")
+                        sender = msg.get("from", "")
+                        if _is_offline_event(text):
+                            agent = _extract_agent_from_lifecycle(text, sender)
+                            if agent and agent not in _offline_agents:
+                                _offline_agents.add(agent)
+                                log.info(f"Lifecycle: {agent} going offline — added to suppression")
+                                changed = True
+                        elif _is_online_event(text):
+                            agent = _extract_agent_from_lifecycle(text, sender)
+                            if agent and agent in _offline_agents:
+                                _offline_agents.discard(agent)
+                                log.info(f"Lifecycle: {agent} back online — removed from suppression")
+                                changed = True
+                    if changed:
+                        save_offline_agents(_offline_agents)
+                except json.JSONDecodeError:
+                    pass
+        except asyncio.TimeoutError:
+            pass
+        except Exception as e:
+            log.warning(f"watch_lifecycle error: {e}")
+
+        await asyncio.sleep(LIFECYCLE_POLL_INTERVAL)
 
 
 COMPACTING_TIMEOUT = 600   # 10 min non-idle with compacting text → alert (#39)
@@ -411,6 +533,15 @@ async def main() -> None:
 
     log.info("Akamaru starting — monitoring Konoha system health")
 
+    # Load persisted offline suppression list from previous run
+    global _offline_agents
+    _offline_agents = load_offline_agents()
+    if _offline_agents:
+        log.info(f"Loaded offline suppression list: {_offline_agents}")
+
+    # Start lifecycle watcher background task (#105)
+    asyncio.create_task(watch_lifecycle())
+
     # Send initial healthcheck trigger after 30s startup grace
     await asyncio.sleep(30)
 
@@ -421,7 +552,8 @@ async def main() -> None:
 
         # Run sync checks in thread pool to avoid blocking
         loop = asyncio.get_running_loop()
-        paused = load_paused()
+        # Merge manual paused list with lifecycle-based offline suppression (#105)
+        paused = load_paused() | _offline_agents
         svc_alerts      = await loop.run_in_executor(None, lambda: check_services(paused))
         tmux_alerts     = await loop.run_in_executor(None, lambda: check_tmux_sessions(paused))
         orphan_alerts   = await loop.run_in_executor(None, lambda: check_orphaned_sessions(paused))
@@ -433,7 +565,7 @@ async def main() -> None:
 
         # Re-read paused at send time (defense-in-depth: file may have been created
         # after the check pass, or an individual check may have missed the filter)
-        paused = load_paused()
+        paused = load_paused() | _offline_agents
         alerts = [a for a in alerts if not is_alert_suppressed(a, paused)]
 
         if alerts:
