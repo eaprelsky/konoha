@@ -208,6 +208,16 @@ async def watch_lifecycle() -> None:
 COMPACTING_TIMEOUT = 600   # 10 min non-idle with compacting text → alert (#39)
 STUCK_TIMEOUT      = 900   # 15 min non-idle without any Claude activity → alert
 
+# Strings that indicate Claude Code hit the token/context limit (#111)
+TOKEN_EXHAUSTION_PATTERNS = [
+    "context window is full",
+    "maximum context length",
+    "context window has been exceeded",
+    "tokens remaining: 0",
+    "You've reached the context",
+    "context limit",
+]
+
 # Per-session idle tracking: {session: last_seen_idle_monotonic}
 _last_idle: dict[str, float] = {}
 
@@ -345,6 +355,15 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                                 alerts.append(
                                     f"kiba:alert agent={session} stuck duration={mins}min"
                                 )
+
+                    # Detect token/context exhaustion (#111)
+                    pane_lower = pane.lower()
+                    if any(p.lower() in pane_lower for p in TOKEN_EXHAUSTION_PATTERNS):
+                        key = f"tmux:{session}:token_exhausted"
+                        if should_alert(key):
+                            alerts.append(
+                                f"kiba:alert agent={session} token_exhausted=true action=restart"
+                            )
 
                     # Detect permission prompt freeze (#69)
                     # Filter out status-bar lines (e.g. "bypass permissions on (shift+tab to cycle)")

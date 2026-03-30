@@ -21,16 +21,33 @@ KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 AGENT_ID     = "kiba"
 TMUX_SESSION = "kiba"
 
-DEBOUNCE_WINDOW  = 5.0   # longer debounce — batch multiple alerts
-IDLE_POLL_SEC    = 2.0
-IDLE_TIMEOUT_SEC = 300
-SSE_MAX_BACKOFF  = 60
+DEBOUNCE_WINDOW       = 5.0   # longer debounce — batch multiple alerts
+IDLE_POLL_SEC         = 2.0
+IDLE_TIMEOUT_SEC      = 300
+SSE_MAX_BACKOFF       = 60
+CIRCUIT_BREAKER_DURATION = 600  # 10 min: no delivery attempts while circuit is open (#111)
 
 # SESSION_ONLINE/OFFLINE are system noise — never deliver to agent
 NOISE_TEXT_PREFIXES = ("SESSION_ONLINE:", "SESSION_OFFLINE:")
 NOISE_TEXT_CONTAINS = ("going offline (session end)",)
 
 LOG_FILE = f"/tmp/watchdog-{AGENT_ID}.log"
+
+# ── Circuit breaker (#111) ────────────────────────────────────────────────────
+# When Kiba is frozen past IDLE_TIMEOUT_SEC, open the circuit to stop
+# accumulating undeliverable alerts. Closes automatically after CIRCUIT_BREAKER_DURATION.
+
+_circuit_open_until: float = 0.0  # monotonic timestamp; 0 = circuit closed
+
+
+def circuit_is_open() -> bool:
+    return time.monotonic() < _circuit_open_until
+
+
+def open_circuit(reason: str) -> None:
+    global _circuit_open_until
+    _circuit_open_until = time.monotonic() + CIRCUIT_BREAKER_DURATION
+    log.warning(f"Circuit breaker OPEN for {CIRCUIT_BREAKER_DURATION}s: {reason}")
 
 class _FlushFileHandler(logging.FileHandler):
     """FileHandler that flushes after each record — prevents log buffering on restart."""
@@ -166,6 +183,17 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
     pending: list[dict] = []
 
     while True:
+        # ── Circuit breaker (#111): drain and discard while circuit is open ──
+        if circuit_is_open():
+            remaining = _circuit_open_until - time.monotonic()
+            log.debug(f"Circuit open — discarding incoming alerts (closes in {int(remaining)}s)")
+            try:
+                await asyncio.wait_for(batched_queue.get(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
+            pending.clear()
+            continue
+
         try:
             timeout = 1.0 if pending else None
             batch = await asyncio.wait_for(batched_queue.get(), timeout=timeout)
@@ -181,8 +209,9 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             if is_agent_idle(TMUX_SESSION):
                 break
             if waited >= IDLE_TIMEOUT_SEC:
-                log.warning(f"Agent {TMUX_SESSION} busy >{IDLE_TIMEOUT_SEC}s — dropping {len(pending)} alerts")
-                await send_freeze_alert(TMUX_SESSION, waited, len(pending))
+                open_circuit(f"agent={TMUX_SESSION} unresponsive >{IDLE_TIMEOUT_SEC}s")
+                log.warning(f"Dropping {len(pending)} alert(s); notifying naruto")
+                asyncio.ensure_future(notify_naruto_frozen(TMUX_SESSION, waited, len(pending)))
                 pending.clear()
                 break
             await asyncio.sleep(IDLE_POLL_SEC)
@@ -200,12 +229,17 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 log.error(f"tmux send failed: {e}")
                 pending.clear()
 
-async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
-    """Alert Kiba when agent has been unresponsive past IDLE_TIMEOUT_SEC."""
+async def notify_naruto_frozen(session: str, waited: float, n_msgs: int) -> None:
+    """Notify Naruto (not Kiba!) when agent has been unresponsive past IDLE_TIMEOUT_SEC.
+
+    Sending to kiba caused a self-referential alert loop (#111): freeze alert →
+    SSE watcher → raw_queue → debouncer → send_loop → another timeout → another alert.
+    Sending to naruto breaks the loop; naruto can escalate or trigger a restart.
+    """
     payload = json.dumps({
         "from": f"watchdog-{session}",
-        "to": "kiba",
-        "text": f"kiba:alert agent={session} frozen timeout={int(waited)}s msgs_dropped={n_msgs}",
+        "to": "naruto",
+        "text": f"kiba:alert agent={session} frozen timeout={int(waited)}s msgs_dropped={n_msgs} circuit=open — restart may be needed",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
@@ -221,7 +255,7 @@ async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
             env=env,
         )
         await asyncio.wait_for(proc.wait(), timeout=10)
-        log.warning(f"Freeze alert sent to kiba: agent={session} waited={int(waited)}s")
+        log.warning(f"Naruto notified: kiba frozen timeout={int(waited)}s circuit=open")
     except Exception as e:
         log.error(f"Failed to send freeze alert: {e}")
 
