@@ -340,25 +340,76 @@ async def bus_watcher(raw_queue: asyncio.Queue) -> None:
 
 # ── Heartbeat ─────────────────────────────────────────────────────────────────
 
+async def _send_lifecycle(text: str, env: dict) -> None:
+    """Broadcast a lifecycle event (SESSION_ONLINE/OFFLINE) to all agents."""
+    payload = json.dumps({
+        "from": f"watchdog-{AGENT_ID}",
+        "to": "all",
+        "text": text,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-s", "-X", "POST",
+            "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+            "-H", "Content-Type: application/json",
+            "-d", payload,
+            f"{KONOHA_URL}/messages",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=env,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=10)
+        log.info(f"Lifecycle broadcast: {text}")
+    except Exception as e:
+        log.warning(f"Failed to broadcast lifecycle: {e}")
+
+
 async def heartbeat_loop() -> None:
-    """Send heartbeat to Konoha every 5 minutes to keep agent online."""
+    """Send heartbeat only when claude-{agent}.service is active (#106).
+
+    Skips heartbeat and broadcasts SESSION_OFFLINE when service is inactive.
+    Broadcasts SESSION_ONLINE when service comes back up.
+    """
     url = f"{KONOHA_URL}/agents/{AGENT_ID}/heartbeat"
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+    service = f"claude-{AGENT_ID}.service"
+    was_active = True  # assume active on start — avoids spurious SESSION_OFFLINE at boot
     while True:
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "curl", "-s", "-X", "POST",
-                "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
-                url,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-                env=env,
+            r = subprocess.run(
+                ["systemctl", "is-active", service],
+                capture_output=True, text=True, timeout=5
             )
-            await proc.wait()
-            log.debug("Heartbeat sent")
+            is_active = r.stdout.strip() in ("active", "activating")
         except Exception as e:
-            log.warning(f"Heartbeat failed: {e}")
+            log.warning(f"Could not check {service}: {e}")
+            is_active = True  # fail open — assume active
+
+        if is_active:
+            if not was_active:
+                await _send_lifecycle(f"SESSION_ONLINE:{AGENT_ID}", env)
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "curl", "-s", "-X", "POST",
+                    "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                    url,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    env=env,
+                )
+                await proc.wait()
+                log.debug("Heartbeat sent")
+            except Exception as e:
+                log.warning(f"Heartbeat failed: {e}")
+        else:
+            log.info(f"{service} inactive — skipping heartbeat")
+            if was_active:
+                await _send_lifecycle(f"SESSION_OFFLINE:{AGENT_ID}", env)
+
+        was_active = is_active
         await asyncio.sleep(300)  # every 5 min
+
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
