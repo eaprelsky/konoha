@@ -16,15 +16,15 @@ from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BITRIX_URL = os.environ.get("BITRIX_WEBHOOK_URL", "")  # set in .agent-env
+BITRIX_URL = "https://knwlab.bitrix24.ru/rest/1/dbobwawe33pb31jl"
 KONOHA_URL = "http://127.0.0.1:3200"
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 SNAPSHOTS_DIR = Path("/opt/shared/mirai/snapshots")
 SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
-YEGOR_CHAT_ID = os.environ.get("OWNER_TG_ID", "")        # set in .owner-config
-SASHA_CHAT_ID = os.environ.get("SASHA_TG_ID", "")        # set in .agent-env
-COMIND_LEADS_CHAT_ID = os.environ.get("COMIND_LEADS_CHAT_ID", "")  # set in .agent-env
+YEGOR_CHAT_ID = "93791246"        # Telegram ID Егора
+SASHA_CHAT_ID = "75397531"        # Telegram ID Саши (Александр Макаров)
+COMIND_LEADS_CHAT_ID = "-4982206077"  # Группа coMind Лиды
 
 TG_SEND_SCRIPT = "/home/ubuntu/tg-send-user.py"
 
@@ -74,8 +74,8 @@ ALL_NEXT_TOUCH_FIELDS = list(STAGE_NEXT_TOUCH.values())
 # Active stage semantic IDs (P = in progress)
 ACTIVE_SEMANTIC = {"P"}
 
-# Stages to skip in monitoring (won/lost)
-CLOSED_STAGES = {"WON", "LOSE"}
+# Stages to skip in monitoring (won/lost/executing)
+CLOSED_STAGES = {"WON", "LOSE", "EXECUTING"}
 
 STALE_DAYS = 14  # days without stage change = stale
 
@@ -260,8 +260,8 @@ def run_digest():
     deals = get_all_deals()
     save_snapshot(deals)
 
-    # Only main pipeline deals (no C5: prefix)
-    main_deals = [d for d in deals if not d["STAGE_ID"].startswith("C")]
+    # Only main pipeline deals (no C5: prefix), excluding closed/executing
+    main_deals = [d for d in deals if not d["STAGE_ID"].startswith("C") and d["STAGE_ID"] not in CLOSED_STAGES]
 
     no_amount = []
     stale = []
@@ -302,7 +302,7 @@ def run_digest():
     lines.append(f"Сумма воронки: {fmt_amount(pipeline_total)}\n")
 
     lines.append("По стадиям:")
-    for stage_id in ["PREPARATION","UC_X0AW1T","UC_YKWSWB","UC_EJQDRV","UC_745K2M","UC_5UIHPA","NEW","UC_1SYSJG","EXECUTING"]:
+    for stage_id in ["PREPARATION","UC_X0AW1T","UC_YKWSWB","UC_EJQDRV","UC_745K2M","UC_5UIHPA","NEW","UC_1SYSJG"]:
         s = by_stage.get(stage_id)
         if s and s["count"] > 0:
             lines.append(f"  {stage_name(stage_id)}: {s['count']} шт, {fmt_amount(s['total'])}")
@@ -336,7 +336,7 @@ def run_digest():
 
 def run_monitor():
     deals = get_all_deals()
-    curr_map = {d["ID"]: d for d in deals}
+    curr_map = {d["ID"]: d for d in deals if d["STAGE_ID"] not in CLOSED_STAGES}
     prev_map = load_snapshot("latest.json")
 
     diff = compute_diff(prev_map, curr_map)
@@ -495,10 +495,10 @@ def resolve_salesperson(assigned_id: str) -> dict | None:
     """Return salesperson info or None if unknown/unassigned."""
     # Direct match by explicit mapping
     # Yegor
-    if assigned_id == YEGOR_CHAT_ID:
+    if assigned_id in ("93791246",):
         return {"name": "Егор", "tg_id": YEGOR_CHAT_ID, "username": "@yegor_aprelsky"}
     # Sasha
-    if assigned_id == SASHA_CHAT_ID:
+    if assigned_id in ("75397531",):
         return {"name": "Саша", "tg_id": SASHA_CHAT_ID, "username": "@Ctrain2042"}
     # Bitrix user ID mapping (to be verified by Yegor)
     sp = SALES_PERSONS.get(assigned_id)
