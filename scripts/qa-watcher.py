@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 QA Watcher — monitors GitHub Issues for bugs closed with 'awaiting-test' label,
-then immediately pings Hinata via Konoha to run tests.
+then pings Shino via Konoha to write a test plan. Shino is the HARD GATE: he
+decides when to trigger Hinata. qa-watcher never contacts Hinata directly (#107).
 
 Polls every 60 seconds. Tracks already-notified issues in a state file to avoid
 duplicate pings.
@@ -57,11 +58,12 @@ def gh(args: list[str]) -> list[dict]:
     return json.loads(result.stdout) if result.stdout.strip() else []
 
 
-def send_to_hinata(issue_number: int, issue_title: str) -> None:
+def send_to_shino(issue_number: int, issue_title: str) -> None:
+    """Route test trigger to Shino (HARD GATE) instead of Hinata directly (#107)."""
     payload = json.dumps({
         "from": "qa-watcher",
-        "to": "hinata",
-        "text": f"hinata:test issue={issue_number} title={json.dumps(issue_title)}",
+        "to": "shino",
+        "text": f"shino:test issue={issue_number} title={json.dumps(issue_title)}",
     })
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
     result = subprocess.run(
@@ -75,9 +77,9 @@ def send_to_hinata(issue_number: int, issue_title: str) -> None:
         capture_output=True, text=True, env=env, timeout=10,
     )
     if result.returncode == 0:
-        log.info(f"Pinged Hinata for issue #{issue_number}: {issue_title}")
+        log.info(f"Pinged Shino for issue #{issue_number}: {issue_title}")
     else:
-        log.error(f"Failed to ping Hinata: {result.stderr[:100]}")
+        log.error(f"Failed to ping Shino: {result.stderr[:100]}")
 
 
 def check_once(notified: set) -> None:
@@ -95,7 +97,7 @@ def check_once(notified: set) -> None:
             continue
         title = issue.get("title", "")
         log.info(f"New awaiting-test issue found: #{num} {title}")
-        send_to_hinata(num, title)
+        send_to_shino(num, title)
         notified.add(num)
     save_notified(notified)
 
