@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { streamSSE } from "hono/streaming";
-import { mkdirSync, writeFileSync, existsSync, statSync } from "fs";
+import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync } from "fs";
 import { join, extname } from "path";
-import { loadWorkflows } from "./workflow-loader";
+import { loadWorkflows, getWorkflow, listWorkflows } from "./workflow-loader";
 import { createCase, getCase, completeWorkItem, listWorkItems, createStandaloneWorkItem, updateWorkItem, processEvent, type WorkItemStatus } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
 import {
@@ -93,6 +93,28 @@ app.use("/workitems", requireAuth);
 
 // health
 app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
+
+// --- Static UI files (no auth required) ---
+const PUBLIC_DIR = join(import.meta.dir, "..", "public");
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js":   "application/javascript; charset=utf-8",
+  ".css":  "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".svg":  "image/svg+xml",
+  ".png":  "image/png",
+  ".ico":  "image/x-icon",
+};
+app.get("/ui", (c) => c.redirect("/ui/index.html"));
+app.get("/ui/:file{.+}", (c) => {
+  const name = c.req.param("file");
+  if (name.includes("..")) return c.text("Forbidden", 403);
+  const filePath = join(PUBLIC_DIR, name);
+  if (!existsSync(filePath) || !statSync(filePath).isFile()) return c.text("Not found", 404);
+  const ext  = extname(filePath).toLowerCase();
+  const mime = MIME[ext] || "application/octet-stream";
+  return c.body(readFileSync(filePath), 200, { "content-type": mime });
+});
 
 // --- Agents ---
 
@@ -408,6 +430,20 @@ app.get("/channels/:name/history", async (c) => {
   const count = parseInt(c.req.query("count") || "20");
   const messages = await readHistory(name, count);
   return c.json(messages);
+});
+
+// --- Workflows ---
+
+app.get("/workflows", requireAuth, async (c) => {
+  const workflows = await listWorkflows();
+  return c.json(workflows);
+});
+
+app.get("/workflows/:id", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const wf = await getWorkflow(id);
+  if (!wf) return c.json({ error: "Workflow not found" }, 404);
+  return c.json(wf);
 });
 
 // Load workflow definitions from disk into Redis on startup

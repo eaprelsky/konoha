@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Work Items</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 24px;
+        }
+
+        .filters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: #0066cc;
+            box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+
+        .button-group button {
+            padding: 8px 16px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .button-group button:hover {
+            background: #0052a3;
+        }
+
+        .button-group .reset {
+            background: #999;
+        }
+
+        .button-group .reset:hover {
+            background: #777;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status.pending {
+            background: #e8e8e8;
+            color: #333;
+        }
+
+        .status.assigned {
+            background: #0066cc;
+            color: white;
+        }
+
+        .status.running {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .status.completed {
+            background: #10b981;
+            color: white;
+        }
+
+        .status.failed {
+            background: #ef4444;
+            color: white;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .items-table th {
+            background: #f9f9f9;
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            border-bottom: 2px solid #eee;
+            text-transform: uppercase;
+        }
+
+        .items-table td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+
+        .items-table tr:hover {
+            background: #fafafa;
+        }
+
+        .item-label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .item-link {
+            color: #0066cc;
+            text-decoration: none;
+        }
+
+        .item-link:hover {
+            text-decoration: underline;
+        }
+
+        .item-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .item-actions button {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            background: white;
+            color: #333;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .item-actions button:hover {
+            background: #f0f0f0;
+        }
+
+        .item-actions button.complete {
+            background: #10b981;
+            color: white;
+            border-color: #10b981;
+        }
+
+        .item-actions button.complete:hover {
+            background: #059669;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #c33;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .details-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .details-modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 25px rgba(0,0,0,0.15);
+        }
+
+        .modal-content h2 {
+            margin-bottom: 16px;
+            color: #333;
+        }
+
+        .modal-content .detail-field {
+            margin-bottom: 12px;
+        }
+
+        .modal-content .detail-field strong {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .modal-content .detail-field code {
+            display: block;
+            background: #f5f5f5;
+            padding: 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #999;
+        }
+
+        .modal-close:hover {
+            color: #333;
+        }
+
+        .refresh-info {
+            font-size: 12px;
+            color: #999;
+            margin-top: 12px;
+            text-align: right;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 12px;
+            }
+
+            .filters {
+                grid-template-columns: 1fr;
+            }
+
+            .items-table {
+                font-size: 12px;
+            }
+
+            .items-table th,
+            .items-table td {
+                padding: 8px;
+            }
+
+            .item-actions {
+                flex-direction: column;
+            }
+
+            .item-actions button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Work Items</h1>
+        <div id="error"></div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label for="filterAssignee">Assignee</label>
+                <input type="text" id="filterAssignee" placeholder="Filter by assignee...">
+            </div>
+            <div class="filter-group">
+                <label for="filterProcess">Process ID</label>
+                <input type="text" id="filterProcess" placeholder="Filter by process...">
+            </div>
+            <div class="filter-group">
+                <label for="filterStatus">Status</label>
+                <select id="filterStatus">
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="assigned">Assigned</option>
+                    <option value="running">Running</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filterDeadline">Deadline Before</label>
+                <input type="date" id="filterDeadline">
+            </div>
+            <div class="button-group">
+                <button onclick="applyFilters()">Apply Filters</button>
+                <button class="reset" onclick="resetFilters()">Reset</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading" style="display:none;">Loading...</div>
+        <table class="items-table" id="itemsTable" style="display:none;">
+            <thead>
+                <tr>
+                    <th>Label</th>
+                    <th>Assignee</th>
+                    <th>Status</th>
+                    <th>Process / Case</th>
+                    <th>Deadline</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="itemsBody"></tbody>
+        </table>
+        <div id="empty" class="empty" style="display:none;">No work items found.</div>
+
+        <div class="refresh-info">
+            Auto-refresh every 10 seconds • Last update: <span id="lastUpdate">-</span>
+        </div>
+    </div>
+
+    <div id="detailsModal" class="details-modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeDetails()">✕</button>
+            <h2 id="detailsTitle"></h2>
+            <div id="detailsContent"></div>
+        </div>
+    </div>
+
+    <script>
+        let apiToken = '';
+        let currentFilters = {};
+        let refreshInterval;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const params = new URLSearchParams(window.location.search);
+            apiToken = params.get('token');
+
+            if (!apiToken) {
+                apiToken = prompt('Please enter API token:');
+                if (!apiToken) {
+                    showError('API token is required');
+                    return;
+                }
+            }
+
+            // Initial load
+            loadWorkItems();
+
+            // Auto-refresh every 10 seconds
+            refreshInterval = setInterval(loadWorkItems, 10000);
+        });
+
+        function buildQueryParams(filters) {
+            const params = new URLSearchParams();
+            if (filters.assignee) params.append('assignee', filters.assignee);
+            if (filters.process_id) params.append('process_id', filters.process_id);
+            if (filters.status) params.append('status', filters.status);
+            if (filters.deadline_before) params.append('deadline_before', filters.deadline_before);
+            return params.toString();
+        }
+
+        function loadWorkItems() {
+            const queryString = buildQueryParams(currentFilters);
+            const url = `${window.location.origin}/workitems${queryString ? '?' + queryString : ''}`;
+
+            showLoading(true);
+            hideError();
+
+            fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${apiToken}`,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (response.status === 401) {
+                    throw new Error('Unauthorized - invalid API token');
+                }
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                renderItems(data);
+                updateLastUpdate();
+                showLoading(false);
+            })
+            .catch(error => {
+                showError(`Failed to load work items: ${error.message}`);
+                showLoading(false);
+            });
+        }
+
+        function renderItems(items) {
+            const tbody = document.getElementById('itemsBody');
+            const table = document.getElementById('itemsTable');
+            const empty = document.getElementById('empty');
+
+            tbody.innerHTML = '';
+
+            if (!items || items.length === 0) {
+                table.style.display = 'none';
+                empty.style.display = 'block';
+                return;
+            }
+
+            table.style.display = 'table';
+            empty.style.display = 'none';
+
+            items.forEach(item => {
+                const row = document.createElement('tr');
+                const deadline = item.deadline ? new Date(item.deadline).toLocaleDateString() : '-';
+                const processLink = item.process_id ? `<a href="${window.location.origin}/processes/${item.process_id}" class="item-link">${item.process_id}</a>` : '-';
+
+                row.innerHTML = `
+                    <td><span class="item-label">${escapeHtml(item.label)}</span></td>
+                    <td>${escapeHtml(item.assignee || '-')}</td>
+                    <td><span class="status ${item.status}">${item.status}</span></td>
+                    <td>${processLink}</td>
+                    <td>${deadline}</td>
+                    <td class="item-actions">
+                        <button class="complete" onclick="completeItem('${escapeAttr(item.id)}')">Complete</button>
+                        <button onclick="showDetails('${escapeAttr(item.id)}', '${escapeAttr(item.label)}', '${escapeAttr(JSON.stringify(item.input || {}))}', '${escapeAttr(JSON.stringify(item.output || {}))}')">Details</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function completeItem(id) {
+            if (!confirm('Mark this item as complete?')) return;
+
+            fetch(`${window.location.origin}/workitems/${id}/complete`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiToken}`,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                loadWorkItems();
+            })
+            .catch(error => {
+                showError(`Failed to complete item: ${error.message}`);
+            });
+        }
+
+        function showDetails(id, label, input, output) {
+            const modal = document.getElementById('detailsModal');
+            document.getElementById('detailsTitle').textContent = `Details: ${label}`;
+
+            let content = '';
+            try {
+                const inputObj = JSON.parse(input);
+                const outputObj = JSON.parse(output);
+
+                content += '<div class="detail-field"><strong>Input</strong><code>' + escapeHtml(JSON.stringify(inputObj, null, 2)) + '</code></div>';
+                content += '<div class="detail-field"><strong>Output</strong><code>' + escapeHtml(JSON.stringify(outputObj, null, 2)) + '</code></div>';
+            } catch (e) {
+                content = '<div class="detail-field"><strong>Error</strong><code>Failed to parse details</code></div>';
+            }
+
+            document.getElementById('detailsContent').innerHTML = content;
+            modal.classList.add('show');
+        }
+
+        function closeDetails() {
+            document.getElementById('detailsModal').classList.remove('show');
+        }
+
+        function applyFilters() {
+            currentFilters = {
+                assignee: document.getElementById('filterAssignee').value,
+                process_id: document.getElementById('filterProcess').value,
+                status: document.getElementById('filterStatus').value,
+                deadline_before: document.getElementById('filterDeadline').value
+            };
+            loadWorkItems();
+        }
+
+        function resetFilters() {
+            document.getElementById('filterAssignee').value = '';
+            document.getElementById('filterProcess').value = '';
+            document.getElementById('filterStatus').value = '';
+            document.getElementById('filterDeadline').value = '';
+            currentFilters = {};
+            loadWorkItems();
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.className = 'error';
+        }
+
+        function hideError() {
+            document.getElementById('error').innerHTML = '';
+        }
+
+        function updateLastUpdate() {
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function escapeAttr(text) {
+            if (!text) return '';
+            return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        // Close modal on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeDetails();
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            clearInterval(refreshInterval);
+        });
+    </script>
+</body>
+</html>

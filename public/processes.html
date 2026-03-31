@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Process Registry — Konoha WE</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #1e293b; }
+    header { background: #0f172a; color: #f8fafc; padding: 14px 28px; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 18px; font-weight: 600; }
+    nav { display: flex; gap: 4px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+    nav a { padding: 7px 16px; border-radius: 6px; text-decoration: none; color: #475569; font-size: 14px; }
+    nav a:hover, nav a.active { background: #f1f5f9; color: #0f172a; font-weight: 500; }
+
+    .layout { display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 100px); }
+    .sidebar {
+      background: #fff; border-right: 1px solid #e2e8f0; overflow-y: auto; padding: 16px;
+    }
+    .sidebar h2 { font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase;
+                  letter-spacing: 0.05em; margin-bottom: 12px; }
+    .category { margin-bottom: 4px; }
+    .category-label {
+      display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer;
+      border-radius: 6px; font-size: 13px; font-weight: 600; color: #334155;
+      user-select: none;
+    }
+    .category-label:hover { background: #f1f5f9; }
+    .category-label .arrow { transition: transform 0.15s; font-size: 10px; color: #94a3b8; }
+    .category-label.open .arrow { transform: rotate(90deg); }
+    .category-items { display: none; padding-left: 16px; }
+    .category-items.open { display: block; }
+    .process-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 8px; cursor: pointer; border-radius: 6px; font-size: 13px; color: #475569;
+    }
+    .process-item:hover { background: #f1f5f9; }
+    .process-item.active { background: #eff6ff; color: #1d4ed8; font-weight: 500; }
+    .process-item .badge {
+      background: #e2e8f0; color: #64748b; font-size: 11px; padding: 2px 6px; border-radius: 10px;
+    }
+
+    .main { overflow-y: auto; padding: 24px; }
+    .main .placeholder { color: #94a3b8; font-size: 15px; padding-top: 60px; text-align: center; }
+    .proc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+    .proc-header h2 { font-size: 18px; font-weight: 700; }
+    .proc-header .meta { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .diagram-box {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px;
+      overflow-x: auto; margin-bottom: 20px;
+    }
+    .diagram-box h3 { font-size: 13px; color: #64748b; margin-bottom: 12px; }
+    #diagram { min-height: 200px; }
+    .loading { color: #94a3b8; font-size: 14px; padding: 40px 0; text-align: center; }
+    .error-msg { color: #ef4444; font-size: 13px; }
+  </style>
+  <script src="/ui/epc-renderer.js"></script>
+</head>
+<body>
+<header>
+  <h1>Konoha Workflow Engine</h1>
+</header>
+<nav>
+  <a href="/ui/index.html">Dashboard</a>
+  <a href="/ui/processes.html" class="active">Processes</a>
+  <a href="/ui/workitems.html">Work Items</a>
+</nav>
+
+<div class="layout">
+  <div class="sidebar">
+    <h2>Process Registry</h2>
+    <div id="tree"><div class="loading">Loading…</div></div>
+  </div>
+  <div class="main" id="main">
+    <div class="placeholder">← Select a process to view its diagram</div>
+  </div>
+</div>
+
+<script>
+  const TOKEN = new URLSearchParams(location.search).get('token') ||
+                localStorage.getItem('konoha_token') ||
+                prompt('Konoha API token:');
+  if (TOKEN) localStorage.setItem('konoha_token', TOKEN);
+
+  const api = (path) => fetch(path, { headers: { Authorization: 'Bearer ' + TOKEN } }).then(r => r.json());
+
+  let workflows = [];
+
+  function groupByCategory(wfs) {
+    const groups = {};
+    wfs.forEach(wf => {
+      const cat = wf.category || wf.id.split('/')[0] || 'other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(wf);
+    });
+    return groups;
+  }
+
+  function buildTree(groups) {
+    const tree = document.getElementById('tree');
+    tree.innerHTML = '';
+    if (Object.keys(groups).length === 0) {
+      tree.innerHTML = '<div style="color:#94a3b8;font-size:13px">No workflows registered</div>';
+      return;
+    }
+    Object.entries(groups).forEach(([cat, items]) => {
+      const catDiv = document.createElement('div');
+      catDiv.className = 'category';
+      const label = document.createElement('div');
+      label.className = 'category-label open';
+      label.innerHTML = `<span class="arrow">▶</span> ${cat} <span style="color:#94a3b8;font-size:11px">(${items.length})</span>`;
+      label.onclick = () => {
+        label.classList.toggle('open');
+        itemsDiv.classList.toggle('open');
+      };
+      const itemsDiv = document.createElement('div');
+      itemsDiv.className = 'category-items open';
+      items.forEach(wf => {
+        const item = document.createElement('div');
+        item.className = 'process-item';
+        item.dataset.id = wf.id;
+        item.innerHTML = `<span>${wf.name || wf.id}</span>`;
+        item.onclick = () => selectProcess(wf, item);
+        itemsDiv.appendChild(item);
+      });
+      catDiv.appendChild(label);
+      catDiv.appendChild(itemsDiv);
+      tree.appendChild(catDiv);
+    });
+  }
+
+  function selectProcess(wf, itemEl) {
+    document.querySelectorAll('.process-item').forEach(i => i.classList.remove('active'));
+    itemEl.classList.add('active');
+
+    const main = document.getElementById('main');
+    main.innerHTML = `
+      <div class="proc-header">
+        <div>
+          <h2>${wf.name || wf.id}</h2>
+          <div class="meta">ID: ${wf.id} &nbsp;|&nbsp; v${wf.version || '—'}</div>
+          ${wf.description ? `<div style="font-size:13px;color:#475569;margin-top:6px">${wf.description}</div>` : ''}
+        </div>
+      </div>
+      <div class="diagram-box">
+        <h3>eEPC Diagram</h3>
+        <div id="diagram"><div class="loading">Rendering…</div></div>
+      </div>
+    `;
+
+    try {
+      const diagramEl = document.getElementById('diagram');
+      EpcRenderer.renderProcess(wf, diagramEl);
+    } catch (e) {
+      document.getElementById('diagram').innerHTML =
+        `<div class="error-msg">Render error: ${e.message}</div>`;
+    }
+  }
+
+  // Load workflows
+  api('/workflows').then(data => {
+    workflows = Array.isArray(data) ? data : (data.workflows || []);
+    buildTree(groupByCategory(workflows));
+  }).catch(e => {
+    document.getElementById('tree').innerHTML =
+      `<div class="error-msg">Failed to load: ${e.message}</div>`;
+  });
+</script>
+</body>
+</html>

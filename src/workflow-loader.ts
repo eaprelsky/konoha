@@ -195,3 +195,16 @@ export async function getWorkflow(id: string): Promise<WorkflowDefinition | null
   if (!raw) return null;
   return JSON.parse(raw);
 }
+
+export async function listWorkflows(): Promise<WorkflowDefinition[]> {
+  const keys = await redis.keys(WORKFLOW_KEY_PREFIX + "*");
+  if (keys.length === 0) return [];
+  const values = await redis.mget(...keys);
+  const results: WorkflowDefinition[] = [];
+  for (const v of values) {
+    if (v) {
+      try { results.push(JSON.parse(v)); } catch { /* skip corrupt entries */ }
+    }
+  }
+  return results;
+}
