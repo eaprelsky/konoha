@@ -2,7 +2,7 @@
  * Issue #75: Akamaru should skip alerts for services listed in paused-services.txt
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { execSync } from "child_process";
 import { mkdirSync, writeFileSync, unlinkSync, existsSync, readFileSync } from "fs";
 
@@ -23,6 +23,23 @@ function cleanupPausedFile() {
     try { unlinkSync(PAUSED_FILE); } catch {}
   }
 }
+
+// Save and restore the live paused-services.txt so tests don't clobber
+// any intentional pauses set by operators (issue #143).
+let _savedContent: string | null = null;
+
+beforeAll(() => {
+  _savedContent = existsSync(PAUSED_FILE) ? readFileSync(PAUSED_FILE, "utf-8") : null;
+});
+
+afterAll(() => {
+  if (_savedContent === null) {
+    if (existsSync(PAUSED_FILE)) unlinkSync(PAUSED_FILE);
+  } else {
+    mkdirSync(PAUSED_DIR, { recursive: true });
+    writeFileSync(PAUSED_FILE, _savedContent);
+  }
+});
 
 describe("Issue #75: Akamaru paused-services logic", () => {
   test("paused-services.txt file can be created and read", async () => {
