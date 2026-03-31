@@ -1,3 +1,5 @@
+import { join } from "path";
+import { loadWorkflows } from "./workflow-loader";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { streamSSE } from "hono/streaming";
@@ -307,6 +309,14 @@ app.get("/channels/:name/history", async (c) => {
   const count = parseInt(c.req.query("count") || "20");
   const messages = await readHistory(name, count);
   return c.json(messages);
+});
+
+// Load workflow definitions from disk into Redis on startup
+const WORKFLOWS_DIR = process.env.KONOHA_WORKFLOWS_DIR || join(import.meta.dir, "..", "workflows");
+loadWorkflows(WORKFLOWS_DIR).then(({ loaded, errors }) => {
+  console.log(`[workflow-loader] startup: ${loaded} loaded, ${errors} failed validation`);
+}).catch((e) => {
+  console.error("[workflow-loader] startup error:", e.message);
 });
 
 console.log(`Konoha bus listening on port ${PORT}`);
