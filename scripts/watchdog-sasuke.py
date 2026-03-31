@@ -183,11 +183,26 @@ def format_batch(events: list[dict]) -> str:
         lines.append("Новые сообщения в Telegram:")
         for ev in tg_events:
             d = ev.get("data", ev)
-            sender = d.get("user_name") or d.get("user", "?")
+            sender = (d.get("sender_name") or d.get("sender_username")
+                      or d.get("user_name") or d.get("user", "?"))
             text = d.get("text", "")
             ts = (d.get("ts") or d.get("timestamp", ""))[:16]
-            lines.append(f"\n[{ts}] {sender}: {text}")
-        lines.append("\nОбработай и ответь через tg-send-user.py.")
+            chat_id = d.get("chat_id", "")
+            chat_title = d.get("chat_title", "")
+            is_group = d.get("is_group", "0")
+            msg_id = d.get("msg_id", "")
+            sender_id = d.get("sender_id", "")
+            meta = f"chat_id={chat_id}"
+            if chat_title:
+                meta += f" [{chat_title}]"
+            if is_group in ("1", 1, True):
+                meta += " [group]"
+            if sender_id:
+                meta += f" sender_id={sender_id}"
+            if msg_id:
+                meta += f" msg_id={msg_id}"
+            lines.append(f"\n[{ts}] {sender} ({meta}): {text}")
+        lines.append("\nОбработай и при необходимости ответь через tg-send-user.py.")
 
     if konoha_events:
         if lines:
