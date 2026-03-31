@@ -1,0 +1,4 @@
+[test]
+# Exclude Playwright E2E specs — they require `bun x playwright test`, not bun runner.
+# E2E specs live in e2e/ at root; unit tests are in tests/*.test.ts
+pathIgnorePatterns = ["e2e/**", "tests/e2e/**"]

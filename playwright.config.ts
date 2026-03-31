@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './tests/e2e',
+  testDir: './e2e',
   use: { baseURL: 'http://127.0.0.1:3199' },
   webServer: {
     command: 'KONOHA_PORT=3199 bun run src/server.ts',
