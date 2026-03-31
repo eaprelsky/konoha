@@ -418,6 +418,12 @@ loadWorkflows(WORKFLOWS_DIR).then(({ loaded, errors }) => {
   console.error("[workflow-loader] startup error:", e.message);
 });
 
+// Initialize Tsunade event handler (KWE-006)
+import { initTsunade } from "./tsunade";
+initTsunade().catch((e) => {
+  console.error("[tsunade] init error:", e.message);
+});
+
 console.log(`Konoha bus listening on port ${PORT}`);
 export { app };
 export default {
