@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { redis } from "./redis";
 import { getWorkflow, type WorkflowDefinition, type WorkflowElement } from "./workflow-loader";
+import { getAdapter } from "./adapters/index";
 
 const CASE_KEY_PREFIX = "case:";
 const WORKITEM_KEY_PREFIX = "workitem:";
@@ -177,6 +178,35 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
         work_item_id,
       });
       await saveCase(kase);
+
+      // Auto-execute via adapter if system is registered
+      if (nextEl.system) {
+        const adapter = getAdapter(nextEl.system);
+        if (adapter) {
+          try {
+            const output = await adapter.execute(nextEl.label.toLowerCase().replace(/\s+/g, "_"), kase.payload);
+            // Complete the work item and continue advancing
+            const prevStatus = wi.status;
+            wi.status = "done";
+            wi.output = output;
+            wi.updated_at = new Date().toISOString();
+            await saveWorkItem(wi, prevStatus);
+            const histEntry = kase.history.find(h => h.work_item_id === work_item_id);
+            if (histEntry) histEntry.output = output;
+            current = nextId;
+            continue; // advance past the completed function
+          } catch (e: any) {
+            console.error(`[runtime] adapter "${nextEl.system}" error for "${nextEl.label}":`, e.message);
+            wi.status = "error";
+            wi.updated_at = new Date().toISOString();
+            await saveWorkItem(wi, "pending");
+            kase.status = "error";
+            await saveCase(kase);
+            return kase;
+          }
+        }
+      }
+
       return kase;
     }
 

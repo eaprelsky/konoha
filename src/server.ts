@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync, existsSync, statSync } from "fs";
 import { join, extname } from "path";
 import { loadWorkflows } from "./workflow-loader";
 import { createCase, getCase, completeWorkItem, listWorkItems, createStandaloneWorkItem, updateWorkItem, processEvent, type WorkItemStatus } from "./runtime";
+import { getAdapter, listAdapters } from "./adapters/index";
 import {
   registerAgent,
   unregisterAgent,
@@ -84,6 +85,7 @@ app.use("/messages/*", requireAuth);
 app.use("/channels/*", requireAuth);
 app.use("/attachments/*", requireAuth);
 app.use("/events", requireAuth);
+app.use("/adapters/*", requireAuth);
 app.use("/cases/*", requireAuth);
 app.use("/cases", requireAuth);
 app.use("/workitems/*", requireAuth);
@@ -378,6 +380,20 @@ app.delete("/workitems/:id", async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 404);
   }
+});
+
+// --- Adapters ---
+
+app.get("/adapters", async (c) => {
+  return c.json({ adapters: listAdapters() });
+});
+
+app.get("/adapters/:name/health", async (c) => {
+  const name = c.req.param("name");
+  const adapter = getAdapter(name);
+  if (!adapter) return c.json({ error: "Adapter not found" }, 404);
+  const healthy = await adapter.healthcheck().catch(() => false);
+  return c.json({ adapter: name, healthy }, healthy ? 200 : 503);
 });
 
 // --- Channels ---
