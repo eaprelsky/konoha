@@ -68,7 +68,7 @@ AGENT_WATCHDOGS = {
     "kakashi": "claude-watchdog-kakashi.service",
 }
 
-PAUSED_FILE = "/opt/shared/kiba/paused-services.txt"
+PAUSED_FILE = os.getenv("AKAMARU_PAUSED_FILE", "/opt/shared/kiba/paused-services.txt")
 OFFLINE_AGENTS_FILE = "/opt/shared/kiba/offline-agents.txt"
 LIFECYCLE_POLL_INTERVAL = 10  # seconds between lifecycle message polls
 

@@ -6,8 +6,12 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { execSync } from "child_process";
 import { mkdirSync, writeFileSync, unlinkSync, existsSync, readFileSync } from "fs";
 
-const PAUSED_FILE = "/opt/shared/kiba/paused-services.txt";
-const PAUSED_DIR = "/opt/shared/kiba";
+import { mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+const _tmpDir = mkdtempSync(join(tmpdir(), "akamaru-paused-test-"));
+const PAUSED_FILE = join(_tmpDir, "paused-services.txt");
+const PAUSED_DIR = _tmpDir;
 
 function setPausedServices(...services: string[]) {
   mkdirSync(PAUSED_DIR, { recursive: true });

@@ -6,8 +6,12 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { execSync } from "child_process";
 import { mkdirSync, writeFileSync, unlinkSync, existsSync, readFileSync } from "fs";
 
-const PAUSED_FILE = "/opt/shared/kiba/paused-services.txt";
-const PAUSED_DIR = "/opt/shared/kiba";
+import { mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+const _tmpDir = mkdtempSync(join(tmpdir(), "akamaru-test-"));
+const PAUSED_FILE = join(_tmpDir, "paused-services.txt");
+const PAUSED_DIR = _tmpDir;
 
 // Helper to set up paused file
 function setPausedServices(...services: string[]) {
@@ -50,7 +54,7 @@ describe("Issue #75: Akamaru paused-services.txt", () => {
     // Run Python to test load_paused
     const result = execSync(
       `python3 -c "import sys; sys.path.insert(0, '/home/ubuntu/konoha/scripts'); from akamaru import load_paused; print(len(load_paused()))"`,
-      { encoding: "utf-8" }
+      { encoding: "utf-8", env: { ...process.env, AKAMARU_PAUSED_FILE: PAUSED_FILE } }
     ).trim();
     expect(result).toBe("0");
   });
@@ -59,7 +63,7 @@ describe("Issue #75: Akamaru paused-services.txt", () => {
     setPausedServices("claude-naruto.service", "claude-sasuke.service", "mirai");
     const result = execSync(
       `python3 -c "import sys; sys.path.insert(0, '/home/ubuntu/konoha/scripts'); from akamaru import load_paused; paused = load_paused(); print(sorted(paused))"`,
-      { encoding: "utf-8" }
+      { encoding: "utf-8", env: { ...process.env, AKAMARU_PAUSED_FILE: PAUSED_FILE } }
     ).trim();
     expect(result).toContain("claude-naruto.service");
     expect(result).toContain("claude-sasuke.service");
@@ -70,7 +74,7 @@ describe("Issue #75: Akamaru paused-services.txt", () => {
     setPausedServices("naruto", "", "  sasuke  ", "\n", "hinata");
     const result = execSync(
       `python3 -c "import sys; sys.path.insert(0, '/home/ubuntu/konoha/scripts'); from akamaru import load_paused; paused = load_paused(); print(len(paused))"`,
-      { encoding: "utf-8" }
+      { encoding: "utf-8", env: { ...process.env, AKAMARU_PAUSED_FILE: PAUSED_FILE } }
     ).trim();
     // Should have 3 services (naruto, sasuke, hinata), blank lines ignored
     expect(result).toBe("3");
@@ -92,7 +96,7 @@ else:
     print("PAUSED_CHECK_FAILED")
 `;
     // Use stdin to avoid shell-quoting issues with double-quoted strings inside `code`
-    const result = execSync("python3", { encoding: "utf-8", input: code }).trim();
+    const result = execSync("python3", { encoding: "utf-8", input: code, env: { ...process.env, AKAMARU_PAUSED_FILE: PAUSED_FILE } }).trim();
     expect(result).toBe("PAUSED_CHECK_OK");
   });
 
