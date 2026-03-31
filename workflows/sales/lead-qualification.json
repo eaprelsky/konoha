@@ -1,22 +1,39 @@
 {
   "id": "lead-qualification",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "name": "Lead Qualification",
-  "description": "Qualify an incoming lead and notify the sales manager. Linear flow (v1).",
+  "description": "Qualify a lead, then branch XOR: qualified → notify manager + create CRM lead; rejected → archive.",
   "triggers": [
     { "event_type": "lead.received", "start_node": "e1" }
   ],
   "elements": [
-    { "id": "e1", "type": "event",    "label": "Lead received" },
-    { "id": "f1", "type": "function", "label": "Qualify lead",         "role": "mirai",   "system": "bitrix24" },
-    { "id": "e2", "type": "event",    "label": "Lead qualified" },
-    { "id": "f2", "type": "function", "label": "Notify sales manager", "role": "naruto" },
-    { "id": "e3", "type": "event",    "label": "Sales manager notified" }
+    { "id": "e1",  "type": "event",    "label": "Lead received" },
+    { "id": "f1",  "type": "function", "label": "Qualify lead",          "role": "mirai",   "system": "bitrix24" },
+    { "id": "e2",  "type": "event",    "label": "Lead qualification done" },
+    { "id": "g1",  "type": "gateway",  "label": "Qualified?",            "operator": "XOR" },
+    { "id": "e3",  "type": "event",    "label": "Lead qualified" },
+    { "id": "e4",  "type": "event",    "label": "Lead rejected" },
+    { "id": "g2",  "type": "gateway",  "label": "Notify in parallel",    "operator": "AND" },
+    { "id": "f2",  "type": "function", "label": "Notify sales manager",  "role": "naruto" },
+    { "id": "f3",  "type": "function", "label": "Create CRM lead",       "role": "mirai",   "system": "bitrix24" },
+    { "id": "g3",  "type": "gateway",  "label": "Parallel done",         "operator": "AND" },
+    { "id": "e5",  "type": "event",    "label": "Lead processed" },
+    { "id": "f4",  "type": "function", "label": "Archive lead",          "role": "mirai",   "system": "bitrix24" },
+    { "id": "e6",  "type": "event",    "label": "Lead archived" }
   ],
   "flow": [
-    ["e1", "f1"],
-    ["f1", "e2"],
-    ["e2", "f2"],
-    ["f2", "e3"]
+    ["e1",  "f1"],
+    ["f1",  "e2"],
+    ["e2",  "g1"],
+    ["g1",  "e3", "payload.qualified === true"],
+    ["g1",  "e4", "payload.qualified !== true"],
+    ["e3",  "g2"],
+    ["e4",  "f4"],
+    ["g2",  "f2"],
+    ["g2",  "f3"],
+    ["f2",  "g3"],
+    ["f3",  "g3"],
+    ["g3",  "e5"],
+    ["f4",  "e6"]
   ]
 }

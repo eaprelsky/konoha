@@ -17,6 +17,10 @@ export interface WorkflowTrigger {
   start_node: string; // element id to start from
 }
 
+// Flow edge: [from, to] or [from, to, condition]
+// condition is a JS expression evaluated against case payload (e.g. "payload.qualified === true")
+export type FlowEdge = [string, string] | [string, string, string];
+
 export interface WorkflowDefinition {
   id: string;
   version: string;
@@ -24,7 +28,7 @@ export interface WorkflowDefinition {
   description?: string;
   triggers?: WorkflowTrigger[];
   elements: WorkflowElement[];
-  flow: [string, string][]; // [from, to] pairs
+  flow: FlowEdge[]; // [from, to] or [from, to, condition]
 }
 
 export interface ValidationError {
@@ -88,12 +92,25 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   }
 
   // Rule 4: Gateway nodes must be connected to a function on at least one side
+  // "Connected" means directly or within one hop through an intermediate event
+  // (eEPC standard allows: function → event → gateway → event → function chains)
+  function hasFunctionWithin1Hop(neighbors: (WorkflowElement | undefined)[], direction: "in" | "out"): boolean {
+    for (const el of neighbors) {
+      if (!el) continue;
+      if (el.type === "function") return true;
+      if (el.type === "event") {
+        // Look one hop further in the given direction
+        const nextIds = direction === "out" ? outEdges.get(el.id) || [] : inEdges.get(el.id) || [];
+        if (nextIds.some(id => byId.get(id)?.type === "function")) return true;
+      }
+    }
+    return false;
+  }
   for (const el of def.elements) {
     if (el.type !== "gateway") continue;
     const ins = (inEdges.get(el.id) || []).map(id => byId.get(id));
     const outs = (outEdges.get(el.id) || []).map(id => byId.get(id));
-    const hasFunction = ins.some(n => n?.type === "function") || outs.some(n => n?.type === "function");
-    if (!hasFunction) {
+    if (!hasFunctionWithin1Hop(ins, "in") && !hasFunctionWithin1Hop(outs, "out")) {
       errors.push({ rule: 4, message: `Gateway "${el.id}" is not connected to a function on either side` });
     }
   }

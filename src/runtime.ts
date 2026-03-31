@@ -25,13 +25,20 @@ export interface HistoryEntry {
   output?: Record<string, unknown>;
 }
 
+export interface ActiveBranch {
+  element_id: string;      // function element id for this branch
+  work_item_id: string;   // pending work item
+  done: boolean;
+}
+
 export interface Case {
   case_id: string;
   process_id: string;
   process_version: string;
   subject: string;
   status: CaseStatus;
-  position: string; // current element id
+  position: string;             // current element id (gateway id when in parallel wait)
+  active_branches?: ActiveBranch[]; // set during AND/OR gateway parallel execution
   payload: Record<string, unknown>;
   history: HistoryEntry[];
   created_at: string;
@@ -96,54 +103,133 @@ function buildAdjacency(def: WorkflowDefinition): {
   outEdges: Map<string, string[]>;
   inEdges: Map<string, string[]>;
   byId: Map<string, WorkflowElement>;
+  edgeConditions: Map<string, string>; // "from->to" => condition expression
 } {
   const byId = new Map<string, WorkflowElement>(def.elements.map(e => [e.id, e]));
   const outEdges = new Map<string, string[]>();
   const inEdges = new Map<string, string[]>();
+  const edgeConditions = new Map<string, string>();
   for (const el of def.elements) {
     outEdges.set(el.id, []);
     inEdges.set(el.id, []);
   }
-  for (const [from, to] of def.flow) {
+  for (const edge of def.flow) {
+    const [from, to, condition] = edge;
     outEdges.get(from)?.push(to);
     inEdges.get(to)?.push(from);
+    if (condition) edgeConditions.set(`${from}->${to}`, condition);
   }
-  return { outEdges, inEdges, byId };
+  return { outEdges, inEdges, byId, edgeConditions };
 }
 
-// --- Core advance logic (v1: linear chains only, no gateways) ---
+// Safely evaluate a condition expression against case payload.
+function evalCondition(condition: string, payload: Record<string, unknown>): boolean {
+  try {
+    // eslint-disable-next-line no-new-func
+    return new Function("payload", `"use strict"; return !!(${condition})`)(payload);
+  } catch {
+    return false;
+  }
+}
+
+// Find the join gateway that all parallel branches converge into.
+// Returns the first gateway reachable from ALL branch start elements.
+function findJoinGateway(
+  branchIds: string[],
+  outEdges: Map<string, string[]>,
+  byId: Map<string, WorkflowElement>,
+): string | null {
+  // BFS forward from each branch to build reachable sets
+  const reachableSets = branchIds.map(startId => {
+    const visited = new Set<string>();
+    const queue = [startId];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      for (const next of outEdges.get(id) || []) queue.push(next);
+    }
+    return visited;
+  });
+
+  if (reachableSets.length === 0) return null;
+
+  // Find the first gateway reachable from ALL branches
+  for (const candidate of reachableSets[0]) {
+    const el = byId.get(candidate);
+    if (el?.type === "gateway" && reachableSets.every(r => r.has(candidate))) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+// Helper: create a work item for a function element in a case
+async function createWorkItemForElement(
+  kase: Case,
+  elementId: string,
+  el: WorkflowElement,
+): Promise<WorkItem> {
+  const now = new Date().toISOString();
+  const wi: WorkItem = {
+    work_item_id: randomUUID(),
+    case_id: kase.case_id,
+    process_id: kase.process_id,
+    element_id: elementId,
+    label: el.label,
+    assignee: el.role || "unassigned",
+    status: "pending",
+    input: kase.payload,
+    created_at: now,
+    updated_at: now,
+  };
+  await saveWorkItem(wi);
+  return wi;
+}
+
+// --- Core advance logic (AND/OR/XOR gateway support) ---
 
 async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
-  const { outEdges, byId } = buildAdjacency(def);
+  const { outEdges, byId, edgeConditions } = buildAdjacency(def);
 
   let current = kase.position;
+  // When a gateway redirects flow (XOR split/join), forcedNextId is processed directly
+  // instead of computing the next element from outEdges.get(current). This ensures the
+  // redirect target is itself processed (not its successors), fixing the XOR skip bug.
+  let forcedNextId: string | null = null;
 
   // Advance until we hit a function (create work item and stop) or a terminal event (close case)
   while (true) {
-    const nexts = outEdges.get(current) || [];
+    let nextId: string;
+    if (forcedNextId !== null) {
+      nextId = forcedNextId;
+      forcedNextId = null;
+    } else {
+      const nexts = outEdges.get(current) || [];
 
-    if (nexts.length === 0) {
-      // Terminal element — if it's an event, close the case
-      const el = byId.get(current);
-      if (el?.type === "event") {
-        kase.status = "done";
-        kase.history.push({
-          element_id: current,
-          element_type: "event",
-          label: el.label,
-          timestamp: new Date().toISOString(),
-        });
+      if (nexts.length === 0) {
+        // Terminal element — if it's an event, close the case
+        const el = byId.get(current);
+        if (el?.type === "event") {
+          kase.status = "done";
+          kase.history.push({
+            element_id: current,
+            element_type: "event",
+            label: el.label,
+            timestamp: new Date().toISOString(),
+          });
+          await saveCase(kase);
+          return kase;
+        }
+        // Unexpected terminal non-event
+        kase.status = "error";
         await saveCase(kase);
         return kase;
       }
-      // Unexpected terminal non-event
-      kase.status = "error";
-      await saveCase(kase);
-      return kase;
+
+      nextId = nexts[0];
     }
 
-    // v1: take the first (and only) successor
-    const nextId = nexts[0];
     const nextEl = byId.get(nextId);
     if (!nextEl) {
       kase.status = "error";
@@ -153,21 +239,7 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
 
     if (nextEl.type === "function") {
       // Create work item and stop
-      const work_item_id = randomUUID();
-      const now = new Date().toISOString();
-      const wi: WorkItem = {
-        work_item_id,
-        case_id: kase.case_id,
-        process_id: kase.process_id,
-        element_id: nextId,
-        label: nextEl.label,
-        assignee: nextEl.role || "unassigned",
-        status: "pending",
-        input: kase.payload,
-        created_at: now,
-        updated_at: now,
-      };
-      await saveWorkItem(wi);
+      const wi = await createWorkItemForElement(kase, nextId, nextEl);
 
       kase.position = nextId;
       kase.history.push({
@@ -175,7 +247,7 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
         element_type: "function",
         label: nextEl.label,
         timestamp: wi.created_at,
-        work_item_id,
+        work_item_id: wi.work_item_id,
       });
       await saveCase(kase);
 
@@ -191,7 +263,7 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
             wi.output = output;
             wi.updated_at = new Date().toISOString();
             await saveWorkItem(wi, prevStatus);
-            const histEntry = kase.history.find(h => h.work_item_id === work_item_id);
+            const histEntry = kase.history.find(h => h.work_item_id === wi.work_item_id);
             if (histEntry) histEntry.output = output;
             current = nextId;
             continue; // advance past the completed function
@@ -223,11 +295,138 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
       continue;
     }
 
-    // gateway — not supported in v1
+    if (nextEl.type === "gateway") {
+      const operator = nextEl.operator;
+      const gwOuts = outEdges.get(nextId) || [];
+
+      // --- XOR split ---
+      if (operator === "XOR") {
+        // Record passage
+        kase.history.push({ element_id: nextId, element_type: "gateway", label: nextEl.label, timestamp: new Date().toISOString() });
+        kase.position = nextId;
+
+        // XOR join: single incoming branch passes through
+        if (gwOuts.length <= 1) {
+          if (gwOuts.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
+          // Use forcedNextId so the successor is processed as nextEl (not skipped)
+          current = nextId;
+          forcedNextId = gwOuts[0];
+          continue;
+        }
+
+        // XOR split: take first branch whose condition is true (or first unconditional)
+        let takenBranch: string | null = null;
+        for (const outId of gwOuts) {
+          const cond = edgeConditions.get(`${nextId}->${outId}`);
+          if (!cond || evalCondition(cond, kase.payload)) {
+            takenBranch = outId;
+            break;
+          }
+        }
+        if (!takenBranch) { kase.status = "error"; await saveCase(kase); return kase; }
+        await saveCase(kase);
+        // Use forcedNextId so takenBranch is processed as nextEl (not its successors)
+        current = nextId;
+        forcedNextId = takenBranch;
+        continue;
+      }
+
+      // --- AND split / OR split ---
+      if (operator === "AND" || operator === "OR") {
+        // Determine active branches
+        let activeBranchIds: string[];
+        if (operator === "AND") {
+          activeBranchIds = gwOuts; // all branches
+        } else {
+          // OR: take branches whose condition is true (or unconditional)
+          activeBranchIds = gwOuts.filter(outId => {
+            const cond = edgeConditions.get(`${nextId}->${outId}`);
+            return !cond || evalCondition(cond, kase.payload);
+          });
+          if (activeBranchIds.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
+        }
+
+        // For each active branch: advance to first function, create work item
+        const branches: ActiveBranch[] = [];
+        for (const branchStartId of activeBranchIds) {
+          // Walk forward from branchStart to find the first function (skip intermediate events)
+          let branchEl = byId.get(branchStartId);
+          let branchElId = branchStartId;
+          // Follow event chain until function
+          while (branchEl?.type === "event") {
+            kase.history.push({ element_id: branchElId, element_type: "event", label: branchEl.label, timestamp: new Date().toISOString() });
+            const nextsOfBranch = outEdges.get(branchElId) || [];
+            if (nextsOfBranch.length === 0) break;
+            branchElId = nextsOfBranch[0];
+            branchEl = byId.get(branchElId);
+          }
+          if (branchEl?.type !== "function") continue; // skip non-function branch endpoints
+
+          const wi = await createWorkItemForElement(kase, branchElId, branchEl);
+          kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
+
+          // Auto-execute via adapter if applicable
+          if (branchEl.system) {
+            const adapter = getAdapter(branchEl.system);
+            if (adapter) {
+              try {
+                const output = await adapter.execute(branchEl.label.toLowerCase().replace(/\s+/g, "_"), kase.payload);
+                wi.status = "done"; wi.output = output; wi.updated_at = new Date().toISOString();
+                await saveWorkItem(wi, "pending");
+                const h = kase.history.find(h => h.work_item_id === wi.work_item_id);
+                if (h) h.output = output;
+                branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: true });
+                continue;
+              } catch (e: any) {
+                console.error(`[runtime] adapter error in branch "${branchElId}":`, e.message);
+              }
+            }
+          }
+          branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: false });
+        }
+
+        kase.position = nextId; // at the split gateway
+        kase.active_branches = branches;
+        kase.history.push({ element_id: nextId, element_type: "gateway", label: `${operator} split (${branches.length} branches)`, timestamp: new Date().toISOString() });
+        await saveCase(kase);
+
+        // If all branches auto-completed (adapters), advance past join
+        if (branches.every(b => b.done)) {
+          return advancePastJoin(kase, def, branches.map(b => b.element_id));
+        }
+        return kase;
+      }
+
+      // Unknown gateway operator
+      kase.status = "error";
+      await saveCase(kase);
+      return kase;
+    }
+
+    // Unknown element type
     kase.status = "error";
     await saveCase(kase);
     return kase;
   }
+}
+
+// Advance past the join gateway after all parallel branches completed.
+async function advancePastJoin(kase: Case, def: WorkflowDefinition, branchElementIds: string[]): Promise<Case> {
+  const { outEdges, byId } = buildAdjacency(def);
+  const joinId = findJoinGateway(branchElementIds, outEdges, byId);
+
+  kase.active_branches = undefined;
+  kase.history.push({ element_id: joinId || "(join)", element_type: "gateway", label: "join", timestamp: new Date().toISOString() });
+
+  if (!joinId) {
+    kase.status = "error";
+    await saveCase(kase);
+    return kase;
+  }
+
+  kase.position = joinId;
+  await saveCase(kase);
+  return advanceCase(kase, def);
 }
 
 // --- Public API ---
@@ -357,7 +556,24 @@ export async function completeWorkItem(
   const def = await getWorkflow(kase.process_id);
   if (!def) throw new Error(`Workflow "${kase.process_id}" not found in registry`);
 
-  // Advance case from the completed function
+  // --- Parallel branch handling (AND/OR join) ---
+  if (kase.active_branches && kase.active_branches.length > 0) {
+    const branch = kase.active_branches.find(b => b.work_item_id === work_item_id);
+    if (branch) {
+      branch.done = true;
+      await saveCase(kase);
+
+      if (kase.active_branches.every(b => b.done)) {
+        // All branches done — advance past join gateway
+        const updatedCase = await advancePastJoin(kase, def, kase.active_branches.map(b => b.element_id));
+        return { workItem: wi, case: updatedCase };
+      }
+      // Still waiting for other branches
+      return { workItem: wi, case: kase };
+    }
+  }
+
+  // --- Linear advance ---
   const updatedCase = await advanceCase(kase, def);
   return { workItem: wi, case: updatedCase };
 }
