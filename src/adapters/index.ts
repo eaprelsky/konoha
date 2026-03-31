@@ -21,6 +21,8 @@ export function listAdapters(): string[] {
 // Register built-in adapters (lazy load to avoid startup crashes if env vars missing)
 import { bitrix24Adapter } from "./bitrix24";
 import { telegramAdapter } from "./telegram";
+import { emailAdapter } from "./email";
 
 registerAdapter("bitrix24", bitrix24Adapter);
 registerAdapter("telegram", telegramAdapter);
+registerAdapter("email", emailAdapter);
