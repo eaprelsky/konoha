@@ -1,6 +1,6 @@
 [Unit]
 Description=Claude Watchdog Ino (Konoha SSE → tmux)
-After=network.target redis.service claude-ino.service
+After=network.target redis.service
 
 [Service]
 Type=simple

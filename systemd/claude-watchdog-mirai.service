@@ -1,6 +1,6 @@
 [Unit]
 Description=Watchdog for Mirai (Claude Agent #3) — Konoha SSE → tmux
-After=network.target konoha.service claude-mirai.service
+After=network.target konoha.service
 
 [Service]
 Type=simple

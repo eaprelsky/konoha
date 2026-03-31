@@ -1,6 +1,6 @@
 [Unit]
 Description=Claude Watchdog Inojin (Konoha SSE → tmux)
-After=network.target redis.service claude-inojin.service
+After=network.target redis.service
 
 [Service]
 Type=simple

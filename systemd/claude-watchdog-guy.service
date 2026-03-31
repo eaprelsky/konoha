@@ -1,6 +1,6 @@
 [Unit]
 Description=Claude Watchdog Guy (Konoha SSE → tmux)
-After=network.target redis.service claude-guy.service
+After=network.target redis.service
 
 [Service]
 Type=simple

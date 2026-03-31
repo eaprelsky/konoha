@@ -1,6 +1,6 @@
 [Unit]
 Description=Watchdog for Jiraiya (Agent #4) — konoha:bus Redis stream → tmux
-After=network.target konoha.service claude-jiraiya.service
+After=network.target konoha.service
 
 [Service]
 Type=simple
