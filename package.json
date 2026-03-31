@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1",
+    "@playwright/test": "^1.58.2",
     "hono": "^4",
     "ioredis": "^5",
     "nodemailer": "^8.0.4"

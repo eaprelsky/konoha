@@ -5,9 +5,9 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:3199' },
   webServer: {
     command: 'KONOHA_PORT=3199 bun run src/server.ts',
-    url: 'http://127.0.0.1:3199',
+    url: 'http://127.0.0.1:3199/ui/index.html',
     reuseExistingServer: false,
-    timeout: 15000,
+    timeout: 30000,
   },
   reporter: [
     ['line'],
