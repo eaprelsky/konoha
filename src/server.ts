@@ -4,7 +4,7 @@ import { streamSSE } from "hono/streaming";
 import { mkdirSync, writeFileSync, existsSync, statSync } from "fs";
 import { join, extname } from "path";
 import { loadWorkflows } from "./workflow-loader";
-import { createCase, getCase, completeWorkItem, listWorkItems, processEvent, type WorkItemStatus } from "./runtime";
+import { createCase, getCase, completeWorkItem, listWorkItems, createStandaloneWorkItem, updateWorkItem, processEvent, type WorkItemStatus } from "./runtime";
 import {
   registerAgent,
   unregisterAgent,
@@ -344,8 +344,40 @@ app.post("/workitems/:id/complete", async (c) => {
 app.get("/workitems", async (c) => {
   const assignee = c.req.query("assignee") || undefined;
   const status = (c.req.query("status") || undefined) as WorkItemStatus | undefined;
-  const items = await listWorkItems({ assignee, status });
+  const process_id = c.req.query("process_id") || undefined;
+  const deadline_before = c.req.query("deadline_before") || undefined;
+  const items = await listWorkItems({ assignee, status, process_id, deadline_before });
   return c.json(items);
+});
+
+app.post("/workitems", async (c) => {
+  const body = await c.req.json();
+  const { label, assignee, input = {}, deadline } = body;
+  if (!label || !assignee) return c.json({ error: "label and assignee required" }, 400);
+  const wi = await createStandaloneWorkItem({ label, assignee, input, deadline });
+  return c.json(wi, 201);
+});
+
+app.patch("/workitems/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const { status, assignee, deadline, output, label } = body;
+  try {
+    const wi = await updateWorkItem(id, { status, assignee, deadline, output, label });
+    return c.json(wi);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 400);
+  }
+});
+
+app.delete("/workitems/:id", async (c) => {
+  const id = c.req.param("id");
+  try {
+    const wi = await updateWorkItem(id, { status: "cancelled" });
+    return c.json(wi);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 404);
+  }
 });
 
 // --- Channels ---

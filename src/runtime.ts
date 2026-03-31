@@ -6,12 +6,14 @@ const CASE_KEY_PREFIX = "case:";
 const WORKITEM_KEY_PREFIX = "workitem:";
 const WORKITEMS_IDX_ASSIGNEE = "konoha:workitems:assignee:"; // set of workitem IDs
 const WORKITEMS_IDX_STATUS = "konoha:workitems:status:";    // set of workitem IDs
+const WORKITEMS_IDX_PROCESS = "konoha:workitems:process:";  // set of workitem IDs per process_id
+const WORKITEMS_IDX_ALL = "konoha:workitems:all";           // sorted set: work_item_id → created_at ms
 const WORKFLOW_KEY_PREFIX = "workflow:";
 
 // --- Types ---
 
 export type CaseStatus = "running" | "done" | "error";
-export type WorkItemStatus = "pending" | "done";
+export type WorkItemStatus = "pending" | "running" | "done" | "cancelled" | "error";
 
 export interface HistoryEntry {
   element_id: string;
@@ -36,14 +38,17 @@ export interface Case {
 
 export interface WorkItem {
   work_item_id: string;
-  case_id: string;
-  element_id: string;
+  case_id: string | null;      // null for standalone items
+  process_id: string | null;   // null for standalone items
+  element_id: string | null;   // null for standalone items
   label: string;
   assignee: string;
   status: WorkItemStatus;
   input: Record<string, unknown>;
   output?: Record<string, unknown>;
+  deadline?: string;           // ISO 8601 optional deadline
   created_at: string;
+  updated_at: string;
 }
 
 // --- Helpers ---
@@ -57,10 +62,28 @@ async function loadCase(case_id: string): Promise<Case | null> {
   return raw ? JSON.parse(raw) : null;
 }
 
-async function saveWorkItem(wi: WorkItem): Promise<void> {
+async function saveWorkItem(wi: WorkItem, prevStatus?: WorkItemStatus, prevAssignee?: string): Promise<void> {
   await redis.set(WORKITEM_KEY_PREFIX + wi.work_item_id, JSON.stringify(wi));
+
+  // Update assignee index (handle reassignment)
+  if (prevAssignee && prevAssignee !== wi.assignee) {
+    await redis.srem(WORKITEMS_IDX_ASSIGNEE + prevAssignee, wi.work_item_id);
+  }
   await redis.sadd(WORKITEMS_IDX_ASSIGNEE + wi.assignee, wi.work_item_id);
+
+  // Update status index (remove from old status set)
+  if (prevStatus && prevStatus !== wi.status) {
+    await redis.srem(WORKITEMS_IDX_STATUS + prevStatus, wi.work_item_id);
+  }
   await redis.sadd(WORKITEMS_IDX_STATUS + wi.status, wi.work_item_id);
+
+  // process_id index
+  if (wi.process_id) {
+    await redis.sadd(WORKITEMS_IDX_PROCESS + wi.process_id, wi.work_item_id);
+  }
+
+  // global sorted set (score = created_at ms for ordering)
+  await redis.zadd(WORKITEMS_IDX_ALL, new Date(wi.created_at).getTime(), wi.work_item_id);
 }
 
 async function loadWorkItem(work_item_id: string): Promise<WorkItem | null> {
@@ -130,15 +153,18 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
     if (nextEl.type === "function") {
       // Create work item and stop
       const work_item_id = randomUUID();
+      const now = new Date().toISOString();
       const wi: WorkItem = {
         work_item_id,
         case_id: kase.case_id,
+        process_id: kase.process_id,
         element_id: nextId,
         label: nextEl.label,
         assignee: nextEl.role || "unassigned",
         status: "pending",
         input: kase.payload,
-        created_at: new Date().toISOString(),
+        created_at: now,
+        updated_at: now,
       };
       await saveWorkItem(wi);
 
@@ -227,24 +253,72 @@ export async function getCase(case_id: string): Promise<Case | null> {
   return loadCase(case_id);
 }
 
+export async function createStandaloneWorkItem(params: {
+  label: string;
+  assignee: string;
+  input?: Record<string, unknown>;
+  deadline?: string;
+}): Promise<WorkItem> {
+  const now = new Date().toISOString();
+  const wi: WorkItem = {
+    work_item_id: randomUUID(),
+    case_id: null,
+    process_id: null,
+    element_id: null,
+    label: params.label,
+    assignee: params.assignee,
+    status: "pending",
+    input: params.input || {},
+    deadline: params.deadline,
+    created_at: now,
+    updated_at: now,
+  };
+  await saveWorkItem(wi);
+  return wi;
+}
+
+export async function updateWorkItem(
+  work_item_id: string,
+  patch: Partial<Pick<WorkItem, "status" | "assignee" | "deadline" | "output" | "label">>,
+): Promise<WorkItem> {
+  const wi = await loadWorkItem(work_item_id);
+  if (!wi) throw new Error(`Work item "${work_item_id}" not found`);
+
+  const prevStatus = wi.status;
+  const prevAssignee = wi.assignee;
+
+  if (patch.status !== undefined) wi.status = patch.status;
+  if (patch.assignee !== undefined) wi.assignee = patch.assignee;
+  if (patch.deadline !== undefined) wi.deadline = patch.deadline;
+  if (patch.output !== undefined) wi.output = patch.output;
+  if (patch.label !== undefined) wi.label = patch.label;
+  wi.updated_at = new Date().toISOString();
+
+  await saveWorkItem(wi, prevStatus, prevAssignee);
+  return wi;
+}
+
 export async function completeWorkItem(
   work_item_id: string,
   output: Record<string, unknown> = {},
-): Promise<{ workItem: WorkItem; case: Case }> {
+): Promise<{ workItem: WorkItem; case: Case | null }> {
   const wi = await loadWorkItem(work_item_id);
   if (!wi) throw new Error(`Work item "${work_item_id}" not found`);
   if (wi.status === "done") throw new Error(`Work item "${work_item_id}" is already done`);
 
-  const kase = await loadCase(wi.case_id);
-  if (!kase) throw new Error(`Case "${wi.case_id}" not found`);
-
-  // Update work item status indices
-  await redis.srem(WORKITEMS_IDX_STATUS + "pending", work_item_id);
-  await redis.sadd(WORKITEMS_IDX_STATUS + "done", work_item_id);
-
+  const prevStatus = wi.status;
   wi.status = "done";
   wi.output = output;
-  await saveWorkItem(wi);
+  wi.updated_at = new Date().toISOString();
+  await saveWorkItem(wi, prevStatus);
+
+  // Standalone work item — no case to advance
+  if (!wi.case_id) {
+    return { workItem: wi, case: null };
+  }
+
+  const kase = await loadCase(wi.case_id);
+  if (!kase) throw new Error(`Case "${wi.case_id}" not found`);
 
   // Update case history entry with output
   const histEntry = kase.history.find(h => h.work_item_id === work_item_id);
@@ -261,28 +335,44 @@ export async function completeWorkItem(
 export async function listWorkItems(filters: {
   assignee?: string;
   status?: WorkItemStatus;
+  process_id?: string;
+  deadline_before?: string;
 }): Promise<WorkItem[]> {
-  let ids: string[] = [];
+  // Build candidate set using the most selective index first
+  let candidateIds: Set<string> | null = null;
 
-  if (filters.assignee && filters.status) {
-    // Intersection
-    const byAssignee = await redis.smembers(WORKITEMS_IDX_ASSIGNEE + filters.assignee);
-    const byStatus = await redis.smembers(WORKITEMS_IDX_STATUS + filters.status);
-    const statusSet = new Set(byStatus);
-    ids = byAssignee.filter(id => statusSet.has(id));
-  } else if (filters.assignee) {
-    ids = await redis.smembers(WORKITEMS_IDX_ASSIGNEE + filters.assignee);
-  } else if (filters.status) {
-    ids = await redis.smembers(WORKITEMS_IDX_STATUS + filters.status);
-  } else {
-    // All: union of pending + done
-    const pending = await redis.smembers(WORKITEMS_IDX_STATUS + "pending");
-    const done = await redis.smembers(WORKITEMS_IDX_STATUS + "done");
-    ids = [...pending, ...done];
+  function intersect(a: Set<string>, b: string[]): Set<string> {
+    return new Set(b.filter(id => a.has(id)));
   }
 
-  const items = await Promise.all(ids.map(id => loadWorkItem(id)));
-  return items.filter((wi): wi is WorkItem => wi !== null);
+  if (filters.assignee) {
+    const ids = await redis.smembers(WORKITEMS_IDX_ASSIGNEE + filters.assignee);
+    candidateIds = new Set(ids);
+  }
+  if (filters.status) {
+    const ids = await redis.smembers(WORKITEMS_IDX_STATUS + filters.status);
+    candidateIds = candidateIds ? intersect(candidateIds, ids) : new Set(ids);
+  }
+  if (filters.process_id) {
+    const ids = await redis.smembers(WORKITEMS_IDX_PROCESS + filters.process_id);
+    candidateIds = candidateIds ? intersect(candidateIds, ids) : new Set(ids);
+  }
+  if (!candidateIds) {
+    // No index filter — get all from sorted set
+    const all = await redis.zrange(WORKITEMS_IDX_ALL, 0, -1);
+    candidateIds = new Set(all);
+  }
+
+  const items = await Promise.all([...candidateIds].map(id => loadWorkItem(id)));
+  let result = items.filter((wi): wi is WorkItem => wi !== null);
+
+  // In-memory filter for deadline_before (range query)
+  if (filters.deadline_before) {
+    const cutoff = new Date(filters.deadline_before).getTime();
+    result = result.filter(wi => wi.deadline && new Date(wi.deadline).getTime() <= cutoff);
+  }
+
+  return result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 }
 
 // Find workflows triggered by a given event type and create cases for each match.
