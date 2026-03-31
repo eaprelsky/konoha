@@ -114,22 +114,16 @@ async def tmux_send(session: str, text: str) -> bool:
     if not ok:
         log.error(f"send-keys timed out for {session} — skipping delivery")
         return False
-    await asyncio.sleep(0.3)
-    await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
-    log.info(f"Sent prompt to {session} ({len(text)} chars)")
-    # Handle [Pasted text] confirmation prompt (#91): long text via send-keys may
-    # trigger bracketed paste mode. The Enter above fires before the dialog appears.
-    # Wait 0.8s, detect the prompt, and send a second Enter to confirm the paste.
+    # Wait for potential [Pasted text] dialog before sending Enter (#145 race fix)
     await asyncio.sleep(0.8)
     _pane_check = tmux_pane_content(session)
     if any("Pasted text" in _line for _line in _pane_check.strip().split("\n")[-8:]):
-        log.info("Detected [Pasted text] prompt — sending Enter to confirm paste (#91)")
+        log.info("Detected [Pasted text] prompt — sending Enter to dismiss (#91 #145)")
         await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
         await asyncio.sleep(0.5)
-        # Dialog dismissed — text is now in buffer but not submitted, send Enter to submit (#145)
-        await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
-        log.info(f"Sent submit Enter after [Pasted text] dismissal in {session}")
-        await asyncio.sleep(0.5)
+    # Always send submit Enter after optional dialog dismissal (#145)
+    await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
+    log.info(f"Sent prompt to {session} ({len(text)} chars)")
     await asyncio.sleep(1.2)  # give agent time to start processing
     for attempt in range(3):
         content_after = tmux_pane_content(session)
