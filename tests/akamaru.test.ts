@@ -74,7 +74,8 @@ if "claude-naruto.service" in paused:
 else:
     print("PAUSED_CHECK_FAILED")
 `;
-    const result = execSync(`python3 -c "${code}"`, { encoding: "utf-8" }).trim();
+    // Use stdin to avoid shell-quoting issues with double-quoted strings inside `code`
+    const result = execSync("python3", { encoding: "utf-8", input: code }).trim();
     expect(result).toBe("PAUSED_CHECK_OK");
   });
 
