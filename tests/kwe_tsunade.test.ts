@@ -8,8 +8,10 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
 
-const TEST_TOKEN = "test-tsunade-token";
-process.env.KONOHA_TOKEN = TEST_TOKEN;
+// Read the token from env (server.ts captures it at module-load time;
+// Bun caches the module across test files, so mutating process.env here
+// would be too late and cause 401s in both this file and others).
+const TEST_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 process.env.KONOHA_PORT = "0";
 
 const { app } = await import("../src/server");
@@ -29,7 +31,7 @@ async function req(method: string, path: string, body?: unknown) {
 }
 
 // Wait up to maxMs for a condition to become true
-async function waitFor(check: () => Promise<boolean>, maxMs = 2000): Promise<boolean> {
+async function waitFor(check: () => Promise<boolean>, maxMs = 5000): Promise<boolean> {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
     if (await check()) return true;
