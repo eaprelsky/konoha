@@ -55,9 +55,10 @@ server.tool(
     roles: z.array(z.string()).optional().describe("Roles for role-based routing (e.g. 'monitor', 'coder')"),
     model: z.string().optional().describe("Model name the agent runs on (e.g. 'claude-sonnet-4-6')"),
     eventSubscriptions: z.array(z.string()).optional().describe("Event types to subscribe to (e.g. ['lead.qualified', 'order.created'])"),
+    village_id: z.string().optional().describe("Village this agent belongs to (e.g. 'comind.konoha'); defaults to 'comind.konoha'"),
   },
-  async ({ id, name, capabilities, roles, model, eventSubscriptions }) => {
-    const result = await api("POST", "/agents/register", { id, name, capabilities, roles, model, eventSubscriptions });
+  async ({ id, name, capabilities, roles, model, eventSubscriptions, village_id }) => {
+    const result = await api("POST", "/agents/register", { id, name, capabilities, roles, model, eventSubscriptions, village_id });
     // store per-agent token for subsequent calls
     if (result.token) {
       agentToken = result.token;
@@ -80,9 +81,10 @@ server.tool(
     type: z.enum(["message", "task", "result", "status", "event"]).optional().default("message"),
     channel: z.string().optional().describe("Optional topic channel name"),
     replyTo: z.string().optional().describe("Message ID this is a reply to"),
+    village_id: z.string().optional().describe("Originating village (e.g. 'comind.konoha'); defaults to 'comind.konoha'"),
   },
-  async ({ from, to, text, type, channel, replyTo }) => {
-    const result = await agentApi("POST", "/messages", { from, to, text, type, channel, replyTo });
+  async ({ from, to, text, type, channel, replyTo, village_id }) => {
+    const result = await agentApi("POST", "/messages", { from, to, text, type, channel, replyTo, village_id });
     if (result.error || !result.id) {
       return { content: [{ type: "text", text: `Error sending message: ${result.error || JSON.stringify(result)}` }] };
     }

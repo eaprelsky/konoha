@@ -11,6 +11,8 @@ const CHANNEL_STREAM_PREFIX = "konoha:channel:";
 const EVENTS_STREAM = "konoha:events";
 const HEARTBEAT_TTL = 600; // seconds (10 minutes)
 
+export const DEFAULT_VILLAGE = "comind.konoha";
+
 export interface Agent {
   id: string;
   name: string;
@@ -21,6 +23,8 @@ export interface Agent {
   lastHeartbeat: number;
   token?: string; // returned on registration, not stored in registry
   eventSubscriptions?: string[]; // event types this agent wants to receive
+  village_id?: string; // e.g. "comind.konoha"; defaults to DEFAULT_VILLAGE
+  address?: string;   // canonical address: id@village_id
 }
 
 export interface KonohaEvent {
@@ -40,14 +44,15 @@ export interface Attachment {
 
 export interface Message {
   id?: string;
-  from: string;
-  to: string; // agent id, "all", or "role:<role>"
+  from: string;  // agent id or agent@village.konoha
+  to: string;    // agent id, "all", "role:<role>", or agent@village.konoha
   channel?: string;
   type: "message" | "task" | "result" | "status" | "event";
   text: string;
   replyTo?: string;
   timestamp?: string;
   attachments?: Attachment[];
+  village_id?: string; // originating village; defaults to DEFAULT_VILLAGE
 }
 
 function createRedis(): Redis {
@@ -61,9 +66,12 @@ function createRedis(): Redis {
 export const redis = createRedis();
 export const redisSub = createRedis(); // separate connection for blocking reads
 
-export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat" | "token">): Promise<Agent> {
+export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat" | "token" | "address">): Promise<Agent> {
+  const village_id = agent.village_id || DEFAULT_VILLAGE;
   const stored: Agent = {
     ...agent,
+    village_id,
+    address: `${agent.id}@${village_id}`,
     eventSubscriptions: agent.eventSubscriptions ?? [],
     status: "online",
     lastHeartbeat: Date.now(),
@@ -161,6 +169,7 @@ export async function sendMessage(msg: Message): Promise<string> {
     type: msg.type,
     text: msg.text,
     timestamp: msg.timestamp || new Date().toISOString(),
+    village_id: msg.village_id || DEFAULT_VILLAGE,
   };
   if (msg.channel) entry.channel = msg.channel;
   if (msg.replyTo) entry.replyTo = msg.replyTo;
@@ -395,5 +404,6 @@ function fieldsToMessage(id: string, fields: string[]): Message {
     replyTo: obj.replyTo,
     timestamp: obj.timestamp,
     attachments,
+    village_id: obj.village_id || DEFAULT_VILLAGE,
   };
 }

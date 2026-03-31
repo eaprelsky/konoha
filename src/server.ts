@@ -110,9 +110,9 @@ app.post("/agents/register", async (c) => {
   }
 
   const body = await c.req.json();
-  const { id, name, capabilities = [], roles = [], model } = body;
+  const { id, name, capabilities = [], roles = [], model, eventSubscriptions, village_id } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
-  const agent = await registerAgent({ id, name, capabilities, roles, ...(model ? { model } : {}) });
+  const agent = await registerAgent({ id, name, capabilities, roles, ...(model ? { model } : {}), ...(eventSubscriptions ? { eventSubscriptions } : {}), ...(village_id ? { village_id } : {}) });
   return c.json(agent, 201);
 });
 
@@ -143,7 +143,7 @@ app.get("/agents", async (c) => {
 
 app.post("/messages", async (c) => {
   const body = await c.req.json();
-  const { to, type = "message", text, channel, replyTo, attachments } = body;
+  const { to, type = "message", text, channel, replyTo, attachments, village_id } = body;
   const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
 
   // Determine sender: admin can specify from, agent token sets from automatically
@@ -164,7 +164,7 @@ app.post("/messages", async (c) => {
       }
     }
   }
-  const id = await sendMessage({ from, to, type, text, channel, replyTo, attachments: validAttachments.length > 0 ? validAttachments : undefined });
+  const id = await sendMessage({ from, to, type, text, channel, replyTo, attachments: validAttachments.length > 0 ? validAttachments : undefined, ...(village_id ? { village_id } : {}) });
   return c.json({ id });
 });
 
