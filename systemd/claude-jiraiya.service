@@ -9,6 +9,7 @@ Type=simple
 User=ubuntu
 ExecStart=/home/ubuntu/scripts/claude-jiraiya-service.sh
 Restart=always
+MemoryMax=800M
 RestartSec=15
 Environment=HOME=/home/ubuntu
 Environment=KONOHA_AGENT_ID=jiraiya

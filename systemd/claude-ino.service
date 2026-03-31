@@ -10,6 +10,7 @@ User=ubuntu
 ExecStart=/home/ubuntu/scripts/claude-ino-service.sh
 ExecStop=/usr/bin/tmux kill-session -t ino
 Restart=on-failure
+MemoryMax=800M
 RestartSec=10
 StandardOutput=journal
 StandardError=journal

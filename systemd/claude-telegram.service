@@ -9,6 +9,7 @@ EnvironmentFile=/home/ubuntu/.agent-env
 WorkingDirectory=/home/ubuntu/claude-telegram-bot
 ExecStart=/home/ubuntu/claude-telegram-bot/venv/bin/python /home/ubuntu/claude-telegram-bot/bot.py
 Restart=always
+MemoryMax=800M
 RestartSec=10
 
 [Install]

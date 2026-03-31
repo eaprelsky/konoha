@@ -10,6 +10,7 @@ User=ubuntu
 ExecStart=/home/ubuntu/scripts/claude-hinata-service.sh
 ExecStop=/usr/bin/tmux kill-session -t hinata
 Restart=on-failure
+MemoryMax=800M
 RestartSec=10
 StandardOutput=journal
 StandardError=journal

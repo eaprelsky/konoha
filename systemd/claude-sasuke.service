@@ -9,6 +9,7 @@ Type=simple
 User=ubuntu
 ExecStart=/home/ubuntu/scripts/claude-sasuke-service.sh
 Restart=always
+MemoryMax=800M
 RestartSec=10
 Environment=HOME=/home/ubuntu
 Environment=KONOHA_AGENT_ID=sasuke

@@ -9,6 +9,7 @@ Type=simple
 User=ubuntu
 ExecStart=/home/ubuntu/scripts/claude-kiba-service.sh
 Restart=always
+MemoryMax=800M
 RestartSec=10
 StandardOutput=journal
 StandardError=journal

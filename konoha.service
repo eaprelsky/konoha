@@ -10,6 +10,7 @@ EnvironmentFile=/home/ubuntu/.agent-env
 ExecStart=/home/ubuntu/.bun/bin/bun run src/server.ts
 Restart=always
 RestartSec=5
+OOMScoreAdjust=-1000
 
 [Install]
 WantedBy=multi-user.target
