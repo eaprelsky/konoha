@@ -183,12 +183,14 @@ export async function sendMessage(msg: Message): Promise<string> {
   // route to recipients
   if (msg.to === "all") {
     // broadcast: write to each online agent's stream (except sender)
+    // Test agents (rtest- prefix) are isolated from production agents in fanout
     const agents = await listAgents(true);
+    const senderIsTest = msg.from.startsWith("rtest-");
     for (const agent of agents) {
-      if (agent.id !== msg.from) {
-        await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
-        await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(entry));
-      }
+      if (agent.id === msg.from) continue;
+      if (senderIsTest !== agent.id.startsWith("rtest-")) continue;
+      await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+      await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(entry));
     }
   } else if (msg.to.startsWith("role:")) {
     // role-based routing
