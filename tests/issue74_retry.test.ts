@@ -5,9 +5,8 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
 
-const TEST_ADMIN_TOKEN = "test-admin-token-retry";
-process.env.KONOHA_TOKEN = TEST_ADMIN_TOKEN;
 process.env.KONOHA_PORT = "0";
+const TEST_ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 
 const { app } = await import("../src/server");
 const redis = new Redis({ host: "127.0.0.1", port: 6379 });

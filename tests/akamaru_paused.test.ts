@@ -73,7 +73,7 @@ describe("Issue #75: Akamaru paused-services logic", () => {
   test("akamaru.py check_services() uses paused parameter", async () => {
     const script = readFileSync("/home/ubuntu/konoha/scripts/akamaru.py", "utf-8");
     expect(script).toContain("def check_services(paused:");
-    expect(script).toContain("if svc in paused:");
+    expect(script).toContain("if svc in paused or short in paused:");
     expect(script).toContain("continue");
   });
 

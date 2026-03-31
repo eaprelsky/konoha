@@ -271,6 +271,32 @@ def is_alert_suppressed(alert: str, paused: set[str]) -> bool:
     return False
 
 
+# ── Helper functions ──────────────────────────────────────────────────────────
+
+def pane_exists(session: str) -> bool:
+    """Return True if the given tmux session exists."""
+    try:
+        r = subprocess.run(
+            ["tmux", "has-session", "-t", session],
+            capture_output=True, timeout=5
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def is_service_active(service: str) -> bool:
+    """Return True if the given systemd service is active or activating."""
+    try:
+        r = subprocess.run(
+            ["systemctl", "is-active", service],
+            capture_output=True, text=True, timeout=5
+        )
+        return r.stdout.strip() in ("active", "activating")
+    except Exception:
+        return False
+
+
 # ── Check functions ───────────────────────────────────────────────────────────
 
 def check_services(paused: set[str] = frozenset()) -> list[str]:
@@ -396,32 +422,23 @@ def check_orphaned_sessions(paused: set[str] = frozenset()) -> list[str]:
     """
     alerts = []
     try:
-        r = subprocess.run(
-            ["tmux", "list-sessions", "-F", "#{session_name}"],
-            capture_output=True, text=True, timeout=5
-        )
-        active_sessions = set(r.stdout.strip().split("\n")) if r.returncode == 0 else set()
-
-        for agent, watchdog_svc in AGENT_WATCHDOGS.items():
-            if agent in paused or watchdog_svc in paused:
+        for agent in WATCHED_SESSIONS:
+            if agent in paused:
                 continue
-            if agent not in active_sessions:
+            if not pane_exists(agent):
                 continue  # session not running — normal for on-demand agents, skip
             # Session alive — watchdog must also be active
-            try:
-                r = subprocess.run(
-                    ["systemctl", "is-active", watchdog_svc],
-                    capture_output=True, text=True, timeout=5
-                )
-                status = r.stdout.strip()
-                if status not in ("active", "activating"):
-                    key = f"orphan:{agent}:watchdog_dead"
-                    if should_alert(key):
-                        alerts.append(
-                            f"kiba:alert agent={agent} watchdog=dead session=alive"
-                        )
-            except Exception as e:
-                log.warning(f"Error checking watchdog status for {agent}: {e}")
+            watchdog_svc = AGENT_WATCHDOGS.get(agent)
+            if not watchdog_svc:
+                continue
+            if watchdog_svc in paused:
+                continue
+            if not is_service_active(watchdog_svc):
+                key = f"orphan:{agent}:watchdog_dead"
+                if should_alert(key):
+                    alerts.append(
+                        f"kiba:alert agent={agent} watchdog=dead session=alive"
+                    )
     except Exception as e:
         log.warning(f"Error in check_orphaned_sessions: {e}")
     return alerts
