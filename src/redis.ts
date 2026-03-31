@@ -8,6 +8,7 @@ const INVITE_TTL = 3600; // seconds (1 hour)
 const BUS_STREAM = "konoha:bus";
 const AGENT_STREAM_PREFIX = "konoha:agent:";
 const CHANNEL_STREAM_PREFIX = "konoha:channel:";
+const EVENTS_STREAM = "konoha:events";
 const HEARTBEAT_TTL = 600; // seconds (10 minutes)
 
 export interface Agent {
@@ -19,6 +20,15 @@ export interface Agent {
   status: "online" | "offline";
   lastHeartbeat: number;
   token?: string; // returned on registration, not stored in registry
+  eventSubscriptions?: string[]; // event types this agent wants to receive
+}
+
+export interface KonohaEvent {
+  type: string;       // e.g. "lead.qualified"
+  source: string;     // e.g. "chatbot@comind.konoha"
+  payload: Record<string, unknown>;
+  timestamp: string;  // ISO 8601
+  village_id: string; // e.g. "comind.konoha"
 }
 
 export interface Attachment {
@@ -54,6 +64,7 @@ export const redisSub = createRedis(); // separate connection for blocking reads
 export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat" | "token">): Promise<Agent> {
   const stored: Agent = {
     ...agent,
+    eventSubscriptions: agent.eventSubscriptions ?? [],
     status: "online",
     lastHeartbeat: Date.now(),
   };
@@ -330,6 +341,39 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
       try { sub.disconnect(); } catch {}
     },
   };
+}
+
+export async function publishEvent(event: KonohaEvent): Promise<string> {
+  const entry: Record<string, string> = {
+    type: event.type,
+    source: event.source,
+    payload: JSON.stringify(event.payload),
+    timestamp: event.timestamp,
+    village_id: event.village_id,
+  };
+
+  // Write to global events stream
+  const id = await redis.xadd(EVENTS_STREAM, "*", ...Object.entries(entry).flat());
+
+  // Route to subscribed agents
+  const all = await redis.hgetall(REGISTRY_KEY);
+  for (const [, val] of Object.entries(all)) {
+    const agent: Agent = JSON.parse(val);
+    if (!agent.eventSubscriptions?.includes(event.type)) continue;
+
+    // Deliver as a message to the agent's stream
+    const msgEntry: Record<string, string> = {
+      from: event.source,
+      to: agent.id,
+      type: "event",
+      text: JSON.stringify(event),
+      timestamp: event.timestamp,
+    };
+    await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(msgEntry).flat());
+    await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(msgEntry));
+  }
+
+  return id;
 }
 
 function fieldsToMessage(id: string, fields: string[]): Message {

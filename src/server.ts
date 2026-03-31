@@ -18,7 +18,9 @@ import {
   getAgentIdByToken,
   createInvite,
   consumeInvite,
+  publishEvent,
   type Attachment,
+  type KonohaEvent,
 } from "./redis";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
@@ -79,6 +81,7 @@ app.use("/agents", requireAuth);
 app.use("/messages/*", requireAuth);
 app.use("/channels/*", requireAuth);
 app.use("/attachments/*", requireAuth);
+app.use("/events", requireAuth);
 
 // health
 app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
@@ -267,6 +270,29 @@ app.get("/messages/:agentId/stream", async (c) => {
 
     await new Promise(() => {});
   });
+});
+
+// --- Events ---
+
+app.post("/events", async (c) => {
+  const body = await c.req.json();
+  const { type, source, payload, timestamp, village_id } = body;
+
+  if (!type || typeof type !== "string") return c.json({ error: "type is required and must be a string" }, 400);
+  if (!source || typeof source !== "string") return c.json({ error: "source is required and must be a string" }, 400);
+  if (payload === undefined || typeof payload !== "object" || Array.isArray(payload)) return c.json({ error: "payload is required and must be an object" }, 400);
+  if (!village_id || typeof village_id !== "string") return c.json({ error: "village_id is required and must be a string" }, 400);
+
+  const event: KonohaEvent = {
+    type,
+    source,
+    payload,
+    timestamp: timestamp || new Date().toISOString(),
+    village_id,
+  };
+
+  const id = await publishEvent(event);
+  return c.json({ id });
 });
 
 // --- Channels ---
