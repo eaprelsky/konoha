@@ -126,6 +126,10 @@ async def tmux_send(session: str, text: str) -> bool:
         log.info("Detected [Pasted text] prompt — sending Enter to confirm paste (#91)")
         await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
         await asyncio.sleep(0.5)
+        # Dialog dismissed — text is now in buffer but not submitted, send Enter to submit (#145)
+        await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
+        log.info(f"Sent submit Enter after [Pasted text] dismissal in {session}")
+        await asyncio.sleep(0.5)
     await asyncio.sleep(1.2)  # give agent time to start processing
     for attempt in range(3):
         content_after = tmux_pane_content(session)
