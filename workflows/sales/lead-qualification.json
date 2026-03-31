@@ -1,10 +1,11 @@
 {
   "id": "lead-qualification",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "name": "Lead Qualification",
-  "description": "Qualify a lead, then branch XOR: qualified → notify manager + create CRM lead; rejected → archive.",
+  "description": "Qualify a lead, then branch XOR: qualified → notify manager + create CRM lead; rejected → archive. lead.qualified trigger starts from the XOR gateway (lead already qualified by chatbot).",
   "triggers": [
-    { "event_type": "lead.received", "start_node": "e1" }
+    { "event_type": "lead.received", "start_node": "e1" },
+    { "event_type": "lead.qualified", "start_node": "g1" }
   ],
   "elements": [
     { "id": "e1",  "type": "event",    "label": "Lead received" },
@@ -15,7 +16,7 @@
     { "id": "e4",  "type": "event",    "label": "Lead rejected" },
     { "id": "g2",  "type": "gateway",  "label": "Notify in parallel",    "operator": "AND" },
     { "id": "f2",  "type": "function", "label": "Notify sales manager",  "role": "naruto" },
-    { "id": "f3",  "type": "function", "label": "Create CRM lead",       "role": "mirai",   "system": "bitrix24" },
+    { "id": "f3",  "type": "function", "label": "Create lead",           "role": "mirai",   "system": "bitrix24" },
     { "id": "g3",  "type": "gateway",  "label": "Parallel done",         "operator": "AND" },
     { "id": "e5",  "type": "event",    "label": "Lead processed" },
     { "id": "f4",  "type": "function", "label": "Archive lead",          "role": "mirai",   "system": "bitrix24" },
