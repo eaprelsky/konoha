@@ -338,14 +338,20 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                     alerts.append(f"kiba:alert tmux=missing session={session}")
             else:
                 # Check for stuck paste mode via pane_in_mode (not text grep — avoids false positives)
+                # Double-check after 1s to filter transient mode states (e.g. brief copy-mode flicker)
                 try:
                     mode = subprocess.check_output(
                         ["tmux", "display-message", "-pt", session, "#{pane_in_mode}"], timeout=3
                     ).decode("utf-8", errors="replace").strip()
                     if mode == "1":
-                        key = f"tmux:{session}:pasted"
-                        if should_alert(key):
-                            alerts.append(f"kiba:alert tmux=stuck_paste session={session}")
+                        time.sleep(1)
+                        mode2 = subprocess.check_output(
+                            ["tmux", "display-message", "-pt", session, "#{pane_in_mode}"], timeout=3
+                        ).decode("utf-8", errors="replace").strip()
+                        if mode2 == "1":
+                            key = f"tmux:{session}:pasted"
+                            if should_alert(key):
+                                alerts.append(f"kiba:alert tmux=stuck_paste session={session}")
                 except Exception:
                     pass
 
