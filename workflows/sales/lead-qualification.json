@@ -1,27 +1,22 @@
 {
   "id": "lead-qualification",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Lead Qualification",
-  "description": "Qualify an incoming lead and route it to the appropriate agent.",
+  "description": "Qualify an incoming lead and notify the sales manager. Linear flow (v1).",
+  "triggers": [
+    { "event_type": "lead.received", "start_node": "e1" }
+  ],
   "elements": [
     { "id": "e1", "type": "event",    "label": "Lead received" },
     { "id": "f1", "type": "function", "label": "Qualify lead",         "role": "mirai",   "system": "bitrix24" },
-    { "id": "g1", "type": "gateway",  "label": "Lead qualified?",      "operator": "XOR" },
     { "id": "e2", "type": "event",    "label": "Lead qualified" },
-    { "id": "e3", "type": "event",    "label": "Lead rejected" },
     { "id": "f2", "type": "function", "label": "Notify sales manager", "role": "naruto" },
-    { "id": "f3", "type": "function", "label": "Archive lead",         "role": "mirai",   "system": "bitrix24" },
-    { "id": "e4", "type": "event",    "label": "Sales manager notified" },
-    { "id": "e5", "type": "event",    "label": "Lead archived" }
+    { "id": "e3", "type": "event",    "label": "Sales manager notified" }
   ],
   "flow": [
     ["e1", "f1"],
-    ["f1", "g1"],
-    ["g1", "e2"],
-    ["g1", "e3"],
+    ["f1", "e2"],
     ["e2", "f2"],
-    ["e3", "f3"],
-    ["f2", "e4"],
-    ["f3", "e5"]
+    ["f2", "e3"]
   ]
 }

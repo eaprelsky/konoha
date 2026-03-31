@@ -12,11 +12,17 @@ export interface WorkflowElement {
   operator?: "AND" | "OR" | "XOR"; // for gateways
 }
 
+export interface WorkflowTrigger {
+  event_type: string; // e.g. "lead.received"
+  start_node: string; // element id to start from
+}
+
 export interface WorkflowDefinition {
   id: string;
   version: string;
   name: string;
   description?: string;
+  triggers?: WorkflowTrigger[];
   elements: WorkflowElement[];
   flow: [string, string][]; // [from, to] pairs
 }

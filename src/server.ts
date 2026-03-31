@@ -1,10 +1,10 @@
-import { join } from "path";
-import { loadWorkflows } from "./workflow-loader";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { streamSSE } from "hono/streaming";
 import { mkdirSync, writeFileSync, existsSync, statSync } from "fs";
 import { join, extname } from "path";
+import { loadWorkflows } from "./workflow-loader";
+import { createCase, getCase, completeWorkItem, listWorkItems, processEvent, type WorkItemStatus } from "./runtime";
 import {
   registerAgent,
   unregisterAgent,
@@ -84,6 +84,10 @@ app.use("/messages/*", requireAuth);
 app.use("/channels/*", requireAuth);
 app.use("/attachments/*", requireAuth);
 app.use("/events", requireAuth);
+app.use("/cases/*", requireAuth);
+app.use("/cases", requireAuth);
+app.use("/workitems/*", requireAuth);
+app.use("/workitems", requireAuth);
 
 // health
 app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
@@ -294,7 +298,54 @@ app.post("/events", async (c) => {
   };
 
   const id = await publishEvent(event);
-  return c.json({ id });
+
+  // Trigger workflow runtime: find matching process definitions and create cases
+  const cases = await processEvent(type, source, payload).catch((e) => {
+    console.error("[runtime] processEvent error:", e.message);
+    return [];
+  });
+
+  return c.json({ id, cases_created: cases.map(c => c.case_id) });
+});
+
+// --- Cases & Work Items (Workflow Runtime) ---
+
+app.post("/cases", async (c) => {
+  const body = await c.req.json();
+  const { process_id, subject, payload = {}, start_node } = body;
+  if (!process_id || !subject) return c.json({ error: "process_id and subject required" }, 400);
+  try {
+    const kase = await createCase(process_id, subject, payload, start_node);
+    return c.json(kase, 201);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 400);
+  }
+});
+
+app.get("/cases/:id", async (c) => {
+  const id = c.req.param("id");
+  const kase = await getCase(id);
+  if (!kase) return c.json({ error: "Case not found" }, 404);
+  return c.json(kase);
+});
+
+app.post("/workitems/:id/complete", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const output = body.output || {};
+  try {
+    const result = await completeWorkItem(id, output);
+    return c.json(result);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 400);
+  }
+});
+
+app.get("/workitems", async (c) => {
+  const assignee = c.req.query("assignee") || undefined;
+  const status = (c.req.query("status") || undefined) as WorkItemStatus | undefined;
+  const items = await listWorkItems({ assignee, status });
+  return c.json(items);
 });
 
 // --- Channels ---
