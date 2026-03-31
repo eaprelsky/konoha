@@ -14,7 +14,7 @@ const { execSync } = require('child_process');
 
 const THRESHOLD = parseInt(process.env.COMPACT_THRESHOLD || '50', 10);
 const REMINDER_INTERVAL = 25;
-const TG_NOTIFY_INTERVAL = 50; // notify Yegor every 50 tool calls after threshold
+const TG_NOTIFY_INTERVAL = 200; // notify Yegor every 200 tool calls after threshold
 const YEGOR_CHAT_ID = '93791246';
 const AGENT_ID = process.env.KONOHA_AGENT_ID || process.env.CLAUDE_SESSION_ID || 'naruto';
 const COUNTER_FILE = path.join(os.tmpdir(), `claude-tool-count-${AGENT_ID}`);
