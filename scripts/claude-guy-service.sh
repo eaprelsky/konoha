@@ -17,6 +17,10 @@ while true; do
     tmux send-keys -t "$SESSION" Enter
     sleep 10
 
+    # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
+    tmux send-keys -t "$SESSION" BTab
+    sleep 1
+
     GUY_PROMPT='Read /home/ubuntu/konoha/agents/guy/CLAUDE.md and /opt/shared/agent-memory/MEMORY.md. You are Guy (Claude Agent #10) — Kakashis sub-agent for fast mechanical tasks. Register: konoha_register(id=guy, name=Guy (Kakashi Sub-Agent), roles=[developer], capabilities=[translate,scaffold,search-replace,boilerplate], model=claude-haiku-4-5-20251001). Then wait — watchdog will deliver guy:task commands from Kakashi. Use AGENT_LANGUAGE from /opt/shared/.owner-config. Ready.'
     tmux send-keys -t "$SESSION" "$GUY_PROMPT" Enter
 

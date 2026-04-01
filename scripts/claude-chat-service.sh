@@ -35,6 +35,10 @@ while true; do
     tmux send-keys -t "$SESSION" Enter
     sleep 15
 
+    # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
+    tmux send-keys -t "$SESSION" BTab
+    sleep 1
+
     # Send initial prompt
     tmux send-keys -t "$SESSION" "$PROMPT" Enter
 

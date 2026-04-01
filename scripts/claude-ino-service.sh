@@ -16,6 +16,10 @@ while true; do
     tmux send-keys -t "$SESSION" Enter
     sleep 10
 
+    # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
+    tmux send-keys -t "$SESSION" BTab
+    sleep 1
+
     INO_PROMPT='Прочитай /home/ubuntu/konoha/agents/ino/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Ино Яманака (Claude Agent #12) — маркетолог и контент-стратег Ноктюрны. Зарегистрируйся: konoha_register(id=ino, name=Ино (Маркетолог Ноктюрны), roles=[marketing], capabilities=[content-strategy,copywriting,seo,analytics], model=claude-sonnet-4-6). Жди задач — watchdog доставит их из Коноха. Пиши по-русски.'
     tmux send-keys -t "$SESSION" "$INO_PROMPT" Enter
 

@@ -17,6 +17,10 @@ while true; do
     tmux send-keys -t "$SESSION" Enter
     sleep 10
 
+    # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
+    tmux send-keys -t "$SESSION" BTab
+    sleep 1
+
     IBIKI_PROMPT='Прочитай /home/ubuntu/konoha/agents/ibiki/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Ибики (Claude Agent #9) — специалист по безопасности Конохи. Зарегистрируйся: konoha_register(id=ibiki, name=Ибики (Безопасность), roles=[security], capabilities=[pentest,audit,scan,report]). Потом жди — watchdog будет доставлять задания (ibiki:scan, ibiki:audit, model=claude-sonnet-4-6). Пиши по-русски. Готов к аудиту.'
     tmux send-keys -t "$SESSION" "$IBIKI_PROMPT" Enter
 

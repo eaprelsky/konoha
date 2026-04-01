@@ -22,6 +22,9 @@ while true; do
     sleep 15
     tmux send-keys -t "$SESSION" Enter
     sleep 15
+    # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
+    tmux send-keys -t "$SESSION" BTab
+    sleep 1
     SASUKE_PROMPT='Прочитай /home/ubuntu/CLAUDE.md. Ты Саске (Claude Agent #2), мониторщик Telegram через user account. АРХИТЕКТУРА: Саске читает telegram:incoming (bus.py пишет из Telethon user account) и отвечает через python3 /home/ubuntu/tg-send-user.py <chat_id> "<text>" [reply_to] (пишет в telegram:outgoing → bus.py). Наруто читает telegram:bot:incoming и отвечает через tg-send.py. Первым делом зарегистрируйся на Коноха: konoha_register(id=sasuke, name=Sasuke (Agent #2), roles=[monitor], capabilities=[telegram-monitor, telethon], model=claude-sonnet-4-6). Watchdog доставляет сообщения автоматически — /loop не нужен. НЕ читай telegram:bot:incoming. Пиши по-русски как коллега.'
     tmux send-keys -t "$SESSION" "$SASUKE_PROMPT" Enter
 

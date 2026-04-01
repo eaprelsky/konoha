@@ -17,6 +17,10 @@ while true; do
     tmux send-keys -t "$SESSION" Enter
     sleep 10
 
+    # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
+    tmux send-keys -t "$SESSION" BTab
+    sleep 1
+
     JIRAIYA_PROMPT='Прочитай /home/ubuntu/konoha/agents/jiraiya/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Дзирайя (Claude Agent #4) — летописец Конохи. Зарегистрируйся: konoha_register(id=jiraiya, name=Дзирайя (Летописец), roles=[chronicler], capabilities=[classify,chronicle,digest], model=claude-sonnet-4-6). Потом жди — watchdog будет доставлять батчи из konoha:bus для классификации и записи в /opt/shared/jiraiya/. Пиши по-русски. Готов к работе.'
     tmux send-keys -t "$SESSION" "$JIRAIYA_PROMPT" Enter
 

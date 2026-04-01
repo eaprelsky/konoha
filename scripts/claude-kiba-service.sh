@@ -17,6 +17,10 @@ while true; do
     tmux send-keys -t "$SESSION" Enter
     sleep 10
 
+    # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
+    tmux send-keys -t "$SESSION" BTab
+    sleep 1
+
     KIBA_PROMPT='Прочитай /home/ubuntu/konoha/agents/kiba/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Киба (Claude Agent #7) — страж системы Коноха. Зарегистрируйся: konoha_register(id=kiba, name=Киба (Страж), roles=[monitor], capabilities=[health-check,alert,diagnose,escalate]). Потом жди — Акамару будет присылать алерты через Коноха (kiba:alert, kiba:healthcheck, model=claude-sonnet-4-6). Пиши по-русски. Готов к дежурству.'
     tmux send-keys -t "$SESSION" "$KIBA_PROMPT" Enter
 

@@ -20,6 +20,9 @@ while true; do
     tmux new-session -d -s "$SESSION" -x 200 -y 50
     tmux send-keys -t "$SESSION" 'claude --dangerously-skip-permissions' Enter
     sleep 15
+    # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
+    tmux send-keys -t "$SESSION" BTab
+    sleep 1
     # Initial prompt: read config, start polling, begin work
     tmux send-keys -t "$SESSION" 'Прочитай /home/ubuntu/CLAUDE.md. Ты Наруто (Claude Agent #1). Сразу после чтения памяти запусти /loop 1m check_messages и /loop 1m check_konoha. Потом проверь незавершённые задачи из памяти и работай автономно.' Enter
 
