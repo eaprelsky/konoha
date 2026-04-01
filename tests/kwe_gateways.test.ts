@@ -62,8 +62,9 @@ function xorWorkflow(): WorkflowDefinition {
 
 /**
  * AND split/join workflow:
- *   e1 → f1 → g1(AND) → f2 → g2(AND) → f4 → e2
- *                      → f3 →/
+ *   e1 → f1 → e_split → g1(AND) → f2 → e_a → g2(AND) → f4 → e2
+ *                                → f3 → e_b →/
+ * Intermediate events added to satisfy eEPC alternation rule (no function→gateway→function).
  */
 function andWorkflow(): WorkflowDefinition {
   return {
@@ -71,32 +72,39 @@ function andWorkflow(): WorkflowDefinition {
     version: "1.0.0",
     name: "AND Gateway Test",
     elements: [
-      { id: "e1", type: "event",    label: "Start" },
-      { id: "f1", type: "function", label: "Trigger",    role: "tester" },
-      { id: "g1", type: "gateway",  label: "Split",      operator: "AND" },
-      { id: "f2", type: "function", label: "Branch A",   role: "tester" },
-      { id: "f3", type: "function", label: "Branch B",   role: "tester" },
-      { id: "g2", type: "gateway",  label: "Join",       operator: "AND" },
-      { id: "f4", type: "function", label: "After Join", role: "tester" },
-      { id: "e2", type: "event",    label: "Done" },
+      { id: "e1",      type: "event",    label: "Start" },
+      { id: "f1",      type: "function", label: "Trigger",    role: "tester" },
+      { id: "e_split", type: "event",    label: "Trigger Done" },
+      { id: "g1",      type: "gateway",  label: "Split",      operator: "AND" },
+      { id: "f2",      type: "function", label: "Branch A",   role: "tester" },
+      { id: "f3",      type: "function", label: "Branch B",   role: "tester" },
+      { id: "e_a",     type: "event",    label: "Branch A Done" },
+      { id: "e_b",     type: "event",    label: "Branch B Done" },
+      { id: "g2",      type: "gateway",  label: "Join",       operator: "AND" },
+      { id: "f4",      type: "function", label: "After Join", role: "tester" },
+      { id: "e2",      type: "event",    label: "Done" },
     ],
     flow: [
-      ["e1", "f1"],
-      ["f1", "g1"],
-      ["g1", "f2"],
-      ["g1", "f3"],
-      ["f2", "g2"],
-      ["f3", "g2"],
-      ["g2", "f4"],
-      ["f4", "e2"],
+      ["e1",      "f1"],
+      ["f1",      "e_split"],
+      ["e_split", "g1"],
+      ["g1",      "f2"],
+      ["g1",      "f3"],
+      ["f2",      "e_a"],
+      ["f3",      "e_b"],
+      ["e_a",     "g2"],
+      ["e_b",     "g2"],
+      ["g2",      "f4"],
+      ["f4",      "e2"],
     ],
   };
 }
 
 /**
  * OR split/join workflow:
- *   e1 → f1 → g1(OR) → f2 [if flag_a===true] → g2(OR) → f4 → e2
- *                     → f3 [if flag_b===true] →/
+ *   e1 → f1 → e_split → g1(OR) → f2 [if flag_a===true] → e_a → g2(OR) → f4 → e2
+ *                               → f3 [if flag_b===true] → e_b →/
+ * Intermediate events added to satisfy eEPC alternation rule (no function→gateway→function).
  */
 function orWorkflow(): WorkflowDefinition {
   return {
@@ -104,24 +112,30 @@ function orWorkflow(): WorkflowDefinition {
     version: "1.0.0",
     name: "OR Gateway Test",
     elements: [
-      { id: "e1", type: "event",    label: "Start" },
-      { id: "f1", type: "function", label: "Trigger",    role: "tester" },
-      { id: "g1", type: "gateway",  label: "OR Split",   operator: "OR" },
-      { id: "f2", type: "function", label: "Branch A",   role: "tester" },
-      { id: "f3", type: "function", label: "Branch B",   role: "tester" },
-      { id: "g2", type: "gateway",  label: "OR Join",    operator: "OR" },
-      { id: "f4", type: "function", label: "After Join", role: "tester" },
-      { id: "e2", type: "event",    label: "Done" },
+      { id: "e1",      type: "event",    label: "Start" },
+      { id: "f1",      type: "function", label: "Trigger",    role: "tester" },
+      { id: "e_split", type: "event",    label: "Trigger Done" },
+      { id: "g1",      type: "gateway",  label: "OR Split",   operator: "OR" },
+      { id: "f2",      type: "function", label: "Branch A",   role: "tester" },
+      { id: "f3",      type: "function", label: "Branch B",   role: "tester" },
+      { id: "e_a",     type: "event",    label: "Branch A Done" },
+      { id: "e_b",     type: "event",    label: "Branch B Done" },
+      { id: "g2",      type: "gateway",  label: "OR Join",    operator: "OR" },
+      { id: "f4",      type: "function", label: "After Join", role: "tester" },
+      { id: "e2",      type: "event",    label: "Done" },
     ],
     flow: [
-      ["e1", "f1"],
-      ["f1", "g1"],
-      ["g1", "f2", "payload.flag_a === true"],
-      ["g1", "f3", "payload.flag_b === true"],
-      ["f2", "g2"],
-      ["f3", "g2"],
-      ["g2", "f4"],
-      ["f4", "e2"],
+      ["e1",      "f1"],
+      ["f1",      "e_split"],
+      ["e_split", "g1"],
+      ["g1",      "f2", "payload.flag_a === true"],
+      ["g1",      "f3", "payload.flag_b === true"],
+      ["f2",      "e_a"],
+      ["f3",      "e_b"],
+      ["e_a",     "g2"],
+      ["e_b",     "g2"],
+      ["g2",      "f4"],
+      ["f4",      "e2"],
     ],
   };
 }

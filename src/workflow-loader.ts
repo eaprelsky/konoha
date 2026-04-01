@@ -82,6 +82,19 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
     }
   }
 
+  // Rule 2 (continued): gateway must not have both function inputs and function outputs
+  // This catches function→gateway→function which violates the alternation principle
+  for (const el of def.elements) {
+    if (el.type !== "gateway") continue;
+    const ins = (inEdges.get(el.id) || []).map(id => byId.get(id));
+    const outs = (outEdges.get(el.id) || []).map(id => byId.get(id));
+    const hasFunctionIn = ins.some(e => e?.type === "function");
+    const hasFunctionOut = outs.some(e => e?.type === "function");
+    if (hasFunctionIn && hasFunctionOut) {
+      errors.push({ rule: 2, message: `Gateway "${el.id}" has function inputs and function outputs — function→gateway→function violates alternation (add an intermediate event)` });
+    }
+  }
+
   // Rule 3: Roles, documents, systems must be attached only to functions (not events or gateways)
   for (const el of def.elements) {
     if (el.type !== "function") {
