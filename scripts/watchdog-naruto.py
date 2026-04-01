@@ -31,7 +31,7 @@ REACTION_QUEUE  = Path(os.path.expanduser("~/.claude/channels/telegram/reaction-
 
 DEBOUNCE_WINDOW  = 2.0   # seconds to accumulate events before flushing
 IDLE_POLL_SEC    = 2.0   # how often to check if agent is idle
-IDLE_TIMEOUT_SEC = 300   # give up waiting after 5 min (agent hung?)
+IDLE_TIMEOUT_SEC = 600   # give up waiting after 10 min (compacting can take 10-20min, #148)
 SSE_MAX_BACKOFF  = 60    # seconds
 
 # SESSION_ONLINE/OFFLINE are system noise — never deliver to agent

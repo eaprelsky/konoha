@@ -38,10 +38,10 @@ REACTION_CONSUMER = "sasuke-reaction-watchdog"
 
 DEBOUNCE_WINDOW  = 2.0   # seconds to accumulate events before flushing
 IDLE_POLL_SEC    = 2.0   # how often to check if agent is idle
-IDLE_TIMEOUT_SEC = 300   # give up waiting after 5 min (agent hung?)
+IDLE_TIMEOUT_SEC = 600   # give up waiting after 10 min (compacting can take 10-20min, #148)
 SSE_MAX_BACKOFF  = 60    # seconds
 
-HEALTH_STUCK_TIMEOUT = 360  # seconds: must be > IDLE_TIMEOUT_SEC (300) + buffer (#54)
+HEALTH_STUCK_TIMEOUT = 720  # seconds: must be > IDLE_TIMEOUT_SEC (600) + buffer (#54, #148)
 
 # ── Delivery state tracker (for health monitor) ───────────────────────────────
 _health: dict = {
