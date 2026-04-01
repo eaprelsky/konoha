@@ -108,6 +108,21 @@ async def tmux_run(*args: str, timeout: float = 10.0) -> bool:
 async def tmux_send(session: str, text: str) -> bool:
     # Collapse newlines to spaces — multi-line text triggers Claude Code [Pasted text] dialog
     text = text.replace("\n", " ").replace("\r", " ")
+    # Wait for compacting to finish before sending — avoids [Pasted text] race (#147)
+    compacting_waited = 0
+    while compacting_waited < 120:
+        content = tmux_pane_content(session)
+        if not any(kw in content for kw in ("Compacting", "Churned for", "\u273b")):
+            break
+        log.info(f"Agent {session} compacting — waiting (waited {compacting_waited}s)")
+        await asyncio.sleep(2.0)
+        compacting_waited += 2
+    if compacting_waited >= 120:
+        log.warning(f"Agent {session} still compacting after 120s — proceeding anyway")
+    elif compacting_waited > 0:
+        log.info(f"Compacting done after {compacting_waited}s — proceeding")
+        await asyncio.sleep(1.0)  # small buffer after compacting ends
+
     # Capture pane content BEFORE send to detect delivery confirmation (#50)
     content_before = tmux_pane_content(session)
     ok = await tmux_run("tmux", "send-keys", "-t", session, text, timeout=5.0)
