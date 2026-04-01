@@ -123,12 +123,42 @@ function buildAdjacency(def: WorkflowDefinition): {
 }
 
 // Safely evaluate a condition expression against case payload.
+// Supports: payload.<field> <op> <literal>
+// Operators: ===, !==, >, <, >=, <=
+// Literals: string ('x' or "x"), number, boolean (true/false), null
 function evalCondition(condition: string, payload: Record<string, unknown>): boolean {
-  try {
-    // eslint-disable-next-line no-new-func
-    return new Function("payload", `"use strict"; return !!(${condition})`)(payload);
-  } catch {
-    return false;
+  const expr = condition.trim();
+  const match = expr.match(
+    /^payload\.([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(===|!==|>=|<=|>|<)\s*(.+)$/,
+  );
+  if (!match) return false;
+
+  const [, field, op, rawValue] = match;
+  const left = payload[field];
+
+  // Parse right-hand side literal
+  let right: unknown;
+  const val = rawValue.trim();
+  if (val === "true")            right = true;
+  else if (val === "false")      right = false;
+  else if (val === "null")       right = null;
+  else if (val === "undefined")  right = undefined;
+  else if (/^-?\d+(\.\d+)?$/.test(val)) right = Number(val);
+  else if ((val.startsWith("'") && val.endsWith("'")) ||
+           (val.startsWith('"') && val.endsWith('"'))) {
+    right = val.slice(1, -1);
+  } else {
+    return false; // unknown literal — reject
+  }
+
+  switch (op) {
+    case "===": return left === right;
+    case "!==": return left !== right;
+    case ">":   return typeof left === "number" && typeof right === "number" && left > right;
+    case "<":   return typeof left === "number" && typeof right === "number" && left < right;
+    case ">=":  return typeof left === "number" && typeof right === "number" && left >= right;
+    case "<=":  return typeof left === "number" && typeof right === "number" && left <= right;
+    default:    return false;
   }
 }
 
