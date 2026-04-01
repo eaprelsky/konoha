@@ -459,3 +459,18 @@ cat << 'SUMMARY'
 =============================================================================
 SUMMARY
 
+
+# ---------------------------------------------------------------------------
+# Memory seed — copy agent memory to /opt/shared/agent-memory/
+# ---------------------------------------------------------------------------
+log "Setting up agent memory..."
+MEMORY_SRC="$(cd "$(dirname "$0")/.." && pwd)/memory"
+MEMORY_DST="/opt/shared/agent-memory"
+sudo mkdir -p "$MEMORY_DST"
+sudo chown ubuntu:ubuntu "$MEMORY_DST"
+if [ -d "$MEMORY_SRC" ]; then
+    cp -n "$MEMORY_SRC"/*.md "$MEMORY_DST"/ 2>/dev/null || true
+    log "Memory seed copied to $MEMORY_DST (existing files not overwritten)"
+else
+    warn "Memory seed directory not found: $MEMORY_SRC"
+fi
