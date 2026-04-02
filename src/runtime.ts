@@ -983,3 +983,130 @@ export function startReminderScheduler(): void {
     } catch (_) {}
   }, 60_000);
 }
+
+// --- Roles Directory ---
+
+const ROLE_KEY_PREFIX = "role:";
+const ROLES_IDX_ALL = "konoha:roles:all";
+
+export type AssignmentStrategy = "round-robin" | "load-balancing" | "broadcast" | "manual";
+
+export interface RoleDef {
+  role_id: string;
+  name: string;
+  description?: string;
+  assignees: string[];          // agent IDs or user handles
+  strategy: AssignmentStrategy;
+  created_at: string;
+  updated_at: string;
+}
+
+async function saveRole(r: RoleDef): Promise<void> {
+  await redis.set(ROLE_KEY_PREFIX + r.role_id, JSON.stringify(r));
+  await redis.zadd(ROLES_IDX_ALL, new Date(r.created_at).getTime(), r.role_id);
+}
+
+async function loadRole(role_id: string): Promise<RoleDef | null> {
+  const raw = await redis.get(ROLE_KEY_PREFIX + role_id);
+  return raw ? JSON.parse(raw) : null;
+}
+
+export async function createRole(params: Omit<RoleDef, "created_at" | "updated_at">): Promise<RoleDef> {
+  const now = new Date().toISOString();
+  const r: RoleDef = { ...params, created_at: now, updated_at: now };
+  await saveRole(r);
+  return r;
+}
+
+export async function listRoles(): Promise<RoleDef[]> {
+  const ids = await redis.zrange(ROLES_IDX_ALL, 0, -1);
+  const roles = await Promise.all(ids.map(id => loadRole(id)));
+  return roles.filter((r): r is RoleDef => r !== null);
+}
+
+export async function updateRole(role_id: string, patch: Partial<Pick<RoleDef, "name" | "description" | "assignees" | "strategy">>): Promise<RoleDef> {
+  const r = await loadRole(role_id);
+  if (!r) throw new Error(`Role "${role_id}" not found`);
+  if (patch.name !== undefined)        r.name = patch.name;
+  if (patch.description !== undefined) r.description = patch.description;
+  if (patch.assignees !== undefined)   r.assignees = patch.assignees;
+  if (patch.strategy !== undefined)    r.strategy = patch.strategy;
+  r.updated_at = new Date().toISOString();
+  await saveRole(r);
+  return r;
+}
+
+export async function deleteRole(role_id: string): Promise<void> {
+  await redis.del(ROLE_KEY_PREFIX + role_id);
+  await redis.zrem(ROLES_IDX_ALL, role_id);
+}
+
+// --- Documents Directory ---
+
+const DOC_KEY_PREFIX = "doc:";
+const DOCS_IDX_ALL = "konoha:docs:all";
+
+export type DocType = "prompt" | "instruction" | "form" | "template" | "attachment";
+
+export interface DocTemplate {
+  doc_id: string;
+  name: string;
+  type: DocType;
+  content: string;             // template text with {{placeholder}} syntax
+  parameters: string[];        // auto-extracted parameter names
+  created_at: string;
+  updated_at: string;
+}
+
+function extractParameters(content: string): string[] {
+  const matches = content.match(/\{\{(\w+)\}\}/g) || [];
+  return [...new Set(matches.map(m => m.slice(2, -2)))];
+}
+
+async function saveDoc(d: DocTemplate): Promise<void> {
+  d.parameters = extractParameters(d.content);
+  await redis.set(DOC_KEY_PREFIX + d.doc_id, JSON.stringify(d));
+  await redis.zadd(DOCS_IDX_ALL, new Date(d.created_at).getTime(), d.doc_id);
+}
+
+async function loadDoc(doc_id: string): Promise<DocTemplate | null> {
+  const raw = await redis.get(DOC_KEY_PREFIX + doc_id);
+  return raw ? JSON.parse(raw) : null;
+}
+
+export async function createDoc(params: { name: string; type: DocType; content: string }): Promise<DocTemplate> {
+  const now = new Date().toISOString();
+  const d: DocTemplate = {
+    doc_id: randomUUID(),
+    name: params.name,
+    type: params.type,
+    content: params.content,
+    parameters: extractParameters(params.content),
+    created_at: now,
+    updated_at: now,
+  };
+  await saveDoc(d);
+  return d;
+}
+
+export async function listDocs(): Promise<DocTemplate[]> {
+  const ids = await redis.zrange(DOCS_IDX_ALL, 0, -1);
+  const docs = await Promise.all(ids.map(id => loadDoc(id)));
+  return docs.filter((d): d is DocTemplate => d !== null);
+}
+
+export async function updateDoc(doc_id: string, patch: Partial<Pick<DocTemplate, "name" | "type" | "content">>): Promise<DocTemplate> {
+  const d = await loadDoc(doc_id);
+  if (!d) throw new Error(`Document "${doc_id}" not found`);
+  if (patch.name !== undefined)    d.name = patch.name;
+  if (patch.type !== undefined)    d.type = patch.type;
+  if (patch.content !== undefined) d.content = patch.content;
+  d.updated_at = new Date().toISOString();
+  await saveDoc(d);
+  return d;
+}
+
+export async function deleteDoc(doc_id: string): Promise<void> {
+  await redis.del(DOC_KEY_PREFIX + doc_id);
+  await redis.zrem(DOCS_IDX_ALL, doc_id);
+}

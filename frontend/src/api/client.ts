@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent } from './types';
 
 // Token stored in localStorage, readable via ?token= query param
 function getToken(): string {
@@ -66,7 +66,64 @@ export const api = {
   },
 
   cases: {
+    list: (filters?: { status?: string; process_id?: string; after?: string; before?: string; limit?: number; offset?: number }) => {
+      const p = new URLSearchParams();
+      if (filters?.status)     p.set('status', filters.status);
+      if (filters?.process_id) p.set('process_id', filters.process_id);
+      if (filters?.after)      p.set('after', filters.after);
+      if (filters?.before)     p.set('before', filters.before);
+      if (filters?.limit)      p.set('limit', String(filters.limit));
+      if (filters?.offset)     p.set('offset', String(filters.offset));
+      const qs = p.toString();
+      return apiFetch<{ cases: Case[]; total: number }>(`/cases${qs ? '?' + qs : ''}`);
+    },
     get: (id: string) => apiFetch<Case>(`/cases/${id}`),
+  },
+
+  events: {
+    list: (filters?: { type?: string; after?: string; before?: string; limit?: number }) => {
+      const p = new URLSearchParams();
+      if (filters?.type)   p.set('type', filters.type);
+      if (filters?.after)  p.set('after', filters.after);
+      if (filters?.before) p.set('before', filters.before);
+      if (filters?.limit)  p.set('limit', String(filters.limit));
+      const qs = p.toString();
+      return apiFetch<RuntimeEvent[]>(`/events/log${qs ? '?' + qs : ''}`);
+    },
+  },
+
+  agents: {
+    list: () => apiFetch<Agent[]>('/agents'),
+    create: (params: { id: string; name: string; system_prompt?: string; model?: string }) =>
+      apiFetch<Agent>('/agents', { method: 'POST', body: JSON.stringify(params) }),
+    start: (id: string) => apiFetch<unknown>(`/agents/${id}/start`, { method: 'POST', body: '{}' }),
+    stop: (id: string) => apiFetch<unknown>(`/agents/${id}/stop`, { method: 'POST', body: '{}' }),
+    restart: (id: string) => apiFetch<unknown>(`/agents/${id}/restart`, { method: 'POST', body: '{}' }),
+    delete: (id: string) => apiFetch<{ ok: boolean }>(`/agents/${id}`, { method: 'DELETE' }),
+    status: (id: string) => apiFetch<unknown>(`/agents/${id}/status`),
+  },
+
+  roles: {
+    list: () => apiFetch<RoleDef[]>('/roles'),
+    create: (params: { role_id: string; name: string; description?: string; assignees?: string[]; strategy?: string }) =>
+      apiFetch<RoleDef>('/roles', { method: 'POST', body: JSON.stringify(params) }),
+    update: (id: string, patch: Partial<RoleDef>) =>
+      apiFetch<RoleDef>(`/roles/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    delete: (id: string) => apiFetch<{ ok: boolean }>(`/roles/${id}`, { method: 'DELETE' }),
+  },
+
+  documents: {
+    list: () => apiFetch<DocTemplate[]>('/documents'),
+    create: (params: { name: string; type?: string; content?: string }) =>
+      apiFetch<DocTemplate>('/documents', { method: 'POST', body: JSON.stringify(params) }),
+    update: (id: string, patch: Partial<DocTemplate>) =>
+      apiFetch<DocTemplate>(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    delete: (id: string) => apiFetch<{ ok: boolean }>(`/documents/${id}`, { method: 'DELETE' }),
+  },
+
+  adapters: {
+    list: () => apiFetch<{ adapters: string[] }>('/adapters'),
+    health: (name: string) => apiFetch<{ adapter: string; healthy: boolean }>(`/adapters/${name}/health`),
   },
 
   reminders: {

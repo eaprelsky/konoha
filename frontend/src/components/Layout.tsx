@@ -19,8 +19,11 @@ const NAV_LINKS = [
   { href: '/ui/reminders.html',  label: 'Reminders' },
   { href: '/ui/cases.html',      label: 'Cases' },
   { href: '/ui/roles.html',      label: 'Roles' },
-  { href: '/ui/eventlog.html',   label: 'Event Log' },
+  { href: '/ui/documents.html',  label: 'Documents' },
   { href: '/ui/connectors.html', label: 'Connectors' },
+  { href: '/ui/eventlog.html',   label: 'Event Log' },
+  { href: '/ui/agents.html',     label: 'Agents' },
+  { href: '/ui/admin.html',      label: 'Admin' },
 ];
 
 interface LayoutProps {

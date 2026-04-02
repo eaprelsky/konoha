@@ -4,7 +4,7 @@ import { streamSSE } from "hono/streaming";
 import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync } from "fs";
 import { join, extname } from "path";
 import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions } from "./workflow-loader";
-import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType } from "./runtime";
+import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, createRole, listRoles, updateRole, deleteRole, createDoc, listDocs, updateDoc, deleteDoc, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType, type AssignmentStrategy, type DocType } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
 import {
   registerAgent,
@@ -593,6 +593,59 @@ app.delete("/reminders/:id", async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 404);
   }
+});
+
+// --- Roles Directory ---
+
+app.use("/roles/*", requireAuth);
+app.use("/roles", requireAuth);
+
+app.get("/roles", async (c) => {
+  return c.json(await listRoles());
+});
+app.post("/roles", async (c) => {
+  const body = await c.req.json();
+  const { role_id, name, description, assignees = [], strategy = "manual" } = body;
+  if (!role_id || !name) return c.json({ error: "role_id and name required" }, 400);
+  const r = await createRole({ role_id, name, description, assignees, strategy: strategy as AssignmentStrategy });
+  return c.json(r, 201);
+});
+app.patch("/roles/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  try { return c.json(await updateRole(id, body)); }
+  catch (e: any) { return c.json({ error: e.message }, 404); }
+});
+app.delete("/roles/:id", async (c) => {
+  const id = c.req.param("id");
+  try { await deleteRole(id); return c.json({ ok: true }); }
+  catch (e: any) { return c.json({ error: e.message }, 404); }
+});
+
+// --- Documents Directory ---
+
+app.use("/documents/*", requireAuth);
+app.use("/documents", requireAuth);
+
+app.get("/documents", async (c) => {
+  return c.json(await listDocs());
+});
+app.post("/documents", async (c) => {
+  const body = await c.req.json();
+  const { name, type = "template", content = "" } = body;
+  if (!name) return c.json({ error: "name required" }, 400);
+  return c.json(await createDoc({ name, type: type as DocType, content }), 201);
+});
+app.patch("/documents/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  try { return c.json(await updateDoc(id, body)); }
+  catch (e: any) { return c.json({ error: e.message }, 404); }
+});
+app.delete("/documents/:id", async (c) => {
+  const id = c.req.param("id");
+  try { await deleteDoc(id); return c.json({ ok: true }); }
+  catch (e: any) { return c.json({ error: e.message }, 404); }
 });
 
 // --- Adapters ---

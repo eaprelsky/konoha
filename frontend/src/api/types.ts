@@ -72,6 +72,65 @@ export interface WorkItemFilters {
   deadline_before?: string;
 }
 
+export type AssignmentStrategy = 'round-robin' | 'load-balancing' | 'broadcast' | 'manual';
+
+export interface RoleDef {
+  role_id: string;
+  name: string;
+  description?: string;
+  assignees: string[];
+  strategy: AssignmentStrategy;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DocType = 'prompt' | 'instruction' | 'form' | 'template' | 'attachment';
+
+export interface DocTemplate {
+  doc_id: string;
+  name: string;
+  type: DocType;
+  content: string;
+  parameters: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RuntimeEvent {
+  id?: string;
+  type: string;
+  case_id?: string;
+  process_id?: string;
+  work_item_id?: string;
+  element_id?: string;
+  label?: string;
+  timestamp: string;
+}
+
+export interface AgentLifecycle {
+  status: string;
+  pid?: number;
+  uptime_seconds?: number;
+}
+
+export interface Agent {
+  id: string;
+  name: string;
+  status: string;
+  roles?: string[];
+  capabilities?: string[];
+  model?: string;
+  system_prompt?: string;
+  tags?: string[];
+  lifecycle?: AgentLifecycle;
+  lastHeartbeat?: number;
+}
+
+export interface AdapterHealth {
+  adapter: string;
+  healthy: boolean;
+}
+
 export type ReminderStatus = 'pending' | 'sent' | 'acknowledged' | 'overdue';
 export type ReminderChannel = 'gui' | 'telegram' | 'email';
 export type ReminderType = 'standalone' | 'process-bound';
