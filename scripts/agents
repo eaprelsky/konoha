@@ -1,0 +1,46 @@
+#!/bin/bash
+# Helper for managing Claude agents with per-socket tmux sessions
+
+AGENTS=(naruto sasuke kakashi guy hinata ino inojin kiba shino ibiki jiraiya mirai chat)
+
+usage() {
+    echo "Usage: agents <command> [agent]"
+    echo ""
+    echo "Commands:"
+    echo "  ls            List all running tmux sessions"
+    echo "  attach <name> Attach to agent's tmux session"
+    echo "  peek <name>   Show last 30 lines of agent's tmux output"
+    echo "  status        Show systemd status of all active agents"
+    echo ""
+    echo "Agents: ${AGENTS[*]}"
+}
+
+case "$1" in
+    ls)
+        for a in "${AGENTS[@]}"; do
+            out=$(tmux -L "$a" ls 2>/dev/null)
+            [ -n "$out" ] && echo "$out"
+        done
+        ;;
+    attach|a)
+        [ -z "$2" ] && { echo "Usage: agents attach <name>"; exit 1; }
+        tmux -L "$2" attach -t "$2"
+        ;;
+    peek|p)
+        [ -z "$2" ] && { echo "Usage: agents peek <name>"; exit 1; }
+        tmux -L "$2" capture-pane -t "$2" -p -S -30 2>/dev/null || echo "No session: $2"
+        ;;
+    status|st)
+        for a in "${AGENTS[@]}"; do
+            st=$(systemctl is-active "claude-$a.service" 2>/dev/null)
+            if [ "$st" = "active" ]; then
+                mem=$(systemctl show "claude-$a.service" --property=MemoryCurrent --value 2>/dev/null)
+                mem_mb=$((mem / 1048576))
+                printf "%-10s active  %4dM\n" "$a" "$mem_mb"
+            fi
+        done
+        ;;
+    *)
+        usage
+        ;;
+esac
