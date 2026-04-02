@@ -109,7 +109,9 @@ app.use("/workitems", requireAuth);
 app.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
 
 // --- Static UI files (no auth required) ---
-const PUBLIC_DIR = join(import.meta.dir, "..", "public");
+// Serve from dist/ui/ (React build output) with fallback to public/ (vanilla HTML)
+const DIST_UI_DIR  = join(import.meta.dir, "..", "dist", "ui");
+const PUBLIC_DIR   = join(import.meta.dir, "..", "public");
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js":   "application/javascript; charset=utf-8",
@@ -123,11 +125,16 @@ app.get("/ui", (c) => c.redirect("/ui/index.html"));
 app.get("/ui/:file{.+}", (c) => {
   const name = c.req.param("file");
   if (name.includes("..")) return c.text("Forbidden", 403);
-  const filePath = join(PUBLIC_DIR, name);
-  if (!existsSync(filePath) || !statSync(filePath).isFile()) return c.text("Not found", 404);
-  const ext  = extname(filePath).toLowerCase();
+  const ext  = extname(name).toLowerCase();
   const mime = MIME[ext] || "application/octet-stream";
-  return c.body(readFileSync(filePath), 200, { "content-type": mime });
+  // Prefer built React output; fall back to vanilla public/
+  for (const base of [DIST_UI_DIR, PUBLIC_DIR]) {
+    const filePath = join(base, name);
+    if (existsSync(filePath) && statSync(filePath).isFile()) {
+      return c.body(readFileSync(filePath), 200, { "content-type": mime });
+    }
+  }
+  return c.text("Not found", 404);
 });
 
 // --- Agents ---
