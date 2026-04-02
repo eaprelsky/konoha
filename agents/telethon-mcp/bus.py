@@ -21,7 +21,9 @@ for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:co
         pass
 sr.close()
 
-client = TelegramClient(SESSION, 2040, 'b18441a1ff607e10a989891a5462e627')
+api_id = int(os.environ.get("TG_API_ID", "2040"))
+api_hash = os.environ.get("TG_API_HASH", "")
+client = TelegramClient(SESSION, api_id, api_hash)
 
 
 @client.on(events.NewMessage)
