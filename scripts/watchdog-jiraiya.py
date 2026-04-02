@@ -58,7 +58,7 @@ def tmux_pane_content(session: str) -> str:
     import subprocess
     try:
         return subprocess.check_output(
-            ["tmux", "capture-pane", "-pt", session],
+            ["tmux", "-L", session, "capture-pane", "-pt", session],
             timeout=3
         ).decode("utf-8", errors="replace")
     except Exception:
@@ -116,7 +116,7 @@ async def tmux_send(session: str, text: str) -> bool:
     # Capture pane content BEFORE send to detect delivery confirmation (#50)
     content_before = tmux_pane_content(session)
     # send-keys without -l: simulates typing (no paste mode, no [Pasted text] indicator)
-    ok = await tmux_run("tmux", "send-keys", "-t", session, text, timeout=5.0)
+    ok = await tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
     if not ok:
         log.error(f"send-keys timed out for {session} — skipping delivery")
         return False
@@ -125,10 +125,10 @@ async def tmux_send(session: str, text: str) -> bool:
     _pane_check = tmux_pane_content(session)
     if any("Pasted text" in _line for _line in _pane_check.strip().split("\n")[-8:]):
         log.info("Detected [Pasted text] prompt — sending Enter to dismiss (#91 #145)")
-        await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
+        await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
         await asyncio.sleep(0.5)
     # Always send submit Enter after optional dialog dismissal (#145)
-    await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
+    await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
     log.info(f"Sent prompt to {session} ({len(text)} chars)")
     await asyncio.sleep(1.2)  # give agent time to start processing
     for attempt in range(3):
@@ -139,13 +139,13 @@ async def tmux_send(session: str, text: str) -> bool:
         if not is_agent_idle(session, stable_checks=2):
             break  # agent is processing — good
         log.warning(f"Pane unchanged and agent idle (attempt {attempt+1}), resending full prompt")
-        await tmux_run("tmux", "send-keys", "-t", session, "C-u", timeout=5.0)
-        ok = await tmux_run("tmux", "send-keys", "-t", session, text, timeout=5.0)
+        await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "C-u", timeout=5.0)
+        ok = await tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
         if not ok:
             log.error(f"Resend attempt {attempt+1} timed out for {session}")
             break
         await asyncio.sleep(0.3)
-        await tmux_run("tmux", "send-keys", "-t", session, "Enter", timeout=5.0)
+        await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
         await asyncio.sleep(2.0)
     return True
 
@@ -208,7 +208,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 pasted_text_wait += IDLE_POLL_SEC
                 if pasted_text_wait >= 30.0:
                     log.info("Detected stuck [Pasted text] dialog in monitoring loop — sending Enter (#93)")
-                    await tmux_run("tmux", "send-keys", "-t", TMUX_SESSION, "Enter", timeout=5.0)
+                    await tmux_run("tmux", "-L", TMUX_SESSION, "send-keys", "-t", TMUX_SESSION, "Enter", timeout=5.0)
                     pasted_text_wait = 0.0
             else:
                 pasted_text_wait = 0.0

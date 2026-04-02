@@ -55,7 +55,7 @@ log = logging.getLogger(__name__)
 def tmux_session_exists(session: str) -> bool:
     try:
         r = subprocess.run(
-            ["tmux", "has-session", "-t", session],
+            ["tmux", "-L", session, "has-session", "-t", session],
             capture_output=True, timeout=3
         )
         return r.returncode == 0
@@ -66,7 +66,7 @@ def tmux_session_exists(session: str) -> bool:
 def tmux_pane_content(session: str) -> str:
     try:
         return subprocess.check_output(
-            ["tmux", "capture-pane", "-pt", session], timeout=3
+            ["tmux", "-L", session, "capture-pane", "-pt", session], timeout=3
         ).decode("utf-8", errors="replace")
     except Exception:
         return ""
@@ -103,9 +103,9 @@ async def tmux_run(*args: str, timeout: float = 10.0) -> None:
 
 
 async def deliver_via_tmux(session: str, text: str) -> None:
-    await tmux_run("tmux", "send-keys", "-t", session, text)
+    await tmux_run("tmux", "-L", session, "send-keys", "-t", session, text)
     await asyncio.sleep(0.3)
-    await tmux_run("tmux", "send-keys", "-t", session, "Enter")
+    await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
     log.info(f"Sent to tmux:{session} ({len(text)} chars)")
 
 
@@ -157,6 +157,11 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             while True:
                 if is_agent_idle(TMUX_SESSION):
                     break
+                if "Pasted text" in tmux_pane_content(TMUX_SESSION):
+                    log.info("Paste dialog detected during idle-wait — sending Enter")
+                    await tmux_run("tmux", "-L", TMUX_SESSION, "send-keys", "-t", TMUX_SESSION, "Enter")
+                    await asyncio.sleep(1.0)
+                    continue
                 if waited >= IDLE_TIMEOUT_SEC:
                     log.warning(f"Agent busy >{IDLE_TIMEOUT_SEC}s — delivering anyway")
                     break
@@ -175,7 +180,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
 # ── Debouncer ─────────────────────────────────────────────────────────────────
 
 async def debouncer(raw_queue: asyncio.Queue, batched_queue: asyncio.Queue) -> None:
-    loop = asyncio.get_running_loop()
+    loop = asyncio.get_event_loop()
     while True:
         msg = await raw_queue.get()
         batch = [msg]
