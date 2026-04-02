@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { redis } from "./redis";
-import { getWorkflow, type WorkflowDefinition, type WorkflowElement } from "./workflow-loader";
+import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "./workflow-loader";
 import { getAdapter } from "./adapters/index";
 
 const CASE_KEY_PREFIX = "case:";
@@ -657,12 +657,12 @@ export async function processEvent(
   subject: string,
   payload: Record<string, unknown>,
 ): Promise<Case[]> {
-  // Scan all workflow keys
-  const keys = await redis.keys(WORKFLOW_KEY_PREFIX + "*");
+  // Use index set instead of KEYS scan to avoid O(N) blocking on Redis
+  const ids = await redis.smembers(WORKFLOW_INDEX_KEY);
   const cases: Case[] = [];
 
-  for (const key of keys) {
-    const raw = await redis.get(key);
+  for (const id of ids) {
+    const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
     if (!raw) continue;
     const def: WorkflowDefinition = JSON.parse(raw);
 

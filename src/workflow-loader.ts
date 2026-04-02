@@ -37,6 +37,7 @@ export interface ValidationError {
 }
 
 const WORKFLOW_KEY_PREFIX = "workflow:";
+export const WORKFLOW_INDEX_KEY = "konoha:workflow:index";
 
 // --- eEPC Validation (6 rules from spec 2.1) ---
 
@@ -196,6 +197,7 @@ export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: num
       continue;
     }
     await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
+    await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
     console.log(`[workflow-loader] Loaded workflow "${def.id}" v${def.version} → Redis key ${WORKFLOW_KEY_PREFIX}${def.id}`);
     loaded++;
   }
@@ -210,8 +212,9 @@ export async function getWorkflow(id: string): Promise<WorkflowDefinition | null
 }
 
 export async function listWorkflows(): Promise<WorkflowDefinition[]> {
-  const keys = await redis.keys(WORKFLOW_KEY_PREFIX + "*");
-  if (keys.length === 0) return [];
+  const ids = await redis.smembers(WORKFLOW_INDEX_KEY);
+  if (ids.length === 0) return [];
+  const keys = ids.map(id => WORKFLOW_KEY_PREFIX + id);
   const values = await redis.mget(...keys);
   const results: WorkflowDefinition[] = [];
   for (const v of values) {
