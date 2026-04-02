@@ -71,3 +71,22 @@ export interface WorkItemFilters {
   status?: WorkItemStatus | '';
   deadline_before?: string;
 }
+
+export type ReminderStatus = 'pending' | 'sent' | 'acknowledged' | 'overdue';
+export type ReminderChannel = 'gui' | 'telegram' | 'email';
+export type ReminderType = 'standalone' | 'process-bound';
+
+export interface Reminder {
+  reminder_id: string;
+  type: ReminderType;
+  recipient: string;
+  message: string;
+  scheduled_at: string;
+  channel: ReminderChannel;
+  status: ReminderStatus;
+  case_id?: string;
+  process_id?: string;
+  element_id?: string;
+  created_at: string;
+  updated_at: string;
+}

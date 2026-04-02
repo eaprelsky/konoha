@@ -4,7 +4,7 @@ import { streamSSE } from "hono/streaming";
 import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync } from "fs";
 import { join, extname } from "path";
 import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions } from "./workflow-loader";
-import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, type WorkItemStatus, type CaseStatus } from "./runtime";
+import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
 import {
   registerAgent,
@@ -541,6 +541,60 @@ app.delete("/workitems/:id", async (c) => {
   }
 });
 
+// --- Reminders ---
+
+app.use("/reminders/*", requireAuth);
+app.use("/reminders", requireAuth);
+
+app.get("/reminders", async (c) => {
+  const status = (c.req.query("status") || undefined) as ReminderStatus | undefined;
+  const recipient = c.req.query("recipient") || undefined;
+  const reminders = await listReminders({ status, recipient });
+  return c.json(reminders);
+});
+
+app.post("/reminders", async (c) => {
+  const body = await c.req.json();
+  const { type, recipient, message, scheduled_at, channel, case_id, process_id, element_id } = body;
+  if (!recipient || !message || !scheduled_at) {
+    return c.json({ error: "recipient, message and scheduled_at required" }, 400);
+  }
+  const r = await createReminder({
+    type: (type || "standalone") as ReminderType,
+    recipient,
+    message,
+    scheduled_at,
+    channel: (channel || "gui") as ReminderChannel,
+    case_id,
+    process_id,
+    element_id,
+  });
+  return c.json(r, 201);
+});
+
+app.patch("/reminders/:id/status", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const { status } = body;
+  if (!status) return c.json({ error: "status required" }, 400);
+  try {
+    const r = await updateReminderStatus(id, status as ReminderStatus);
+    return c.json(r);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 404);
+  }
+});
+
+app.delete("/reminders/:id", async (c) => {
+  const id = c.req.param("id");
+  try {
+    await deleteReminder(id);
+    return c.json({ ok: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 404);
+  }
+});
+
 // --- Adapters ---
 
 app.get("/adapters", async (c) => {
@@ -628,6 +682,8 @@ import { initTsunade } from "./tsunade";
 initTsunade().catch((e) => {
   console.error("[tsunade] init error:", e.message);
 });
+
+startReminderScheduler();
 
 console.log(`Konoha bus listening on port ${PORT}`);
 export { app };

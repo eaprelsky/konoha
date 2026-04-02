@@ -16,6 +16,7 @@ const NAV_LINKS = [
   { href: '/ui/index.html',      label: 'Dashboard' },
   { href: '/ui/processes.html',  label: 'Processes' },
   { href: '/ui/workitems.html',  label: 'Work Items' },
+  { href: '/ui/reminders.html',  label: 'Reminders' },
   { href: '/ui/cases.html',      label: 'Cases' },
   { href: '/ui/roles.html',      label: 'Roles' },
   { href: '/ui/eventlog.html',   label: 'Event Log' },

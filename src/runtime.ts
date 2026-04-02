@@ -73,6 +73,9 @@ const WORKFLOW_KEY_PREFIX = "workflow:";
 const CASES_IDX_ALL = "konoha:cases:all";                   // sorted set: case_id → created_at ms
 const CASES_IDX_STATUS = "konoha:cases:status:";            // set of case IDs per status
 const CASES_IDX_PROCESS = "konoha:cases:process:";          // set of case IDs per process_id
+const REMINDER_KEY_PREFIX = "reminder:";
+const REMINDERS_IDX_ALL = "konoha:reminders:all";           // sorted set: reminder_id → scheduled_at ms
+const REMINDERS_IDX_STATUS = "konoha:reminders:status:";    // set of reminder IDs per status
 
 // --- Types ---
 
@@ -118,6 +121,26 @@ export interface WorkItem {
   input: Record<string, unknown>;
   output?: Record<string, unknown>;
   deadline?: string;           // ISO 8601 optional deadline
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReminderStatus = "pending" | "sent" | "acknowledged" | "overdue";
+export type ReminderChannel = "gui" | "telegram" | "email";
+export type ReminderType = "standalone" | "process-bound";
+
+export interface Reminder {
+  reminder_id: string;
+  type: ReminderType;
+  recipient: string;           // role, agent name, or user handle
+  message: string;
+  scheduled_at: string;        // ISO 8601
+  channel: ReminderChannel;
+  status: ReminderStatus;
+  // process-bound context (optional)
+  case_id?: string;
+  process_id?: string;
+  element_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -838,4 +861,125 @@ export async function listCases(filters: {
   const page = result.slice(offset, offset + limit);
 
   return { cases: page, total };
+}
+
+// --- Reminders ---
+
+async function saveReminder(r: Reminder, prevStatus?: ReminderStatus): Promise<void> {
+  await redis.set(REMINDER_KEY_PREFIX + r.reminder_id, JSON.stringify(r));
+  if (prevStatus && prevStatus !== r.status) {
+    await redis.srem(REMINDERS_IDX_STATUS + prevStatus, r.reminder_id);
+  }
+  await redis.sadd(REMINDERS_IDX_STATUS + r.status, r.reminder_id);
+  await redis.zadd(REMINDERS_IDX_ALL, new Date(r.scheduled_at).getTime(), r.reminder_id);
+}
+
+async function loadReminder(reminder_id: string): Promise<Reminder | null> {
+  const raw = await redis.get(REMINDER_KEY_PREFIX + reminder_id);
+  return raw ? JSON.parse(raw) : null;
+}
+
+export async function createReminder(params: {
+  type: ReminderType;
+  recipient: string;
+  message: string;
+  scheduled_at: string;
+  channel: ReminderChannel;
+  case_id?: string;
+  process_id?: string;
+  element_id?: string;
+}): Promise<Reminder> {
+  const now = new Date().toISOString();
+  const r: Reminder = {
+    reminder_id: randomUUID(),
+    type: params.type,
+    recipient: params.recipient,
+    message: params.message,
+    scheduled_at: params.scheduled_at,
+    channel: params.channel,
+    status: "pending",
+    case_id: params.case_id,
+    process_id: params.process_id,
+    element_id: params.element_id,
+    created_at: now,
+    updated_at: now,
+  };
+  await saveReminder(r);
+  return r;
+}
+
+export async function listReminders(filters: {
+  status?: ReminderStatus;
+  recipient?: string;
+} = {}): Promise<Reminder[]> {
+  let ids: string[];
+  if (filters.status) {
+    ids = await redis.smembers(REMINDERS_IDX_STATUS + filters.status);
+  } else {
+    ids = await redis.zrange(REMINDERS_IDX_ALL, 0, -1);
+  }
+  const reminders = await Promise.all(ids.map(id => loadReminder(id)));
+  let result = reminders.filter((r): r is Reminder => r !== null);
+  if (filters.recipient) {
+    result = result.filter(r => r.recipient === filters.recipient);
+  }
+  result.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+  return result;
+}
+
+export async function updateReminderStatus(
+  reminder_id: string,
+  status: ReminderStatus,
+): Promise<Reminder> {
+  const r = await loadReminder(reminder_id);
+  if (!r) throw new Error(`Reminder "${reminder_id}" not found`);
+  const prev = r.status;
+  r.status = status;
+  r.updated_at = new Date().toISOString();
+  await saveReminder(r, prev);
+  return r;
+}
+
+export async function deleteReminder(reminder_id: string): Promise<void> {
+  const r = await loadReminder(reminder_id);
+  if (!r) throw new Error(`Reminder "${reminder_id}" not found`);
+  await redis.del(REMINDER_KEY_PREFIX + reminder_id);
+  await redis.srem(REMINDERS_IDX_STATUS + r.status, reminder_id);
+  await redis.zrem(REMINDERS_IDX_ALL, reminder_id);
+}
+
+// Scheduler: check every 60s, mark overdue/sent pending reminders
+export function startReminderScheduler(): void {
+  setInterval(async () => {
+    try {
+      const pending = await listReminders({ status: "pending" });
+      const now = new Date();
+      for (const r of pending) {
+        const scheduled = new Date(r.scheduled_at);
+        if (scheduled <= now) {
+          // Mark as sent (actual delivery is channel-specific; GUI channel = mark sent)
+          await updateReminderStatus(r.reminder_id, "sent");
+          if (r.channel === "telegram") {
+            // Publish to telegram:bot:outgoing for bot delivery
+            await redis.xadd(
+              "telegram:bot:outgoing",
+              "*",
+              "text",
+              `[Reminder] ${r.message}`,
+              "recipient",
+              r.recipient,
+            ).catch(() => {});
+          }
+        }
+      }
+      // Mark sent reminders older than 24h without ack as overdue
+      const sent = await listReminders({ status: "sent" });
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      for (const r of sent) {
+        if (new Date(r.scheduled_at) < oneDayAgo) {
+          await updateReminderStatus(r.reminder_id, "overdue").catch(() => {});
+        }
+      }
+    } catch (_) {}
+  }, 60_000);
 }

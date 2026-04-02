@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus } from './types';
 
 // Token stored in localStorage, readable via ?token= query param
 function getToken(): string {
@@ -58,10 +58,39 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ output: output || {} }),
       }),
+    create: (params: { label: string; assignee: string; deadline?: string; input?: Record<string, unknown> }) =>
+      apiFetch<WorkItem>('/workitems', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }),
   },
 
   cases: {
     get: (id: string) => apiFetch<Case>(`/cases/${id}`),
+  },
+
+  reminders: {
+    list: (filters?: { status?: ReminderStatus; recipient?: string }) => {
+      const p = new URLSearchParams();
+      if (filters?.status)    p.set('status', filters.status);
+      if (filters?.recipient) p.set('recipient', filters.recipient);
+      const qs = p.toString();
+      return apiFetch<Reminder[]>(`/reminders${qs ? '?' + qs : ''}`);
+    },
+    create: (params: {
+      recipient: string;
+      message: string;
+      scheduled_at: string;
+      channel?: string;
+      type?: string;
+    }) => apiFetch<Reminder>('/reminders', { method: 'POST', body: JSON.stringify(params) }),
+    acknowledge: (id: string) =>
+      apiFetch<Reminder>(`/reminders/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'acknowledged' }),
+      }),
+    delete: (id: string) =>
+      apiFetch<{ ok: boolean }>(`/reminders/${id}`, { method: 'DELETE' }),
   },
 };
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
 import { Layout } from '../components/Layout';
 import { StatusBadge } from '../components/StatusBadge';
 import { useToken } from '../context/TokenContext';
@@ -46,6 +47,22 @@ const styles = `
   .modal-close { position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 20px; cursor: pointer; color: #999; }
   .modal-close:hover { color: #333; }
   .refresh-info { font-size: 12px; color: #999; margin-top: 12px; text-align: right; }
+  .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .page-header h1 { margin-bottom: 0; }
+  .btn-new-task { padding: 8px 18px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  .btn-new-task:hover { background: #059669; }
+  .standalone-badge { display: inline-block; padding: 2px 7px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .new-task-form { display: flex; flex-direction: column; gap: 14px; }
+  .new-task-form .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .new-task-form label { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; }
+  .new-task-form input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; }
+  .new-task-form input:focus { outline: none; border-color: #0066cc; box-shadow: 0 0 0 2px rgba(0,102,204,.1); }
+  .new-task-form .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .new-task-form .form-actions button { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
+  .new-task-form .btn-submit { background: #10b981; color: white; }
+  .new-task-form .btn-submit:hover { background: #059669; }
+  .new-task-form .btn-cancel { background: #e5e7eb; color: #374151; }
+  .new-task-form .btn-cancel:hover { background: #d1d5db; }
   @media (max-width: 768px) { .container { padding: 12px; } .filters { grid-template-columns: 1fr; } .items-table { font-size: 12px; } .items-table th, .items-table td { padding: 8px; } .item-actions { flex-direction: column; } .item-actions button { width: 100%; } }
 `;
 
@@ -61,6 +78,72 @@ function getStepLabel(kase: Case, wiId: string): string {
   const idx = (kase.history || []).findIndex((h: any) => h.work_item_id === wiId);
   if (idx === -1) return '';
   return `step ${idx + 1}/${kase.history.length}`;
+}
+
+interface NewTaskModalProps { onClose: () => void; onCreated: () => void; }
+function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
+  const [label, setLabel] = useState('');
+  const [assignee, setAssignee] = useState('');
+  const [deadline, setDeadline] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!label.trim() || !assignee.trim()) { setError('Label and assignee are required'); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.workitems.create({
+        label: label.trim(),
+        assignee: assignee.trim(),
+        deadline: deadline || undefined,
+      });
+      onCreated();
+      onClose();
+    } catch (err: any) {
+      setError(err.message);
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="details-modal show" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-content">
+        <button className="modal-close" onClick={onClose}>✕</button>
+        <h2>New Task</h2>
+        {error && <div className="error-banner" style={{ marginBottom: 12 }}>{error}</div>}
+        <form className="new-task-form" onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="ntLabel">Label *</label>
+            <input id="ntLabel" type="text" placeholder="Task description..." value={label}
+              onChange={e => setLabel(e.target.value)} autoFocus required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="ntAssignee">Assignee *</label>
+            <input id="ntAssignee" type="text" placeholder="Role or agent name..." value={assignee}
+              onChange={e => setAssignee(e.target.value)} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="ntDeadline">Deadline</label>
+            <input id="ntDeadline" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn-cancel" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-submit" disabled={submitting}>
+              {submitting ? 'Creating...' : 'Create Task'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 interface DetailsModalProps { item: WorkItem | null; onClose: () => void; }
@@ -99,6 +182,7 @@ export function WorkItems() {
   const [lastUpdate, setLastUpdate] = useState<string>('-');
   const [filters, setFilters] = useState<WorkItemFilters>({});
   const [detailItem, setDetailItem] = useState<WorkItem | null>(null);
+  const [showNewTask, setShowNewTask] = useState(false);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
   const [caseCache, setCaseCache] = useState<Record<string, Case>>({});
 
@@ -148,7 +232,10 @@ export function WorkItems() {
       <style>{styles}</style>
       <div className="wf-body">
         <div className="container">
-          <h1>Work Items</h1>
+          <div className="page-header">
+            <h1>Work Items</h1>
+            <button className="btn-new-task" onClick={() => setShowNewTask(true)}>+ New Task</button>
+          </div>
           {error && <div className="error-banner">{error}</div>}
 
           <div className="filters">
@@ -222,7 +309,7 @@ export function WorkItems() {
                       <td>
                         {(item.process_id || item.case_id)
                           ? <span title={fullTitle} style={{ cursor: 'default' }}>{processCell}</span>
-                          : '-'}
+                          : <span className="standalone-badge">Standalone</span>}
                       </td>
                       <td className="step-progress"
                           data-case-id={item.case_id || ''}
@@ -247,6 +334,7 @@ export function WorkItems() {
         </div>
       </div>
 
+      {showNewTask && <NewTaskModal onClose={() => setShowNewTask(false)} onCreated={loadItems} />}
       <DetailsModal item={detailItem} onClose={() => setDetailItem(null)} />
     </Layout>
   );
