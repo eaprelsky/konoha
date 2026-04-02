@@ -128,8 +128,8 @@ async def tmux_send(session: str, text: str) -> bool:
     # Wait for compacting to finish before sending — avoids [Pasted text] race (#147)
     compacting_waited = 0
     while compacting_waited < 120:
-        content = tmux_pane_content(session)
-        if not any(kw in content for kw in ("Compacting", "Churned for", "\u273b")):
+        last_lines = chr(10).join(tmux_pane_content(session).strip().split(chr(10))[-6:])
+        if not any(kw in last_lines for kw in ("Compacting", "Churned for", "\u273b")):
             break
         log.info(f"Agent {session} compacting — waiting (waited {compacting_waited}s)")
         await asyncio.sleep(2.0)
