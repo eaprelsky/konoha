@@ -3,6 +3,66 @@ import { redis } from "./redis";
 import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "./workflow-loader";
 import { getAdapter } from "./adapters/index";
 
+// --- Event log ---
+
+const EVENTS_LOG_KEY = "konoha:events:log"; // Redis stream for structured runtime events
+const EVENTS_LOG_MAX_LEN = 10000;           // trim to last 10k events
+
+export interface RuntimeEvent {
+  id?: string;         // stream entry id (set on read)
+  type: string;        // e.g. "case.created", "step.started"
+  case_id?: string;
+  process_id?: string;
+  work_item_id?: string;
+  element_id?: string;
+  label?: string;
+  timestamp: string;
+}
+
+async function emitEvent(event: Omit<RuntimeEvent, "id">): Promise<void> {
+  const fields: Record<string, string> = { type: event.type, timestamp: event.timestamp };
+  if (event.case_id)      fields.case_id = event.case_id;
+  if (event.process_id)   fields.process_id = event.process_id;
+  if (event.work_item_id) fields.work_item_id = event.work_item_id;
+  if (event.element_id)   fields.element_id = event.element_id;
+  if (event.label)        fields.label = event.label;
+  await redis.xadd(EVENTS_LOG_KEY, "MAXLEN", "~", EVENTS_LOG_MAX_LEN, "*", ...Object.entries(fields).flat());
+}
+
+export async function listEvents(filters: {
+  type?: string;
+  after?: string;  // stream ID or ISO timestamp (converted to ms)
+  before?: string; // stream ID or ISO timestamp
+  limit?: number;
+}): Promise<RuntimeEvent[]> {
+  const limit = Math.min(filters.limit ?? 100, 1000);
+
+  // Convert ISO dates to Redis stream IDs (ms timestamps)
+  function toStreamId(s: string): string {
+    if (/^\d+-\d+$/.test(s) || /^\d+$/.test(s)) return s; // already a stream ID
+    const ms = new Date(s).getTime();
+    return isNaN(ms) ? "-" : String(ms);
+  }
+
+  const start = filters.after ? toStreamId(filters.after) : "-";
+  const end   = filters.before ? toStreamId(filters.before) : "+";
+
+  const entries = await redis.xrange(EVENTS_LOG_KEY, start, end, "COUNT", limit) as [string, string[]][];
+  const result: RuntimeEvent[] = [];
+  for (const [entryId, fields] of entries) {
+    const obj: Record<string, string> = {};
+    for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
+    const event: RuntimeEvent = { id: entryId, type: obj.type, timestamp: obj.timestamp };
+    if (obj.case_id)      event.case_id = obj.case_id;
+    if (obj.process_id)   event.process_id = obj.process_id;
+    if (obj.work_item_id) event.work_item_id = obj.work_item_id;
+    if (obj.element_id)   event.element_id = obj.element_id;
+    if (obj.label)        event.label = obj.label;
+    if (!filters.type || event.type === filters.type) result.push(event);
+  }
+  return result;
+}
+
 const CASE_KEY_PREFIX = "case:";
 const WORKITEM_KEY_PREFIX = "workitem:";
 const WORKITEMS_IDX_ASSIGNEE = "konoha:workitems:assignee:"; // set of workitem IDs
@@ -10,6 +70,9 @@ const WORKITEMS_IDX_STATUS = "konoha:workitems:status:";    // set of workitem I
 const WORKITEMS_IDX_PROCESS = "konoha:workitems:process:";  // set of workitem IDs per process_id
 const WORKITEMS_IDX_ALL = "konoha:workitems:all";           // sorted set: work_item_id → created_at ms
 const WORKFLOW_KEY_PREFIX = "workflow:";
+const CASES_IDX_ALL = "konoha:cases:all";                   // sorted set: case_id → created_at ms
+const CASES_IDX_STATUS = "konoha:cases:status:";            // set of case IDs per status
+const CASES_IDX_PROCESS = "konoha:cases:process:";          // set of case IDs per process_id
 
 // --- Types ---
 
@@ -63,6 +126,15 @@ export interface WorkItem {
 
 async function saveCase(c: Case): Promise<void> {
   await redis.set(CASE_KEY_PREFIX + c.case_id, JSON.stringify(c));
+  // Maintain indexes (idempotent — always re-sync)
+  await redis.zadd(CASES_IDX_ALL, new Date(c.created_at).getTime(), c.case_id);
+  // Remove from all status sets then add to current (handles status transitions)
+  const allStatuses: CaseStatus[] = ["running", "done", "error"];
+  for (const s of allStatuses) {
+    if (s !== c.status) await redis.srem(CASES_IDX_STATUS + s, c.case_id);
+  }
+  await redis.sadd(CASES_IDX_STATUS + c.status, c.case_id);
+  await redis.sadd(CASES_IDX_PROCESS + c.process_id, c.case_id);
 }
 
 async function loadCase(case_id: string): Promise<Case | null> {
@@ -214,6 +286,7 @@ async function createWorkItemForElement(
     updated_at: now,
   };
   await saveWorkItem(wi);
+  await emitEvent({ type: "step.started", case_id: kase.case_id, process_id: kase.process_id, work_item_id: wi.work_item_id, element_id: elementId, label: el.label, timestamp: now });
   return wi;
 }
 
@@ -281,31 +354,47 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
       });
       await saveCase(kase);
 
-      // Auto-execute via adapter if system is registered
-      if (nextEl.system) {
-        const adapter = getAdapter(nextEl.system);
-        if (adapter) {
+      // Auto-execute via adapters (systems array; legacy system string already normalized on load)
+      const systemBindings = nextEl.systems ?? (nextEl.system ? [{ connector: nextEl.system, operation: "default" }] : []);
+      if (systemBindings.length > 0) {
+        const labelSlug = nextEl.label.toLowerCase().replace(/\s+/g, "_");
+        let mergedOutput: Record<string, unknown> = {};
+        let adapterError = false;
+
+        for (const binding of systemBindings) {
+          const adapter = getAdapter(binding.connector);
+          if (!adapter) continue;
           try {
-            const output = await adapter.execute(nextEl.label.toLowerCase().replace(/\s+/g, "_"), kase.payload);
-            // Complete the work item and continue advancing
-            const prevStatus = wi.status;
-            wi.status = "done";
-            wi.output = output;
-            wi.updated_at = new Date().toISOString();
-            await saveWorkItem(wi, prevStatus);
-            const histEntry = kase.history.find(h => h.work_item_id === wi.work_item_id);
-            if (histEntry) histEntry.output = output;
-            current = nextId;
-            continue; // advance past the completed function
+            const op = (binding.operation && binding.operation !== "default") ? binding.operation : labelSlug;
+            const out = await adapter.execute(op, kase.payload);
+            mergedOutput = { ...mergedOutput, ...out };
           } catch (e: any) {
-            console.error(`[runtime] adapter "${nextEl.system}" error for "${nextEl.label}":`, e.message);
-            wi.status = "error";
-            wi.updated_at = new Date().toISOString();
-            await saveWorkItem(wi, "pending");
-            kase.status = "error";
-            await saveCase(kase);
-            return kase;
+            console.error(`[runtime] adapter "${binding.connector}" error for "${nextEl.label}":`, e.message);
+            adapterError = true;
+            break;
           }
+        }
+
+        if (adapterError) {
+          wi.status = "error";
+          wi.updated_at = new Date().toISOString();
+          await saveWorkItem(wi, "pending");
+          kase.status = "error";
+          await saveCase(kase);
+          return kase;
+        }
+
+        if (Object.keys(mergedOutput).length > 0 || systemBindings.some(b => getAdapter(b.connector))) {
+          // All adapters executed — complete the work item and advance
+          const prevStatus = wi.status;
+          wi.status = "done";
+          wi.output = mergedOutput;
+          wi.updated_at = new Date().toISOString();
+          await saveWorkItem(wi, prevStatus);
+          const histEntry = kase.history.find(h => h.work_item_id === wi.work_item_id);
+          if (histEntry) histEntry.output = mergedOutput;
+          current = nextId;
+          continue; // advance past the completed function
         }
       }
 
@@ -332,8 +421,10 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
       // --- XOR split ---
       if (operator === "XOR") {
         // Record passage
-        kase.history.push({ element_id: nextId, element_type: "gateway", label: nextEl.label, timestamp: new Date().toISOString() });
+        const gwTs = new Date().toISOString();
+        kase.history.push({ element_id: nextId, element_type: "gateway", label: nextEl.label, timestamp: gwTs });
         kase.position = nextId;
+        await emitEvent({ type: "gateway.evaluated", case_id: kase.case_id, process_id: kase.process_id, element_id: nextId, label: nextEl.label, timestamp: gwTs });
 
         // XOR join: single incoming branch passes through
         if (gwOuts.length <= 1) {
@@ -395,21 +486,32 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
           const wi = await createWorkItemForElement(kase, branchElId, branchEl);
           kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
 
-          // Auto-execute via adapter if applicable
-          if (branchEl.system) {
-            const adapter = getAdapter(branchEl.system);
-            if (adapter) {
+          // Auto-execute via adapters (systems array; legacy system string already normalized on load)
+          const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
+          if (branchBindings.length > 0) {
+            const labelSlug = branchEl.label.toLowerCase().replace(/\s+/g, "_");
+            let mergedOut: Record<string, unknown> = {};
+            let branchErr = false;
+            for (const binding of branchBindings) {
+              const adapter = getAdapter(binding.connector);
+              if (!adapter) continue;
               try {
-                const output = await adapter.execute(branchEl.label.toLowerCase().replace(/\s+/g, "_"), kase.payload);
-                wi.status = "done"; wi.output = output; wi.updated_at = new Date().toISOString();
-                await saveWorkItem(wi, "pending");
-                const h = kase.history.find(h => h.work_item_id === wi.work_item_id);
-                if (h) h.output = output;
-                branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: true });
-                continue;
+                const op = (binding.operation && binding.operation !== "default") ? binding.operation : labelSlug;
+                const out = await adapter.execute(op, kase.payload);
+                mergedOut = { ...mergedOut, ...out };
               } catch (e: any) {
                 console.error(`[runtime] adapter error in branch "${branchElId}":`, e.message);
+                branchErr = true;
+                break;
               }
+            }
+            if (!branchErr && branchBindings.some(b => getAdapter(b.connector))) {
+              wi.status = "done"; wi.output = mergedOut; wi.updated_at = new Date().toISOString();
+              await saveWorkItem(wi, "pending");
+              const h = kase.history.find(h => h.work_item_id === wi.work_item_id);
+              if (h) h.output = mergedOut;
+              branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: true });
+              continue;
             }
           }
           branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: false });
@@ -503,6 +605,7 @@ export async function createCase(
   };
 
   await saveCase(kase);
+  await emitEvent({ type: "case.created", case_id: kase.case_id, process_id: kase.process_id, timestamp: kase.created_at });
 
   // Advance to the first work item
   return advanceCase(kase, def);
@@ -570,6 +673,15 @@ export async function completeWorkItem(
   wi.output = output;
   wi.updated_at = new Date().toISOString();
   await saveWorkItem(wi, prevStatus);
+  await emitEvent({
+    type: "step.completed",
+    case_id: wi.case_id ?? undefined,
+    process_id: wi.process_id ?? undefined,
+    work_item_id: wi.work_item_id,
+    element_id: wi.element_id ?? undefined,
+    label: wi.label,
+    timestamp: wi.updated_at,
+  });
 
   // Standalone work item — no case to advance
   if (!wi.case_id) {
@@ -675,4 +787,55 @@ export async function processEvent(
   }
 
   return cases;
+}
+
+export async function listCases(filters: {
+  status?: CaseStatus;
+  process_id?: string;
+  after?: string;   // ISO 8601 — created_at >=
+  before?: string;  // ISO 8601 — created_at <=
+  limit?: number;
+  offset?: number;
+}): Promise<{ cases: Case[]; total: number }> {
+  let candidateIds: Set<string> | null = null;
+
+  function intersect(a: Set<string>, b: string[]): Set<string> {
+    return new Set(b.filter(id => a.has(id)));
+  }
+
+  if (filters.status) {
+    const ids = await redis.smembers(CASES_IDX_STATUS + filters.status);
+    candidateIds = new Set(ids);
+  }
+  if (filters.process_id) {
+    const ids = await redis.smembers(CASES_IDX_PROCESS + filters.process_id);
+    candidateIds = candidateIds ? intersect(candidateIds, ids) : new Set(ids);
+  }
+  if (!candidateIds) {
+    // No index filter — get all from sorted set (ordered by created_at)
+    const all = await redis.zrange(CASES_IDX_ALL, 0, -1);
+    candidateIds = new Set(all);
+  }
+
+  const cases = await Promise.all([...candidateIds].map(id => loadCase(id)));
+  let result = cases.filter((c): c is Case => c !== null);
+
+  // In-memory date range filter
+  if (filters.after) {
+    const after = new Date(filters.after).getTime();
+    result = result.filter(c => new Date(c.created_at).getTime() >= after);
+  }
+  if (filters.before) {
+    const before = new Date(filters.before).getTime();
+    result = result.filter(c => new Date(c.created_at).getTime() <= before);
+  }
+
+  result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+  const total = result.length;
+  const offset = filters.offset ?? 0;
+  const limit = filters.limit ?? 50;
+  const page = result.slice(offset, offset + limit);
+
+  return { cases: page, total };
 }

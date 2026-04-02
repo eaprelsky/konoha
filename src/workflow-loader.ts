@@ -2,12 +2,18 @@ import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { redis } from "./redis";
 
+export interface SystemBinding {
+  connector: string;  // adapter name (e.g. "telegram", "bitrix24")
+  operation?: string; // specific operation; defaults to function label slug
+}
+
 export interface WorkflowElement {
   id: string;
   type: "event" | "function" | "gateway";
   label: string;
   role?: string;
-  system?: string;
+  system?: string;           // legacy single system (auto-converted to systems on load)
+  systems?: SystemBinding[]; // multi-system bindings (section 13 of spec)
   documents?: string[];
   operator?: "AND" | "OR" | "XOR"; // for gateways
 }
@@ -181,12 +187,25 @@ function loadWorkflowsFromDir(dir: string): WorkflowDefinition[] {
   return results;
 }
 
+// Normalize legacy `system` string → `systems` array (backward compat for issue #156)
+function normalizeSystems(def: WorkflowDefinition): WorkflowDefinition {
+  const elements = def.elements.map(el => {
+    if (el.type !== "function") return el;
+    if (el.system && !el.systems) {
+      return { ...el, systems: [{ connector: el.system, operation: "default" }] };
+    }
+    return el;
+  });
+  return { ...def, elements };
+}
+
 export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: number; errors: number }> {
   const defs = loadWorkflowsFromDir(workflowsDir);
   let loaded = 0;
   let errorCount = 0;
 
-  for (const def of defs) {
+  for (let def of defs) {
+    def = normalizeSystems(def);
     const validationErrors = validateWorkflow(def);
     if (validationErrors.length > 0) {
       console.error(`[workflow-loader] Workflow "${def.id}" failed eEPC validation (${validationErrors.length} error(s)):`);
@@ -223,4 +242,59 @@ export async function listWorkflows(): Promise<WorkflowDefinition[]> {
     }
   }
   return results;
+}
+
+// --- CRUD (issue #152) ---
+
+const WORKFLOW_VERSION_KEY_PREFIX = "workflow:version:"; // workflow:{id}:v{N}
+const WORKFLOW_VERSION_CTR_PREFIX = "konoha:workflow:versionctr:"; // INCR counter per workflow id
+
+export async function createWorkflow(def: WorkflowDefinition): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] }> {
+  def = normalizeSystems(def);
+  const errors = validateWorkflow(def);
+  if (errors.length > 0) return { workflow: def, errors };
+  await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
+  await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
+  return { workflow: def, errors: [] };
+}
+
+export async function updateWorkflow(id: string, patch: Partial<WorkflowDefinition>): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] } | null> {
+  const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
+  if (!raw) return null;
+
+  const current: WorkflowDefinition = JSON.parse(raw);
+
+  // Archive current version before overwriting
+  const versionNum = await redis.incr(WORKFLOW_VERSION_CTR_PREFIX + id);
+  await redis.set(`${WORKFLOW_VERSION_KEY_PREFIX}${id}:v${versionNum}`, raw);
+
+  const updated: WorkflowDefinition = { ...current, ...patch, id }; // id is immutable
+  const normalized = normalizeSystems(updated);
+  const errors = validateWorkflow(normalized);
+  if (errors.length > 0) return { workflow: normalized, errors };
+
+  await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(normalized));
+  return { workflow: normalized, errors: [] };
+}
+
+export async function archiveWorkflow(id: string): Promise<boolean> {
+  const exists = await redis.exists(WORKFLOW_KEY_PREFIX + id);
+  if (!exists) return false;
+  await redis.srem(WORKFLOW_INDEX_KEY, id);
+  // Keep the key in Redis (archived, not deleted) — remove from active index only
+  return true;
+}
+
+export async function listWorkflowVersions(id: string): Promise<WorkflowDefinition[]> {
+  const pattern = `${WORKFLOW_VERSION_KEY_PREFIX}${id}:v*`;
+  const keys = await redis.keys(pattern);
+  if (keys.length === 0) return [];
+  const values = await redis.mget(...keys);
+  const results: WorkflowDefinition[] = [];
+  for (const v of values) {
+    if (v) {
+      try { results.push(JSON.parse(v)); } catch { /* skip */ }
+    }
+  }
+  return results.sort((a, b) => a.version.localeCompare(b.version));
 }

@@ -3,8 +3,8 @@ import { bearerAuth } from "hono/bearer-auth";
 import { streamSSE } from "hono/streaming";
 import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync } from "fs";
 import { join, extname } from "path";
-import { loadWorkflows, getWorkflow, listWorkflows } from "./workflow-loader";
-import { createCase, getCase, completeWorkItem, listWorkItems, createStandaloneWorkItem, updateWorkItem, processEvent, type WorkItemStatus } from "./runtime";
+import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions } from "./workflow-loader";
+import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, type WorkItemStatus, type CaseStatus } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
 import {
   registerAgent,
@@ -99,6 +99,7 @@ app.use("/messages/*", requireAuth);
 app.use("/channels/*", requireAuth);
 app.use("/attachments/*", requireAuth);
 app.use("/events", requireAuth);
+app.use("/events/log", requireAuth);
 app.use("/adapters/*", requireAuth);
 app.use("/cases/*", requireAuth);
 app.use("/cases", requireAuth);
@@ -448,7 +449,27 @@ app.post("/events", async (c) => {
   return c.json({ id, cases_created: cases.map(c => c.case_id) });
 });
 
+app.get("/events/log", async (c) => {
+  const type = c.req.query("type") || undefined;
+  const after = c.req.query("after") || undefined;
+  const before = c.req.query("before") || undefined;
+  const limit = Math.min(parseInt(c.req.query("limit") || "100"), 1000);
+  const events = await listEvents({ type, after, before, limit });
+  return c.json(events);
+});
+
 // --- Cases & Work Items (Workflow Runtime) ---
+
+app.get("/cases", async (c) => {
+  const status = (c.req.query("status") || undefined) as CaseStatus | undefined;
+  const process_id = c.req.query("process_id") || undefined;
+  const after = c.req.query("after") || undefined;
+  const before = c.req.query("before") || undefined;
+  const limit = Math.min(parseInt(c.req.query("limit") || "50"), 200);
+  const offset = parseInt(c.req.query("offset") || "0");
+  const result = await listCases({ status, process_id, after, before, limit, offset });
+  return c.json(result);
+});
 
 app.post("/cases", async (c) => {
   const body = await c.req.json();
@@ -560,6 +581,38 @@ app.get("/workflows/:id", requireAuth, async (c) => {
   const wf = await getWorkflow(id);
   if (!wf) return c.json({ error: "Workflow not found" }, 404);
   return c.json(wf);
+});
+
+app.post("/workflows", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body) return c.json({ error: "Invalid JSON body" }, 400);
+  if (!body.id || !body.name) return c.json({ error: "id and name required" }, 400);
+  const result = await createWorkflow(body);
+  if (result.errors.length > 0) return c.json({ error: "Validation failed", details: result.errors }, 422);
+  return c.json(result.workflow, 201);
+});
+
+app.put("/workflows/:id", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => null);
+  if (!body) return c.json({ error: "Invalid JSON body" }, 400);
+  const result = await updateWorkflow(id, body);
+  if (result === null) return c.json({ error: "Workflow not found" }, 404);
+  if (result.errors.length > 0) return c.json({ error: "Validation failed", details: result.errors }, 422);
+  return c.json(result.workflow);
+});
+
+app.delete("/workflows/:id", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const ok = await archiveWorkflow(id);
+  if (!ok) return c.json({ error: "Workflow not found" }, 404);
+  return c.json({ ok: true, archived: id });
+});
+
+app.get("/workflows/:id/versions", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const versions = await listWorkflowVersions(id);
+  return c.json(versions);
 });
 
 // Load workflow definitions from disk into Redis on startup
