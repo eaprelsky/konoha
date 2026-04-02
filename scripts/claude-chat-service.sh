@@ -12,7 +12,7 @@ while true; do
     echo "[$(date)] Starting Claude Chat Agent..."
 
     # Kill old session if exists
-    tmux kill-session -t "$SESSION" 2>/dev/null
+    tmux -L "$SESSION" kill-session -t "$SESSION" 2>/dev/null
     sleep 2
 
     # Ensure bus is running
@@ -25,29 +25,29 @@ while true; do
     fi
 
     # Create tmux session
-    tmux new-session -d -s "$SESSION" -x 200 -y 50
+    tmux -L "$SESSION" new-session -d -s "$SESSION" -x 200 -y 50
 
     # Launch Claude Code
-    tmux send-keys -t "$SESSION" "claude --dangerously-skip-permissions --mcp-config $MCP_CONFIG" Enter
+    tmux -L "$SESSION" send-keys -t "$SESSION" "claude --dangerously-skip-permissions --mcp-config $MCP_CONFIG" Enter
     sleep 15
 
     # Confirm trust
-    tmux send-keys -t "$SESSION" Enter
-    sleep 15
+    tmux -L "$SESSION" send-keys -t "$SESSION" Enter
+    /home/ubuntu/scripts/wait-for-prompt.sh "$SESSION" 90 "$SESSION"
 
     # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
-    tmux send-keys -t "$SESSION" BTab
+    tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1
 
     # Send initial prompt
-    tmux send-keys -t "$SESSION" "$PROMPT" Enter
+    tmux -L "$SESSION" send-keys -t "$SESSION" "$PROMPT" Enter
 
     echo "[$(date)] Claude Chat Agent started. Will restart in ${RESTART_INTERVAL}s."
     sleep "$RESTART_INTERVAL"
 
     echo "[$(date)] Restarting Claude Chat Agent (context reset)..."
-    tmux send-keys -t "$SESSION" C-c
+    tmux -L "$SESSION" send-keys -t "$SESSION" C-c
     sleep 2
-    tmux send-keys -t "$SESSION" "/exit" Enter
+    tmux -L "$SESSION" send-keys -t "$SESSION" "/exit" Enter
     sleep 3
 done
