@@ -111,16 +111,33 @@
     applyStatus(shape, style);
     addLabel(g, node.label, W / 2, H / 2, W - 24);
 
-    // Small role badge in bottom-right corner
+    // Role side-element: small organizational unit figure attached to the right
     if (node.role) {
+      const RW = 68, RH = 32, GAP = 12;
+      // Dashed connector line from right center of function to role element
+      el('line', {
+        x1: W, y1: H / 2,
+        x2: W + GAP, y2: H / 2,
+        stroke: '#9ca3af', 'stroke-width': 1,
+        'stroke-dasharray': '3 2',
+        'pointer-events': 'none',
+      }, g);
+      // Role oval (organizational unit shape)
+      const rg = el('g', { transform: `translate(${W + GAP}, ${(H - RH) / 2})` }, g);
+      el('ellipse', {
+        cx: RW / 2, cy: RH / 2, rx: RW / 2 - 1, ry: RH / 2 - 1,
+        fill: '#FFF9C4', stroke: '#B7A000', 'stroke-width': 1,
+      }, rg);
+      el('line', { x1: 10, y1: 3, x2: 10, y2: RH - 3, stroke: '#B7A000', 'stroke-width': 1.5 }, rg);
       el('text', {
-        x: W - 6, y: H - 5,
-        'text-anchor': 'end',
+        x: RW / 2 + 4, y: RH / 2,
+        'text-anchor': 'middle',
+        'dominant-baseline': 'middle',
         'font-size': 9,
         'font-family': 'system-ui, sans-serif',
-        fill: '#3B6D11',
+        fill: '#78600a',
         'pointer-events': 'none',
-      }, g).textContent = node.role;
+      }, rg).textContent = node.role;
     }
   }
 
@@ -317,15 +334,28 @@
     return { x: cx, y: p.y };
   }
 
-  function drawEdge(svg, from, to, condition, nodeMap, positions, defs) {
+  function drawEdge(svg, from, to, nodeMap, positions) {
     const fp = bottomOf(from, nodeMap, positions);
     const tp = topOf(to, nodeMap, positions);
 
-    // Cubic bezier with vertical tangents
-    const midY = (fp.y + tp.y) / 2;
-    const d = fp.x === tp.x
-      ? `M${fp.x},${fp.y} L${tp.x},${tp.y}`
-      : `M${fp.x},${fp.y} C${fp.x},${midY} ${tp.x},${midY} ${tp.x},${tp.y}`;
+    let d;
+    if (Math.abs(fp.x - tp.x) < 0.5) {
+      // Same x: straight vertical line
+      d = `M${fp.x},${fp.y} L${tp.x},${tp.y}`;
+    } else {
+      // Orthogonal routing: down → horizontal → down, with rounded corners
+      const midY = (fp.y + tp.y) / 2;
+      const r = Math.min(8, Math.abs(tp.y - fp.y) / 3);
+      const sign = tp.x > fp.x ? 1 : -1;
+      d = [
+        `M${fp.x},${fp.y}`,
+        `V${midY - r}`,
+        `Q${fp.x},${midY} ${fp.x + sign * r},${midY}`,
+        `H${tp.x - sign * r}`,
+        `Q${tp.x},${midY} ${tp.x},${midY + r}`,
+        `V${tp.y}`,
+      ].join(' ');
+    }
 
     el('path', {
       d,
@@ -334,25 +364,6 @@
       fill: 'none',
       'marker-end': 'url(#epc-arrow)',
     }, svg);
-
-    // Condition label (short, mid-path)
-    if (condition) {
-      const labelX = (fp.x + tp.x) / 2 + 6;
-      const labelY = midY - 4;
-      const shortLabel = condition
-        .replace('payload.', '')
-        .replace(' === true', ': ✓')
-        .replace(' !== true', ': ✗')
-        .replace(' == true', ': ✓')
-        .replace(' != true', ': ✗');
-      const t = el('text', {
-        x: labelX, y: labelY,
-        'font-size': 10,
-        'font-family': 'system-ui, sans-serif',
-        fill: '#9ca3af',
-      }, svg);
-      t.textContent = shortLabel;
-    }
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -425,9 +436,9 @@
 
     // Layer: edges (drawn first, below nodes)
     const edgeLayer = el('g', { id: 'edges' }, svg);
-    flow.forEach(([from, to, condition]) => {
+    flow.forEach(([from, to]) => {
       if (!positions[from] || !positions[to]) return;
-      drawEdge(edgeLayer, from, to, condition, nodeMap, positions, defs);
+      drawEdge(edgeLayer, from, to, nodeMap, positions);
     });
 
     // Layer: nodes

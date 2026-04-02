@@ -14,8 +14,15 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background: #f5f5f5;
-            padding: 20px;
+            padding: 0;
         }
+
+        header { background: #0f172a; color: #f8fafc; padding: 14px 28px; display: flex; align-items: center; gap: 16px; }
+        header h1 { font-size: 18px; font-weight: 600; margin: 0; }
+        nav { display: flex; gap: 4px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #e2e8f0; margin-bottom: 0; }
+        nav a { padding: 7px 16px; border-radius: 6px; text-decoration: none; color: #475569; font-size: 14px; }
+        nav a:hover, nav a.active { background: #f1f5f9; color: #0f172a; font-weight: 500; }
+        .page-body { padding: 20px; }
 
         .container {
             max-width: 1400px;
@@ -294,6 +301,12 @@
             color: #333;
         }
 
+        .step-progress {
+            font-size: 12px;
+            color: #64748b;
+            white-space: nowrap;
+        }
+
         .refresh-info {
             font-size: 12px;
             color: #999;
@@ -330,6 +343,19 @@
     </style>
 </head>
 <body>
+<header>
+  <h1>Konoha Workflow Engine</h1>
+</header>
+<nav>
+  <a href="/ui/index.html">Dashboard</a>
+  <a href="/ui/processes.html">Processes</a>
+  <a href="/ui/workitems.html" class="active">Work Items</a>
+  <a href="/ui/cases.html">Cases</a>
+  <a href="/ui/roles.html">Roles</a>
+  <a href="/ui/eventlog.html">Event Log</a>
+  <a href="/ui/connectors.html">Connectors</a>
+</nav>
+<div class="page-body">
     <div class="container">
         <h1>Work Items</h1>
         <div id="error"></div>
@@ -372,6 +398,7 @@
                     <th>Assignee</th>
                     <th>Status</th>
                     <th>Process / Case</th>
+                    <th>Progress</th>
                     <th>Deadline</th>
                     <th>Actions</th>
                 </tr>
@@ -384,6 +411,7 @@
             Auto-refresh every 10 seconds • Last update: <span id="lastUpdate">-</span>
         </div>
     </div>
+</div>
 
     <div id="detailsModal" class="details-modal">
         <div class="modal-content">
@@ -397,6 +425,12 @@
         let apiToken = '';
         let currentFilters = {};
         let refreshInterval;
+        // item data map: work_item_id → item object (fixes Detail button for all rows)
+        const itemsMap = {};
+        // workflow name map: process_id → workflow name
+        const wfNameMap = {};
+        // case data cache: case_id → case object (for step progress)
+        const caseCache = {};
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
@@ -410,6 +444,18 @@
                     return;
                 }
             }
+
+            // Load workflow names once for the process/case column
+            fetch(`${window.location.origin}/workflows`, {
+                headers: { 'Authorization': `Bearer ${apiToken}` }
+            })
+            .then(r => r.ok ? r.json() : [])
+            .then(wfs => {
+                if (Array.isArray(wfs)) {
+                    wfs.forEach(wf => { wfNameMap[wf.id] = wf.name || wf.id; });
+                }
+            })
+            .catch(() => {});
 
             // Initial load
             loadWorkItems();
@@ -453,11 +499,53 @@
                 renderItems(data);
                 updateLastUpdate();
                 showLoading(false);
+                // Fetch case data for step progress (unique case_ids only)
+                fetchCasesForProgress(data);
             })
             .catch(error => {
                 showError(`Failed to load work items: ${error.message}`);
                 showLoading(false);
             });
+        }
+
+        function fetchCasesForProgress(items) {
+            const caseIds = [...new Set(
+                items.filter(i => i.case_id && !caseCache[i.case_id]).map(i => i.case_id)
+            )];
+            caseIds.forEach(caseId => {
+                fetch(`${window.location.origin}/cases/${caseId}`, {
+                    headers: { 'Authorization': `Bearer ${apiToken}` }
+                })
+                .then(r => r.ok ? r.json() : null)
+                .then(kase => {
+                    if (!kase) return;
+                    caseCache[caseId] = kase;
+                    // Update progress cells for this case
+                    document.querySelectorAll(`[data-case-id="${caseId}"]`).forEach(cell => {
+                        const wiId = cell.dataset.wiId;
+                        cell.textContent = getStepLabel(kase, wiId);
+                    });
+                })
+                .catch(() => {});
+            });
+        }
+
+        function getStepLabel(kase, wiId) {
+            const history = kase.history || [];
+            const idx = history.findIndex(h => h.work_item_id === wiId);
+            const total = history.length;
+            if (idx === -1) return '';
+            return `step ${idx + 1}/${total}`;
+        }
+
+        function formatProcessCase(item) {
+            if (!item.process_id && !item.case_id) return '-';
+            const name = wfNameMap[item.process_id] ||
+                (item.process_id ? item.process_id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '');
+            const shortCase = item.case_id ? item.case_id.substring(0, 6).toUpperCase() : '';
+            const fullTitle = [item.process_id, item.case_id].filter(Boolean).join(' / ');
+            const display = shortCase ? `${name} #${shortCase}` : name;
+            return `<span title="${escapeHtml(fullTitle)}" style="cursor:default">${escapeHtml(display)}</span>`;
         }
 
         function renderItems(items) {
@@ -477,19 +565,28 @@
             empty.style.display = 'none';
 
             items.forEach(item => {
+                const id = item.work_item_id;
+                itemsMap[id] = item;
+
                 const row = document.createElement('tr');
                 const deadline = item.deadline ? new Date(item.deadline).toLocaleDateString() : '-';
-                const processLink = item.process_id ? `<a href="${window.location.origin}/processes/${item.process_id}" class="item-link">${item.process_id}</a>` : '-';
+
+                // Progress cell — will be updated async after case fetch
+                let progressHtml = '-';
+                if (item.case_id && caseCache[item.case_id]) {
+                    progressHtml = escapeHtml(getStepLabel(caseCache[item.case_id], id));
+                }
 
                 row.innerHTML = `
                     <td><span class="item-label">${escapeHtml(item.label)}</span></td>
                     <td>${escapeHtml(item.assignee || '-')}</td>
                     <td><span class="status ${item.status}">${item.status}</span></td>
-                    <td>${processLink}</td>
+                    <td>${formatProcessCase(item)}</td>
+                    <td class="step-progress" data-case-id="${escapeAttr(item.case_id || '')}" data-wi-id="${escapeAttr(id)}">${progressHtml}</td>
                     <td>${deadline}</td>
                     <td class="item-actions">
-                        <button class="complete" onclick="completeItem('${escapeAttr(item.id)}')">Complete</button>
-                        <button onclick="showDetails('${escapeAttr(item.id)}', '${escapeAttr(item.label)}', '${escapeAttr(JSON.stringify(item.input || {}))}', '${escapeAttr(JSON.stringify(item.output || {}))}')">Details</button>
+                        <button class="complete" onclick="completeItem('${escapeAttr(id)}')">Complete</button>
+                        <button onclick="showDetails('${escapeAttr(id)}')">Details</button>
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -515,20 +612,19 @@
             });
         }
 
-        function showDetails(id, label, input, output) {
+        function showDetails(id) {
+            const item = itemsMap[id];
+            if (!item) return;
             const modal = document.getElementById('detailsModal');
-            document.getElementById('detailsTitle').textContent = `Details: ${label}`;
+            document.getElementById('detailsTitle').textContent = `Details: ${item.label}`;
 
             let content = '';
-            try {
-                const inputObj = JSON.parse(input);
-                const outputObj = JSON.parse(output);
-
-                content += '<div class="detail-field"><strong>Input</strong><code>' + escapeHtml(JSON.stringify(inputObj, null, 2)) + '</code></div>';
-                content += '<div class="detail-field"><strong>Output</strong><code>' + escapeHtml(JSON.stringify(outputObj, null, 2)) + '</code></div>';
-            } catch (e) {
-                content = '<div class="detail-field"><strong>Error</strong><code>Failed to parse details</code></div>';
+            content += '<div class="detail-field"><strong>ID</strong><code>' + escapeHtml(item.work_item_id) + '</code></div>';
+            if (item.case_id) {
+                content += '<div class="detail-field"><strong>Case ID</strong><code>' + escapeHtml(item.case_id) + '</code></div>';
             }
+            content += '<div class="detail-field"><strong>Input</strong><code>' + escapeHtml(JSON.stringify(item.input || {}, null, 2)) + '</code></div>';
+            content += '<div class="detail-field"><strong>Output</strong><code>' + escapeHtml(JSON.stringify(item.output || {}, null, 2)) + '</code></div>';
 
             document.getElementById('detailsContent').innerHTML = content;
             modal.classList.add('show');
