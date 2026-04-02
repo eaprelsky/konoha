@@ -41,6 +41,12 @@ export const api = {
   workflows: {
     list: () => apiFetch<Workflow[]>('/workflows'),
     get: (id: string) => apiFetch<Workflow>(`/workflows/${id}`),
+    create: (body: Partial<Workflow> & { id: string; name: string }) =>
+      apiFetch<Workflow>('/workflows', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: Partial<Workflow>) =>
+      apiFetch<Workflow>(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: string) =>
+      apiFetch<{ ok: boolean }>(`/workflows/${id}`, { method: 'DELETE' }),
   },
 
   workitems: {

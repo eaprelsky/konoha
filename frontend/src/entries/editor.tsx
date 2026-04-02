@@ -1,13 +1,13 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { TokenProvider } from '../context/TokenContext';
-import { Admin } from '../pages/Admin';
+import { ProcessEditor } from '../pages/ProcessEditor';
 import { I18nProvider } from '../context/I18nContext';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <I18nProvider><TokenProvider>
-      <Admin />
+      <ProcessEditor />
     </TokenProvider></I18nProvider>
   </StrictMode>
 );

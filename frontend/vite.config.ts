@@ -23,6 +23,7 @@ export default defineConfig({
         documents:  resolve(__dirname, 'src/documents.html'),
         connectors: resolve(__dirname, 'src/connectors.html'),
         admin:      resolve(__dirname, 'src/admin.html'),
+        editor:     resolve(__dirname, 'src/editor.html'),
       },
     },
   },

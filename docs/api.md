@@ -218,6 +218,46 @@ event: ping
 data:
 ```
 
+## Knowledge Base API
+
+### GET /api/kb/tree
+
+Canonical endpoint that returns the file tree of the Knowledge Base root.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:3200/api/kb/tree
+```
+
+### GET /api/kb
+
+Alias that redirects to `/api/kb/tree` (301).
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:3200/api/kb
+```
+
+### GET /api/kb/file
+
+Returns file content by relative path.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://127.0.0.1:3200/api/kb/file?path=path/to/file.md"
+```
+
+### GET /api/kb/search
+
+Full-text search in .md files.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://127.0.0.1:3200/api/kb/search?q=search+query"
+```
+
+> **Note:** Always use `/api/kb/tree` as the canonical endpoint. The `/api/kb` redirect may not work in all proxy configurations.
+
 ## Channels
 
 ### GET /channels

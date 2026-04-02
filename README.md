@@ -159,6 +159,25 @@ See [docs/architecture.md](docs/architecture.md) for details.
 | konoha_history | Read message/channel history |
 | konoha_listen | Real-time SSE listener |
 
+## Frontend
+
+The UI is built with React 18 + TypeScript + Vite (multi-page).
+
+### Development
+```bash
+cd frontend
+bun install
+bun run dev   # starts at http://localhost:5173
+```
+
+### Build
+```bash
+cd frontend
+bun run build  # outputs to dist/ui/
+```
+
+The server serves built files from `dist/ui/` at the `/ui/` path. Pages: Dashboard (`/ui/index.html`), Process Registry (`/ui/processes.html`), Work Items (`/ui/workitems.html`).
+
 ## License
 
 MIT
