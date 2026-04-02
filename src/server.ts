@@ -25,6 +25,16 @@ import {
   type Attachment,
   type KonohaEvent,
 } from "./redis";
+import {
+  createAgentDef,
+  getAgentDef,
+  deleteAgentDef,
+  listAgentDefs,
+  getAgentState,
+  startAgent,
+  stopAgent,
+  restartAgent,
+} from "./agent-lifecycle";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
 mkdirSync(ATTACHMENTS_DIR, { recursive: true });
@@ -75,6 +85,10 @@ async function requireAdmin(c: any, next: any) {
 // /agents/register is handled inline (invite token logic, no middleware)
 app.use("/agents/invite", requireAdmin);
 app.use("/agents/:id/heartbeat", requireAuth);
+app.use("/agents/:id/start", requireAuth);
+app.use("/agents/:id/stop", requireAuth);
+app.use("/agents/:id/restart", requireAuth);
+app.use("/agents/:id/status", requireAuth);
 app.use("/agents/:id", (c, next) => {
   // /agents/register has its own auth — skip middleware for it
   if (c.req.path === "/agents/register") return next();
@@ -144,11 +158,112 @@ app.post("/agents/register", async (c) => {
   return c.json(agent, 201);
 });
 
+// --- Agent lifecycle management (create/start/stop/restart/status/delete) ---
+
+// POST /agents — create a managed agent definition
+app.post("/agents", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { id, name, system_prompt, model = "claude-sonnet-4-6", env, tags } = body;
+  if (!id || !name) return c.json({ error: "id and name required" }, 400);
+  const def = await createAgentDef({ id, name, system_prompt, model, env, tags });
+  return c.json(def, 201);
+});
+
+// GET /agents/:id/status — lifecycle status (tmux state, pid, uptime)
+app.get("/agents/:id/status", async (c) => {
+  const id = c.req.param("id");
+  const def = await getAgentDef(id);
+  if (!def) return c.json({ error: "Agent not found" }, 404);
+  const state = await getAgentState(id);
+  return c.json(state);
+});
+
+// POST /agents/:id/start
+app.post("/agents/:id/start", async (c) => {
+  const id = c.req.param("id");
+  const def = await getAgentDef(id);
+  if (!def) return c.json({ error: "Agent not found" }, 404);
+  try {
+    const state = await startAgent(id, def);
+    return c.json(state);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// POST /agents/:id/stop
+app.post("/agents/:id/stop", async (c) => {
+  const id = c.req.param("id");
+  const def = await getAgentDef(id);
+  if (!def) return c.json({ error: "Agent not found" }, 404);
+  try {
+    const state = await stopAgent(id);
+    return c.json(state);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// POST /agents/:id/restart
+app.post("/agents/:id/restart", async (c) => {
+  const id = c.req.param("id");
+  const def = await getAgentDef(id);
+  if (!def) return c.json({ error: "Agent not found" }, 404);
+  try {
+    const state = await restartAgent(id, def);
+    return c.json(state);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// DELETE /agents/:id — stop agent, delete definition, and unregister from bus
 app.delete("/agents/:id", async (c) => {
   const id = c.req.param("id");
-  const hard = c.req.query("hard") === "true";
-  await unregisterAgent(id, hard);
+  const def = await getAgentDef(id);
+  if (def) {
+    // Stop if running
+    const state = await getAgentState(id);
+    if (state.status === "running" || state.status === "starting") {
+      await stopAgent(id).catch(() => {});
+    }
+    await deleteAgentDef(id);
+  } else {
+    // Legacy: unregister from bus only
+    const hard = c.req.query("hard") === "true";
+    await unregisterAgent(id, hard);
+  }
   return c.json({ ok: true });
+});
+
+// GET /agents — list with lifecycle status merged in
+app.get("/agents", async (c) => {
+  const onlineOnly = c.req.query("online") === "true";
+  const [busAgents, defs] = await Promise.all([
+    listAgents(onlineOnly),
+    listAgentDefs(),
+  ]);
+  // Build a map from managed defs for quick lookup
+  const defMap = new Map(defs.map(d => [d.id, d]));
+  // Merge lifecycle state into bus agents
+  const agentsWithState = await Promise.all(
+    busAgents.map(async (a) => {
+      const def = defMap.get(a.id);
+      if (!def) return a;
+      const state = await getAgentState(a.id);
+      return { ...a, lifecycle: { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds } };
+    })
+  );
+  // Also include managed agents not yet on the bus
+  const busIds = new Set(busAgents.map(a => a.id));
+  const unmatchedDefs = defs.filter(d => !busIds.has(d.id));
+  const unmatchedWithState = await Promise.all(
+    unmatchedDefs.map(async (d) => {
+      const state = await getAgentState(d.id);
+      return { ...d, status: "offline", lifecycle: { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds } };
+    })
+  );
+  return c.json([...agentsWithState, ...unmatchedWithState]);
 });
 
 app.post("/agents/:id/heartbeat", async (c) => {
@@ -159,12 +274,6 @@ app.post("/agents/:id/heartbeat", async (c) => {
   }
   await heartbeat(id);
   return c.json({ ok: true });
-});
-
-app.get("/agents", async (c) => {
-  const onlineOnly = c.req.query("online") === "true";
-  const agents = await listAgents(onlineOnly);
-  return c.json(agents);
 });
 
 // --- Messages ---
