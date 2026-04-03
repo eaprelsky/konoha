@@ -42,26 +42,26 @@ export function Dashboard() {
       <div className="container">
         <div className="grid" id="stats">
           <div className="card">
-            <h3>Workflows</h3>
+            <h3>Процессы</h3>
             <div className="value" id="wf-count">{wfCount ?? '—'}</div>
-            <div className="sub">registered</div>
+            <div className="sub">зарегистрировано</div>
           </div>
           <div className="card">
-            <h3>Active Cases</h3>
+            <h3>Активные дела</h3>
             <div className="value" id="case-count">—</div>
-            <div className="sub">running</div>
+            <div className="sub">выполняется</div>
           </div>
           <div className="card">
-            <h3>Work Items</h3>
+            <h3>Задачи</h3>
             <div className="value" id="wi-count">{wiCount ?? '—'}</div>
-            <div className="sub">pending + assigned</div>
+            <div className="sub">ожидание + назначены</div>
           </div>
         </div>
         <div className="panel">
-          <h2>Navigation</h2>
+          <h2>Навигация</h2>
           <div className="links">
-            <a href="/ui/processes.html"><span className="icon">🗂</span> Process Registry — browse eEPC workflows and active cases</a>
-            <a href="/ui/workitems.html"><span className="icon">✅</span> Work Items — task queue with filters and actions</a>
+            <a href="/ui/processes.html"><span className="icon">🗂</span> Реестр процессов — eEPC-процессы и активные дела</a>
+            <a href="/ui/workitems.html"><span className="icon">✅</span> Задачи — очередь задач с фильтрами и действиями</a>
           </div>
         </div>
       </div>

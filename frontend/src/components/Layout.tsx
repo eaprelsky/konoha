@@ -111,7 +111,7 @@ export function Layout({ children, activePage, subtitle }: LayoutProps) {
           <button className={`lang-btn${lang === 'ru' ? ' active' : ''}`} onClick={() => setLang('ru')}>RU</button>
         </div>
         <button className="logout-btn" onClick={() => { localStorage.removeItem('konoha_dash_auth'); window.location.replace('/ui/login.html'); }}>
-          Logout
+          Выйти
         </button>
       </header>
       <nav>

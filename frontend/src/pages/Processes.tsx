@@ -89,7 +89,7 @@ function NewProcessModal({ onClose, onCreated }: NewProcessModalProps) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !wfId.trim()) { setError('Name and ID are required'); return; }
+    if (!name.trim() || !wfId.trim()) { setError('Введите название и ID'); return; }
     setSubmitting(true); setError(null);
     const fullId = category.trim() ? `${slugify(category)}/${wfId}` : wfId;
     try {
@@ -104,30 +104,30 @@ function NewProcessModal({ onClose, onCreated }: NewProcessModalProps) {
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
-        <h2>New Process</h2>
+        <h2>Новый процесс</h2>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
           <div className="form-group">
-            <label>Name *</label>
-            <input type="text" placeholder="Process name..." value={name} onChange={e => setName(e.target.value)} autoFocus required />
+            <label>Название *</label>
+            <input type="text" placeholder="Название процесса..." value={name} onChange={e => setName(e.target.value)} autoFocus required />
           </div>
           <div className="form-group">
             <label>ID *</label>
-            <input type="text" placeholder="e.g. lead-qualification" value={wfId}
+            <input type="text" placeholder="например: lead-qualification" value={wfId}
               onChange={e => { setWfId(e.target.value); setIdTouched(true); }} required />
-            <span className="hint">Slug-style ID. Category will be prepended as folder prefix.</span>
+            <span className="hint">Slug-ID. Категория добавится как префикс папки.</span>
           </div>
           <div className="form-group">
-            <label>Category</label>
-            <input type="text" placeholder="e.g. sales (optional folder group)" value={category} onChange={e => setCategory(e.target.value)} />
+            <label>Категория</label>
+            <input type="text" placeholder="например: sales (опционально)" value={category} onChange={e => setCategory(e.target.value)} />
           </div>
           <div className="form-group">
-            <label>Description</label>
-            <input type="text" placeholder="Optional..." value={description} onChange={e => setDescription(e.target.value)} />
+            <label>Описание</label>
+            <input type="text" placeholder="Опционально..." value={description} onChange={e => setDescription(e.target.value)} />
           </div>
           <div className="form-actions">
-            <button type="button" className="btn-cancel-f" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary" disabled={submitting}>{submitting ? 'Creating...' : 'Create'}</button>
+            <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
+            <button type="submit" className="btn-primary" disabled={submitting}>{submitting ? 'Создание…' : 'Создать'}</button>
           </div>
         </form>
       </div>
@@ -152,9 +152,9 @@ function CategoryNode({ cat, items, selectedId, onSelect, onDuplicate, onDelete,
             <div key={wf.id} className={`process-item${selectedId === wf.id ? ' active' : ''}`} onClick={() => onSelect(wf)}>
               <span>{wf.name || wf.id}</span>
               <div className="proc-actions" onClick={e => e.stopPropagation()}>
-                <button title="Duplicate" onClick={() => onDuplicate(wf)}>⎘</button>
-                <button title="Export JSON" onClick={() => onExport(wf)}>↓</button>
-                <button className="del-btn" title="Delete" onClick={() => onDelete(wf)}>✕</button>
+                <button title="Копировать" onClick={() => onDuplicate(wf)}>⎘</button>
+                <button title="Экспорт JSON" onClick={() => onExport(wf)}>↓</button>
+                <button className="del-btn" title="Удалить" onClick={() => onDelete(wf)}>✕</button>
               </div>
             </div>
           ))}
@@ -177,13 +177,13 @@ export function Processes() {
   async function duplicate(wf: Workflow) {
     const newId = wf.id + '-copy-' + Date.now().toString(36);
     try {
-      const copy = await api.workflows.create({ ...wf, id: newId, name: wf.name + ' (copy)' } as any);
+      const copy = await api.workflows.create({ ...wf, id: newId, name: wf.name + ' (копия)' } as any);
       refetch?.(); setSelected(copy);
     } catch (e: any) { setOpError(e.message); }
   }
 
   async function deleteWf(wf: Workflow) {
-    if (!confirm(`Archive process "${wf.name || wf.id}"?`)) return;
+    if (!confirm(`Архивировать процесс "${wf.name || wf.id}"?`)) return;
     try {
       await api.workflows.delete(wf.id);
       refetch?.();
@@ -213,16 +213,16 @@ export function Processes() {
       <div className="layout">
         <div className="sidebar">
           <div className="sidebar-top">
-            <button className="btn-new-proc" onClick={() => setShowNew(true)}>+ New</button>
-            <button onClick={importWf} title="Import JSON">↑ Import</button>
+            <button className="btn-new-proc" onClick={() => setShowNew(true)}>+ Новый</button>
+            <button onClick={importWf} title="Import JSON">↑ Импорт</button>
           </div>
-          <h2>Process Registry</h2>
+          <h2>Реестр процессов</h2>
           {opError && <div className="error-banner">{opError} <button style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setOpError(null)}>✕</button></div>}
           <div id="tree">
             {loading && <div className="loading">Loading…</div>}
             {error && <div className="error-msg">Failed to load: {error}</div>}
             {!loading && !error && Object.keys(groups).length === 0 && (
-              <div style={{ color: '#94a3b8', fontSize: 13 }}>No workflows. Click + New to create one.</div>
+              <div style={{ color: '#94a3b8', fontSize: 13 }}>Нет процессов. Нажмите + Новый для создания.</div>
             )}
             {Object.entries(groups).map(([cat, items]) => (
               <CategoryNode key={cat} cat={cat} items={items} selectedId={selected?.id ?? null}
@@ -232,7 +232,7 @@ export function Processes() {
         </div>
         <div className="main" id="main">
           {!selected ? (
-            <div className="placeholder">← Select a process to view its diagram</div>
+            <div className="placeholder">← Выберите процесс для просмотра диаграммы</div>
           ) : (
             <>
               <div className="proc-header">
@@ -244,13 +244,13 @@ export function Processes() {
                   )}
                 </div>
                 <div className="proc-header-actions">
-                  <button onClick={() => duplicate(selected)}>⎘ Duplicate</button>
-                  <button onClick={() => exportWf(selected)}>↓ Export</button>
-                  <button className="del" onClick={() => deleteWf(selected)}>✕ Delete</button>
+                  <button onClick={() => duplicate(selected)}>⎘ Дублировать</button>
+                  <button onClick={() => exportWf(selected)}>↓ Экспорт</button>
+                  <button className="del" onClick={() => deleteWf(selected)}>✕ Удалить</button>
                 </div>
               </div>
               <div className="diagram-box">
-                <h3>eEPC Diagram</h3>
+                <h3>Диаграмма eEPC</h3>
                 <EpcRenderer workflow={selected} />
               </div>
             </>

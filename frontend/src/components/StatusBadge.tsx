@@ -11,6 +11,17 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   cancelled: { bg: '#9ca3af', color: '#fff' },
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  pending:   'Ожидает',
+  assigned:  'Назначено',
+  running:   'Выполняется',
+  completed: 'Выполнено',
+  done:      'Выполнено',
+  failed:    'Ошибка',
+  error:     'Ошибка',
+  cancelled: 'Отменено',
+};
+
 export function StatusBadge({ status }: { status: string }) {
   const { bg, color } = STATUS_COLORS[status] || { bg: '#e2e8f0', color: '#475569' };
   return (
@@ -27,7 +38,7 @@ export function StatusBadge({ status }: { status: string }) {
         color,
       }}
     >
-      {status}
+      {STATUS_LABELS[status] ?? status}
     </span>
   );
 }

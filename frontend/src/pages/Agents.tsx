@@ -68,6 +68,18 @@ function lifecycleColor(lc?: { status: string }): string {
   return 'dot-offline';
 }
 
+const BUS_STATUS_LABELS: Record<string, string> = {
+  online: 'онлайн',
+  offline: 'офлайн',
+};
+
+const LIFECYCLE_STATUS_LABELS: Record<string, string> = {
+  running: 'работает',
+  starting: 'запускается',
+  stopped: 'остановлен',
+  error: 'ошибка',
+};
+
 function busColor(status: string): string {
   if (status === 'online') return 'dot-online';
   return 'dot-offline';
@@ -222,7 +234,7 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" style={{ width: 580 }}>
-        <h2>Edit Agent — {agent.id}</h2>
+        <h2>Изменить агента — {agent.id}</h2>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
           <div className="form-group">
@@ -305,8 +317,8 @@ export function Agents() {
       <div className="ag-body">
         <div className="container">
           <div className="page-header">
-            <h1>Agents</h1>
-            <button className="btn-new" onClick={() => setShowNew(true)}>+ New Agent</button>
+            <h1>Агенты</h1>
+            <button className="btn-new" onClick={() => setShowNew(true)}>+ Новый агент</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
           {loading && <div className="empty">Загрузка…</div>}
@@ -337,13 +349,13 @@ export function Agents() {
                     </td>
                     <td>
                       <span className={`status-dot ${busColor(a.status)}`} />
-                      {a.status}
+                      {BUS_STATUS_LABELS[a.status] ?? a.status}
                     </td>
                     <td>
                       {a.lifecycle ? (
                         <>
                           <span className={`status-dot ${lifecycleColor(a.lifecycle)}`} />
-                          {a.lifecycle.status}
+                          {LIFECYCLE_STATUS_LABELS[a.lifecycle.status] ?? a.lifecycle.status}
                           {a.lifecycle.uptime_seconds ? (
                             <div className="uptime">{formatUptime(a.lifecycle.uptime_seconds)}</div>
                           ) : null}
