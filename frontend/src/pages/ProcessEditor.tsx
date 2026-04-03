@@ -25,7 +25,7 @@ const CH = 960;   // canvas height
 const PALETTE: { type: EType; label: string; fill: string; stroke: string }[] = [
   { type: 'event',              label: 'Событие',  fill: '#F5C4B3', stroke: '#993C1D' },
   { type: 'function',           label: 'Функция',  fill: '#C0DD97', stroke: '#3B6D11' },
-  { type: 'gateway',            label: 'Шлюз',     fill: '#E8F4FD', stroke: '#4B7BA8' },
+  { type: 'gateway',            label: 'Ветвление', fill: '#E8F4FD', stroke: '#4B7BA8' },
   { type: 'role',               label: 'Роль',     fill: '#FFF9C4', stroke: '#B7A000' },
   { type: 'document',           label: 'Документ', fill: '#DBEAFE', stroke: '#3B82F6' },
   { type: 'information_system', label: 'IS',       fill: '#E0F2FE', stroke: '#0EA5E9' },
@@ -34,7 +34,7 @@ const PALETTE: { type: EType; label: string; fill: string; stroke: string }[] = 
 const DEFAULT_LABELS: Record<EType, string> = {
   event:              'Новое событие',
   function:           'Новая функция',
-  gateway:            'Новый шлюз',
+  gateway:            'Новое ветвление',
   role:               'Новая роль',
   document:           'Новый документ',
   information_system: 'Новая ИС',
@@ -247,6 +247,8 @@ export function ProcessEditor() {
   const [editingValue, setEditingValue] = useState('');
   const [error,  setError]  = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [draftWarning, setDraftWarning] = useState<string | null>(null);
+  const [gatewayPickerId, setGatewayPickerId] = useState<string | null>(null);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [sideW,   setSideW]   = useState(240);
   const [roles,    setRoles]    = useState<RoleDef[]>([]);
@@ -421,6 +423,7 @@ export function ProcessEditor() {
   function onElMouseDown(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     e.preventDefault();
+    setGatewayPickerId(null);
 
     if (mode === 'connect') {
       if (!connectFrom) {
@@ -522,6 +525,7 @@ export function ProcessEditor() {
   }
 
   function onSvgClick() {
+    setGatewayPickerId(null);
     if (mode === 'connect' && connectFrom) {
       setConnectFrom(null);
     } else if (!marquee) {
@@ -535,7 +539,7 @@ export function ProcessEditor() {
   }
 
   // ── Save ────────────────────────────────────────────────────────────────────
-  async function save(draft = false) {
+  async function save() {
     const name = wfName.trim();
     if (!name) { setError('Введите название процесса'); return; }
     let id = wfId.trim();
@@ -543,14 +547,23 @@ export function ProcessEditor() {
       id = slugify(name) || `process-${Date.now().toString(36)}`;
       setWfId(id);
     }
-    setSaving(true); setError(null);
+    setSaving(true); setError(null); setDraftWarning(null);
     try {
       const fresh = await api.workflows.list().catch(() => workflows);
       const exists = fresh.find(w => w.id === id);
       const body = { id, name, elements, flow, ...(exists ? {} : { version: '1.0.0' }) } as unknown as Workflow;
-      if (exists) await api.workflows.update(id, body, draft);
-      else        await api.workflows.create(body, draft);
+      let savedAsDraft = false;
+      try {
+        if (exists) await api.workflows.update(id, body, false);
+        else        await api.workflows.create(body, false);
+      } catch {
+        // Validation failed — save as draft instead
+        if (exists) await api.workflows.update(id, body, true);
+        else        await api.workflows.create(body, true);
+        savedAsDraft = true;
+      }
       refreshList();
+      if (savedAsDraft) setDraftWarning('Процесс сохранён как черновик — схема некорректна, недоступна для запуска');
     } catch (err: any) { setError(err.message); }
     setSaving(false);
   }
@@ -596,34 +609,11 @@ export function ProcessEditor() {
             </>
           )}
           <div className="sep" />
-          <button
-            className={mode === 'select' ? 'active' : ''}
-            onClick={() => switchMode('select')}
-            title="Выбор и перемещение элементов">
-            ↖ Выбор
-          </button>
-          <button
-            className={mode === 'connect' ? 'active' : ''}
-            onClick={() => switchMode(mode === 'connect' ? 'select' : 'connect')}
-            title="Рисовать связи между элементами">
-            ⟶ Связь
-          </button>
-          <div className="sep" />
-          <button className="btn-save" onClick={() => save(false)} disabled={saving}>
+          <button className="btn-save" onClick={save} disabled={saving}>
             {saving ? 'Сохранение…' : isKnown ? '💾 Обновить' : '💾 Сохранить'}
           </button>
-          <button onClick={() => save(true)} disabled={saving}
-            title="Сохранить без валидации как черновик" style={{ opacity: 0.8 }}>
-            📝 Черновик
-          </button>
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}
-          {mode === 'connect' && (
-            <span className="hint">
-              {connectFrom
-                ? `Источник: ${connectFrom} — кликните целевой элемент`
-                : 'Кликните исходный элемент…'}
-            </span>
-          )}
+          {draftWarning && <span style={{ color: '#fbbf24', fontSize: 12 }}>{draftWarning}</span>}
         </div>
 
         <div className="ipe-body">
@@ -851,6 +841,17 @@ export function ProcessEditor() {
                   : 'pointer';
                 const isEditingThis = editingId === el.id;
                 const showAnchors = hoveredEl === el.id && mode === 'select' && !dragging && !groupDrag && !connectDrag && !marquee;
+                const anchors = el.type === 'gateway' ? [
+                  { ax: EW / 2,      ay: EH / 2 - GR },
+                  { ax: EW / 2,      ay: EH / 2 + GR },
+                  { ax: EW / 2 - GR, ay: EH / 2 },
+                  { ax: EW / 2 + GR, ay: EH / 2 },
+                ] : [
+                  { ax: EW / 2, ay: 0 },
+                  { ax: EW / 2, ay: EH },
+                  { ax: 0,      ay: EH / 2 },
+                  { ax: EW,     ay: EH / 2 },
+                ];
                 return (
                   <g
                     key={el.id}
@@ -864,18 +865,20 @@ export function ProcessEditor() {
                     onDoubleClick={e => {
                       if (mode !== 'select') return;
                       e.stopPropagation();
-                      const field = el.type === 'gateway' ? (el.operator ?? el.label) : el.label;
+                      if (el.type === 'gateway') {
+                        setGatewayPickerId(prev => prev === el.id ? null : el.id);
+                        return;
+                      }
                       setEditingId(el.id);
-                      setEditingValue(String(field ?? ''));
+                      setEditingValue(String(el.label ?? ''));
                     }}
                   >
+                    {/* Expanded invisible hit area for gateways so hover isn't lost before reaching anchor */}
+                    {el.type === 'gateway' && (
+                      <circle cx={EW / 2} cy={EH / 2} r={GR + 20} fill="transparent" pointerEvents="all" />
+                    )}
                     <ElShape el={el} selected={isSel} connectSrc={isCFrom} isEditing={isEditingThis} />
-                    {showAnchors && [
-                      { ax: EW / 2, ay: 0 },
-                      { ax: EW / 2, ay: EH },
-                      { ax: 0,      ay: EH / 2 },
-                      { ax: EW,     ay: EH / 2 },
-                    ].map(({ ax, ay }, i) => (
+                    {showAnchors && anchors.map(({ ax, ay }, i) => (
                       <circle key={i} cx={ax} cy={ay} r={5}
                         fill="#6366f1" fillOpacity={0.85} stroke="white" strokeWidth={1.5}
                         style={{ cursor: 'crosshair' }}
@@ -920,6 +923,25 @@ export function ProcessEditor() {
                   </g>
                 );
               })}
+
+              {/* ── Gateway operator picker ── */}
+              {gatewayPickerId && (() => {
+                const gpos = positions[gatewayPickerId] || { x: 0, y: 0 };
+                const curOp = elements.find(e => e.id === gatewayPickerId)?.operator || 'AND';
+                return (
+                  <foreignObject x={gpos.x + EW / 2 - 44} y={gpos.y + EH / 2 - 48} width={88} height={96}>
+                    <div style={{ background: 'white', border: '1px solid #ddd', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.18)', padding: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {(['XOR', 'AND', 'OR'] as const).map(op => (
+                        <button key={op}
+                          onClick={e => { e.stopPropagation(); updateElement(gatewayPickerId, { operator: op }); setGatewayPickerId(null); }}
+                          style={{ padding: '5px 0', background: curOp === op ? '#6366f1' : 'white', color: curOp === op ? 'white' : '#333', border: '1px solid #e2e8f0', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+                          {op}
+                        </button>
+                      ))}
+                    </div>
+                  </foreignObject>
+                );
+              })()}
 
               {elements.length === 0 && (
                 <text x={CW / 2} y={CH / 2} textAnchor="middle" dominantBaseline="middle"

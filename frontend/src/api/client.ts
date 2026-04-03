@@ -16,7 +16,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     try {
       const body = await res.json();
       if (Array.isArray(body?.details) && body.details.length > 0) {
-        msg = body.details.map((d: unknown) => typeof d === 'string' ? d : JSON.stringify(d)).join('; ');
+        msg = body.details.map((d: any) => typeof d === 'string' ? d : (d.message || JSON.stringify(d))).join('\n');
       } else if (typeof body?.error === 'string') {
         msg = body.error;
       }
