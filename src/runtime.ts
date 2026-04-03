@@ -312,7 +312,11 @@ async function createWorkItemForElement(
     label: el.label,
     assignee: el.role || "unassigned",
     status: "pending",
-    input: kase.payload,
+    input: {
+      ...kase.payload,
+      // Include intent if set, so AI agents can reason from goals rather than instructions
+      ...(el.intent ? { _intent: el.intent } : {}),
+    },
     created_at: now,
     updated_at: now,
   };

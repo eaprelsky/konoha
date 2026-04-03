@@ -37,6 +37,8 @@ export interface WorkflowElement {
   };
   // Sub-process: immutable boundary events locked to parent interface
   locked?: boolean;
+  // Intent-based execution: outcome/goal for AI agent (vs instruction-based label)
+  intent?: string;
 }
 
 export interface WorkflowTrigger {

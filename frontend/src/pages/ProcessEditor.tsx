@@ -1184,20 +1184,40 @@ export function ProcessEditor() {
                   </div>
                 )}
                 {selEl.type === 'function' && (
-                  <div className="props-field">
-                    <label>Роль</label>
-                    {roles.length > 0 ? (
-                      <select value={selEl.role || ''} onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })}>
-                        <option value="">— нет —</option>
-                        {roles.map(r => <option key={r.role_id} value={r.name}>{r.name}</option>)}
-                        {selEl.role && !roles.some(r => r.name === selEl.role) &&
-                          <option value={selEl.role}>{selEl.role}</option>}
-                      </select>
-                    ) : (
-                      <input value={selEl.role || ''} placeholder="Назначенная роль…"
-                        onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })} />
-                    )}
-                  </div>
+                  <>
+                    <div className="props-field">
+                      <label>Роль</label>
+                      {roles.length > 0 ? (
+                        <select value={selEl.role || ''} onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })}>
+                          <option value="">— нет —</option>
+                          {roles.map(r => <option key={r.role_id} value={r.name}>{r.name}</option>)}
+                          {selEl.role && !roles.some(r => r.name === selEl.role) &&
+                            <option value={selEl.role}>{selEl.role}</option>}
+                        </select>
+                      ) : (
+                        <input value={selEl.role || ''} placeholder="Назначенная роль…"
+                          onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })} />
+                      )}
+                    </div>
+                    <div className="props-field">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <label style={{ margin: 0 }}>Намерение (Intent)</label>
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 8, background: selEl.intent ? '#065f46' : '#1e293b', color: selEl.intent ? '#6ee7b7' : '#94a3b8', fontWeight: 600 }}>
+                          {selEl.intent ? 'intent' : 'instruction'}
+                        </span>
+                      </div>
+                      <textarea
+                        value={selEl.intent || ''}
+                        onChange={e => updateElement(selEl.id, { intent: e.target.value || undefined })}
+                        placeholder="Опишите цель/результат (не инструкцию). Пример: Клиент должен получить понятное обоснование ценности."
+                        rows={3}
+                        style={{ width: '100%', padding: '5px 8px', border: '1px solid #ddd', borderRadius: 4, fontSize: 12, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
+                      />
+                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
+                        Если задан — AI-агент получает цель вместо инструкции и сам выбирает подход.
+                      </div>
+                    </div>
+                  </>
                 )}
                 {selEl.type === 'event' && !flow.some(([, to]) => to === selEl.id) && (
                   // Start event — show trigger configuration
@@ -1514,6 +1534,15 @@ export function ProcessEditor() {
                       <circle cx={EW / 2} cy={EH / 2} r={GR + 20} fill="transparent" pointerEvents="all" />
                     )}
                     <ElShape el={el} selected={isSel} connectSrc={isCFrom} isEditing={isEditingThis} />
+                    {/* Intent badge on function nodes (shows when intent is set) */}
+                    {el.type === 'function' && el.intent && !isEditingThis && (
+                      <g title={`Intent: ${el.intent}`}>
+                        <rect x={2} y={EH - 18} width={18} height={14} rx={3}
+                          fill="#065f46" stroke="#10b981" strokeWidth={0.5} />
+                        <text x={11} y={EH - 11} textAnchor="middle" dominantBaseline="middle"
+                          fontSize={8} fill="#6ee7b7" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">I</text>
+                      </g>
+                    )}
                     {/* Drill-down badge on function nodes (visible on hover) */}
                     {el.type === 'function' && !isEditingThis && (
                       <g className="drill-badge"
