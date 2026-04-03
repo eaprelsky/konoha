@@ -8,6 +8,7 @@
     "mcp": "bun run src/mcp.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
     "@modelcontextprotocol/sdk": "^1",
     "@playwright/test": "^1.58.2",
     "hono": "^4",

@@ -7,6 +7,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions } from "./workflow-loader";
+import { normalizeElementNames } from "./normalizer";
 import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, purgeAllWorkItems, createRole, listRoles, updateRole, deleteRole, createDoc, listDocs, updateDoc, deleteDoc, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType, type AssignmentStrategy, type DocType } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
 import {
@@ -890,9 +891,17 @@ app.post("/workflows", requireAuth, async (c) => {
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
   if (!body.id || !body.name) return c.json({ error: "id and name required" }, 400);
   const draft = c.req.query("draft") === "true";
+  let normalized = false;
+  if (body.elements?.length) {
+    const nameMap = await normalizeElementNames(body.elements).catch(() => ({}));
+    if (Object.keys(nameMap).length) {
+      body.elements = body.elements.map((el: any) => nameMap[el.id] ? { ...el, label: nameMap[el.id] } : el);
+      normalized = true;
+    }
+  }
   const result = await createWorkflow(body, { draft });
   if (result.errors.length > 0) return c.json({ error: "Validation failed", details: result.errors }, 422);
-  return c.json(result.workflow, 201);
+  return c.json({ ...result.workflow, normalized }, 201);
 });
 
 app.put("/workflows/:id{.+}", requireAuth, async (c) => {
@@ -900,10 +909,18 @@ app.put("/workflows/:id{.+}", requireAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
   const draft = c.req.query("draft") === "true";
+  let normalized = false;
+  if (body.elements?.length) {
+    const nameMap = await normalizeElementNames(body.elements).catch(() => ({}));
+    if (Object.keys(nameMap).length) {
+      body.elements = body.elements.map((el: any) => nameMap[el.id] ? { ...el, label: nameMap[el.id] } : el);
+      normalized = true;
+    }
+  }
   const result = await updateWorkflow(id, body, { draft });
   if (result === null) return c.json({ error: "Workflow not found" }, 404);
   if (result.errors.length > 0) return c.json({ error: "Validation failed", details: result.errors }, 422);
-  return c.json(result.workflow);
+  return c.json({ ...result.workflow, normalized });
 });
 
 app.delete("/workflows/:id{.+}", requireAuth, async (c) => {
