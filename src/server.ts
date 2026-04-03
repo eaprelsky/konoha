@@ -3,6 +3,9 @@ import { bearerAuth } from "hono/bearer-auth";
 import { streamSSE } from "hono/streaming";
 import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync } from "fs";
 import { join, extname } from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
+const execFileAsync = promisify(execFile);
 import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions } from "./workflow-loader";
 import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, createRole, listRoles, updateRole, deleteRole, createDoc, listDocs, updateDoc, deleteDoc, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType, type AssignmentStrategy, type DocType } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
@@ -224,6 +227,30 @@ app.post("/agents/:id/restart", async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
+});
+
+// GET /agents/tmux/:id — capture tmux pane output (last 200 lines)
+app.use("/agents/tmux/:id", requireAuth);
+app.get("/agents/tmux/:id", async (c) => {
+  const id = c.req.param("id");
+  const konohaSession = `konoha-${id}`;
+
+  async function capturePane(args: string[]): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync("tmux", [...args, "-S", "-200"]);
+      return stdout;
+    } catch { return null; }
+  }
+
+  // Attempt 1: konoha lifecycle session (default socket)
+  const lines1 = await capturePane(["capture-pane", "-p", "-t", konohaSession]);
+  if (lines1 !== null) return c.json({ session: konohaSession, lines: lines1 });
+
+  // Attempt 2: system agent session (named socket, e.g. naruto/sasuke/kakashi)
+  const lines2 = await capturePane(["-L", id, "capture-pane", "-p", "-t", id]);
+  if (lines2 !== null) return c.json({ session: id, lines: lines2 });
+
+  return c.json({ session: konohaSession, lines: "" });
 });
 
 // GET /agents/:id — get single agent (bus data merged with def)
