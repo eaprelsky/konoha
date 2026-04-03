@@ -20,16 +20,6 @@ const STRATEGY_LABELS: Record<AssignmentStrategy, string> = {
   broadcast:        'Широковещательно',
 };
 
-/** Generate a slug from a display name */
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
 const styles = `
   .rl-body { padding: 20px; }
   .container { max-width: 1060px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,.1); padding: 20px; }
@@ -57,8 +47,7 @@ const styles = `
   .form-group input, .form-group select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; }
   .form-group input:focus, .form-group select:focus { outline: none; border-color: #0066cc; }
   .form-group .hint { font-size: 11px; color: #888; }
-  .form-group .slug-preview { font-size: 11px; color: #64748b; font-family: monospace; margin-top: 2px; }
-  .desc-toggle { font-size: 12px; color: #0066cc; cursor: pointer; background: none; border: none; padding: 0; margin-bottom: 8px; text-decoration: underline; }
+.desc-toggle { font-size: 12px; color: #0066cc; cursor: pointer; background: none; border: none; padding: 0; margin-bottom: 8px; text-decoration: underline; }
   .form-group textarea { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 64px; }
   .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
   .form-actions button { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
@@ -186,8 +175,6 @@ function RoleModal({ role, agents, people, onClose, onSaved }: RoleModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const autoId = slugify(name);
-
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', h);
@@ -207,8 +194,7 @@ function RoleModal({ role, agents, people, onClose, onSaved }: RoleModalProps) {
       if (role) {
         await api.roles.update(role.role_id, { name, description: description || undefined, assignees, strategy });
       } else {
-        const role_id = autoId || slugify(name);
-        if (!role_id) { setError('Не удалось сгенерировать ID из названия'); setSubmitting(false); return; }
+        const role_id = crypto.randomUUID();
         await api.roles.create({ role_id, name, description: description || undefined, assignees, strategy });
       }
       onSaved(); onClose();
@@ -232,12 +218,6 @@ function RoleModal({ role, agents, people, onClose, onSaved }: RoleModalProps) {
               autoFocus
               required
             />
-            {!role && name && (
-              <span className="slug-preview">ID: {autoId || '…'}</span>
-            )}
-            {role && (
-              <span className="slug-preview">ID: {role.role_id}</span>
-            )}
           </div>
 
           <button
