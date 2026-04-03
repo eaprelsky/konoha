@@ -20,6 +20,8 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.admin':       'Admin',
     'nav.people':      'People',
     'nav.system':      'System',
+    'role.architect':  'Processes',
+    'role.admin':      'System',
     // Common actions
     'action.new':      'New',
     'action.edit':     'Edit',
@@ -137,6 +139,8 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.admin':       'Админ',
     'nav.people':      'Люди',
     'nav.system':      'Система',
+    'role.architect':  'Процессы',
+    'role.admin':      'Система',
     // Common actions
     'action.new':      'Создать',
     'action.edit':     'Изменить',

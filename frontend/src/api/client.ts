@@ -162,6 +162,7 @@ export const api = {
 
   people: {
     list: () => apiFetch<Person[]>(`${BASE}/people`),
+    save: (p: Partial<Person>) => apiFetch<Person>(`${BASE}/people`, { method: 'POST', body: JSON.stringify(p) }),
   },
 
   health: {

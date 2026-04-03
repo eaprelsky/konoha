@@ -22,6 +22,7 @@ import {
   createInvite,
   consumeInvite,
   publishEvent,
+  redis,
   type Attachment,
   type KonohaEvent,
 } from "./redis";
@@ -689,13 +690,16 @@ app.get("/adapters/:name/health", async (c) => {
   return c.json({ adapter: name, healthy }, healthy ? 200 : 503);
 });
 
-// --- People Directory (read-only, from .trusted-users.json) ---
+// --- People Directory ---
 
-app.use("/people", requireAuth);
-app.get("/people", async (c) => {
+const PEOPLE_CUSTOM_KEY = "people:custom";
+
+type PersonRecord = { id: string; name: string; tg_id: number; position: string; tg_username?: string; email?: string };
+
+function loadTrustedPeople(): PersonRecord[] {
   const TRUSTED_PATH = "/opt/shared/.trusted-users.json";
   try {
-    if (!existsSync(TRUSTED_PATH)) return c.json([]);
+    if (!existsSync(TRUSTED_PATH)) return [];
     const raw = readFileSync(TRUSTED_PATH, "utf-8");
     const data = JSON.parse(raw) as {
       owner?: { name: string; telegram_id: number; username?: string };
@@ -703,17 +707,47 @@ app.get("/people", async (c) => {
     };
     const toId = (name: string, username?: string | null) =>
       username ? `@${username}` : name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    const people: { id: string; name: string; tg_id: number; position: string }[] = [];
+    const people: PersonRecord[] = [];
     if (data.owner) {
-      people.push({ id: toId(data.owner.name, data.owner.username), name: data.owner.name, tg_id: data.owner.telegram_id, position: "Owner" });
+      people.push({ id: toId(data.owner.name, data.owner.username), name: data.owner.name, tg_id: data.owner.telegram_id, position: "Owner", tg_username: data.owner.username || undefined });
     }
     for (const u of data.trusted || []) {
-      people.push({ id: toId(u.name, u.username), name: u.name, tg_id: u.telegram_id, position: u.position || "" });
+      people.push({ id: toId(u.name, u.username), name: u.name, tg_id: u.telegram_id, position: u.position || "", tg_username: u.username || undefined });
     }
-    return c.json(people);
+    return people;
   } catch {
-    return c.json([]);
+    return [];
   }
+}
+
+app.use("/people", requireAuth);
+app.get("/people", async (c) => {
+  const trusted = loadTrustedPeople();
+  const map = new Map<string, PersonRecord>(trusted.map(p => [p.id, p]));
+  try {
+    const custom = await redis.hgetall(PEOPLE_CUSTOM_KEY);
+    for (const val of Object.values(custom)) {
+      const p: PersonRecord = JSON.parse(val);
+      map.set(p.id, p);
+    }
+  } catch { /* redis unavailable — serve trusted only */ }
+  return c.json([...map.values()]);
+});
+
+app.post("/people", async (c) => {
+  const body = await c.req.json<Partial<PersonRecord>>();
+  if (!body.name?.trim()) return c.json({ error: "name required" }, 400);
+  const id = body.id?.trim() || body.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9@.-]/g, "");
+  const record: PersonRecord = {
+    id,
+    name: body.name.trim(),
+    tg_id: body.tg_id ?? 0,
+    position: body.position?.trim() || "",
+    tg_username: body.tg_username?.trim() || undefined,
+    email: body.email?.trim() || undefined,
+  };
+  await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(record));
+  return c.json(record, 201);
 });
 
 // --- Channels ---

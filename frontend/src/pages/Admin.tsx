@@ -88,6 +88,8 @@ export function Admin() {
     }
   }
 
+  const online = agents.filter(a => a.status === 'online').length;
+  const offline = agents.length - online;
   const running = agents.filter(a => a.lifecycle?.status === 'running').length;
 
   return (

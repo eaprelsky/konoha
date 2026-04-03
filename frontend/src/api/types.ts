@@ -172,6 +172,8 @@ export interface Person {
   name: string;
   tg_id: number;
   position: string;
+  tg_username?: string;
+  email?: string;
 }
 
 export interface KbNode {
