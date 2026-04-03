@@ -234,6 +234,27 @@ const CSS = `
   .proc-new-input { width:100%; padding:5px 8px; border:1px solid #6366f1; border-radius:4px; font-size:12px; box-sizing:border-box; outline:none; }
   .proc-rename-input { flex:1; padding:2px 5px; border:1px solid #6366f1; border-radius:3px; font-size:12px; outline:none; min-width:0; }
   /* Picker */
+  /* Tsunade chat panel */
+  .tsunade-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#0f172a; border-left:1px solid #1e293b; height:100%; }
+  .tsunade-header { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #1e293b; }
+  .tsunade-title { font-size:13px; font-weight:600; color:#e2e8f0; }
+  .tsunade-btn-close { background:none; border:none; color:#64748b; cursor:pointer; font-size:16px; padding:0 4px; line-height:1; }
+  .tsunade-btn-close:hover { color:#94a3b8; }
+  .tsunade-messages { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
+  .tsunade-msg { max-width:90%; padding:8px 10px; border-radius:8px; font-size:13px; line-height:1.5; }
+  .tsunade-msg.user { align-self:flex-end; background:#334155; color:#e2e8f0; border-bottom-right-radius:2px; }
+  .tsunade-msg.assistant { align-self:flex-start; background:#1e3a5f; color:#bfdbfe; border-bottom-left-radius:2px; }
+  .tsunade-msg.system { align-self:center; background:#064e3b; color:#6ee7b7; font-size:11px; padding:4px 10px; border-radius:12px; }
+  .tsunade-msg.error { align-self:center; background:#7f1d1d; color:#fca5a5; font-size:11px; padding:4px 10px; border-radius:12px; }
+  .tsunade-input-row { display:flex; gap:6px; padding:10px 12px; border-top:1px solid #1e293b; }
+  .tsunade-input { flex:1; background:#1e293b; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:13px; padding:7px 10px; outline:none; resize:none; font-family:inherit; }
+  .tsunade-input:focus { border-color:#6366f1; }
+  .tsunade-input::placeholder { color:#475569; }
+  .tsunade-send { background:#6366f1; border:none; color:white; border-radius:6px; padding:7px 12px; cursor:pointer; font-size:13px; font-weight:600; flex-shrink:0; }
+  .tsunade-send:hover { background:#4f46e5; }
+  .tsunade-send:disabled { opacity:.5; cursor:not-allowed; }
+  .btn-tsunade { background:#4f46e5 !important; border-color:#6366f1 !important; }
+  .btn-tsunade:hover { background:#6366f1 !important; }
   .picker-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:200; display:flex; align-items:center; justify-content:center; }
   .picker-box { background:white; border-radius:8px; padding:18px; width:340px; max-height:70vh; display:flex; flex-direction:column; box-shadow:0 20px 40px rgba(0,0,0,.2); }
   .picker-box h3 { font-size:14px; font-weight:700; margin-bottom:12px; }
@@ -287,6 +308,13 @@ export function ProcessEditor() {
   const [docs,     setDocs]     = useState<DocTemplate[]>([]);
   const [adapters, setAdapters] = useState<string[]>([]);
   const [wsFiles,  setWsFiles]  = useState<string[]>([]);
+  // Tsunade chat
+  const [showChat,   setShowChat]   = useState(false);
+  const [chatId,     setChatId]     = useState<string | null>(null);
+  const [chatMsgs,   setChatMsgs]   = useState<{ role: 'user' | 'assistant' | 'system' | 'error'; text: string }[]>([]);
+  const [chatInput,  setChatInput]  = useState('');
+  const [chatBusy,   setChatBusy]   = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
   const [picker,   setPicker]   = useState<'role' | 'document' | 'is' | null>(null);
   // Sidebar state
   const [sideSearch,    setSideSearch]    = useState('');
@@ -711,6 +739,64 @@ export function ProcessEditor() {
 
   const isKnown = workflows.some(w => w.id === wfId.trim());
 
+  // ── Tsunade chat ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMsgs]);
+
+  async function sendToTsunade() {
+    const msg = chatInput.trim();
+    if (!msg || chatBusy) return;
+    setChatInput('');
+    setChatMsgs(prev => [...prev, { role: 'user', text: msg }]);
+    setChatBusy(true);
+    const schema = { id: wfId, name: wfName, elements, flow, positions };
+    try {
+      const res = await api.tsunade.chat({ message: msg, schema, chat_id: chatId ?? undefined });
+      if (!chatId) setChatId(res.chat_id);
+      setChatMsgs(prev => [...prev, { role: 'assistant', text: res.reply }]);
+
+      // Apply schema patch if present
+      const patch = res.schema_patch as any;
+      if (patch) {
+        pushSnapshot();
+        if (patch.update_elements?.length) {
+          patch.update_elements.forEach((upd: any) => {
+            if (upd.id) {
+              const { id, ...rest } = upd;
+              updateElement(id, rest);
+            }
+          });
+        }
+        if (patch.update_positions) {
+          setPositions(prev => ({ ...prev, ...patch.update_positions }));
+        }
+        if (patch.add_elements?.length) {
+          patch.add_elements.forEach((el: any) => {
+            const id = el.id || `el-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            const { x = 100, y = 100, ...rest } = el;
+            setElements(prev => [...prev, { id, type: rest.type || 'function', label: rest.label || 'Новый элемент', ...rest }]);
+            setPositions(prev => ({ ...prev, [id]: { x, y } }));
+          });
+        }
+        if (patch.remove_elements?.length) {
+          patch.remove_elements.forEach((id: string) => {
+            setElements(prev => prev.filter(e => e.id !== id));
+            setPositions(prev => { const n = { ...prev }; delete n[id]; return n; });
+            setFlow(prev => prev.filter(([f, t]) => f !== id && t !== id));
+          });
+        }
+        if (patch.update_elements?.length || patch.update_positions || patch.add_elements?.length || patch.remove_elements?.length) {
+          setChatMsgs(prev => [...prev, { role: 'system', text: 'Схема обновлена. Нажмите 💾 для сохранения.' }]);
+        }
+      }
+    } catch (e: any) {
+      setChatMsgs(prev => [...prev, { role: 'error', text: `Ошибка: ${e.message}` }]);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
   // ── Undo / redo ─────────────────────────────────────────────────────────────
   function pushSnapshot() {
     setUndoStack(prev => [...prev.slice(-49), { els: elements, fl: flow, pos: positions }]);
@@ -800,6 +886,10 @@ export function ProcessEditor() {
           <div className="sep" />
           <button className="btn-save" onClick={save} disabled={saving}>
             {saving ? 'Сохранение…' : '💾 Сохранить'}
+          </button>
+          <div className="sep" />
+          <button className={`btn-tsunade${showChat ? ' active' : ''}`} onClick={() => setShowChat(v => !v)}>
+            💬 Цунаде
           </button>
           {autosavePending && !saving && <span style={{ color: '#94a3b8', fontSize: 11 }}>автосохранение…</span>}
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}
@@ -1277,6 +1367,48 @@ export function ProcessEditor() {
               </g>{/* end panned content group */}
             </svg>
           </div>
+
+          {/* ── Tsunade chat panel ── */}
+          {showChat && (
+            <div className="tsunade-panel">
+              <div className="tsunade-header">
+                <span className="tsunade-title">💬 Цунаде — AI-ассистент</span>
+                <button className="tsunade-btn-close" onClick={() => setShowChat(false)}>✕</button>
+              </div>
+              <div className="tsunade-messages">
+                {chatMsgs.length === 0 && (
+                  <div style={{ color: '#475569', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>
+                    Спросите Цунаде о схеме.<br />
+                    Например: «Выровняй элементы вертикально» или «Добавь шлюз XOR после функции X».
+                  </div>
+                )}
+                {chatMsgs.map((m, i) => (
+                  <div key={i} className={`tsunade-msg ${m.role}`}>{m.text}</div>
+                ))}
+                {chatBusy && (
+                  <div className="tsunade-msg assistant" style={{ opacity: 0.6 }}>Думаю…</div>
+                )}
+                <div ref={chatBottomRef} />
+              </div>
+              <div className="tsunade-input-row">
+                <textarea
+                  className="tsunade-input"
+                  rows={2}
+                  placeholder="Сообщение Цунаде…"
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendToTsunade(); } }}
+                />
+                <button
+                  className="tsunade-send"
+                  disabled={chatBusy || !chatInput.trim()}
+                  onClick={sendToTsunade}
+                >
+                  ➤
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { streamSSE } from "hono/streaming";
@@ -849,6 +850,106 @@ app.delete("/people/:id", requireAuth, async (c) => {
   }
   const deleted = await redis.hdel(PEOPLE_CUSTOM_KEY, id);
   if (!deleted) return c.json({ error: "Not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// --- Tsunade Chat API ---
+
+const TSUNADE_CHAT_PREFIX = "tsunade:chat:";
+const CHAT_MAX_HISTORY = 20;
+
+import Anthropic from "@anthropic-ai/sdk";
+const _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const TSUNADE_SYSTEM = `Ты — Цунаде, AI-ассистент редактора бизнес-процессов в нотации eEPC (Konoha Workflow Engine).
+Ты помогаешь бизнес-архитектору работать со схемами процессов.
+
+Типы элементов: event (начало/конец), function (задача/шаг), gateway (AND/OR/XOR развилка), role (исполнитель), document (документ), information_system (информационная система).
+Связи flow: [[from_id, to_id], ...].
+Позиции: {"element_id": {"x": N, "y": N}}.
+
+Операции, которые ты можешь выполнять:
+- Изменить названия элементов
+- Выровнять расположение (вертикально сверху-вниз, горизонтально, по центру)
+- Равномерно распределить элементы
+- Добавить новый элемент (укажи тип, label, позицию)
+- Удалить элемент
+
+Когда нужно изменить схему, отвечай строго JSON:
+{
+  "reply": "Что ты сделал или ответ на вопрос",
+  "schema_patch": {
+    "update_elements": [{"id": "...", "label": "...", ...other fields}],
+    "update_positions": {"id": {"x": N, "y": N}, ...},
+    "add_elements": [{"type": "function", "label": "...", "x": N, "y": N}],
+    "remove_elements": ["id1", "id2"]
+  }
+}
+
+Если схему менять не нужно, отвечай JSON:
+{"reply": "Твой ответ"}
+
+ВАЖНО: отвечай ТОЛЬКО валидным JSON. Без markdown-оберток.`;
+
+app.use("/tsunade/chat", requireAuth);
+app.post("/tsunade/chat", async (c) => {
+  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string }>().catch(() => null);
+  if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
+
+  const chatId = body.chat_id || randomUUID();
+  const histKey = TSUNADE_CHAT_PREFIX + chatId;
+
+  // Load history
+  const rawHistory = await redis.lrange(histKey, 0, -1).catch(() => [] as string[]);
+  const history: { role: "user" | "assistant"; content: string }[] = rawHistory.map(r => {
+    try { return JSON.parse(r); } catch { return null; }
+  }).filter(Boolean);
+
+  const schemaContext = body.schema
+    ? `\nТекущая схема процесса:\n${JSON.stringify(body.schema, null, 2)}`
+    : "";
+
+  const userMsg = body.message + schemaContext;
+
+  const messages: { role: "user" | "assistant"; content: string }[] = [
+    ...history,
+    { role: "user", content: userMsg },
+  ];
+
+  try {
+    const response = await _anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 2000,
+      system: TSUNADE_SYSTEM,
+      messages,
+    });
+
+    const rawReply = (response.content[0] as any).text.trim();
+
+    // Parse JSON reply
+    let reply = rawReply;
+    let schema_patch: unknown = undefined;
+    try {
+      const parsed = JSON.parse(rawReply);
+      reply = parsed.reply || rawReply;
+      if (parsed.schema_patch) schema_patch = parsed.schema_patch;
+    } catch { /* not JSON, use raw text */ }
+
+    // Save history (last N turns)
+    await redis.rpush(histKey, JSON.stringify({ role: "user", content: body.message }));
+    await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));
+    await redis.ltrim(histKey, -CHAT_MAX_HISTORY * 2, -1);
+    await redis.expire(histKey, 7 * 24 * 3600); // 7 days TTL
+
+    return c.json({ reply, chat_id: chatId, schema_patch: schema_patch ?? null });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete("/tsunade/chat/:chat_id", requireAuth, async (c) => {
+  const chatId = c.req.param("chat_id");
+  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(() => {});
   return c.json({ ok: true });
 });
 
