@@ -14,6 +14,44 @@ import { join } from "path";
 
 const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
 
+// ── System template ──────────────────────────────────────────────────────────
+
+const SYSTEM_TEMPLATE = `\
+# System Instructions (managed by Konoha — do not edit)
+
+## Identity
+- Agent ID: {{id}}
+- Agent Name: {{name}}
+- Model: {{model}}
+- Language: Russian (communicate in Russian unless overridden in user instructions)
+
+## Startup sequence
+1. source /home/ubuntu/.agent-env
+2. Read /opt/shared/agent-memory/MEMORY.md and all referenced files
+3. Register on Konoha bus: konoha_register(id={{id}}, name={{name}}, model={{model}})
+4. Read your personal memory if it exists: /opt/shared/agent-memory/{{id}}/MEMORY.md
+5. Wait for tasks — watchdog delivers them via Konoha bus
+
+## Konoha Bus
+- HTTP API: http://127.0.0.1:3200
+- Token: stored in KONOHA_TOKEN env var
+- Use MCP tools: konoha_send, konoha_read, konoha_register, konoha_heartbeat
+- Messages arrive via watchdog — do NOT poll manually
+
+## Watchdog behavior
+When you receive a task via watchdog injection, process it and respond via konoha_send.
+Session cleanup fires every 2h — save work-state and do /new when requested.
+
+---
+# User Instructions`;
+
+export function renderSystemTemplate(def: Pick<AgentDef, "id" | "name" | "model">): string {
+  return SYSTEM_TEMPLATE
+    .replace(/{{id}}/g, def.id)
+    .replace(/{{name}}/g, def.name)
+    .replace(/{{model}}/g, def.model || "claude-sonnet-4-6");
+}
+
 const execFileAsync = promisify(execFile);
 
 // ── Redis keys ───────────────────────────────────────────────────────────────
@@ -156,12 +194,11 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const envVars = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : "";
     const fullCmd = envVars ? `env ${envVars}${launchCmd}` : launchCmd;
 
-    // Prepare per-agent working directory with CLAUDE.md if system_prompt is set
+    // Prepare per-agent working directory with two-level CLAUDE.md
     const workdir = join(AGENT_WORKDIR_ROOT, id);
     mkdirSync(workdir, { recursive: true });
-    if (def.system_prompt?.trim()) {
-      writeFileSync(join(workdir, "CLAUDE.md"), def.system_prompt.trim(), "utf-8");
-    }
+    const claudeMd = renderSystemTemplate(def) + "\n" + (def.system_prompt?.trim() || "");
+    writeFileSync(join(workdir, "CLAUDE.md"), claudeMd, "utf-8");
 
     const r = await sh("tmux", ["new-session", "-d", "-s", session, "-c", workdir, fullCmd]);
     if (!r.ok) throw new Error(r.stderr || "tmux new-session failed");

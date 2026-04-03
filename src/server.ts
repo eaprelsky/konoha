@@ -38,6 +38,7 @@ import {
   startAgent,
   stopAgent,
   restartAgent,
+  renderSystemTemplate,
 } from "./agent-lifecycle";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
@@ -178,6 +179,8 @@ app.post("/agents", async (c) => {
   const { id, name, system_prompt, model = "claude-sonnet-4-6", env, tags } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
   const def = await createAgentDef({ id, name, system_prompt, model, env, tags });
+  // Prepare personal memory directory
+  mkdirSync(`/opt/shared/agent-memory/${id}`, { recursive: true });
   return c.json(def, 201);
 });
 
@@ -251,6 +254,14 @@ app.get("/agents/tmux/:id", async (c) => {
   if (lines2 !== null) return c.json({ session: id, lines: lines2 });
 
   return c.json({ session: konohaSession, lines: "" });
+});
+
+// GET /agents/:id/system-template — rendered system template for this agent
+app.get("/agents/:id/system-template", async (c) => {
+  const id = c.req.param("id");
+  const def = await getAgentDef(id);
+  const base = def ?? { id, name: id, model: "claude-sonnet-4-6" };
+  return c.json({ template: renderSystemTemplate(base) });
 });
 
 // GET /agents/:id — get single agent (bus data merged with def)
