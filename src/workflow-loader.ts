@@ -65,8 +65,13 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   }
 
   // Rule 1: Process must start with an event and end with an event
-  const startNodes = def.elements.filter(el => (inEdges.get(el.id) || []).length === 0);
-  const endNodes = def.elements.filter(el => (outEdges.get(el.id) || []).length === 0);
+  // Only consider flow-topology elements (events, functions, gateways).
+  // Roles, documents, and systems are organizational metadata — they have no flow edges
+  // and must not be counted as start/end nodes regardless of their position in elements[].
+  const FLOW_TYPES = new Set(["event", "function", "gateway"]);
+  const flowEls = def.elements.filter(el => FLOW_TYPES.has(el.type));
+  const startNodes = flowEls.filter(el => (inEdges.get(el.id) || []).length === 0);
+  const endNodes   = flowEls.filter(el => (outEdges.get(el.id) || []).length === 0);
 
   if (!startNodes.every(n => n.type === "event")) {
     errors.push({ rule: 1, message: `Process must start with an event. Non-event start nodes: ${startNodes.filter(n => n.type !== "event").map(n => n.id).join(", ")}` });

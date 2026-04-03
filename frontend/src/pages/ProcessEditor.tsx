@@ -269,6 +269,12 @@ export function ProcessEditor() {
   const [saving, setSaving] = useState(false);
   const [draftWarning, setDraftWarning] = useState<{ text: string; details: string[] } | null>(null);
   const [gatewayPickerId, setGatewayPickerId] = useState<string | null>(null);
+  // Undo / redo
+  type Snapshot = { els: WorkflowElement[]; fl: [string,string,string?][]; pos: Record<string,Pos> };
+  const [undoStack, setUndoStack] = useState<Snapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<Snapshot[]>([]);
+  // Autosave
+  const [autosavePending, setAutosavePending] = useState(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [sideW,   setSideW]   = useState(240);
   const [roles,    setRoles]    = useState<RoleDef[]>([]);
@@ -285,7 +291,9 @@ export function ProcessEditor() {
   const resizing      = useRef(false);
   const resizeStartX  = useRef(0);
   const resizeStartW  = useRef(240);
-  const justMarqueed  = useRef(false); // prevents onSvgClick from clearing marquee selection
+  const justMarqueed  = useRef(false);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveRef       = useRef<() => Promise<void>>(async () => {});
 
   // ── Load workflow list + registries ────────────────────────────────────────
   const refreshList = useCallback(() => {
@@ -356,10 +364,15 @@ export function ProcessEditor() {
   }
 
   // ── Keyboard delete ─────────────────────────────────────────────────────────
+  const undoRef = useRef(undo); undoRef.current = undo;
+  const redoRef = useRef(redo); redoRef.current = redo;
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undoRef.current(); return; }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); redoRef.current(); return; }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       const toDelete = multiSelected.length > 0 ? multiSelected : selected ? [selected] : [];
       toDelete.forEach(id => deleteElement(id));
     };
@@ -389,6 +402,7 @@ export function ProcessEditor() {
 
   // ── Element management ──────────────────────────────────────────────────────
   function addElement(type: EType, label?: string, refId?: string) {
+    pushSnapshot(); scheduleAutosave();
     const id  = genId(type, elements);
     const idx = elements.length;
     const col = idx % 6, row = Math.floor(idx / 6);
@@ -416,6 +430,7 @@ export function ProcessEditor() {
   }
 
   function deleteElement(id: string) {
+    pushSnapshot(); scheduleAutosave();
     setElements(prev => prev.filter(e => e.id !== id));
     setFlow(prev => prev.filter(([f, t]) => f !== id && t !== id));
     setPositions(prev => { const n = { ...prev }; delete n[id]; return n; });
@@ -425,10 +440,12 @@ export function ProcessEditor() {
   }
 
   function updateElement(id: string, patch: Partial<WorkflowElement>) {
+    pushSnapshot(); scheduleAutosave();
     setElements(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
   }
 
   function removeEdge(f: string, t: string) {
+    pushSnapshot(); scheduleAutosave();
     setFlow(prev => prev.filter(([a, b]) => !(a === f && b === t)));
   }
 
@@ -510,6 +527,7 @@ export function ProcessEditor() {
   }
 
   function onSvgMouseUp() {
+    if (dragging || groupDrag) scheduleAutosave(); // positions changed by drag
     setDragging(null);
     setGroupDrag(null);
     setConnectDrag(null);
@@ -537,6 +555,7 @@ export function ProcessEditor() {
     e.stopPropagation();
     const fromId = connectDrag.fromId;
     if (!flow.some(([f, t]) => f === fromId && t === toId)) {
+      pushSnapshot(); scheduleAutosave();
       setFlow(prev => [...prev, [fromId, toId]]);
     }
     const srcEl = elements.find(el => el.id === fromId);
@@ -601,7 +620,49 @@ export function ProcessEditor() {
     setSaving(false);
   }
 
+  // Keep saveRef current on every render so debounced timer always calls latest save
+  saveRef.current = save;
+
   const isKnown = workflows.some(w => w.id === wfId.trim());
+
+  // ── Undo / redo ─────────────────────────────────────────────────────────────
+  function pushSnapshot() {
+    setUndoStack(prev => [...prev.slice(-49), { els: elements, fl: flow, pos: positions }]);
+    setRedoStack([]);
+  }
+
+  function undo() {
+    setUndoStack(prev => {
+      if (prev.length === 0) return prev;
+      const snap = prev[prev.length - 1];
+      setRedoStack(r => [...r.slice(-49), { els: elements, fl: flow, pos: positions }]);
+      setElements(snap.els); setFlow(snap.fl); setPositions(snap.pos);
+      setSelected(null); setMultiSelected([]);
+      return prev.slice(0, -1);
+    });
+  }
+
+  function redo() {
+    setRedoStack(prev => {
+      if (prev.length === 0) return prev;
+      const snap = prev[prev.length - 1];
+      setUndoStack(u => [...u.slice(-49), { els: elements, fl: flow, pos: positions }]);
+      setElements(snap.els); setFlow(snap.fl); setPositions(snap.pos);
+      setSelected(null); setMultiSelected([]);
+      return prev.slice(0, -1);
+    });
+  }
+
+  // ── Autosave (2s debounce) ───────────────────────────────────────────────────
+  function scheduleAutosave() {
+    if (!wfName.trim()) return;
+    setAutosavePending(true);
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(async () => {
+      await saveRef.current();
+      setAutosavePending(false);
+    }, 2000);
+  }
 
   function loadWorkflow(id: string) {
     const wf = workflows.find(w => w.id === id);
@@ -646,9 +707,15 @@ export function ProcessEditor() {
             </>
           )}
           <div className="sep" />
+          <button title="Ctrl+Z" style={{ padding: '5px 8px' }}
+            onClick={undo} disabled={undoStack.length === 0}>↩</button>
+          <button title="Ctrl+Y" style={{ padding: '5px 8px' }}
+            onClick={redo} disabled={redoStack.length === 0}>↪</button>
+          <div className="sep" />
           <button className="btn-save" onClick={save} disabled={saving}>
-            {saving ? 'Сохранение…' : isKnown ? '💾 Обновить' : '💾 Сохранить'}
+            {saving ? 'Сохранение…' : '💾 Сохранить'}
           </button>
+          {autosavePending && !saving && <span style={{ color: '#94a3b8', fontSize: 11 }}>автосохранение…</span>}
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}
           {draftWarning && (
             <span className="warn-wrap" style={{ color: '#fbbf24', fontSize: 12 }}>
