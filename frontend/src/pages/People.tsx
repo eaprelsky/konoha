@@ -290,7 +290,7 @@ export function People() {
   return (
     <Layout activePage="people.html">
       <style>{styles + KIBA_CSS}</style>
-      <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      <div style={{ display: 'flex', height: 'calc(100vh - 105px)' }}>
       <div className="ppl-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="page-header">

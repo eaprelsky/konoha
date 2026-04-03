@@ -52,11 +52,16 @@ export async function generateAvatar(params: AvatarGenerationParams): Promise<Av
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
-    throw new Error(`OpenRouter image API error ${res.status}: ${errBody}`);
+    if (res.status === 404 || errBody.includes("not found") || errBody.includes("does not exist")) {
+      throw new Error("Генерация аватаров временно недоступна — провайдер изображений недоступен");
+    }
+    throw new Error(`Генерация аватаров временно недоступна (${res.status})`);
   }
 
   const data = await res.json() as { data: { b64_json?: string; url?: string }[] };
-  if (!data.data || data.data.length === 0) throw new Error("No image returned");
+  if (!data.data || data.data.length === 0) {
+    throw new Error("Генерация аватаров временно недоступна — пустой ответ от провайдера");
+  }
 
   mkdirSync(AVATARS_DIR, { recursive: true });
   const filename = `${params.id.replace(/[^a-zA-Z0-9_-]/g, "_")}.png`;
@@ -71,7 +76,7 @@ export async function generateAvatar(params: AvatarGenerationParams): Promise<Av
     const buf = await imgRes.arrayBuffer();
     writeFileSync(localPath, Buffer.from(buf));
   } else {
-    throw new Error("No image data in response");
+    throw new Error("Генерация аватаров временно недоступна — нет данных изображения в ответе");
   }
 
   return {

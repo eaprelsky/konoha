@@ -346,7 +346,7 @@ export function Roles() {
   return (
     <Layout activePage="roles.html">
       <style>{styles + KIBA_CSS}</style>
-      <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      <div style={{ display: 'flex', height: 'calc(100vh - 105px)' }}>
       <div className="rl-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="page-header">

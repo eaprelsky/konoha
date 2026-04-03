@@ -119,7 +119,7 @@ export function Kb() {
   return (
     <Layout activePage="kb.html">
       <style>{styles + JIRAIYA_CSS}</style>
-      <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      <div style={{ display: 'flex', height: 'calc(100vh - 105px)' }}>
       <div className="kb-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="panel">

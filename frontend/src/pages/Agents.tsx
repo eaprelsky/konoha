@@ -58,6 +58,12 @@ const styles = `
   .btn-cancel-f { background: #e5e7eb; color: #374151; }
   .uptime { font-size: 12px; color: #888; }
   .refresh-info { font-size: 12px; color: #999; margin-top: 12px; text-align: right; }
+  .ag-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; padding: 10px 12px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; }
+  .ag-filter-input { padding: 5px 10px; border: 1px solid #e2e8f0; border-radius: 5px; font-size: 13px; background: white; }
+  .ag-filter-input:focus { outline: none; border-color: #6366f1; }
+  .ag-filter-select { padding: 5px 10px; border: 1px solid #e2e8f0; border-radius: 5px; font-size: 13px; background: white; cursor: pointer; }
+  .ag-filter-select:focus { outline: none; border-color: #6366f1; }
+  .ag-filter-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
 `;
 
 function lifecycleColor(lc?: { status: string }): string {
@@ -217,6 +223,7 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>((agent as any).avatar_url);
   const [avatarStyle, setAvatarStyle] = useState('anime ninja');
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
+  const [gender, setGender] = useState<'male' | 'female' | 'neutral'>((agent as any).gender || 'neutral');
 
   useEffect(() => {
     api.agents.get(agent.id).then(d => {
@@ -272,7 +279,7 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
     e.preventDefault();
     setSubmitting(true); setError(null);
     try {
-      await api.agents.update(agent.id, { name: name.trim(), model, system_prompt: prompt, capabilities });
+      await api.agents.update(agent.id, { name: name.trim(), model, system_prompt: prompt, capabilities, gender });
       onSaved(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
   }
@@ -334,6 +341,14 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
                 <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
                 <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
                 <option value="claude-opus-4-6">claude-opus-4-6</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Род</label>
+              <select value={gender} onChange={e => setGender(e.target.value as 'male' | 'female' | 'neutral')}>
+                <option value="neutral">Средний (они)</option>
+                <option value="male">Мужской (он)</option>
+                <option value="female">Женский (она)</option>
               </select>
             </div>
             {sysTemplate !== null && (
@@ -426,6 +441,12 @@ export function Agents() {
   const [tmuxAgent, setTmuxAgent] = useState<string | null>(null);
   const [editAgent, setEditAgent] = useState<Agent | null>(null);
   const [showKiba, setShowKiba] = useState(false);
+  // Filters & sort
+  const [search, setSearch] = useState('');
+  const [filterBus, setFilterBus] = useState('all');
+  const [filterLifecycle, setFilterLifecycle] = useState('all');
+  const [filterModel, setFilterModel] = useState('all');
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'model'>('name');
 
   const load = useCallback(() => {
     if (!token) return;
@@ -442,10 +463,30 @@ export function Agents() {
     try { await fn(); load(); } catch (e: any) { setError(e.message); }
   }
 
+  const allModels = [...new Set(agents.map(a => a.model).filter(Boolean))] as string[];
+
+  const filteredAgents = agents
+    .filter(a => {
+      if (search && !a.name.toLowerCase().includes(search.toLowerCase()) && !a.id.toLowerCase().includes(search.toLowerCase())) return false;
+      if (filterBus !== 'all' && a.status !== filterBus) return false;
+      if (filterLifecycle !== 'all') {
+        const ls = (a.lifecycle as any)?.status;
+        if (filterLifecycle === 'none' ? ls : ls !== filterLifecycle) return false;
+      }
+      if (filterModel !== 'all' && a.model !== filterModel) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'model') return (a.model || '').localeCompare(b.model || '');
+      if (sortBy === 'status') return a.status.localeCompare(b.status);
+      return 0;
+    });
+
   return (
     <Layout activePage="agents.html">
       <style>{styles + KIBA_CSS}</style>
-      <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      <div style={{ display: 'flex', height: 'calc(100vh - 105px)' }}>
       <div className="ag-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="page-header">
@@ -457,6 +498,42 @@ export function Agents() {
           </div>
           {error && <div className="error-banner">{error}</div>}
           {loading && <div className="empty">Загрузка…</div>}
+          {!loading && (
+            <div className="ag-filters">
+              <span className="ag-filter-label">Поиск:</span>
+              <input className="ag-filter-input" placeholder="Имя или ID…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 160 }} />
+              <span className="ag-filter-label">Шина:</span>
+              <select className="ag-filter-select" value={filterBus} onChange={e => setFilterBus(e.target.value)}>
+                <option value="all">Все</option>
+                <option value="online">Онлайн</option>
+                <option value="offline">Офлайн</option>
+              </select>
+              <span className="ag-filter-label">Процесс:</span>
+              <select className="ag-filter-select" value={filterLifecycle} onChange={e => setFilterLifecycle(e.target.value)}>
+                <option value="all">Все</option>
+                <option value="running">Запущен</option>
+                <option value="stopped">Остановлен</option>
+                <option value="error">Ошибка</option>
+                <option value="none">Нет процесса</option>
+              </select>
+              {allModels.length > 1 && <>
+                <span className="ag-filter-label">Модель:</span>
+                <select className="ag-filter-select" value={filterModel} onChange={e => setFilterModel(e.target.value)}>
+                  <option value="all">Все</option>
+                  {allModels.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </>}
+              <span className="ag-filter-label">Сортировка:</span>
+              <select className="ag-filter-select" value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
+                <option value="name">По имени</option>
+                <option value="status">По статусу</option>
+                <option value="model">По модели</option>
+              </select>
+              {filteredAgents.length !== agents.length && (
+                <span style={{ fontSize: 12, color: '#6366f1', marginLeft: 4 }}>{filteredAgents.length} из {agents.length}</span>
+              )}
+            </div>
+          )}
           {!loading && agents.length === 0 && <div className="empty">Агенты не зарегистрированы.</div>}
           {agents.length > 0 && (
             <table className="table">
@@ -470,7 +547,7 @@ export function Agents() {
                 </tr>
               </thead>
               <tbody>
-                {agents.map(a => {
+                {filteredAgents.map(a => {
                   const atype = getAgentType(a);
                   const canEdit = atype === 'managed';
                   return (

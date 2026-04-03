@@ -159,6 +159,7 @@ export interface Agent {
   lastHeartbeat?: number;
   village_id?: string;
   avatar_url?: string;
+  gender?: 'male' | 'female' | 'neutral';
 }
 
 export interface AdapterHealth {

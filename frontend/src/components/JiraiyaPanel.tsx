@@ -6,7 +6,7 @@ import { useState, useRef, useEffect } from 'react';
 import { api } from '../api/client';
 
 export const JIRAIYA_CSS = `
-  .jiraiya-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#fff; border-left:1px solid #e2e8f0; height:calc(100vh - 64px); }
+  .jiraiya-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#fff; border-left:1px solid #e2e8f0; height:100%; }
   .jiraiya-header { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #e2e8f0; background:#f8fafc; }
   .jiraiya-title { font-size:13px; font-weight:600; color:#1e293b; }
   .jiraiya-btn-close { background:none; border:none; color:#94a3b8; cursor:pointer; font-size:16px; padding:0 4px; line-height:1; }

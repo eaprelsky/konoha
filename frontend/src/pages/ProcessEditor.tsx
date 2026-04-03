@@ -189,7 +189,7 @@ function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps & { isEditi
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const CSS = `
-  .ipe-root { display:flex; flex-direction:column; height:calc(100vh - 64px); overflow:hidden; background:#e2e8f0; }
+  .ipe-root { display:flex; flex-direction:column; height:calc(100vh - 105px); overflow:hidden; background:#e2e8f0; }
   .ipe-bar { display:flex; gap:8px; align-items:center; padding:8px 14px; background:#1e293b; color:white; flex-shrink:0; flex-wrap:wrap; }
   .ipe-bar .sep { width:1px; height:22px; background:#475569; flex-shrink:0; }
   .ipe-bar button { padding:5px 12px; border:1px solid #475569; background:#334155; color:white; border-radius:4px; cursor:pointer; font-size:12px; font-weight:500; white-space:nowrap; }
@@ -350,7 +350,7 @@ export function ProcessEditor() {
   const resizeStartW  = useRef(240);
   const justMarqueed  = useRef(false);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveRef       = useRef<() => Promise<void>>(async () => {});
+  const saveRef       = useRef<() => Promise<boolean>>(async () => false);
   // Pan refs (capture at gesture start; used by global mousemove & touch handlers)
   const panStart      = useRef<{ cx: number; cy: number; px: number; py: number } | null>(null);
   const touchPinch    = useRef<{ dist: number; z: number } | null>(null);
@@ -713,9 +713,9 @@ export function ProcessEditor() {
   }
 
   // ── Save ────────────────────────────────────────────────────────────────────
-  async function save() {
+  async function save(): Promise<boolean> {
     const name = wfName.trim();
-    if (!name) { setError('Введите название процесса'); return; }
+    if (!name) { setError('Введите название процесса'); startCreatingNew(); return false; }
     let id = wfId.trim();
     if (!id) {
       id = slugify(name) || `process-${Date.now().toString(36)}`;
@@ -748,8 +748,9 @@ export function ProcessEditor() {
         const details = validationMsg ? validationMsg.split('\n').map(s => s.trim()).filter(Boolean) : [];
         setDraftWarning({ text: 'Процесс сохранён как черновик — схема некорректна, недоступна для запуска', details });
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message); setSaving(false); return false; }
     setSaving(false);
+    return true;
   }
 
   // Keep saveRef current on every render so debounced timer always calls latest save
@@ -933,8 +934,9 @@ export function ProcessEditor() {
   // Drill down into a sub-process from a Function node
   async function drillDown(funcEl: WorkflowElement) {
     if (!wfId) return;
-    // Save current first
-    await saveRef.current();
+    // Save current first — abort drill-down if save failed (e.g. empty name)
+    const saved = await saveRef.current();
+    if (!saved) return;
     const childId = `${wfId}--${funcEl.id}`;
     const childName = funcEl.label;
     // Determine boundary events from parent flow

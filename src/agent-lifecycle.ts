@@ -72,6 +72,7 @@ export interface AgentDef {
   tags?: string[];
   capabilities?: string[];  // skill IDs assigned to this agent
   avatar_url?: string;
+  gender?: 'male' | 'female' | 'neutral';
   created_at: string;
   updated_at: string;
 }
