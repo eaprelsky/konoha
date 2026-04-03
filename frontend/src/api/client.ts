@@ -206,6 +206,16 @@ export const api = {
       apiFetch<{ ok: boolean }>(`${BASE}/ai/admin-chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
   },
 
+  jiraiya: {
+    chat: (params: { message: string; file_path?: string; chat_id?: string }) =>
+      apiFetch<{ reply: string; chat_id: string; sources: string[] }>(`${BASE}/ai/kb-chat`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }),
+    clearChat: (chat_id: string) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/ai/kb-chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+  },
+
   workspace: {
     list: () => apiFetch<WorkspaceFile[]>(`${BASE}/workspace/files`),
     upload: (file: File) => {

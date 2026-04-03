@@ -4,6 +4,7 @@ import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
 import type { KbNode } from '../api/types';
+import { JiraiyaPanel, JIRAIYA_CSS } from '../components/JiraiyaPanel';
 
 const styles = `
   .kb-body { padding: 20px; }
@@ -79,6 +80,7 @@ export function Kb() {
   const [searchQ, setSearchQ] = useState('');
   const [searchResults, setSearchResults] = useState<{ path: string }[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [showJiraiya, setShowJiraiya] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -116,12 +118,17 @@ export function Kb() {
 
   return (
     <Layout activePage="kb.html">
-      <style>{styles}</style>
-      <div className="kb-body">
+      <style>{styles + JIRAIYA_CSS}</style>
+      <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      <div className="kb-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="panel">
             <div className="panel-header">
               <h2>Knowledge Base</h2>
+              <button
+                style={{ padding: '4px 10px', background: showJiraiya ? '#4f46e5' : '#1e293b', color: 'white', border: '1px solid #6366f1', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                onClick={() => setShowJiraiya(v => !v)}
+              >📜 Дзирайя</button>
             </div>
             <form className="search-row" onSubmit={search}>
               <input
@@ -169,6 +176,14 @@ export function Kb() {
             )}
           </div>
         </div>
+      </div>
+      {showJiraiya && (
+        <JiraiyaPanel
+          filePath={selectedPath}
+          onFileSelect={openFile}
+          onClose={() => setShowJiraiya(false)}
+        />
+      )}
       </div>
     </Layout>
   );
