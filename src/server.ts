@@ -774,7 +774,11 @@ app.get("/adapters/:name/health", async (c) => {
 
 const PEOPLE_CUSTOM_KEY = "people:custom";
 
-type PersonRecord = { id: string; name: string; tg_id: number; position: string; tg_username?: string; email?: string };
+type PersonRecord = {
+  id: string; name: string; tg_id: number; position: string;
+  tg_username?: string; email?: string; source?: "file" | "custom";
+  bitrix24_id?: string; tracker_login?: string; yonote_id?: string;
+};
 
 function loadTrustedPeople(): PersonRecord[] {
   const TRUSTED_PATH = "/opt/shared/.trusted-users.json";
@@ -789,10 +793,10 @@ function loadTrustedPeople(): PersonRecord[] {
       username ? `@${username}` : name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
     const people: PersonRecord[] = [];
     if (data.owner) {
-      people.push({ id: toId(data.owner.name, data.owner.username), name: data.owner.name, tg_id: data.owner.telegram_id, position: "Owner", tg_username: data.owner.username || undefined });
+      people.push({ id: toId(data.owner.name, data.owner.username), name: data.owner.name, tg_id: data.owner.telegram_id, position: "Owner", tg_username: data.owner.username || undefined, source: "file" });
     }
     for (const u of data.trusted || []) {
-      people.push({ id: toId(u.name, u.username), name: u.name, tg_id: u.telegram_id, position: u.position || "", tg_username: u.username || undefined });
+      people.push({ id: toId(u.name, u.username), name: u.name, tg_id: u.telegram_id, position: u.position || "", tg_username: u.username || undefined, source: "file" });
     }
     return people;
   } catch {
@@ -808,7 +812,7 @@ app.get("/people", async (c) => {
     const custom = await redis.hgetall(PEOPLE_CUSTOM_KEY);
     for (const val of Object.values(custom)) {
       const p: PersonRecord = JSON.parse(val);
-      map.set(p.id, p);
+      map.set(p.id, { ...p, source: "custom" });
     }
   } catch { /* redis unavailable — serve trusted only */ }
   return c.json([...map.values()]);
@@ -825,9 +829,24 @@ app.post("/people", async (c) => {
     position: body.position?.trim() || "",
     tg_username: body.tg_username?.trim() || undefined,
     email: body.email?.trim() || undefined,
+    source: "custom",
+    bitrix24_id: body.bitrix24_id?.trim() || undefined,
+    tracker_login: body.tracker_login?.trim() || undefined,
+    yonote_id: body.yonote_id?.trim() || undefined,
   };
   await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(record));
   return c.json(record, 201);
+});
+
+app.delete("/people/:id", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const trusted = loadTrustedPeople();
+  if (trusted.some(p => p.id === id)) {
+    return c.json({ error: "Cannot delete file-based users" }, 403);
+  }
+  const deleted = await redis.hdel(PEOPLE_CUSTOM_KEY, id);
+  if (!deleted) return c.json({ error: "Not found" }, 404);
+  return c.json({ ok: true });
 });
 
 // --- Channels ---

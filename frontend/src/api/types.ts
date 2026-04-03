@@ -177,6 +177,10 @@ export interface Person {
   position: string;
   tg_username?: string;
   email?: string;
+  source?: 'file' | 'custom';
+  bitrix24_id?: string;
+  tracker_login?: string;
+  yonote_id?: string;
 }
 
 export interface KbNode {

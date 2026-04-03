@@ -172,6 +172,7 @@ export const api = {
   people: {
     list: () => apiFetch<Person[]>(`${BASE}/people`),
     save: (p: Partial<Person>) => apiFetch<Person>(`${BASE}/people`, { method: 'POST', body: JSON.stringify(p) }),
+    delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/people/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
 
   health: {

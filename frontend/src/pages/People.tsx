@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type React from 'react';
 import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
@@ -8,7 +8,7 @@ import type { Person } from '../api/types';
 
 const styles = `
   .ppl-body { padding: 20px; }
-  .container { max-width: 900px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,.1); padding: 20px; }
+  .container { max-width: 960px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,.1); padding: 20px; }
   .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
   .page-header h1 { color: #333; font-size: 24px; }
   .header-right { display: flex; gap: 8px; align-items: center; }
@@ -19,21 +19,28 @@ const styles = `
   .table { width: 100%; border-collapse: collapse; }
   .table th { background: #f9f9f9; padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; color: #666; border-bottom: 2px solid #eee; text-transform: uppercase; }
   .table td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: middle; }
-  .table tr:hover td { background: #fafafa; cursor: pointer; }
+  .table tr:hover td { background: #fafafa; }
+  .row-clickable { cursor: pointer; }
   .tg-link { color: #0066cc; text-decoration: none; font-family: monospace; font-size: 13px; }
   .tg-link:hover { text-decoration: underline; }
   .empty { text-align: center; padding: 40px; color: #999; }
   .error-banner { background: #fee; color: #c33; padding: 12px; border-radius: 4px; margin-bottom: 16px; border-left: 4px solid #c33; }
   .position { color: #64748b; font-size: 13px; }
-  .custom-badge { display: inline-block; padding: 1px 6px; background: #eff6ff; color: #1d4ed8; border-radius: 8px; font-size: 10px; margin-left: 6px; vertical-align: middle; }
+  .badge-custom { display: inline-block; padding: 1px 6px; background: #eff6ff; color: #1d4ed8; border-radius: 8px; font-size: 10px; margin-left: 6px; vertical-align: middle; }
+  .badge-file { display: inline-block; padding: 1px 6px; background: #f0fdf4; color: #166534; border-radius: 8px; font-size: 10px; margin-left: 6px; vertical-align: middle; }
+  .btn-delete { padding: 3px 8px; background: transparent; color: #dc2626; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .btn-delete:hover { background: #fee2e2; }
   /* Modal */
   .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
-  .modal { background: white; border-radius: 8px; padding: 32px; width: 460px; max-width: 95vw; box-shadow: 0 20px 25px rgba(0,0,0,.15); }
+  .modal { background: white; border-radius: 8px; padding: 32px; width: 500px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px rgba(0,0,0,.15); }
   .modal h2 { margin-bottom: 20px; color: #333; }
+  .form-section { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; margin: 18px 0 10px; padding-bottom: 4px; border-bottom: 1px solid #f1f5f9; }
   .form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
   .form-group label { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; }
   .form-group input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; }
   .form-group input:focus { outline: none; border-color: #0066cc; }
+  .form-group input:disabled { background: #f8fafc; color: #94a3b8; cursor: not-allowed; }
+  .form-hint { font-size: 11px; color: #94a3b8; margin-top: 2px; }
   .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
   .form-actions button { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
   .btn-submit { background: #0066cc; color: white; }
@@ -47,10 +54,17 @@ interface PersonModalProps {
 }
 
 function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
+  const isFile = person?.source === 'file';
+  const isNew = !person;
+
   const [name, setName] = useState(person?.name || '');
   const [position, setPosition] = useState(person?.position || '');
+  const [tgId, setTgId] = useState(person?.tg_id ? String(person.tg_id) : '');
   const [tgUsername, setTgUsername] = useState(person?.tg_username || '');
   const [email, setEmail] = useState(person?.email || '');
+  const [bitrix24Id, setBitrix24Id] = useState(person?.bitrix24_id || '');
+  const [trackerLogin, setTrackerLogin] = useState(person?.tracker_login || '');
+  const [yonoteId, setYonoteId] = useState(person?.yonote_id || '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,36 +83,75 @@ function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
         id: person?.id,
         name: name.trim(),
         position: position.trim(),
-        tg_id: person?.tg_id ?? 0,
+        tg_id: tgId ? parseInt(tgId, 10) : (person?.tg_id ?? 0),
         tg_username: tgUsername.trim() || undefined,
         email: email.trim() || undefined,
+        bitrix24_id: bitrix24Id.trim() || undefined,
+        tracker_login: trackerLogin.trim() || undefined,
+        yonote_id: yonoteId.trim() || undefined,
       });
       onSaved(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
   }
 
+  const title = isNew ? 'Новый пользователь' : isFile ? person!.name : 'Редактировать';
+
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
-        <h2>{person ? 'Редактировать' : 'Новый человек'}</h2>
+        <h2>{title}</h2>
+        {isFile && (
+          <div style={{ background: '#f0fdf4', color: '#166534', padding: '8px 12px', borderRadius: 4, fontSize: 13, marginBottom: 16 }}>
+            Пользователь из файла (trusted-users.json). Интеграционные поля доступны для редактирования.
+          </div>
+        )}
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
+          <div className="form-section">Основное</div>
           <div className="form-group">
             <label>Имя *</label>
-            <input value={name} onChange={e => setName(e.target.value)} autoFocus required />
+            <input value={name} onChange={e => setName(e.target.value)} autoFocus required disabled={isFile} />
           </div>
           <div className="form-group">
             <label>Должность</label>
-            <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Например: Разработчик" />
+            <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Например: Разработчик" disabled={isFile} />
+          </div>
+          <div className="form-group">
+            <label>Telegram ID</label>
+            <input
+              value={tgId}
+              onChange={e => setTgId(e.target.value)}
+              placeholder="Числовой ID"
+              type="number"
+              disabled={isFile}
+            />
           </div>
           <div className="form-group">
             <label>Telegram username</label>
-            <input value={tgUsername} onChange={e => setTgUsername(e.target.value)} placeholder="username (без @)" />
+            <input value={tgUsername} onChange={e => setTgUsername(e.target.value)} placeholder="username (без @)" disabled={isFile} />
           </div>
           <div className="form-group">
-            <label>Email (опционально)</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" />
+            <label>Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" disabled={isFile} />
           </div>
+
+          <div className="form-section">Интеграции</div>
+          <div className="form-group">
+            <label>Bitrix24 User ID</label>
+            <input value={bitrix24Id} onChange={e => setBitrix24Id(e.target.value)} placeholder="Числовой ID в Bitrix24" />
+            <span className="form-hint">Используется адаптером Bitrix24 для маппинга</span>
+          </div>
+          <div className="form-group">
+            <label>Yandex Tracker Login</label>
+            <input value={trackerLogin} onChange={e => setTrackerLogin(e.target.value)} placeholder="login" />
+            <span className="form-hint">Логин в Яндекс Трекере</span>
+          </div>
+          <div className="form-group">
+            <label>Yonote User ID</label>
+            <input value={yonoteId} onChange={e => setYonoteId(e.target.value)} placeholder="UUID или логин" />
+            <span className="form-hint">ID пользователя в Yonote</span>
+          </div>
+
           <div className="form-actions">
             <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
             <button type="submit" className="btn-submit" disabled={submitting}>
@@ -141,6 +194,17 @@ export function People() {
   function openEdit(p: Person) { setEditPerson(p); setShowModal(true); }
   function openNew() { setEditPerson(null); setShowModal(true); }
 
+  async function deletePerson(e: React.MouseEvent, p: Person) {
+    e.stopPropagation();
+    if (!confirm(`Удалить пользователя "${p.name}"?`)) return;
+    try {
+      await api.people.delete(p.id);
+      load();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
   return (
     <Layout activePage="people.html">
       <style>{styles}</style>
@@ -169,14 +233,16 @@ export function People() {
                   <th>Должность</th>
                   <th>Telegram</th>
                   <th>Email</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(p => (
-                  <tr key={p.id} onClick={() => openEdit(p)}>
+                  <tr key={p.id} className="row-clickable" onClick={() => openEdit(p)}>
                     <td style={{ fontWeight: 600 }}>
                       {p.name}
-                      {p.email && <span className="custom-badge">custom</span>}
+                      {p.source === 'custom' && <span className="badge-custom">custom</span>}
+                      {p.source === 'file' && <span className="badge-file">trusted</span>}
                     </td>
                     <td><span className="position">{p.position || '—'}</span></td>
                     <td>
@@ -197,6 +263,17 @@ export function People() {
                       ) : '—'}
                     </td>
                     <td style={{ color: '#64748b', fontSize: 13 }}>{p.email || '—'}</td>
+                    <td style={{ width: 60, textAlign: 'right' }}>
+                      {p.source === 'custom' && (
+                        <button
+                          className="btn-delete"
+                          onClick={e => deletePerson(e, p)}
+                          title="Удалить"
+                        >
+                          Удалить
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
