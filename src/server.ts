@@ -303,6 +303,37 @@ app.delete("/agents/:id/memory/:filename", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// PUT /agents/:id/memory/:filename — overwrite memory file content
+app.put("/agents/:id/memory/:filename", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const filename = basename(c.req.param("filename"));
+  if (!filename.endsWith(".md") && !filename.endsWith(".txt") && !filename.endsWith(".json")) {
+    return c.json({ error: "Only .md, .txt, .json files allowed" }, 415);
+  }
+  const dir = `/opt/shared/agent-memory/${basename(id)}`;
+  const filepath = join(dir, filename);
+  if (!existsSync(filepath)) return c.json({ error: "Not found" }, 404);
+  const content = await c.req.text();
+  writeFileSync(filepath, content, "utf-8");
+  return c.json({ ok: true, filename, size: content.length });
+});
+
+// POST /agents/:id/memory/:filename — create new memory file
+app.post("/agents/:id/memory/:filename", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const filename = basename(c.req.param("filename"));
+  if (!filename.endsWith(".md") && !filename.endsWith(".txt") && !filename.endsWith(".json")) {
+    return c.json({ error: "Only .md, .txt, .json files allowed" }, 415);
+  }
+  const dir = `/opt/shared/agent-memory/${basename(id)}`;
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const filepath = join(dir, filename);
+  if (existsSync(filepath)) return c.json({ error: "File already exists, use PUT to update" }, 409);
+  const content = await c.req.text().catch(() => "");
+  writeFileSync(filepath, content, "utf-8");
+  return c.json({ ok: true, filename, size: content.length }, 201);
+});
+
 // GET /agents/:id — get single agent (bus data merged with def)
 app.get("/agents/:id", async (c) => {
   const id = c.req.param("id");

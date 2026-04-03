@@ -115,6 +115,10 @@ export const api = {
       return res.text();
     },
     memoryDelete: (id: string, filename: string) => apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}/memory/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+    memorySave: (id: string, filename: string, content: string) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}/memory/${encodeURIComponent(filename)}`, { method: 'PUT', body: content }),
+    memoryCreate: (id: string, filename: string, content: string) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}/memory/${encodeURIComponent(filename)}`, { method: 'POST', body: content }),
     generateAvatar: (id: string, params?: { style?: string; description?: string }) =>
       apiFetch<{ avatar_url: string }>(`${BASE}/agents/${id}/avatar`, { method: 'POST', body: JSON.stringify(params || {}) }),
     uploadAvatar: (id: string, file: File) => {
