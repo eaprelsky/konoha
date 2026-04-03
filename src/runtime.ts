@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { readFileSync } from "fs";
 import { redis } from "./redis";
 import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "./workflow-loader";
 import { getAdapter } from "./adapters/index";
@@ -960,15 +961,24 @@ export function startReminderScheduler(): void {
           // Mark as sent (actual delivery is channel-specific; GUI channel = mark sent)
           await updateReminderStatus(r.reminder_id, "sent");
           if (r.channel === "telegram") {
-            // Publish to telegram:bot:outgoing for bot delivery
-            await redis.xadd(
-              "telegram:bot:outgoing",
-              "*",
-              "text",
-              `[Reminder] ${r.message}`,
-              "recipient",
-              r.recipient,
-            ).catch(() => {});
+            // Resolve recipient name → telegram_id from trusted-users
+            try {
+              const trustedUsers = JSON.parse(readFileSync("/opt/shared/.trusted-users.json", "utf-8"));
+              const allUsers = [trustedUsers.owner, ...(trustedUsers.trusted ?? [])];
+              const user = allUsers.find((u: { name: string; telegram_id: number }) =>
+                u.name === r.recipient || String(u.telegram_id) === r.recipient
+              );
+              if (user) {
+                await redis.xadd(
+                  "telegram:bot:outgoing",
+                  "*",
+                  "chat_id",
+                  String(user.telegram_id),
+                  "text",
+                  `[Напоминание] ${r.message}`,
+                ).catch(() => {});
+              }
+            } catch (_) {}
           }
         }
       }
