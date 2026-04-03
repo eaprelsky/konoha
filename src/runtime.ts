@@ -143,6 +143,7 @@ export interface Reminder {
   case_id?: string;
   process_id?: string;
   element_id?: string;
+  work_item_id?: string;       // when set, scheduler auto-completes this work item on fire
   created_at: string;
   updated_at: string;
 }
@@ -387,6 +388,7 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
           work_item_id: wi.work_item_id,
           case_id: kase.case_id,
           process_id: kase.process_id,
+          element_id: nextId,
           docIds: nextEl.documents || [],
         }).catch(e => console.error("[runtime] dispatch error:", e.message));
       }
@@ -902,6 +904,7 @@ export async function createReminder(params: {
   case_id?: string;
   process_id?: string;
   element_id?: string;
+  work_item_id?: string;
 }): Promise<Reminder> {
   const now = new Date().toISOString();
   const r: Reminder = {
@@ -915,6 +918,7 @@ export async function createReminder(params: {
     case_id: params.case_id,
     process_id: params.process_id,
     element_id: params.element_id,
+    work_item_id: params.work_item_id,
     created_at: now,
     updated_at: now,
   };
@@ -971,6 +975,15 @@ export function startReminderScheduler(): void {
       for (const r of pending) {
         const scheduled = new Date(r.scheduled_at);
         if (scheduled <= now) {
+          // Auto-complete work item for process-bound timer reminders
+          if (r.type === "process-bound" && r.work_item_id) {
+            try {
+              await completeWorkItem(r.work_item_id, { system: "timer-expired", label: r.message });
+              console.log(`[scheduler] timer expired — completed work_item ${r.work_item_id}`);
+            } catch (e: any) {
+              console.error(`[scheduler] auto-complete failed for ${r.work_item_id}:`, e.message);
+            }
+          }
           // Mark as sent (actual delivery is channel-specific; GUI channel = mark sent)
           await updateReminderStatus(r.reminder_id, "sent");
           if (r.channel === "telegram") {

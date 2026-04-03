@@ -153,6 +153,7 @@ export interface Reminder {
   case_id?: string;
   process_id?: string;
   element_id?: string;
+  work_item_id?: string;
   created_at: string;
   updated_at: string;
 }

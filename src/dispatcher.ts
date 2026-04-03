@@ -4,6 +4,7 @@
  */
 import { redis } from "./redis";
 import { listAgents, sendMessage } from "./redis";
+import { isSystemRole, executeSystemFunction } from "./system-agent";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { readFileSync, existsSync } from "fs";
@@ -72,12 +73,19 @@ export interface DispatchParams {
   work_item_id: string;
   case_id: string;
   process_id: string;
+  element_id: string;
   docIds: string[];
 }
 
 /** Dispatch a work item to an agent or person based on role. Fire-and-forget safe. */
 export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
-  const { role, label, work_item_id, case_id, process_id, docIds } = params;
+  const { role, label, work_item_id, case_id, process_id, element_id, docIds } = params;
+
+  // 0. System role → system-agent handles timers, doc gen, auto-execute
+  if (isSystemRole(role)) {
+    await executeSystemFunction({ label, work_item_id, case_id, process_id, element_id, docIds });
+    return;
+  }
 
   const instruction = await loadInstructionText(docIds, label);
   const hasExtra = instruction !== label;
