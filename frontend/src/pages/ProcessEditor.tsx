@@ -275,10 +275,11 @@ export function ProcessEditor() {
   const [newProcName,   setNewProcName]   = useState('');
   const [renamingWfId,  setRenamingWfId]  = useState<string | null>(null);
   const [renamingVal,   setRenamingVal]   = useState('');
-  const svgRef    = useRef<SVGSVGElement>(null);
-  const resizing  = useRef(false);
-  const resizeStartX = useRef(0);
-  const resizeStartW = useRef(240);
+  const svgRef        = useRef<SVGSVGElement>(null);
+  const resizing      = useRef(false);
+  const resizeStartX  = useRef(0);
+  const resizeStartW  = useRef(240);
+  const justMarqueed  = useRef(false); // prevents onSvgClick from clearing marquee selection
 
   // ── Load workflow list + registries ────────────────────────────────────────
   const refreshList = useCallback(() => {
@@ -519,6 +520,7 @@ export function ProcessEditor() {
         }).map(el => el.id);
         setMultiSelected(ids);
         if (ids.length === 1) setSelected(ids[0]);
+        justMarqueed.current = true; // block the following click event from clearing selection
       }
       setMarquee(null);
     }
@@ -540,9 +542,10 @@ export function ProcessEditor() {
 
   function onSvgClick() {
     setGatewayPickerId(null);
+    if (justMarqueed.current) { justMarqueed.current = false; return; }
     if (mode === 'connect' && connectFrom) {
       setConnectFrom(null);
-    } else if (!marquee) {
+    } else {
       setSelected(null); setMultiSelected([]);
     }
   }
