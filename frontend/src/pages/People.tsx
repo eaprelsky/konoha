@@ -65,6 +65,7 @@ function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
   const [bitrix24Id, setBitrix24Id] = useState(person?.bitrix24_id || '');
   const [trackerLogin, setTrackerLogin] = useState(person?.tracker_login || '');
   const [yonoteId, setYonoteId] = useState(person?.yonote_id || '');
+  const [channel, setChannel] = useState<'telegram' | 'email'>(person?.channel || 'telegram');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,6 +90,7 @@ function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
         bitrix24_id: bitrix24Id.trim() || undefined,
         tracker_login: trackerLogin.trim() || undefined,
         yonote_id: yonoteId.trim() || undefined,
+        channel,
       });
       onSaved(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
@@ -133,6 +135,16 @@ function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
           <div className="form-group">
             <label>Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" disabled={isFile} />
+          </div>
+
+          <div className="form-section">Уведомления</div>
+          <div className="form-group">
+            <label>Предпочтительный канал</label>
+            <select value={channel} onChange={e => setChannel(e.target.value as 'telegram' | 'email')} style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 4, fontSize: 14, fontFamily: 'inherit' }}>
+              <option value="telegram">Telegram (по умолчанию)</option>
+              <option value="email">Email</option>
+            </select>
+            <span className="form-hint">Используется при диспетчеризации задач пользователю</span>
           </div>
 
           <div className="form-section">Интеграции</div>

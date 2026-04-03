@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile } from './types';
 
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
 
@@ -183,6 +183,16 @@ export const api = {
     tree: () => apiFetch<KbNode[]>(`${BASE}/kb/tree`),
     file: (path: string) => apiFetch<{ content: string; path: string }>(`${BASE}/kb/file?path=${encodeURIComponent(path)}`),
     search: (q: string) => apiFetch<{ path: string }[]>(`${BASE}/kb/search?q=${encodeURIComponent(q)}`),
+  },
+
+  workspace: {
+    list: () => apiFetch<WorkspaceFile[]>(`${BASE}/workspace/files`),
+    upload: (file: File) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return apiFetch<{ name: string; size: number }>(`${BASE}/workspace/upload`, { method: 'POST', body: fd });
+    },
+    delete: (name: string) => apiFetch<{ ok: boolean }>(`${BASE}/workspace/files/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   },
 };
 

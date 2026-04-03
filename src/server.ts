@@ -779,6 +779,7 @@ type PersonRecord = {
   id: string; name: string; tg_id: number; position: string;
   tg_username?: string; email?: string; source?: "file" | "custom";
   bitrix24_id?: string; tracker_login?: string; yonote_id?: string;
+  channel?: "telegram" | "email";
 };
 
 function loadTrustedPeople(): PersonRecord[] {
@@ -834,6 +835,7 @@ app.post("/people", async (c) => {
     bitrix24_id: body.bitrix24_id?.trim() || undefined,
     tracker_login: body.tracker_login?.trim() || undefined,
     yonote_id: body.yonote_id?.trim() || undefined,
+    channel: (body.channel === "telegram" || body.channel === "email") ? body.channel : undefined,
   };
   await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(record));
   return c.json(record, 201);
@@ -847,6 +849,51 @@ app.delete("/people/:id", requireAuth, async (c) => {
   }
   const deleted = await redis.hdel(PEOPLE_CUSTOM_KEY, id);
   if (!deleted) return c.json({ error: "Not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// --- Workspace ---
+
+const WORKSPACE_DIR = "/opt/shared/workspace";
+const WORKSPACE_ALLOWED_EXT = new Set([".docx", ".xlsx", ".pdf", ".png", ".jpg", ".jpeg", ".wav", ".mp3", ".m4a", ".ogg"]);
+
+if (!existsSync(WORKSPACE_DIR)) {
+  mkdirSync(WORKSPACE_DIR, { recursive: true });
+}
+
+app.use("/workspace", requireAuth);
+app.use("/workspace/*", requireAuth);
+
+app.get("/workspace/files", async (c) => {
+  const files = readdirSync(WORKSPACE_DIR).map(name => {
+    const fullPath = join(WORKSPACE_DIR, name);
+    const st = statSync(fullPath);
+    return { name, size: st.size, modified_at: st.mtime.toISOString() };
+  });
+  return c.json(files);
+});
+
+app.post("/workspace/upload", async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File | null;
+  if (!file) return c.json({ error: "file required" }, 400);
+  const ext = extname(file.name).toLowerCase();
+  if (!WORKSPACE_ALLOWED_EXT.has(ext)) {
+    return c.json({ error: `File type not allowed: ${ext}` }, 415);
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const destPath = join(WORKSPACE_DIR, safeName);
+  const buf = Buffer.from(await file.arrayBuffer());
+  writeFileSync(destPath, buf);
+  return c.json({ name: safeName, size: buf.length }, 201);
+});
+
+app.delete("/workspace/files/:name", async (c) => {
+  const name = c.req.param("name");
+  if (name.includes("/") || name.includes("..")) return c.json({ error: "Invalid file name" }, 400);
+  const filePath = join(WORKSPACE_DIR, name);
+  if (!existsSync(filePath)) return c.json({ error: "Not found" }, 404);
+  unlinkSync(filePath);
   return c.json({ ok: true });
 });
 

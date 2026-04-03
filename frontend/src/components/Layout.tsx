@@ -61,6 +61,7 @@ const SYS_NAV = [
   { href: '/ui/messages.html',   key: 'nav.messages',   fallback: 'Messages' },
   { href: '/ui/eventlog.html',   key: 'nav.eventlog',   fallback: 'Event Log' },
   { href: '/ui/kb.html',         key: 'nav.kb',         fallback: 'KB' },
+  { href: '/ui/workspace.html',  key: 'nav.workspace',  fallback: 'Workspace' },
   { href: '/ui/admin.html',      key: 'nav.admin',      fallback: 'Admin' },
 ];
 

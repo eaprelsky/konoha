@@ -181,6 +181,13 @@ export interface Person {
   bitrix24_id?: string;
   tracker_login?: string;
   yonote_id?: string;
+  channel?: 'telegram' | 'email';
+}
+
+export interface WorkspaceFile {
+  name: string;
+  size: number;
+  modified_at: string;
 }
 
 export interface KbNode {
