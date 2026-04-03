@@ -77,6 +77,39 @@ export interface DispatchParams {
   docIds: string[];
 }
 
+/** Count pending/running work items assigned to an agent (load indicator). */
+async function agentLoad(agentId: string): Promise<number> {
+  try {
+    return await redis.scard(`konoha:workitems:assignee:${agentId}`);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Find the best agent for a role using:
+ * 1. Direct name/id match (exact)
+ * 2. Capability match (role is in agent.capabilities[])
+ * Among multiple capability matches, prefer the least loaded agent.
+ */
+async function findAgent(role: string): Promise<import("./redis").Agent | null> {
+  const agents = await listAgents(true); // online only
+
+  // Exact name/id match
+  const exact = agents.find(a => a.id === role || a.name === role);
+  if (exact) return exact;
+
+  // Capability-based match
+  const capable = agents.filter(a => a.capabilities?.includes(role));
+  if (capable.length === 0) return null;
+  if (capable.length === 1) return capable[0];
+
+  // Load-aware: pick agent with fewest in-flight work items
+  const loads = await Promise.all(capable.map(a => agentLoad(a.id)));
+  const minLoad = Math.min(...loads);
+  return capable[loads.indexOf(minLoad)];
+}
+
 /** Dispatch a work item to an agent or person based on role. Fire-and-forget safe. */
 export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
   const { role, label, work_item_id, case_id, process_id, element_id, docIds } = params;
@@ -90,10 +123,10 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
   const instruction = await loadInstructionText(docIds, label);
   const hasExtra = instruction !== label;
 
-  // 1. Check if role matches a registered Konoha agent
-  const agents = await listAgents(true); // online only
-  const agent = agents.find(a => a.id === role || a.name === role);
+  // 1. Check if role matches a registered agent (by name/id or capability)
+  const agent = await findAgent(role);
   if (agent) {
+    const routeReason = (agent.id === role || agent.name === role) ? "name-match" : "capability-match";
     const text = [
       `[Задача от runtime] Процесс: ${process_id} | Кейс: ${case_id}`,
       `Функция: ${label}`,
@@ -102,7 +135,7 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
     ].filter(Boolean).join("\n");
 
     await sendMessage({ from: "runtime", to: agent.id, type: "task", text });
-    console.log(`[dispatcher] sent task to agent "${agent.id}" for work_item ${work_item_id}`);
+    console.log(`[dispatcher] sent task to agent "${agent.id}" (${routeReason}) for work_item ${work_item_id}`);
     return;
   }
 
