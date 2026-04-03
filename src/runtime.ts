@@ -965,12 +965,15 @@ export function startReminderScheduler(): void {
             try {
               const trustedUsers = JSON.parse(readFileSync("/opt/shared/.trusted-users.json", "utf-8"));
               const allUsers = [trustedUsers.owner, ...(trustedUsers.trusted ?? [])];
-              const user = allUsers.find((u: { name: string; telegram_id: number }) =>
-                u.name === r.recipient || String(u.telegram_id) === r.recipient
+              const recipientClean = r.recipient.replace(/^@/, "");
+              const user = allUsers.find((u: { name: string; username?: string; telegram_id: number }) =>
+                u.name === r.recipient ||
+                u.username === recipientClean ||
+                String(u.telegram_id) === r.recipient
               );
               if (user) {
                 await redis.xadd(
-                  "telegram:bot:outgoing",
+                  "telegram:outgoing",
                   "*",
                   "chat_id",
                   String(user.telegram_id),
