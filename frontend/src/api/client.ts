@@ -1,31 +1,11 @@
 import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent } from './types';
 
-// Token stored in localStorage, readable via ?token= query param
-function getToken(): string {
-  const params = new URLSearchParams(window.location.search);
-  const fromUrl = params.get('token');
-  if (fromUrl) {
-    localStorage.setItem('konoha_token', fromUrl);
-    return fromUrl;
-  }
-  return localStorage.getItem('konoha_token') || '';
-}
-
-function ensureToken(): string {
-  let token = getToken();
-  if (!token) {
-    token = prompt('Konoha API token:') || '';
-    if (token) localStorage.setItem('konoha_token', token);
-  }
-  return token;
-}
+// Nginx injects Bearer token into /api/* automatically — no token needed from client.
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = ensureToken();
   const res = await fetch(path, {
     ...options,
     headers: {
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
       ...(options?.headers || {}),
     },
@@ -102,12 +82,15 @@ export const api = {
 
   agents: {
     list: () => apiFetch<Agent[]>(`${BASE}/agents`),
+    get: (id: string) => apiFetch<Agent>(`${BASE}/agents/${id}`),
     create: (params: { id: string; name: string; system_prompt?: string; model?: string }) =>
       apiFetch<Agent>(`${BASE}/agents`, { method: 'POST', body: JSON.stringify(params) }),
+    update: (id: string, patch: { name?: string; system_prompt?: string; model?: string }) =>
+      apiFetch<Agent>(`${BASE}/agents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
     start: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/start`, { method: 'POST', body: '{}' }),
     stop: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/stop`, { method: 'POST', body: '{}' }),
     restart: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/restart`, { method: 'POST', body: '{}' }),
-    delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}`, { method: 'DELETE' }),
+    delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}?hard=true`, { method: 'DELETE' }),
     status: (id: string) => apiFetch<AgentStatus>(`${BASE}/agents/${id}/status`),
     tmuxLog: (id: string) => apiFetch<{ session: string; lines: string }>(`${BASE}/agents/tmux/${id}`),
   },

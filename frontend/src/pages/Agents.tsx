@@ -163,6 +163,65 @@ function TmuxModal({ agentId, onClose }: TmuxModalProps) {
   );
 }
 
+interface EditAgentModalProps { agent: Agent; onClose: () => void; onSaved: () => void; }
+function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
+  const [name, setName] = useState(agent.name);
+  const [model, setModel] = useState(agent.model || 'claude-sonnet-4-6');
+  const [prompt, setPrompt] = useState((agent as any).system_prompt || '');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Load full agent data (system_prompt may not be in list response)
+    api.agents.get(agent.id)
+      .then(d => { setPrompt((d as any).system_prompt || ''); })
+      .catch(() => {});
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [agent.id, onClose]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true); setError(null);
+    try {
+      await api.agents.update(agent.id, { name: name.trim(), model, system_prompt: prompt });
+      onSaved(); onClose();
+    } catch (err: any) { setError(err.message); setSubmitting(false); }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ width: 540 }}>
+        <h2>Edit Agent — {agent.id}</h2>
+        {error && <div className="error-banner">{error}</div>}
+        <form onSubmit={submit}>
+          <div className="form-group">
+            <label>Name *</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} required autoFocus />
+          </div>
+          <div className="form-group">
+            <label>Model</label>
+            <select value={model} onChange={e => setModel(e.target.value)}>
+              <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+              <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
+              <option value="claude-opus-4-6">claude-opus-4-6</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>System Prompt</label>
+            <textarea placeholder="System prompt..." value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 180 }} />
+          </div>
+          <div className="form-actions">
+            <button type="button" className="btn-cancel-f" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Saving...' : 'Save'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function Agents() {
   const token = useToken();
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -171,6 +230,7 @@ export function Agents() {
   const [lastUpdate, setLastUpdate] = useState('-');
   const [showNew, setShowNew] = useState(false);
   const [tmuxAgent, setTmuxAgent] = useState<string | null>(null);
+  const [editAgent, setEditAgent] = useState<Agent | null>(null);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -244,6 +304,7 @@ export function Agents() {
                           <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start')}>▶ Start</button>
                           <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop')}>■ Stop</button>
                           <button className="btn-restart" onClick={() => action(a.id, () => api.agents.restart(a.id), 'Restart')}>↺</button>
+                          <button onClick={() => setEditAgent(a)}>Edit</button>
                         </>}
                         <button onClick={() => setTmuxAgent(a.id)}>Logs</button>
                         <button className="btn-del" onClick={() => action(a.id, () => api.agents.delete(a.id), 'Delete')}>🗑</button>
@@ -259,6 +320,7 @@ export function Agents() {
       </div>
       {showNew && <NewAgentModal onClose={() => setShowNew(false)} onCreated={load} />}
       {tmuxAgent && <TmuxModal agentId={tmuxAgent} onClose={() => setTmuxAgent(null)} />}
+      {editAgent && <EditAgentModal agent={editAgent} onClose={() => setEditAgent(null)} onSaved={load} />}
     </Layout>
   );
 }
