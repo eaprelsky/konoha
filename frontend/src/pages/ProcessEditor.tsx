@@ -576,14 +576,21 @@ export function ProcessEditor() {
                 if (!fp || !tp) return null;
                 const d = orthogonalPath(fp, tp);
                 const isHighlighted = selected === fId || selected === tId;
+                // Role connections are undirected (ownership, not flow)
+                const srcType = elements.find(e => e.id === fId)?.type;
+                const dstType = elements.find(e => e.id === tId)?.type;
+                const isRoleEdge = srcType === 'role' || dstType === 'role';
+                const arrow = isRoleEdge ? undefined
+                  : isHighlighted ? 'url(#arr-hi)' : 'url(#arr)';
                 return (
                   <g key={i}>
                     <path
                       d={d}
-                      stroke={isHighlighted ? '#6366f1' : '#6b7280'}
+                      stroke={isHighlighted ? '#6366f1' : isRoleEdge ? '#B7A000' : '#6b7280'}
                       strokeWidth={isHighlighted ? 2 : 1.5}
+                      strokeDasharray={isRoleEdge ? '5 3' : undefined}
                       fill="none"
-                      markerEnd={isHighlighted ? 'url(#arr-hi)' : 'url(#arr)'}
+                      markerEnd={arrow}
                     />
                     {/* Wider invisible hit area for deletion */}
                     <path
