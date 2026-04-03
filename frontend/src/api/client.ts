@@ -114,6 +114,8 @@ export const api = {
       return res.text();
     },
     memoryDelete: (id: string, filename: string) => apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}/memory/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+    generateAvatar: (id: string, params?: { style?: string; description?: string }) =>
+      apiFetch<{ avatar_url: string }>(`${BASE}/agents/${id}/avatar`, { method: 'POST', body: JSON.stringify(params || {}) }),
   },
 
   roles: {
@@ -174,6 +176,8 @@ export const api = {
     list: () => apiFetch<Person[]>(`${BASE}/people`),
     save: (p: Partial<Person>) => apiFetch<Person>(`${BASE}/people`, { method: 'POST', body: JSON.stringify(p) }),
     delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/people/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    generateAvatar: (id: string, params?: { style?: string; description?: string }) =>
+      apiFetch<{ avatar_url: string }>(`${BASE}/people/${encodeURIComponent(id)}/avatar`, { method: 'POST', body: JSON.stringify(params || {}) }),
   },
 
   health: {

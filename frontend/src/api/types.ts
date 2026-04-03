@@ -156,6 +156,7 @@ export interface Agent {
   lifecycle?: AgentLifecycle;
   lastHeartbeat?: number;
   village_id?: string;
+  avatar_url?: string;
 }
 
 export interface AdapterHealth {
@@ -213,6 +214,7 @@ export interface Person {
   yonote_id?: string;
   channel?: 'telegram' | 'email';
   capabilities?: string[];
+  avatar_url?: string;
 }
 
 export interface WorkspaceFile {

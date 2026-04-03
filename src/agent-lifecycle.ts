@@ -71,6 +71,7 @@ export interface AgentDef {
   env?: Record<string, string>;
   tags?: string[];
   capabilities?: string[];  // skill IDs assigned to this agent
+  avatar_url?: string;
   created_at: string;
   updated_at: string;
 }

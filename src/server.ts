@@ -843,6 +843,7 @@ type PersonRecord = {
   bitrix24_id?: string; tracker_login?: string; yonote_id?: string;
   channel?: "telegram" | "email";
   capabilities?: string[];  // skill IDs
+  avatar_url?: string;
 };
 
 function loadTrustedPeople(): PersonRecord[] {
@@ -914,6 +915,51 @@ app.delete("/people/:id", requireAuth, async (c) => {
   const deleted = await redis.hdel(PEOPLE_CUSTOM_KEY, id);
   if (!deleted) return c.json({ error: "Not found" }, 404);
   return c.json({ ok: true });
+});
+
+// --- Avatar Generation ---
+
+import { generateAvatar } from "./adapters/image";
+
+app.post("/agents/:id/avatar", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const def = await getAgentDef(id);
+  if (!def) return c.json({ error: "Agent not found" }, 404);
+  const body = await c.req.json<{ style?: string; description?: string }>().catch(() => ({}));
+  try {
+    const result = await generateAvatar({
+      id,
+      name: def.name,
+      description: body.description || def.system_prompt?.slice(0, 100),
+      style: body.style,
+    });
+    const updated = { ...def, avatar_url: result.avatar_url, updated_at: new Date().toISOString() };
+    await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+    return c.json({ avatar_url: result.avatar_url });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post("/people/:id/avatar", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const raw = await redis.hget(PEOPLE_CUSTOM_KEY, id);
+  if (!raw) return c.json({ error: "Person not found or is file-based" }, 404);
+  const person: PersonRecord = JSON.parse(raw);
+  const body = await c.req.json<{ style?: string; description?: string }>().catch(() => ({}));
+  try {
+    const result = await generateAvatar({
+      id,
+      name: person.name,
+      description: body.description || person.position,
+      style: body.style,
+    });
+    person.avatar_url = result.avatar_url;
+    await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(person));
+    return c.json({ avatar_url: result.avatar_url });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
 });
 
 // --- Tsunade Chat API ---

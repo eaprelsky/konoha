@@ -69,6 +69,9 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
   const [yonoteId, setYonoteId] = useState(person?.yonote_id || '');
   const [channel, setChannel] = useState<'telegram' | 'email'>(person?.channel || 'telegram');
   const [capabilities, setCapabilities] = useState<string[]>(person?.capabilities || []);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(person?.avatar_url);
+  const [avatarStyle, setAvatarStyle] = useState('professional photo');
+  const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,9 +98,23 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
         yonote_id: yonoteId.trim() || undefined,
         channel,
         capabilities: capabilities.length > 0 ? capabilities : undefined,
+        avatar_url: avatarUrl,
       });
       onSaved(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
+  }
+
+  async function doGenerateAvatar() {
+    if (!person?.id) { setError('Сначала сохраните пользователя'); return; }
+    setGeneratingAvatar(true);
+    try {
+      const res = await api.people.generateAvatar(person.id, { style: avatarStyle, description: position || undefined });
+      setAvatarUrl(res.avatar_url);
+    } catch (e: any) {
+      setError(`Аватар: ${e.message}`);
+    } finally {
+      setGeneratingAvatar(false);
+    }
   }
 
   const title = isNew ? 'Новый пользователь' : isFile ? person!.name : 'Редактировать';
@@ -113,6 +130,32 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
         )}
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 16 }}>
+            <div style={{ flexShrink: 0 }}>
+              {avatarUrl
+                ? <img src={avatarUrl} alt="avatar" style={{ width: 64, height: 64, borderRadius: 50, objectFit: 'cover', border: '2px solid #e2e8f0' }} />
+                : <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#0066cc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: 'white', fontWeight: 700, border: '2px solid #e2e8f0', userSelect: 'none' }}>
+                    {name.charAt(0).toUpperCase() || '?'}
+                  </div>
+              }
+            </div>
+            {!isNew && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Аватар</div>
+                <input
+                  type="text"
+                  value={avatarStyle}
+                  onChange={e => setAvatarStyle(e.target.value)}
+                  placeholder="professional photo, anime, pixel art…"
+                  style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }}
+                />
+                <button type="button" onClick={doGenerateAvatar} disabled={generatingAvatar}
+                  style={{ padding: '5px 12px', background: '#0066cc', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: generatingAvatar ? 0.6 : 1 }}>
+                  {generatingAvatar ? '⏳ Генерируется…' : '✨ Сгенерировать аватар'}
+                </button>
+              </div>
+            )}
+          </div>
           <div className="form-section">Основное</div>
           <div className="form-group">
             <label>Имя *</label>
@@ -281,9 +324,17 @@ export function People() {
                 {filtered.map(p => (
                   <tr key={p.id} className="row-clickable" onClick={() => openEdit(p)}>
                     <td style={{ fontWeight: 600 }}>
-                      {p.name}
-                      {p.source === 'custom' && <span className="badge-custom">custom</span>}
-                      {p.source === 'file' && <span className="badge-file">trusted</span>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {p.avatar_url
+                          ? <img src={p.avatar_url} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                          : <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#0066cc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'white', fontWeight: 700, flexShrink: 0 }}>{p.name.charAt(0).toUpperCase()}</div>
+                        }
+                        <span>
+                          {p.name}
+                          {p.source === 'custom' && <span className="badge-custom">custom</span>}
+                          {p.source === 'file' && <span className="badge-file">trusted</span>}
+                        </span>
+                      </div>
                     </td>
                     <td><span className="position">{p.position || '—'}</span></td>
                     <td>

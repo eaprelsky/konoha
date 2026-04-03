@@ -214,11 +214,15 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const [memLoading, setMemLoading] = useState(false);
   const [allSkills, setAllSkills] = useState<Skill[]>([]);
   const [capabilities, setCapabilities] = useState<string[]>((agent as any).capabilities || []);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>((agent as any).avatar_url);
+  const [avatarStyle, setAvatarStyle] = useState('anime ninja');
+  const [generatingAvatar, setGeneratingAvatar] = useState(false);
 
   useEffect(() => {
     api.agents.get(agent.id).then(d => {
       setPrompt((d as any).system_prompt || '');
       setCapabilities((d as any).capabilities || []);
+      setAvatarUrl((d as any).avatar_url);
     }).catch(() => {});
     api.agents.systemTemplate(agent.id).then(d => setSysTemplate(d.template)).catch(() => {});
     api.skills.list().then(setAllSkills).catch(() => {});
@@ -252,6 +256,18 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
     setCapabilities(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
   }
 
+  async function doGenerateAvatar() {
+    setGeneratingAvatar(true);
+    try {
+      const res = await api.agents.generateAvatar(agent.id, { style: avatarStyle, description: prompt.slice(0, 100) || undefined });
+      setAvatarUrl(res.avatar_url);
+    } catch (e: any) {
+      setError(`Аватар: ${e.message}`);
+    } finally {
+      setGeneratingAvatar(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true); setError(null);
@@ -280,6 +296,34 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
 
         {tab === 'settings' && (
           <form onSubmit={submit} style={{ overflowY: 'auto', flex: 1 }}>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 16 }}>
+              <div style={{ flexShrink: 0 }}>
+                {avatarUrl
+                  ? <img src={avatarUrl} alt="avatar" style={{ width: 72, height: 72, borderRadius: 8, objectFit: 'cover', border: '2px solid #e2e8f0' }} />
+                  : <div style={{ width: 72, height: 72, borderRadius: 8, background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, color: 'white', fontWeight: 700, border: '2px solid #e2e8f0', userSelect: 'none' }}>
+                      {name.charAt(0).toUpperCase() || agent.id.charAt(0).toUpperCase()}
+                    </div>
+                }
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Аватар</div>
+                <input
+                  type="text"
+                  value={avatarStyle}
+                  onChange={e => setAvatarStyle(e.target.value)}
+                  placeholder="anime ninja, pixel art, portrait…"
+                  style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }}
+                />
+                <button
+                  type="button"
+                  onClick={doGenerateAvatar}
+                  disabled={generatingAvatar}
+                  style={{ padding: '5px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: generatingAvatar ? 0.6 : 1 }}
+                >
+                  {generatingAvatar ? '⏳ Генерируется…' : '✨ Сгенерировать аватар'}
+                </button>
+              </div>
+            </div>
             <div className="form-group">
               <label>Имя *</label>
               <input type="text" value={name} onChange={e => setName(e.target.value)} required autoFocus />
@@ -432,11 +476,19 @@ export function Agents() {
                   return (
                   <tr key={a.id}>
                     <td>
-                      <div style={{ fontWeight: 600 }}>
-                        {a.name}
-                        <AgentTypeBadge type={atype} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {(a as any).avatar_url
+                          ? <img src={(a as any).avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                          : <div style={{ width: 36, height: 36, borderRadius: 6, background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'white', fontWeight: 700, flexShrink: 0 }}>{a.name.charAt(0).toUpperCase()}</div>
+                        }
+                        <div>
+                          <div style={{ fontWeight: 600 }}>
+                            {a.name}
+                            <AgentTypeBadge type={atype} />
+                          </div>
+                          <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{a.id}</div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{a.id}</div>
                     </td>
                     <td>
                       <span className={`status-dot ${busColor(a.status)}`} />
