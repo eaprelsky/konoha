@@ -228,6 +228,14 @@ export function Admin() {
                   onClick={load}>
                   ↺ Обновить дашборд
                 </button>
+                <button className="check-btn" style={{ padding: '8px 14px', fontSize: 13, textAlign: 'left', color: '#ef4444', borderColor: '#fca5a5' }}
+                  onClick={async () => {
+                    if (!confirm('Удалить ВСЕ рабочие задачи? Это действие необратимо.')) return;
+                    try { await api.workitems.deleteAll(); alert('Все задачи удалены.'); load(); }
+                    catch (e: any) { alert('Ошибка: ' + e.message); }
+                  }}>
+                  🗑 Очистить все задачи
+                </button>
               </div>
               <div style={{ marginTop: 20, fontSize: 12, color: '#94a3b8' }}>
                 Расширенные действия (переназначение задач, отключение агентов) появятся в следующих версиях.

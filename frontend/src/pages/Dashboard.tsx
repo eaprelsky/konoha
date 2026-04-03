@@ -47,7 +47,7 @@ export function Dashboard() {
             <div className="sub">зарегистрировано</div>
           </div>
           <div className="card">
-            <h3>Активные дела</h3>
+            <h3>Активные кейсы</h3>
             <div className="value" id="case-count">—</div>
             <div className="sub">выполняется</div>
           </div>
@@ -60,7 +60,7 @@ export function Dashboard() {
         <div className="panel">
           <h2>Навигация</h2>
           <div className="links">
-            <a href="/ui/processes.html"><span className="icon">🗂</span> Реестр процессов — eEPC-процессы и активные дела</a>
+            <a href="/ui/processes.html"><span className="icon">🗂</span> Реестр процессов — eEPC-процессы и активные кейсы</a>
             <a href="/ui/workitems.html"><span className="icon">✅</span> Задачи — очередь задач с фильтрами и действиями</a>
           </div>
         </div>

@@ -163,7 +163,7 @@ function DetailsModal({ item, onClose }: DetailsModalProps) {
             <h2 id="detailsTitle">Детали: {item.label}</h2>
             <div id="detailsContent">
               <div className="detail-field"><strong>ID</strong><code>{item.work_item_id}</code></div>
-              {item.case_id && <div className="detail-field"><strong>ID дела</strong><code>{item.case_id}</code></div>}
+              {item.case_id && <div className="detail-field"><strong>ID кейса</strong><code>{item.case_id}</code></div>}
               <div className="detail-field"><strong>Входные данные</strong><code>{JSON.stringify(item.input || {}, null, 2)}</code></div>
               <div className="detail-field"><strong>Выходные данные</strong><code>{JSON.stringify(item.output || {}, null, 2)}</code></div>
             </div>
@@ -288,7 +288,7 @@ export function WorkItems() {
                   <th>Описание</th>
                   <th>Исполнитель</th>
                   <th>Статус</th>
-                  <th>Процесс / Дело</th>
+                  <th>Процесс / Кейс</th>
                   <th>Прогресс</th>
                   <th>Срок</th>
                   <th>Действия</th>

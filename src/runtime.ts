@@ -1123,3 +1123,17 @@ export async function deleteDoc(doc_id: string): Promise<void> {
   await redis.del(DOC_KEY_PREFIX + doc_id);
   await redis.zrem(DOCS_IDX_ALL, doc_id);
 }
+
+export async function purgeAllWorkItems(): Promise<number> {
+  const ids = await redis.zrange(WORKITEMS_IDX_ALL, 0, -1);
+  if (ids.length === 0) return 0;
+  // Delete all workitem keys
+  await redis.del(...ids.map((id: string) => WORKITEM_KEY_PREFIX + id));
+  // Delete all index keys (status, assignee, process sets may have stale members — just flush them all)
+  const statusKeys = await redis.keys(WORKITEMS_IDX_STATUS + "*");
+  const assigneeKeys = await redis.keys(WORKITEMS_IDX_ASSIGNEE + "*");
+  const processKeys = await redis.keys(WORKITEMS_IDX_PROCESS + "*");
+  const extraKeys = [...statusKeys, ...assigneeKeys, ...processKeys, WORKITEMS_IDX_ALL];
+  if (extraKeys.length > 0) await redis.del(...extraKeys);
+  return ids.length;
+}

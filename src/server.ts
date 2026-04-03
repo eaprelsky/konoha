@@ -7,7 +7,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions } from "./workflow-loader";
-import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, createRole, listRoles, updateRole, deleteRole, createDoc, listDocs, updateDoc, deleteDoc, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType, type AssignmentStrategy, type DocType } from "./runtime";
+import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, purgeAllWorkItems, createRole, listRoles, updateRole, deleteRole, createDoc, listDocs, updateDoc, deleteDoc, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType, type AssignmentStrategy, type DocType } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
 import {
   registerAgent,
@@ -632,6 +632,11 @@ app.patch("/workitems/:id", async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 400);
   }
+});
+
+app.delete("/workitems/all", requireAuth, async (c) => {
+  const deleted = await purgeAllWorkItems();
+  return c.json({ ok: true, deleted });
 });
 
 app.delete("/workitems/:id", async (c) => {

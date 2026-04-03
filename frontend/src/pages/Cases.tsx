@@ -114,7 +114,7 @@ export function Cases() {
       <style>{styles}</style>
       <div className="cs-body">
         <div className="container">
-          <div className="page-header"><h1>Дела</h1></div>
+          <div className="page-header"><h1>Кейсы</h1></div>
           {error && <div className="error-banner">{error}</div>}
 
           <div className="filters">
@@ -132,7 +132,7 @@ export function Cases() {
           </div>
 
           {loading && <div className="empty">Загрузка…</div>}
-          {!loading && cases.length === 0 && <div className="empty">Дела не найдены.</div>}
+          {!loading && cases.length === 0 && <div className="empty">Кейсы не найдены.</div>}
 
           {cases.length > 0 && (
             <table className="table">

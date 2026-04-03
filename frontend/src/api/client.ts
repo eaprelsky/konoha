@@ -16,7 +16,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     try {
       const body = await res.json();
       if (Array.isArray(body?.details) && body.details.length > 0) {
-        msg = body.details.join('; ');
+        msg = body.details.map((d: unknown) => typeof d === 'string' ? d : JSON.stringify(d)).join('; ');
       } else if (typeof body?.error === 'string') {
         msg = body.error;
       }
@@ -62,6 +62,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(params),
       }),
+    deleteAll: () => apiFetch<{ deleted: number }>(`${BASE}/workitems/all`, { method: 'DELETE' }),
   },
 
   cases: {
