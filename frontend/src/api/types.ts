@@ -167,6 +167,13 @@ export interface AgentStatus {
   started_at?: string;
 }
 
+export interface Person {
+  id: string;
+  name: string;
+  tg_id: number;
+  position: string;
+}
+
 export interface KbNode {
   type: 'file' | 'dir';
   name: string;

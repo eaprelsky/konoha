@@ -225,6 +225,33 @@ app.post("/agents/:id/restart", async (c) => {
   }
 });
 
+// GET /agents/:id — get single agent (bus data merged with def)
+app.get("/agents/:id", async (c) => {
+  const id = c.req.param("id");
+  const [busAgents, def] = await Promise.all([
+    listAgents(false),
+    getAgentDef(id),
+  ]);
+  const busAgent = busAgents.find(a => a.id === id);
+  if (!busAgent && !def) return c.json({ error: "Agent not found" }, 404);
+  const base = busAgent ?? { id, status: "offline" };
+  if (!def) return c.json(base);
+  const state = await getAgentState(id);
+  return c.json({ ...base, ...def, lifecycle: { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds } });
+});
+
+// PUT /agents/:id — update agent definition fields (name, system_prompt, model)
+app.put("/agents/:id", async (c) => {
+  const id = c.req.param("id");
+  const def = await getAgentDef(id);
+  if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
+  const body = await c.req.json().catch(() => null);
+  if (!body) return c.json({ error: "Invalid JSON" }, 400);
+  const updated = { ...def, ...body, id, updated_at: new Date().toISOString() };
+  await redis.hset("konoha:agent:defs", id, JSON.stringify(updated));
+  return c.json(updated);
+});
+
 // DELETE /agents/:id — stop agent, delete definition, and unregister from bus
 app.delete("/agents/:id", async (c) => {
   const id = c.req.param("id");
@@ -660,6 +687,33 @@ app.get("/adapters/:name/health", async (c) => {
   if (!adapter) return c.json({ error: "Adapter not found" }, 404);
   const healthy = await adapter.healthcheck().catch(() => false);
   return c.json({ adapter: name, healthy }, healthy ? 200 : 503);
+});
+
+// --- People Directory (read-only, from .trusted-users.json) ---
+
+app.use("/people", requireAuth);
+app.get("/people", async (c) => {
+  const TRUSTED_PATH = "/opt/shared/.trusted-users.json";
+  try {
+    if (!existsSync(TRUSTED_PATH)) return c.json([]);
+    const raw = readFileSync(TRUSTED_PATH, "utf-8");
+    const data = JSON.parse(raw) as {
+      owner?: { name: string; telegram_id: number; username?: string };
+      trusted?: { name: string; telegram_id: number; username?: string | null; position?: string }[];
+    };
+    const toId = (name: string, username?: string | null) =>
+      username ? `@${username}` : name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const people: { id: string; name: string; tg_id: number; position: string }[] = [];
+    if (data.owner) {
+      people.push({ id: toId(data.owner.name, data.owner.username), name: data.owner.name, tg_id: data.owner.telegram_id, position: "Owner" });
+    }
+    for (const u of data.trusted || []) {
+      people.push({ id: toId(u.name, u.username), name: u.name, tg_id: u.telegram_id, position: u.position || "" });
+    }
+    return c.json(people);
+  } catch {
+    return c.json([]);
+  }
 });
 
 // --- Channels ---

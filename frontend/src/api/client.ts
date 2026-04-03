@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person } from './types';
 
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
 
@@ -158,6 +158,10 @@ export const api = {
       apiFetch<KonohaMessage[]>(`${BASE}/messages/${agentId}/history?count=${count}`),
     send: (params: { from: string; to: string; text: string; type?: string }) =>
       apiFetch<{ id: string }>(`${BASE}/messages`, { method: 'POST', body: JSON.stringify(params) }),
+  },
+
+  people: {
+    list: () => apiFetch<Person[]>(`${BASE}/people`),
   },
 
   health: {

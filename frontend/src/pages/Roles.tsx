@@ -1,16 +1,38 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type React from 'react';
 import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { RoleDef, AssignmentStrategy } from '../api/types';
+import type { RoleDef, AssignmentStrategy, Agent, Person } from '../api/types';
 
-const STRATEGIES: AssignmentStrategy[] = ['manual', 'round-robin', 'load-balancing', 'broadcast'];
+const STRATEGIES: { value: AssignmentStrategy; label: string }[] = [
+  { value: 'manual',          label: 'Вручную' },
+  { value: 'round-robin',     label: 'По кругу' },
+  { value: 'load-balancing',  label: 'Баланс нагрузки' },
+  { value: 'broadcast',       label: 'Широковещательно' },
+];
+
+const STRATEGY_LABELS: Record<AssignmentStrategy, string> = {
+  manual:           'Вручную',
+  'round-robin':    'По кругу',
+  'load-balancing': 'Баланс нагрузки',
+  broadcast:        'Широковещательно',
+};
+
+/** Generate a slug from a display name */
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
 
 const styles = `
   .rl-body { padding: 20px; }
-  .container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,.1); padding: 20px; }
+  .container { max-width: 1060px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,.1); padding: 20px; }
   .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
   .page-header h1 { color: #333; font-size: 24px; }
   .btn-new { padding: 8px 18px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; }
@@ -28,28 +50,143 @@ const styles = `
   .empty { text-align: center; padding: 40px; color: #999; }
   .error-banner { background: #fee; color: #c33; padding: 12px; border-radius: 4px; margin-bottom: 16px; border-left: 4px solid #c33; }
   .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
-  .modal { background: white; border-radius: 8px; padding: 24px; width: 480px; max-width: 95vw; box-shadow: 0 20px 25px rgba(0,0,0,.15); }
+  .modal { background: white; border-radius: 8px; padding: 24px; width: 500px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px rgba(0,0,0,.15); }
   .modal h2 { margin-bottom: 18px; color: #333; }
   .form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
   .form-group label { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; }
-  .form-group input, .form-group select, .form-group textarea { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; }
+  .form-group input, .form-group select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; }
   .form-group input:focus, .form-group select:focus { outline: none; border-color: #0066cc; }
   .form-group .hint { font-size: 11px; color: #888; }
+  .form-group .slug-preview { font-size: 11px; color: #64748b; font-family: monospace; margin-top: 2px; }
+  .desc-toggle { font-size: 12px; color: #0066cc; cursor: pointer; background: none; border: none; padding: 0; margin-bottom: 8px; text-decoration: underline; }
+  .form-group textarea { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 64px; }
   .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
   .form-actions button { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
   .btn-submit { background: #0066cc; color: white; }
   .btn-cancel-f { background: #e5e7eb; color: #374151; }
+  /* Multiselect assignees */
+  .ms-wrapper { position: relative; }
+  .ms-trigger { display: flex; flex-wrap: wrap; gap: 4px; min-height: 38px; padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; background: white; align-items: center; }
+  .ms-trigger:hover { border-color: #0066cc; }
+  .ms-tag { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; background: #eff6ff; color: #1d4ed8; border-radius: 10px; font-size: 12px; }
+  .ms-tag-del { background: none; border: none; cursor: pointer; color: #64748b; font-size: 12px; padding: 0; line-height: 1; }
+  .ms-placeholder { color: #9ca3af; font-size: 13px; }
+  .ms-dropdown { position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.12); z-index: 50; max-height: 220px; overflow-y: auto; }
+  .ms-search { width: 100%; padding: 7px 10px; border: none; border-bottom: 1px solid #eee; font-size: 13px; outline: none; box-sizing: border-box; }
+  .ms-group-label { padding: 6px 10px 2px; font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; }
+  .ms-option { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; font-size: 13px; }
+  .ms-option:hover { background: #f1f5f9; }
+  .ms-option.selected { background: #eff6ff; }
+  .ms-option input[type=checkbox] { accent-color: #0066cc; flex-shrink: 0; }
+  .ms-empty { padding: 10px; color: #999; font-size: 13px; text-align: center; }
 `;
 
-interface RoleModalProps { role?: RoleDef | null; onClose: () => void; onSaved: () => void; }
-function RoleModal({ role, onClose, onSaved }: RoleModalProps) {
-  const [roleId, setRoleId] = useState(role?.role_id || '');
+// ── Multiselect component ─────────────────────────────────────────────────────
+interface AssigneeOption { id: string; label: string; group: string }
+interface MultiselectProps {
+  options: AssigneeOption[];
+  value: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+}
+
+function Multiselect({ options, value, onChange, placeholder = 'Выберите…' }: MultiselectProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = options.filter(o =>
+    o.label.toLowerCase().includes(search.toLowerCase()) ||
+    o.id.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const groups = ['Агенты', 'Люди'];
+  const grouped = groups.map(g => ({ group: g, items: filtered.filter(o => o.group === g) }));
+
+  function toggle(id: string) {
+    onChange(value.includes(id) ? value.filter(v => v !== id) : [...value, id]);
+  }
+
+  return (
+    <div className="ms-wrapper" ref={ref}>
+      <div className="ms-trigger" onClick={() => setOpen(o => !o)}>
+        {value.length === 0 && <span className="ms-placeholder">{placeholder}</span>}
+        {value.map(v => {
+          const opt = options.find(o => o.id === v);
+          return (
+            <span key={v} className="ms-tag">
+              {opt?.label || v}
+              <button
+                className="ms-tag-del"
+                onClick={e => { e.stopPropagation(); toggle(v); }}
+                type="button"
+              >×</button>
+            </span>
+          );
+        })}
+      </div>
+      {open && (
+        <div className="ms-dropdown">
+          <input
+            className="ms-search"
+            placeholder="Поиск…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onClick={e => e.stopPropagation()}
+            autoFocus
+          />
+          {grouped.every(g => g.items.length === 0) && (
+            <div className="ms-empty">Ничего не найдено</div>
+          )}
+          {grouped.map(({ group, items }) => items.length === 0 ? null : (
+            <div key={group}>
+              <div className="ms-group-label">{group}</div>
+              {items.map(opt => (
+                <div
+                  key={opt.id}
+                  className={`ms-option${value.includes(opt.id) ? ' selected' : ''}`}
+                  onClick={() => toggle(opt.id)}
+                >
+                  <input type="checkbox" checked={value.includes(opt.id)} readOnly />
+                  <span>{opt.label}</span>
+                  <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 'auto' }}>{opt.id}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Role modal ────────────────────────────────────────────────────────────────
+interface RoleModalProps {
+  role?: RoleDef | null;
+  agents: Agent[];
+  people: Person[];
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function RoleModal({ role, agents, people, onClose, onSaved }: RoleModalProps) {
   const [name, setName] = useState(role?.name || '');
   const [description, setDescription] = useState(role?.description || '');
-  const [assignees, setAssignees] = useState((role?.assignees || []).join(', '));
+  const [showDesc, setShowDesc] = useState(!!role?.description);
+  const [assignees, setAssignees] = useState<string[]>(role?.assignees || []);
   const [strategy, setStrategy] = useState<AssignmentStrategy>(role?.strategy || 'manual');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const autoId = slugify(name);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -57,17 +194,22 @@ function RoleModal({ role, onClose, onSaved }: RoleModalProps) {
     return () => document.removeEventListener('keydown', h);
   }, [onClose]);
 
+  const assigneeOptions: AssigneeOption[] = [
+    ...agents.map(a => ({ id: a.id, label: a.name, group: 'Агенты' })),
+    ...people.map(p => ({ id: p.id, label: `${p.name}${p.position ? ` (${p.position})` : ''}`, group: 'Люди' })),
+  ];
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) { setError('Name is required'); return; }
-    const assigneeList = assignees.split(',').map(s => s.trim()).filter(Boolean);
+    if (!name.trim()) { setError('Название обязательно'); return; }
     setSubmitting(true); setError(null);
     try {
       if (role) {
-        await api.roles.update(role.role_id, { name, description, assignees: assigneeList, strategy });
+        await api.roles.update(role.role_id, { name, description: description || undefined, assignees, strategy });
       } else {
-        if (!roleId.trim()) { setError('Role ID is required'); setSubmitting(false); return; }
-        await api.roles.create({ role_id: roleId.trim(), name, description, assignees: assigneeList, strategy });
+        const role_id = autoId || slugify(name);
+        if (!role_id) { setError('Не удалось сгенерировать ID из названия'); setSubmitting(false); return; }
+        await api.roles.create({ role_id, name, description: description || undefined, assignees, strategy });
       }
       onSaved(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
@@ -76,37 +218,69 @@ function RoleModal({ role, onClose, onSaved }: RoleModalProps) {
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
-        <h2>{role ? 'Edit Role' : 'New Role'}</h2>
+        <h2>{role ? 'Редактировать роль' : 'Новая роль'}</h2>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
-          {!role && (
+
+          <div className="form-group">
+            <label>Название *</label>
+            <input
+              type="text"
+              placeholder="Например: Менеджер по продажам"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              autoFocus
+              required
+            />
+            {!role && name && (
+              <span className="slug-preview">ID: {autoId || '…'}</span>
+            )}
+            {role && (
+              <span className="slug-preview">ID: {role.role_id}</span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="desc-toggle"
+            onClick={() => setShowDesc(v => !v)}
+          >
+            {showDesc ? '▲ Скрыть описание' : '▼ Добавить описание'}
+          </button>
+
+          {showDesc && (
             <div className="form-group">
-              <label>Role ID *</label>
-              <input type="text" placeholder="e.g. sales-manager" value={roleId} onChange={e => setRoleId(e.target.value)} autoFocus required />
+              <label>Описание</label>
+              <textarea
+                placeholder="Опционально…"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+              />
             </div>
           )}
+
           <div className="form-group">
-            <label>Name *</label>
-            <input type="text" placeholder="Display name..." value={name} onChange={e => setName(e.target.value)} autoFocus={!!role} required />
+            <label>Исполнители</label>
+            <Multiselect
+              options={assigneeOptions}
+              value={assignees}
+              onChange={setAssignees}
+              placeholder="Выберите агентов или людей…"
+            />
           </div>
+
           <div className="form-group">
-            <label>Description</label>
-            <input type="text" placeholder="Optional description..." value={description} onChange={e => setDescription(e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Assignees</label>
-            <input type="text" placeholder="agent1, agent2, @user..." value={assignees} onChange={e => setAssignees(e.target.value)} />
-            <span className="hint">Comma-separated agent IDs or user handles</span>
-          </div>
-          <div className="form-group">
-            <label>Assignment Strategy</label>
+            <label>Стратегия назначения</label>
             <select value={strategy} onChange={e => setStrategy(e.target.value as AssignmentStrategy)}>
-              {STRATEGIES.map(s => <option key={s} value={s}>{s}</option>)}
+              {STRATEGIES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
+
           <div className="form-actions">
-            <button type="button" className="btn-cancel-f" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Saving...' : 'Save'}</button>
+            <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
+            <button type="submit" className="btn-submit" disabled={submitting}>
+              {submitting ? 'Сохранение…' : 'Сохранить'}
+            </button>
           </div>
         </form>
       </div>
@@ -114,13 +288,16 @@ function RoleModal({ role, onClose, onSaved }: RoleModalProps) {
   );
 }
 
+// ── Main page ─────────────────────────────────────────────────────────────────
 export function Roles() {
   const token = useToken();
-  const [roles, setRoles] = useState<RoleDef[]>([]);
+  const [roles,   setRoles]   = useState<RoleDef[]>([]);
+  const [agents,  setAgents]  = useState<Agent[]>([]);
+  const [people,  setPeople]  = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error,   setError]   = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [editRole, setEditRole] = useState<RoleDef | null>(null);
+  const [editRole,  setEditRole]  = useState<RoleDef | null>(null);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -132,13 +309,19 @@ export function Roles() {
   useEffect(() => { load(); }, [load]);
   useInterval(load, 30000);
 
+  useEffect(() => {
+    if (!token) return;
+    api.agents.list().then(setAgents).catch(() => {});
+    api.people.list().then(setPeople).catch(() => {});
+  }, [token]);
+
   async function deleteRole(id: string) {
-    if (!confirm(`Delete role "${id}"?`)) return;
+    if (!confirm(`Удалить роль "${id}"?`)) return;
     try { await api.roles.delete(id); load(); } catch (e: any) { setError(e.message); }
   }
 
   function openEdit(r: RoleDef) { setEditRole(r); setShowModal(true); }
-  function openNew() { setEditRole(null); setShowModal(true); }
+  function openNew()             { setEditRole(null); setShowModal(true); }
 
   return (
     <Layout activePage="roles.html">
@@ -146,36 +329,41 @@ export function Roles() {
       <div className="rl-body">
         <div className="container">
           <div className="page-header">
-            <h1>Roles</h1>
-            <button className="btn-new" onClick={openNew}>+ New Role</button>
+            <h1>Роли</h1>
+            <button className="btn-new" onClick={openNew}>+ Новая роль</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
-          {loading && <div className="empty">Loading...</div>}
-          {!loading && roles.length === 0 && <div className="empty">No roles defined yet.</div>}
+          {loading && <div className="empty">Загрузка…</div>}
+          {!loading && roles.length === 0 && <div className="empty">Роли ещё не определены.</div>}
           {roles.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Name</th>
-                  <th>Description</th>
-                  <th>Strategy</th>
-                  <th>Assignees</th>
-                  <th>Actions</th>
+                  <th>Название</th>
+                  <th>Стратегия</th>
+                  <th>Исполнители</th>
+                  <th>Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {roles.map(r => (
                   <tr key={r.role_id}>
-                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.role_id}</td>
-                    <td style={{ fontWeight: 600 }}>{r.name}</td>
-                    <td style={{ color: '#666' }}>{r.description || '-'}</td>
-                    <td><span className="strategy-badge">{r.strategy}</span></td>
-                    <td>{r.assignees.map(a => <span key={a} className="tag">{a}</span>)}{r.assignees.length === 0 && '-'}</td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{r.name}</div>
+                      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#94a3b8' }}>{r.role_id}</div>
+                      {r.description && (
+                        <div style={{ color: '#666', fontSize: 12, marginTop: 2 }}>{r.description}</div>
+                      )}
+                    </td>
+                    <td><span className="strategy-badge">{STRATEGY_LABELS[r.strategy] ?? r.strategy}</span></td>
+                    <td>
+                      {r.assignees.map(a => <span key={a} className="tag">{a}</span>)}
+                      {r.assignees.length === 0 && <span style={{ color: '#999' }}>—</span>}
+                    </td>
                     <td>
                       <div className="actions">
-                        <button className="edit" onClick={() => openEdit(r)}>Edit</button>
-                        <button className="del" onClick={() => deleteRole(r.role_id)}>Delete</button>
+                        <button className="edit" onClick={() => openEdit(r)}>Изменить</button>
+                        <button className="del"  onClick={() => deleteRole(r.role_id)}>Удалить</button>
                       </div>
                     </td>
                   </tr>
@@ -185,7 +373,15 @@ export function Roles() {
           )}
         </div>
       </div>
-      {showModal && <RoleModal role={editRole} onClose={() => setShowModal(false)} onSaved={load} />}
+      {showModal && (
+        <RoleModal
+          role={editRole}
+          agents={agents}
+          people={people}
+          onClose={() => setShowModal(false)}
+          onSaved={load}
+        />
+      )}
     </Layout>
   );
 }
