@@ -86,21 +86,35 @@ function routeHVH(x1: number, y1: number, x2: number, y2: number, midX: number):
   ].join(' ');
 }
 
-function orthogonalPath(fp: Pos, tp: Pos): string {
+function orthogonalPath(fp: Pos, tp: Pos, fromType?: EType, toType?: EType): string {
   const fcx = fp.x + EW / 2, fcy = fp.y + EH / 2;
   const tcx = tp.x + EW / 2, tcy = tp.y + EH / 2;
   const dx = tcx - fcx, dy = tcy - fcy;
-  if (Math.abs(dy) >= Math.abs(dx)) {
-    const goDown = dy >= 0;
-    const x1 = fcx, y1 = goDown ? fp.y + EH : fp.y;
-    const x2 = tcx, y2 = goDown ? tp.y       : tp.y + EH;
-    return routeVHV(x1, y1, x2, y2, (y1 + y2) / 2);
+  const vert = Math.abs(dy) >= Math.abs(dx);
+
+  let x1: number, y1: number, x2: number, y2: number;
+
+  // Source exit point — snap to circle edge for gateways
+  if (fromType === 'gateway') {
+    if (vert) { x1 = fcx; y1 = fcy + (dy >= 0 ? GR : -GR); }
+    else      { x1 = fcx + (dx >= 0 ? GR : -GR); y1 = fcy; }
   } else {
-    const goRight = dx >= 0;
-    const x1 = goRight ? fp.x + EW : fp.x, y1 = fcy;
-    const x2 = goRight ? tp.x       : tp.x + EW, y2 = tcy;
-    return routeHVH(x1, y1, x2, y2, (x1 + x2) / 2);
+    if (vert) { x1 = fcx; y1 = dy >= 0 ? fp.y + EH : fp.y; }
+    else      { x1 = dx >= 0 ? fp.x + EW : fp.x; y1 = fcy; }
   }
+
+  // Target entry point — snap to circle edge for gateways
+  if (toType === 'gateway') {
+    if (vert) { x2 = tcx; y2 = tcy + (dy >= 0 ? -GR : GR); }
+    else      { x2 = tcx + (dx >= 0 ? -GR : GR); y2 = tcy; }
+  } else {
+    if (vert) { x2 = tcx; y2 = dy >= 0 ? tp.y : tp.y + EH; }
+    else      { x2 = dx >= 0 ? tp.x : tp.x + EW; y2 = tcy; }
+  }
+
+  return vert
+    ? routeVHV(x1, y1, x2, y2, (y1 + y2) / 2)
+    : routeHVH(x1, y1, x2, y2, (x1 + x2) / 2);
 }
 
 function snap(v: number, g = 20): number { return Math.round(v / g) * g; }
@@ -792,11 +806,11 @@ export function ProcessEditor() {
               {flow.map(([fId, tId], i) => {
                 const fp = positions[fId], tp = positions[tId];
                 if (!fp || !tp) return null;
-                const d = orthogonalPath(fp, tp);
-                const isHighlighted = selected === fId || selected === tId
-                  || multiSelected.includes(fId) || multiSelected.includes(tId);
                 const srcType = elements.find(e => e.id === fId)?.type;
                 const dstType = elements.find(e => e.id === tId)?.type;
+                const d = orthogonalPath(fp, tp, srcType, dstType);
+                const isHighlighted = selected === fId || selected === tId
+                  || multiSelected.includes(fId) || multiSelected.includes(tId);
                 const isRoleEdge = srcType === 'role' || dstType === 'role';
                 const arrow = isRoleEdge ? undefined : isHighlighted ? 'url(#arr-hi)' : 'url(#arr)';
                 return (
