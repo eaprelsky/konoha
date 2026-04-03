@@ -31,10 +31,10 @@ const styles = `
 `;
 
 const ADAPTER_DESCRIPTIONS: Record<string, string> = {
-  telegram: 'Telegram messaging via bot or user account',
-  email: 'Email delivery via SMTP/Mailcow',
-  bitrix24: 'Bitrix24 CRM integration',
-  redis: 'Redis message bus (internal)',
+  telegram: 'Telegram: отправка через бота или пользовательский аккаунт',
+  email: 'Email: доставка через SMTP/Mailcow',
+  bitrix24: 'Интеграция с Bitrix24 CRM',
+  redis: 'Redis: внутренняя шина сообщений',
 };
 
 interface ConnectorStatus { name: string; healthy: boolean | null; checking: boolean; }
@@ -92,12 +92,12 @@ export function Connectors() {
             <p>Интеграции и адаптеры, доступные движку процессов.</p>
           </div>
           {error && <div className="error-banner">{error}</div>}
-          {loading && <div className="empty">Loading...</div>}
-          {!loading && adapters.length === 0 && <div className="empty">No adapters registered.</div>}
+          {loading && <div className="empty">Загрузка…</div>}
+          {!loading && adapters.length === 0 && <div className="empty">Адаптеры не зарегистрированы.</div>}
           {adapters.length > 0 && (
             <>
               <div style={{ marginBottom: 16 }}>
-                <button className="check-btn" onClick={checkAll}>Check all health</button>
+                <button className="check-btn" onClick={checkAll}>Проверить все</button>
               </div>
               <div className="cards">
                 {adapters.map(name => {
@@ -108,13 +108,13 @@ export function Connectors() {
                         <span className="card-name">{name}</span>
                         <div className={`health-dot ${st?.healthy === true ? 'health-ok' : st?.healthy === false ? 'health-err' : 'health-unknown'}`} />
                       </div>
-                      <div className="card-desc">{ADAPTER_DESCRIPTIONS[name] || 'Integration adapter'}</div>
+                      <div className="card-desc">{ADAPTER_DESCRIPTIONS[name] || 'Адаптер интеграции'}</div>
                       <button className="check-btn" onClick={() => checkHealth(name)} disabled={st?.checking}>
-                        {st?.checking ? 'Checking...' : 'Check Health'}
+                        {st?.checking ? 'Проверка…' : 'Проверить'}
                       </button>
                       {st?.healthy !== null && (
                         <div className={`status-text ${st.healthy ? 'status-ok' : 'status-err'}`}>
-                          {st.healthy ? '✓ Connected' : '✗ Disconnected / Error'}
+                          {st.healthy ? '✓ Подключено' : '✗ Ошибка подключения'}
                         </div>
                       )}
                     </div>
@@ -123,7 +123,7 @@ export function Connectors() {
               </div>
             </>
           )}
-          <div className="refresh-info">Last loaded: {lastUpdate}</div>
+          <div className="refresh-info">Последнее обновление: {lastUpdate}</div>
         </div>
       </div>
     </Layout>

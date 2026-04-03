@@ -112,7 +112,7 @@ function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!id.trim() || !name.trim()) { setError('ID and name are required'); return; }
+    if (!id.trim() || !name.trim()) { setError('Укажите ID и имя'); return; }
     setSubmitting(true); setError(null);
     try {
       await api.agents.create({ id: id.trim(), name: name.trim(), model, system_prompt: prompt || undefined });
@@ -123,19 +123,19 @@ function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
-        <h2>New Agent</h2>
+        <h2>Новый агент</h2>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
           <div className="form-group">
-            <label>Agent ID *</label>
-            <input type="text" placeholder="e.g. my-agent" value={id} onChange={e => setId(e.target.value)} autoFocus required />
+            <label>ID агента *</label>
+            <input type="text" placeholder="например: my-agent" value={id} onChange={e => setId(e.target.value)} autoFocus required />
           </div>
           <div className="form-group">
-            <label>Name *</label>
-            <input type="text" placeholder="Display name..." value={name} onChange={e => setName(e.target.value)} required />
+            <label>Имя *</label>
+            <input type="text" placeholder="Отображаемое имя..." value={name} onChange={e => setName(e.target.value)} required />
           </div>
           <div className="form-group">
-            <label>Model</label>
+            <label>Модель</label>
             <select value={model} onChange={e => setModel(e.target.value)}>
               <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
               <option value="claude-opus-4-6">claude-opus-4-6</option>
@@ -151,8 +151,8 @@ function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
             <textarea placeholder="Роль, специализация, типы задач, поведение..." value={prompt} onChange={e => setPrompt(e.target.value)} />
           </div>
           <div className="form-actions">
-            <button type="button" className="btn-cancel-f" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Creating...' : 'Create'}</button>
+            <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
+            <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Создание…' : 'Создать'}</button>
           </div>
         </form>
       </div>
@@ -226,11 +226,11 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
           <div className="form-group">
-            <label>Name *</label>
+            <label>Имя *</label>
             <input type="text" value={name} onChange={e => setName(e.target.value)} required autoFocus />
           </div>
           <div className="form-group">
-            <label>Model</label>
+            <label>Модель</label>
             <select value={model} onChange={e => setModel(e.target.value)}>
               <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
               <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
@@ -265,8 +265,8 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
             />
           </div>
           <div className="form-actions">
-            <button type="button" className="btn-cancel-f" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Saving...' : 'Save'}</button>
+            <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
+            <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Сохранение…' : 'Сохранить'}</button>
           </div>
         </form>
       </div>
@@ -295,7 +295,7 @@ export function Agents() {
   useInterval(load, 10000);
 
   async function action(id: string, fn: () => Promise<unknown>, label: string) {
-    if (label === 'Delete' && !confirm(`Delete agent "${id}"? This cannot be undone.`)) return;
+    if (label === 'Delete' && !confirm(`Удалить агента "${id}"? Это действие необратимо.`)) return;
     try { await fn(); load(); } catch (e: any) { setError(e.message); }
   }
 
@@ -309,17 +309,17 @@ export function Agents() {
             <button className="btn-new" onClick={() => setShowNew(true)}>+ New Agent</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
-          {loading && <div className="empty">Loading...</div>}
-          {!loading && agents.length === 0 && <div className="empty">No agents registered.</div>}
+          {loading && <div className="empty">Загрузка…</div>}
+          {!loading && agents.length === 0 && <div className="empty">Агенты не зарегистрированы.</div>}
           {agents.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Agent</th>
-                  <th>Bus Status</th>
-                  <th>Lifecycle</th>
-                  <th>Model</th>
-                  <th>Actions</th>
+                  <th>Агент</th>
+                  <th>Шина</th>
+                  <th>Процесс</th>
+                  <th>Модель</th>
+                  <th>Действия</th>
                 </tr>
               </thead>
               <tbody>
@@ -354,12 +354,12 @@ export function Agents() {
                     <td>
                       <div className="actions">
                         {canEdit && a.lifecycle && <>
-                          <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start')}>▶ Start</button>
-                          <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop')}>■ Stop</button>
+                          <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start')}>▶ Запустить</button>
+                          <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop')}>■ Остановить</button>
                           <button className="btn-restart" onClick={() => action(a.id, () => api.agents.restart(a.id), 'Restart')}>↺</button>
-                          <button onClick={() => setEditAgent(a)}>Edit</button>
+                          <button onClick={() => setEditAgent(a)}>Изменить</button>
                         </>}
-                        <button onClick={() => setTmuxAgent(a.id)}>Logs</button>
+                        <button onClick={() => setTmuxAgent(a.id)}>Логи</button>
                         {canEdit && <button className="btn-del" onClick={() => action(a.id, () => api.agents.delete(a.id), 'Delete')}>🗑</button>}
                       </div>
                     </td>
@@ -369,7 +369,7 @@ export function Agents() {
               </tbody>
             </table>
           )}
-          <div className="refresh-info">Auto-refresh 10s • Last: {lastUpdate}</div>
+          <div className="refresh-info">Авто-обновление 10с • Последнее: {lastUpdate}</div>
         </div>
       </div>
       {showNew && <NewAgentModal onClose={() => setShowNew(false)} onCreated={load} />}

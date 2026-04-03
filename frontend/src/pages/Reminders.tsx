@@ -55,8 +55,15 @@ const styles = `
   .refresh-info { font-size: 12px; color: #999; margin-top: 12px; text-align: right; }
 `;
 
+const STATUS_LABELS: Record<ReminderStatus, string> = {
+  pending: 'Ожидает',
+  sent: 'Отправлено',
+  acknowledged: 'Принято',
+  overdue: 'Просрочено',
+};
+
 function statusBadge(s: ReminderStatus) {
-  return <span className={`badge badge-${s}`}>{s}</span>;
+  return <span className={`badge badge-${s}`}>{STATUS_LABELS[s] ?? s}</span>;
 }
 
 interface NewReminderModalProps { onClose: () => void; onCreated: () => void; }
@@ -77,7 +84,7 @@ function NewReminderModal({ onClose, onCreated }: NewReminderModalProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!recipient.trim() || !message.trim() || !scheduledAt) {
-      setError('Recipient, message and scheduled time are required');
+      setError('Заполните получателя, сообщение и время');
       return;
     }
     setSubmitting(true);
@@ -101,26 +108,26 @@ function NewReminderModal({ onClose, onCreated }: NewReminderModalProps) {
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
-        <h2>New Reminder</h2>
+        <h2>Новое напоминание</h2>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Recipient *</label>
-            <input type="text" placeholder="Role, agent name, or @handle..." value={recipient}
+            <label>Получатель *</label>
+            <input type="text" placeholder="Роль, имя агента..." value={recipient}
               onChange={e => setRecipient(e.target.value)} autoFocus required />
           </div>
           <div className="form-group">
-            <label>Message *</label>
-            <textarea placeholder="Reminder message..." value={message}
+            <label>Сообщение *</label>
+            <textarea placeholder="Текст напоминания..." value={message}
               onChange={e => setMessage(e.target.value)} required />
           </div>
           <div className="form-group">
-            <label>Scheduled At *</label>
+            <label>Время отправки *</label>
             <input type="datetime-local" value={scheduledAt}
               onChange={e => setScheduledAt(e.target.value)} required />
           </div>
           <div className="form-group">
-            <label>Channel</label>
+            <label>Канал</label>
             <select value={channel} onChange={e => setChannel(e.target.value as any)}>
               <option value="gui">GUI</option>
               <option value="telegram">Telegram</option>
@@ -128,9 +135,9 @@ function NewReminderModal({ onClose, onCreated }: NewReminderModalProps) {
             </select>
           </div>
           <div className="form-actions">
-            <button type="button" className="btn-cancel-form" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-cancel-form" onClick={onClose}>Отмена</button>
             <button type="submit" className="btn-submit" disabled={submitting}>
-              {submitting ? 'Creating...' : 'Create Reminder'}
+              {submitting ? 'Создание…' : 'Создать'}
             </button>
           </div>
         </form>
@@ -171,7 +178,7 @@ export function Reminders() {
   }
 
   async function remove(id: string) {
-    if (!confirm('Delete this reminder?')) return;
+    if (!confirm('Удалить напоминание?')) return;
     try {
       await api.reminders.delete(id);
       load();
@@ -184,39 +191,39 @@ export function Reminders() {
       <div className="rm-body">
         <div className="container">
           <div className="page-header">
-            <h1>Reminders</h1>
-            <button className="btn-new" onClick={() => setShowNew(true)}>+ New Reminder</button>
+            <h1>Напоминания</h1>
+            <button className="btn-new" onClick={() => setShowNew(true)}>+ Новое напоминание</button>
           </div>
 
           {error && <div className="error-banner">{error}</div>}
 
           <div className="filters">
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
-              <option value="">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="sent">Sent</option>
-              <option value="acknowledged">Acknowledged</option>
-              <option value="overdue">Overdue</option>
+              <option value="">Все статусы</option>
+              <option value="pending">Ожидает</option>
+              <option value="sent">Отправлено</option>
+              <option value="acknowledged">Принято</option>
+              <option value="overdue">Просрочено</option>
             </select>
           </div>
 
-          {loading && <div className="empty">Loading...</div>}
+          {loading && <div className="empty">Загрузка…</div>}
 
           {!loading && reminders.length === 0 && (
-            <div className="empty">No reminders found.</div>
+            <div className="empty">Напоминания не найдены.</div>
           )}
 
           {reminders.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Message</th>
-                  <th>Recipient</th>
-                  <th>Scheduled</th>
-                  <th>Channel</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Actions</th>
+                  <th>Сообщение</th>
+                  <th>Получатель</th>
+                  <th>Время</th>
+                  <th>Канал</th>
+                  <th>Тип</th>
+                  <th>Статус</th>
+                  <th>Действия</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,16 +237,16 @@ export function Reminders() {
                     <td><span className={`badge badge-${r.channel}`}>{r.channel}</span></td>
                     <td>
                       <span className={`badge badge-${r.type === 'standalone' ? 'standalone' : 'process'}`}>
-                        {r.type}
+                        {r.type === 'standalone' ? 'Разовое' : 'Процесс'}
                       </span>
                     </td>
                     <td>{statusBadge(r.status)}</td>
                     <td>
                       <div className="actions">
                         {(r.status === 'sent' || r.status === 'pending') && (
-                          <button className="ack" onClick={() => acknowledge(r.reminder_id)}>Ack</button>
+                          <button className="ack" onClick={() => acknowledge(r.reminder_id)}>Принять</button>
                         )}
-                        <button className="del" onClick={() => remove(r.reminder_id)}>Delete</button>
+                        <button className="del" onClick={() => remove(r.reminder_id)}>Удалить</button>
                       </div>
                     </td>
                   </tr>
@@ -249,7 +256,7 @@ export function Reminders() {
           )}
 
           <div className="refresh-info">
-            Auto-refresh every 15 seconds • Last update: {lastUpdate}
+            Авто-обновление 15с • Последнее: {lastUpdate}
           </div>
         </div>
       </div>

@@ -97,11 +97,11 @@ export function Admin() {
       <style>{styles}</style>
       <div className="adm-body">
         <div className="container">
-          <h1>Admin</h1>
+          <h1>Администрирование</h1>
           {error && <div className="error-banner">{error}</div>}
 
           {/* Health section */}
-          <div className="section-title">Health</div>
+          <div className="section-title">Состояние</div>
           <div className="grid">
             <div className="panel">
               <h2>Konoha Bus</h2>
@@ -124,54 +124,54 @@ export function Admin() {
               )}
             </div>
             <div className="panel">
-              <h2>Agent Summary</h2>
+              <h2>Агенты</h2>
               <div className="metric-row">
-                <span className="metric-label">Total registered</span>
+                <span className="metric-label">Всего зарегистрировано</span>
                 <span className="metric-value">{agents.length}</span>
               </div>
               <div className="metric-row">
-                <span className="metric-label"><span className="status-dot-sm dot-green" />Online</span>
+                <span className="metric-label"><span className="status-dot-sm dot-green" />В сети</span>
                 <span className="metric-value" style={{ color: '#10b981' }}>{online}</span>
               </div>
               <div className="metric-row">
-                <span className="metric-label"><span className="status-dot-sm dot-gray" />Offline</span>
+                <span className="metric-label"><span className="status-dot-sm dot-gray" />Не в сети</span>
                 <span className="metric-value" style={{ color: '#9ca3af' }}>{offline}</span>
               </div>
-              <div className="refresh-info">Last: {lastUpdate}</div>
+              <div className="refresh-info">Последнее: {lastUpdate}</div>
             </div>
           </div>
 
-          <div className="section-title">System</div>
+          <div className="section-title">Система</div>
           <div className="grid">
 
             {/* System Health */}
             <div className="panel">
-              <h2>System Health</h2>
+              <h2>Состояние системы</h2>
               <div className="metric-row">
-                <span className="metric-label">API Status</span>
+                <span className="metric-label">API</span>
                 <span className={health?.status === 'ok' ? 'status-ok' : 'status-err'}>
-                  {health?.status === 'ok' ? '✓ OK' : health ? '✗ Error' : '…'}
+                  {health?.status === 'ok' ? '✓ OK' : health ? '✗ Ошибка' : '…'}
                 </span>
               </div>
               <div className="metric-row">
-                <span className="metric-label">Server Time</span>
+                <span className="metric-label">Время сервера</span>
                 <span className="metric-value">{health?.ts ? new Date(health.ts).toLocaleString() : '-'}</span>
               </div>
               <div className="metric-row">
-                <span className="metric-label">Agents Online</span>
+                <span className="metric-label">Агентов онлайн</span>
                 <span className="metric-value">{online} / {agents.length}</span>
               </div>
               <div className="metric-row">
-                <span className="metric-label">Agents Running (lifecycle)</span>
+                <span className="metric-label">Запущено (lifecycle)</span>
                 <span className="metric-value">{running}</span>
               </div>
-              <div className="refresh-info">Last: {lastUpdate}</div>
+              <div className="refresh-info">Последнее: {lastUpdate}</div>
             </div>
 
             {/* Bus Monitoring */}
             <div className="panel">
-              <h2>Bus — Registered Agents</h2>
-              {agents.length === 0 && <div style={{ color: '#999', fontSize: 13 }}>No agents.</div>}
+              <h2>Шина — агенты</h2>
+              {agents.length === 0 && <div style={{ color: '#999', fontSize: 13 }}>Нет агентов.</div>}
               {agents.map(a => (
                 <div className="agent-row" key={a.id}>
                   <div>
@@ -198,8 +198,8 @@ export function Admin() {
 
             {/* Connectors Health */}
             <div className="panel">
-              <h2>Connectors</h2>
-              {adapters.length === 0 && <div style={{ color: '#999', fontSize: 13 }}>No adapters registered.</div>}
+              <h2>Коннекторы</h2>
+              {adapters.length === 0 && <div style={{ color: '#999', fontSize: 13 }}>Адаптеры не зарегистрированы.</div>}
               {adapters.map(name => {
                 const h = adapterHealth[name];
                 return (
@@ -218,19 +218,19 @@ export function Admin() {
 
             {/* Quick Actions */}
             <div className="panel">
-              <h2>Quick Actions</h2>
+              <h2>Быстрые действия</h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <button className="check-btn" style={{ padding: '8px 14px', fontSize: 13, textAlign: 'left' }}
                   onClick={() => { adapters.forEach(n => checkAdapter(n)); }}>
-                  ↺ Check all connector health
+                  ↺ Проверить все коннекторы
                 </button>
                 <button className="check-btn" style={{ padding: '8px 14px', fontSize: 13, textAlign: 'left' }}
                   onClick={load}>
-                  ↺ Refresh dashboard
+                  ↺ Обновить дашборд
                 </button>
               </div>
               <div style={{ marginTop: 20, fontSize: 12, color: '#94a3b8' }}>
-                More operational controls (reassign work items, disable agents) coming in future versions.
+                Расширенные действия (переназначение задач, отключение агентов) появятся в следующих версиях.
               </div>
             </div>
 

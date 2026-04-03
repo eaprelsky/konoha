@@ -114,41 +114,41 @@ export function Cases() {
       <style>{styles}</style>
       <div className="cs-body">
         <div className="container">
-          <div className="page-header"><h1>Cases</h1></div>
+          <div className="page-header"><h1>Дела</h1></div>
           {error && <div className="error-banner">{error}</div>}
 
           <div className="filters">
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option value="">All statuses</option>
-              <option value="running">Running</option>
-              <option value="done">Done</option>
-              <option value="error">Error</option>
+              <option value="">Все статусы</option>
+              <option value="running">Выполняется</option>
+              <option value="done">Завершено</option>
+              <option value="error">Ошибка</option>
             </select>
-            <input type="text" placeholder="Filter by process ID..."
+            <input type="text" placeholder="Фильтр по процессу..."
               value={processFilter} onChange={e => setProcessFilter(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && applyFilters()} />
-            <button onClick={applyFilters}>Apply</button>
-            <button className="reset" onClick={resetFilters}>Reset</button>
+            <button onClick={applyFilters}>Применить</button>
+            <button className="reset" onClick={resetFilters}>Сбросить</button>
           </div>
 
-          {loading && <div className="empty">Loading...</div>}
-          {!loading && cases.length === 0 && <div className="empty">No cases found.</div>}
+          {loading && <div className="empty">Загрузка…</div>}
+          {!loading && cases.length === 0 && <div className="empty">Дела не найдены.</div>}
 
           {cases.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Subject</th>
-                  <th>Process</th>
-                  <th>Status</th>
-                  <th>Position</th>
-                  <th>Started</th>
+                  <th>Тема</th>
+                  <th>Процесс</th>
+                  <th>Статус</th>
+                  <th>Позиция</th>
+                  <th>Создано</th>
                 </tr>
               </thead>
               <tbody>
                 {cases.map(c => (
                   <tr key={c.case_id} onClick={() => openDetail(c)}>
-                    <td><span className="link">{c.subject || '(no subject)'}</span></td>
+                    <td><span className="link">{c.subject || '(без темы)'}</span></td>
                     <td>{wfNameMap[c.process_id] || c.process_id}</td>
                     <td><StatusBadge status={c.status} /></td>
                     <td className="mono">{c.position || '-'}</td>
@@ -161,13 +161,13 @@ export function Cases() {
 
           {total > PAGE_SIZE && (
             <div className="pagination">
-              <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Prev</button>
-              <span>Page {currentPage} of {totalPages} ({total} total)</span>
-              <button disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Next →</button>
+              <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Назад</button>
+              <span>Стр. {currentPage} из {totalPages} (всего: {total})</span>
+              <button disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Вперёд →</button>
             </div>
           )}
 
-          <div className="refresh-info">Auto-refresh 15s • Last: {lastUpdate}</div>
+          <div className="refresh-info">Авто-обновление 15с • Последнее: {lastUpdate}</div>
         </div>
       </div>
 
@@ -182,10 +182,10 @@ export function Cases() {
               <StatusBadge status={selectedCase.status} />
             </div>
 
-            <div className="section-title">Payload</div>
+            <div className="section-title">Данные</div>
             <pre className="payload-code">{JSON.stringify(selectedCase.payload, null, 2)}</pre>
 
-            <div className="section-title">Timeline ({selectedCase.history?.length || 0} steps)</div>
+            <div className="section-title">История ({selectedCase.history?.length || 0} шагов)</div>
             {(selectedCase.history || []).map((h, i) => (
               <div className="timeline-item" key={i}>
                 <div className={`timeline-dot${i === (selectedCase.history.length - 1) ? ' active' : ''}`} />
@@ -199,7 +199,7 @@ export function Cases() {
               </div>
             ))}
             {(!selectedCase.history || selectedCase.history.length === 0) && (
-              <div style={{ color: '#999', fontSize: 13 }}>No history yet.</div>
+              <div style={{ color: '#999', fontSize: 13 }}>История пуста.</div>
             )}
           </div>
         </div>

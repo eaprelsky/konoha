@@ -96,7 +96,7 @@ function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!label.trim() || !assignee.trim()) { setError('Label and assignee are required'); return; }
+    if (!label.trim() || !assignee.trim()) { setError('Введите описание и исполнителя'); return; }
     setSubmitting(true);
     setError(null);
     try {
@@ -117,27 +117,27 @@ function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
     <div className="details-modal show" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-content">
         <button className="modal-close" onClick={onClose}>✕</button>
-        <h2>New Task</h2>
+        <h2>Новая задача</h2>
         {error && <div className="error-banner" style={{ marginBottom: 12 }}>{error}</div>}
         <form className="new-task-form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="ntLabel">Label *</label>
-            <input id="ntLabel" type="text" placeholder="Task description..." value={label}
+            <label htmlFor="ntLabel">Описание *</label>
+            <input id="ntLabel" type="text" placeholder="Описание задачи..." value={label}
               onChange={e => setLabel(e.target.value)} autoFocus required />
           </div>
           <div className="form-group">
-            <label htmlFor="ntAssignee">Assignee *</label>
-            <input id="ntAssignee" type="text" placeholder="Role or agent name..." value={assignee}
+            <label htmlFor="ntAssignee">Исполнитель *</label>
+            <input id="ntAssignee" type="text" placeholder="Роль или агент..." value={assignee}
               onChange={e => setAssignee(e.target.value)} required />
           </div>
           <div className="form-group">
-            <label htmlFor="ntDeadline">Deadline</label>
+            <label htmlFor="ntDeadline">Срок</label>
             <input id="ntDeadline" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
           </div>
           <div className="form-actions">
-            <button type="button" className="btn-cancel" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-cancel" onClick={onClose}>Отмена</button>
             <button type="submit" className="btn-submit" disabled={submitting}>
-              {submitting ? 'Creating...' : 'Create Task'}
+              {submitting ? 'Создание…' : 'Создать'}
             </button>
           </div>
         </form>
@@ -160,12 +160,12 @@ function DetailsModal({ item, onClose }: DetailsModalProps) {
         <button className="modal-close" onClick={onClose}>✕</button>
         {item && (
           <>
-            <h2 id="detailsTitle">Details: {item.label}</h2>
+            <h2 id="detailsTitle">Детали: {item.label}</h2>
             <div id="detailsContent">
               <div className="detail-field"><strong>ID</strong><code>{item.work_item_id}</code></div>
-              {item.case_id && <div className="detail-field"><strong>Case ID</strong><code>{item.case_id}</code></div>}
-              <div className="detail-field"><strong>Input</strong><code>{JSON.stringify(item.input || {}, null, 2)}</code></div>
-              <div className="detail-field"><strong>Output</strong><code>{JSON.stringify(item.output || {}, null, 2)}</code></div>
+              {item.case_id && <div className="detail-field"><strong>ID дела</strong><code>{item.case_id}</code></div>}
+              <div className="detail-field"><strong>Входные данные</strong><code>{JSON.stringify(item.input || {}, null, 2)}</code></div>
+              <div className="detail-field"><strong>Выходные данные</strong><code>{JSON.stringify(item.output || {}, null, 2)}</code></div>
             </div>
           </>
         )}
@@ -219,10 +219,10 @@ export function WorkItems() {
   useInterval(loadItems, 10000);
 
   function completeItem(id: string) {
-    if (!confirm('Mark this item as complete?')) return;
+    if (!confirm('Завершить задачу?')) return;
     api.workitems.complete(id)
       .then(() => loadItems())
-      .catch(e => setError(`Failed to complete item: ${e.message}`));
+      .catch(e => setError(`Ошибка завершения: ${e.message}`));
   }
 
   const [localFilters, setLocalFilters] = useState<WorkItemFilters>({});
@@ -233,65 +233,65 @@ export function WorkItems() {
       <div className="wf-body">
         <div className="container">
           <div className="page-header">
-            <h1>Work Items</h1>
-            <button className="btn-new-task" onClick={() => setShowNewTask(true)}>+ New Task</button>
+            <h1>Задачи</h1>
+            <button className="btn-new-task" onClick={() => setShowNewTask(true)}>+ Новая задача</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
 
           <div className="filters">
             <div className="filter-group">
-              <label htmlFor="filterAssignee">Assignee</label>
-              <input id="filterAssignee" type="text" placeholder="Filter by assignee..."
+              <label htmlFor="filterAssignee">Исполнитель</label>
+              <input id="filterAssignee" type="text" placeholder="Фильтр по исполнителю..."
                 value={localFilters.assignee || ''}
                 onChange={e => setLocalFilters(f => ({ ...f, assignee: e.target.value }))} />
             </div>
             <div className="filter-group">
-              <label htmlFor="filterProcess">Process ID</label>
-              <input id="filterProcess" type="text" placeholder="Filter by process..."
+              <label htmlFor="filterProcess">ID процесса</label>
+              <input id="filterProcess" type="text" placeholder="Фильтр по процессу..."
                 value={localFilters.process_id || ''}
                 onChange={e => setLocalFilters(f => ({ ...f, process_id: e.target.value }))} />
             </div>
             <div className="filter-group">
-              <label htmlFor="filterStatus">Status</label>
+              <label htmlFor="filterStatus">Статус</label>
               <select id="filterStatus" value={localFilters.status || ''}
                 onChange={e => setLocalFilters(f => ({ ...f, status: e.target.value as any }))}>
-                <option value="">All Statuses</option>
-                <option value="pending">Pending</option>
-                <option value="assigned">Assigned</option>
-                <option value="running">Running</option>
-                <option value="done">Done</option>
-                <option value="error">Error</option>
+                <option value="">Все статусы</option>
+                <option value="pending">Ожидает</option>
+                <option value="assigned">Назначено</option>
+                <option value="running">Выполняется</option>
+                <option value="done">Завершено</option>
+                <option value="error">Ошибка</option>
               </select>
             </div>
             <div className="filter-group">
-              <label htmlFor="filterDeadline">Deadline Before</label>
+              <label htmlFor="filterDeadline">Срок до</label>
               <input id="filterDeadline" type="date"
                 value={localFilters.deadline_before || ''}
                 onChange={e => setLocalFilters(f => ({ ...f, deadline_before: e.target.value }))} />
             </div>
             <div className="button-group">
-              <button onClick={() => setFilters(localFilters)}>Apply Filters</button>
-              <button className="reset" onClick={() => { setLocalFilters({}); setFilters({}); }}>Reset</button>
+              <button onClick={() => setFilters(localFilters)}>Применить</button>
+              <button className="reset" onClick={() => { setLocalFilters({}); setFilters({}); }}>Сбросить</button>
             </div>
           </div>
 
-          {loading && <div className="loading-msg">Loading...</div>}
+          {loading && <div className="loading-msg">Загрузка…</div>}
 
           {!loading && items.length === 0 && !error && (
-            <div className="empty">No work items found.</div>
+            <div className="empty">Задачи не найдены.</div>
           )}
 
           {items.length > 0 && (
             <table className="items-table" id="itemsTable">
               <thead>
                 <tr>
-                  <th>Label</th>
-                  <th>Assignee</th>
-                  <th>Status</th>
-                  <th>Process / Case</th>
-                  <th>Progress</th>
-                  <th>Deadline</th>
-                  <th>Actions</th>
+                  <th>Описание</th>
+                  <th>Исполнитель</th>
+                  <th>Статус</th>
+                  <th>Процесс / Дело</th>
+                  <th>Прогресс</th>
+                  <th>Срок</th>
+                  <th>Действия</th>
                 </tr>
               </thead>
               <tbody id="itemsBody">
@@ -309,7 +309,7 @@ export function WorkItems() {
                       <td>
                         {(item.process_id || item.case_id)
                           ? <span title={fullTitle} style={{ cursor: 'default' }}>{processCell}</span>
-                          : <span className="standalone-badge">Standalone</span>}
+                          : <span className="standalone-badge">Автономная</span>}
                       </td>
                       <td className="step-progress"
                           data-case-id={item.case_id || ''}
@@ -318,8 +318,8 @@ export function WorkItems() {
                       </td>
                       <td>{deadline}</td>
                       <td className="item-actions">
-                        <button className="complete" onClick={() => completeItem(item.work_item_id)}>Complete</button>
-                        <button onClick={() => setDetailItem(item)}>Details</button>
+                        <button className="complete" onClick={() => completeItem(item.work_item_id)}>Завершить</button>
+                        <button onClick={() => setDetailItem(item)}>Детали</button>
                       </td>
                     </tr>
                   );
@@ -329,7 +329,7 @@ export function WorkItems() {
           )}
 
           <div className="refresh-info">
-            Auto-refresh every 10 seconds • Last update: <span id="lastUpdate">{lastUpdate}</span>
+            Авто-обновление 10с • Последнее: <span id="lastUpdate">{lastUpdate}</span>
           </div>
         </div>
       </div>
