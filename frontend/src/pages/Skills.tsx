@@ -192,7 +192,7 @@ export function Skills() {
       <div className="skills-body">
         <div className="container">
           <div className="page-header">
-            <h1>Навыки / Skills</h1>
+            <h1>Навыки</h1>
             <button className="btn-new" onClick={openNew}>+ Добавить навык</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
