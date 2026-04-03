@@ -240,9 +240,11 @@ export function Agents() {
                     </td>
                     <td>
                       <div className="actions">
-                        <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start')}>▶ Start</button>
-                        <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop')}>■ Stop</button>
-                        <button className="btn-restart" onClick={() => action(a.id, () => api.agents.restart(a.id), 'Restart')}>↺</button>
+                        {a.lifecycle && <>
+                          <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start')}>▶ Start</button>
+                          <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop')}>■ Stop</button>
+                          <button className="btn-restart" onClick={() => action(a.id, () => api.agents.restart(a.id), 'Restart')}>↺</button>
+                        </>}
                         <button onClick={() => setTmuxAgent(a.id)}>Logs</button>
                         <button className="btn-del" onClick={() => action(a.id, () => api.agents.delete(a.id), 'Delete')}>🗑</button>
                       </div>
