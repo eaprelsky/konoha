@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type React from 'react';
 import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
@@ -40,14 +41,14 @@ const styles = `
   .empty { text-align: center; padding: 40px; color: #999; }
   .error-banner { background: #fee; color: #c33; padding: 12px; border-radius: 4px; margin-bottom: 16px; border-left: 4px solid #c33; }
   .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
-  .modal { background: white; border-radius: 8px; padding: 24px; width: 500px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px rgba(0,0,0,.15); }
+  .modal { background: white; border-radius: 8px; padding: 32px; width: 500px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px rgba(0,0,0,.15); }
   .modal h2 { margin-bottom: 18px; color: #333; }
   .form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
   .form-group label { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; }
   .form-group input, .form-group select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; }
   .form-group input:focus, .form-group select:focus { outline: none; border-color: #0066cc; }
   .form-group .hint { font-size: 11px; color: #888; }
-.desc-toggle { font-size: 12px; color: #0066cc; cursor: pointer; background: none; border: none; padding: 0; margin-bottom: 8px; text-decoration: underline; }
+  .desc-toggle { font-size: 12px; color: #0066cc; cursor: pointer; background: none; border: none; padding: 0; margin-top: 4px; margin-bottom: 8px; text-decoration: underline; }
   .form-group textarea { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 64px; }
   .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
   .form-actions button { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
@@ -60,7 +61,7 @@ const styles = `
   .ms-tag { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; background: #eff6ff; color: #1d4ed8; border-radius: 10px; font-size: 12px; }
   .ms-tag-del { background: none; border: none; cursor: pointer; color: #64748b; font-size: 12px; padding: 0; line-height: 1; }
   .ms-placeholder { color: #9ca3af; font-size: 13px; }
-  .ms-dropdown { position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.12); z-index: 50; max-height: 220px; overflow-y: auto; }
+  .ms-dropdown { background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.12); z-index: 9999; max-height: 220px; overflow-y: auto; }
   .ms-search { width: 100%; padding: 7px 10px; border: none; border-bottom: 1px solid #eee; font-size: 13px; outline: none; box-sizing: border-box; }
   .ms-group-label { padding: 6px 10px 2px; font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; }
   .ms-option { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; font-size: 13px; }
@@ -82,6 +83,7 @@ interface MultiselectProps {
 function Multiselect({ options, value, onChange, placeholder = 'Выберите…' }: MultiselectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -91,6 +93,14 @@ function Multiselect({ options, value, onChange, placeholder = 'Выберите
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  function handleTriggerClick() {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 2, left: rect.left, width: rect.width });
+    }
+    setOpen(o => !o);
+  }
 
   const filtered = options.filter(o =>
     o.label.toLowerCase().includes(search.toLowerCase()) ||
@@ -104,9 +114,44 @@ function Multiselect({ options, value, onChange, placeholder = 'Выберите
     onChange(value.includes(id) ? value.filter(v => v !== id) : [...value, id]);
   }
 
+  const dropdown = (
+    <div
+      className="ms-dropdown"
+      style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width }}
+    >
+      <input
+        className="ms-search"
+        placeholder="Поиск…"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        onClick={e => e.stopPropagation()}
+        autoFocus
+      />
+      {grouped.every(g => g.items.length === 0) && (
+        <div className="ms-empty">Ничего не найдено</div>
+      )}
+      {grouped.map(({ group, items }) => items.length === 0 ? null : (
+        <div key={group}>
+          <div className="ms-group-label">{group}</div>
+          {items.map(opt => (
+            <div
+              key={opt.id}
+              className={`ms-option${value.includes(opt.id) ? ' selected' : ''}`}
+              onClick={() => toggle(opt.id)}
+            >
+              <input type="checkbox" checked={value.includes(opt.id)} readOnly />
+              <span>{opt.label}</span>
+              <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 'auto' }}>{opt.id}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <div className="ms-wrapper" ref={ref}>
-      <div className="ms-trigger" onClick={() => setOpen(o => !o)}>
+      <div className="ms-trigger" onClick={handleTriggerClick}>
         {value.length === 0 && <span className="ms-placeholder">{placeholder}</span>}
         {value.map(v => {
           const opt = options.find(o => o.id === v);
@@ -122,37 +167,7 @@ function Multiselect({ options, value, onChange, placeholder = 'Выберите
           );
         })}
       </div>
-      {open && (
-        <div className="ms-dropdown">
-          <input
-            className="ms-search"
-            placeholder="Поиск…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            onClick={e => e.stopPropagation()}
-            autoFocus
-          />
-          {grouped.every(g => g.items.length === 0) && (
-            <div className="ms-empty">Ничего не найдено</div>
-          )}
-          {grouped.map(({ group, items }) => items.length === 0 ? null : (
-            <div key={group}>
-              <div className="ms-group-label">{group}</div>
-              {items.map(opt => (
-                <div
-                  key={opt.id}
-                  className={`ms-option${value.includes(opt.id) ? ' selected' : ''}`}
-                  onClick={() => toggle(opt.id)}
-                >
-                  <input type="checkbox" checked={value.includes(opt.id)} readOnly />
-                  <span>{opt.label}</span>
-                  <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 'auto' }}>{opt.id}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+      {open && createPortal(dropdown, document.body)}
     </div>
   );
 }
