@@ -5,6 +5,8 @@ import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Agent } from '../api/types';
 
+interface BusStatus { status: string; ts: string; }
+
 const styles = `
   .adm-body { padding: 20px; }
   .container { max-width: 1200px; margin: 0 auto; }
@@ -32,6 +34,16 @@ const styles = `
   .error-banner { background: #fee; color: #c33; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; border-left: 4px solid #c33; }
   .adapter-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
   .check-btn { padding: 3px 8px; border: 1px solid #ddd; background: white; border-radius: 3px; cursor: pointer; font-size: 11px; }
+  .section-title { font-size: 18px; font-weight: 700; color: #1e293b; margin: 28px 0 14px; }
+  .big-status { text-align: center; padding: 8px 0 12px; }
+  .big-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; margin-bottom: 6px; }
+  .big-label { font-size: 18px; font-weight: 700; }
+  .big-ts { font-size: 12px; color: #888; margin-top: 4px; }
+  .status-dot-sm { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+  .dot-green { background: #10b981; }
+  .dot-gray { background: #9ca3af; }
+  .dot-red { background: #ef4444; }
+  .dot-blue { background: #3b82f6; }
   @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
 `;
 
@@ -41,6 +53,8 @@ export function Admin() {
   const [adapters, setAdapters] = useState<string[]>([]);
   const [adapterHealth, setAdapterHealth] = useState<Record<string, boolean | null>>({});
   const [health, setHealth] = useState<{ status: string; ts: string } | null>(null);
+  const [busStatus, setBusStatus] = useState<BusStatus | null>(null);
+  const [busError, setBusError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState('-');
 
@@ -49,7 +63,7 @@ export function Admin() {
     Promise.all([
       api.agents.list(),
       api.adapters.list(),
-      fetch('/health').then(r => r.json()),
+      fetch('/api/health').then(r => r.json()),
     ]).then(([ags, adps, hlth]) => {
       setAgents(ags);
       setAdapters(adps.adapters);
@@ -57,6 +71,9 @@ export function Admin() {
       setLastUpdate(new Date().toLocaleTimeString());
       setError(null);
     }).catch(e => setError(e.message));
+    api.health.bus()
+      .then(d => { setBusStatus(d); setBusError(null); })
+      .catch(e => setBusError(e.message));
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
@@ -71,7 +88,6 @@ export function Admin() {
     }
   }
 
-  const online = agents.filter(a => a.status === 'online').length;
   const running = agents.filter(a => a.lifecycle?.status === 'running').length;
 
   return (
@@ -81,6 +97,49 @@ export function Admin() {
         <div className="container">
           <h1>Admin</h1>
           {error && <div className="error-banner">{error}</div>}
+
+          {/* Health section */}
+          <div className="section-title">Health</div>
+          <div className="grid">
+            <div className="panel">
+              <h2>Konoha Bus</h2>
+              {busError ? (
+                <div className="big-status">
+                  <div className="big-dot" style={{ background: '#ef4444' }} />
+                  <div className="big-label" style={{ color: '#ef4444' }}>ERROR</div>
+                  <div className="big-ts">{busError}</div>
+                </div>
+              ) : busStatus ? (
+                <div className="big-status">
+                  <div className="big-dot" style={{ background: busStatus.status === 'ok' ? '#10b981' : '#f59e0b' }} />
+                  <div className="big-label" style={{ color: busStatus.status === 'ok' ? '#10b981' : '#f59e0b' }}>
+                    {busStatus.status.toUpperCase()}
+                  </div>
+                  <div className="big-ts">{new Date(busStatus.ts).toLocaleString()}</div>
+                </div>
+              ) : (
+                <div className="big-status"><div className="big-ts">Loading…</div></div>
+              )}
+            </div>
+            <div className="panel">
+              <h2>Agent Summary</h2>
+              <div className="metric-row">
+                <span className="metric-label">Total registered</span>
+                <span className="metric-value">{agents.length}</span>
+              </div>
+              <div className="metric-row">
+                <span className="metric-label"><span className="status-dot-sm dot-green" />Online</span>
+                <span className="metric-value" style={{ color: '#10b981' }}>{online}</span>
+              </div>
+              <div className="metric-row">
+                <span className="metric-label"><span className="status-dot-sm dot-gray" />Offline</span>
+                <span className="metric-value" style={{ color: '#9ca3af' }}>{offline}</span>
+              </div>
+              <div className="refresh-info">Last: {lastUpdate}</div>
+            </div>
+          </div>
+
+          <div className="section-title">System</div>
           <div className="grid">
 
             {/* System Health */}

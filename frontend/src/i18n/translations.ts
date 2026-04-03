@@ -18,6 +18,8 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.kb':          'KB',
     'nav.editor':      'Editor',
     'nav.admin':       'Admin',
+    'nav.people':      'People',
+    'nav.system':      'System',
     // Common actions
     'action.new':      'New',
     'action.edit':     'Edit',
@@ -133,6 +135,8 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.kb':          'База знаний',
     'nav.editor':      'Редактор',
     'nav.admin':       'Админ',
+    'nav.people':      'Люди',
+    'nav.system':      'Система',
     // Common actions
     'action.new':      'Создать',
     'action.edit':     'Изменить',

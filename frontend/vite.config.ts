@@ -7,6 +7,7 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [react()],
   root: 'src',
+  base: '/ui/',
   build: {
     outDir: '../../dist/ui',
     emptyOutDir: true,
@@ -28,6 +29,7 @@ export default defineConfig({
         health:     resolve(__dirname, 'src/health.html'),
         kb:         resolve(__dirname, 'src/kb.html'),
         login:      resolve(__dirname, 'src/login.html'),
+        people:     resolve(__dirname, 'src/people.html'),
       },
     },
   },
