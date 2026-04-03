@@ -809,7 +809,15 @@ app.get("/workflows", requireAuth, async (c) => {
   return c.json(workflows);
 });
 
-app.get("/workflows/:id", requireAuth, async (c) => {
+// NOTE: /versions sub-route must be declared BEFORE the wildcard get below
+app.get("/workflows/:id{.+}/versions", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const versions = await listWorkflowVersions(id);
+  return c.json(versions);
+});
+
+// :id{.+} captures slashes so IDs like "general/reflection" work correctly
+app.get("/workflows/:id{.+}", requireAuth, async (c) => {
   const id = c.req.param("id");
   const wf = await getWorkflow(id);
   if (!wf) return c.json({ error: "Workflow not found" }, 404);
@@ -825,7 +833,7 @@ app.post("/workflows", requireAuth, async (c) => {
   return c.json(result.workflow, 201);
 });
 
-app.put("/workflows/:id", requireAuth, async (c) => {
+app.put("/workflows/:id{.+}", requireAuth, async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
@@ -835,17 +843,11 @@ app.put("/workflows/:id", requireAuth, async (c) => {
   return c.json(result.workflow);
 });
 
-app.delete("/workflows/:id", requireAuth, async (c) => {
+app.delete("/workflows/:id{.+}", requireAuth, async (c) => {
   const id = c.req.param("id");
   const ok = await archiveWorkflow(id);
   if (!ok) return c.json({ error: "Workflow not found" }, 404);
   return c.json({ ok: true, archived: id });
-});
-
-app.get("/workflows/:id/versions", requireAuth, async (c) => {
-  const id = c.req.param("id");
-  const versions = await listWorkflowVersions(id);
-  return c.json(versions);
 });
 
 // Load workflow definitions from disk into Redis on startup
