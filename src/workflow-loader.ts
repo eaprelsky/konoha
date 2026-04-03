@@ -29,6 +29,8 @@ export interface WorkflowElement {
     event_type?: string;     // for event: upstream event type to react to
     webhook_path?: string;   // for webhook: auto-generated URL suffix
   };
+  // Sub-process: immutable boundary events locked to parent interface
+  locked?: boolean;
 }
 
 export interface WorkflowTrigger {
@@ -48,6 +50,8 @@ export interface WorkflowDefinition {
   triggers?: WorkflowTrigger[];
   elements: WorkflowElement[];
   flow: FlowEdge[]; // [from, to] or [from, to, condition]
+  parent_id?: string;        // ID of the parent workflow (if this is a sub-process)
+  parent_function_id?: string; // ID of the function node in the parent that this sub-process represents
 }
 
 export interface ValidationError {

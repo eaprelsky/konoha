@@ -265,6 +265,15 @@ const CSS = `
   .picker-footer button { flex:1; padding:7px; border:none; border-radius:4px; cursor:pointer; font-size:13px; }
   .picker-footer .btn-custom { background:#0066cc; color:white; }
   .picker-footer .btn-cancel { background:#e5e7eb; color:#374151; }
+  /* Breadcrumb navigation */
+  .ipe-breadcrumb { display:flex; align-items:center; gap:4px; font-size:12px; color:#94a3b8; flex-shrink:0; max-width:400px; overflow:hidden; }
+  .ipe-breadcrumb a { color:#93c5fd; cursor:pointer; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px; display:inline-block; }
+  .ipe-breadcrumb a:hover { color:#bfdbfe; text-decoration:underline; }
+  .ipe-breadcrumb .bc-sep { color:#475569; flex-shrink:0; }
+  .ipe-breadcrumb .bc-current { color:#e2e8f0; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px; display:inline-block; }
+  /* Sub-process drill-down badge on function node */
+  .drill-badge { cursor:pointer; opacity:0; transition:opacity .15s; }
+  .drill-badge:hover { opacity:1 !important; }
   /* Draft warning popover */
   .warn-wrap { position:relative; cursor:help; }
   .warn-pop { display:none; position:absolute; top:calc(100% + 6px); left:0; background:#1e293b; border:1px solid #fbbf24; border-radius:6px; padding:8px 12px; min-width:300px; max-width:460px; z-index:200; box-shadow:0 8px 24px rgba(0,0,0,.4); }
@@ -306,6 +315,8 @@ export function ProcessEditor() {
   const [sideW,   setSideW]   = useState(240);
   const [roles,    setRoles]    = useState<RoleDef[]>([]);
   const [docs,     setDocs]     = useState<DocTemplate[]>([]);
+  // Sub-process breadcrumb: stack of { id, name } from root to current
+  const [breadcrumb, setBreadcrumb] = useState<{ id: string; name: string }[]>([]);
   const [adapters, setAdapters] = useState<string[]>([]);
   const [wsFiles,  setWsFiles]  = useState<string[]>([]);
   // Tsunade chat
@@ -359,6 +370,7 @@ export function ProcessEditor() {
   function newProcess() {
     setWfId(''); setWfName(''); setElements([]); setFlow([]); setPositions({});
     setSelected(null); setMultiSelected([]); setConnectFrom(null); setMode('select'); setError(null);
+    setBreadcrumb([]);
   }
 
   function startCreatingNew() {
@@ -533,6 +545,8 @@ export function ProcessEditor() {
   }
 
   function deleteElement(id: string) {
+    const el = elements.find(e => e.id === id);
+    if (el?.locked) return; // locked boundary events in sub-processes cannot be deleted
     pushSnapshot(); scheduleAutosave();
     setElements(prev => prev.filter(e => e.id !== id));
     setFlow(prev => prev.filter(([f, t]) => f !== id && t !== id));
@@ -836,7 +850,7 @@ export function ProcessEditor() {
     }, 2000);
   }
 
-  function loadWorkflow(id: string) {
+  function loadWorkflow(id: string, fromBreadcrumb?: { id: string; name: string }[]) {
     const wf = workflows.find(w => w.id === id);
     if (!wf) return;
     setWfId(wf.id); setWfName(wf.name || wf.id);
@@ -852,6 +866,91 @@ export function ProcessEditor() {
       }
     });
     setPositions(pos);
+    // Restore breadcrumb: if explicitly provided use that, otherwise rebuild from parent_id chain
+    if (fromBreadcrumb !== undefined) {
+      setBreadcrumb(fromBreadcrumb);
+    } else if ((wf as any).parent_id) {
+      // Reconstruct breadcrumb by following parent_id chain
+      const chain: { id: string; name: string }[] = [];
+      let cur: Workflow | undefined = wf;
+      const visited = new Set<string>();
+      while (cur && (cur as any).parent_id && !visited.has(cur.id)) {
+        visited.add(cur.id);
+        const parentId = (cur as any).parent_id as string;
+        const parent = workflows.find(w => w.id === parentId);
+        if (parent) chain.unshift({ id: parent.id, name: parent.name || parent.id });
+        cur = parent;
+      }
+      setBreadcrumb(chain);
+    } else {
+      setBreadcrumb([]);
+    }
+  }
+
+  // Drill down into a sub-process from a Function node
+  async function drillDown(funcEl: WorkflowElement) {
+    if (!wfId) return;
+    // Save current first
+    await saveRef.current();
+    const childId = `${wfId}--${funcEl.id}`;
+    const childName = funcEl.label;
+    // Determine boundary events from parent flow
+    const incomingEvents = flow
+      .filter(([, to]) => to === funcEl.id)
+      .map(([from]) => elements.find(e => e.id === from))
+      .filter(e => e?.type === 'event') as WorkflowElement[];
+    const outgoingEvents = flow
+      .filter(([from]) => from === funcEl.id)
+      .map(([, to]) => elements.find(e => e.id === to))
+      .filter(e => e?.type === 'event') as WorkflowElement[];
+
+    // Fetch fresh list to check if child already exists
+    let freshList = await api.workflows.list().catch(() => workflows);
+    if (!freshList.find(w => w.id === childId)) {
+      // Build child workflow with immutable boundary events
+      const childEls: WorkflowElement[] = [];
+      // Start events (locked, x=40)
+      incomingEvents.forEach((ev, i) => {
+        childEls.push({ ...ev, id: `start-${i + 1}`, locked: true, x: 40, y: snap(40 + i * (EH + 80)) });
+      });
+      // End events (locked, x=600)
+      outgoingEvents.forEach((ev, i) => {
+        childEls.push({ ...ev, id: `end-${i + 1}`, locked: true, x: 600, y: snap(40 + i * (EH + 80)) });
+      });
+      const childBody = {
+        id: childId,
+        name: childName,
+        version: '1.0.0',
+        elements: childEls,
+        flow: [],
+        parent_id: wfId,
+        parent_function_id: funcEl.id,
+      };
+      try {
+        await api.workflows.create(childBody as unknown as Workflow, true); // draft — boundary events only
+      } catch { /* may already exist */ }
+      freshList = await api.workflows.list().catch(() => freshList);
+      setWorkflows(freshList);
+    }
+
+    // Navigate into child — load from fresh list
+    const newCrumb = [...breadcrumb, { id: wfId, name: wfName }];
+    const childWf = freshList.find(w => w.id === childId);
+    if (!childWf) { setError(`Не удалось создать под-процесс ${childId}`); return; }
+    setWfId(childWf.id); setWfName(childWf.name || childWf.id);
+    setElements([...childWf.elements]); setFlow([...(childWf.flow || [])]);
+    setSelected(null); setMultiSelected([]); setConnectFrom(null); setMode('select');
+    const pos: Record<string, Pos> = {};
+    childWf.elements.forEach((el, i) => {
+      if (typeof el.x === 'number' && typeof el.y === 'number' && (el.x !== 0 || el.y !== 0)) {
+        pos[el.id] = { x: el.x, y: el.y };
+      } else {
+        const col = i % 6, row = Math.floor(i / 6);
+        pos[el.id] = { x: snap(40 + col * (EW + 60)), y: snap(40 + row * (EH + 80)) };
+      }
+    });
+    setPositions(pos);
+    setBreadcrumb(newCrumb);
   }
 
   // ── Derived ─────────────────────────────────────────────────────────────────
@@ -873,9 +972,26 @@ export function ProcessEditor() {
           {wfName && (
             <>
               <div className="sep" />
-              <span style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 500, flexShrink: 0, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {wfName}
-              </span>
+              {breadcrumb.length > 0 ? (
+                <div className="ipe-breadcrumb">
+                  {breadcrumb.map((crumb, i) => (
+                    <span key={crumb.id} style={{ display: 'contents' }}>
+                      {i > 0 && <span className="bc-sep">›</span>}
+                      <a onClick={() => {
+                        // Navigate back up — pop breadcrumb to this level
+                        const newCrumb = breadcrumb.slice(0, i);
+                        loadWorkflow(crumb.id, newCrumb);
+                      }}>{crumb.name}</a>
+                    </span>
+                  ))}
+                  <span className="bc-sep">›</span>
+                  <span className="bc-current">{wfName}</span>
+                </div>
+              ) : (
+                <span style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 500, flexShrink: 0, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {wfName}
+                </span>
+              )}
             </>
           )}
           <div className="sep" />
@@ -1150,7 +1266,14 @@ export function ProcessEditor() {
                   </>
                 )}
                 <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', marginBottom: 4 }}>{selEl.id}</div>
-                <button className="btn-del-el" onClick={() => deleteElement(selEl.id)}>Удалить элемент</button>
+                {selEl.locked && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', padding: '4px 8px', background: '#451a03', borderRadius: 4, marginBottom: 6 }}>
+                    🔒 Граничное событие — заблокировано
+                  </div>
+                )}
+                {!selEl.locked && (
+                  <button className="btn-del-el" onClick={() => deleteElement(selEl.id)}>Удалить элемент</button>
+                )}
               </div>
             )}
 
@@ -1280,6 +1403,7 @@ export function ProcessEditor() {
                     onDoubleClick={e => {
                       if (mode !== 'select') return;
                       e.stopPropagation();
+                      if (el.locked) return; // locked boundary events cannot be renamed
                       if (el.type === 'gateway') {
                         setGatewayPickerId(prev => prev === el.id ? null : el.id);
                         return;
@@ -1293,6 +1417,25 @@ export function ProcessEditor() {
                       <circle cx={EW / 2} cy={EH / 2} r={GR + 20} fill="transparent" pointerEvents="all" />
                     )}
                     <ElShape el={el} selected={isSel} connectSrc={isCFrom} isEditing={isEditingThis} />
+                    {/* Drill-down badge on function nodes (visible on hover) */}
+                    {el.type === 'function' && !isEditingThis && (
+                      <g className="drill-badge"
+                        style={{ opacity: hoveredEl === el.id ? 0.9 : 0 }}
+                        onClick={e2 => { e2.stopPropagation(); drillDown(el); }}
+                        title="Детализировать (создать под-процесс)"
+                      >
+                        <rect x={EW - 24} y={EH - 20} width={22} height={18} rx={4}
+                          fill="#1e293b" stroke="#6366f1" strokeWidth={1} />
+                        <text x={EW - 13} y={EH - 8} textAnchor="middle" dominantBaseline="middle"
+                          fontSize={11} fill="#93c5fd" fontFamily="system-ui" pointerEvents="none">⊞</text>
+                      </g>
+                    )}
+                    {/* Lock indicator on locked (boundary) events */}
+                    {el.locked && (
+                      <text x={EW - 12} y={12} textAnchor="middle" dominantBaseline="middle"
+                        fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none"
+                        title="Заблокировано (граница под-процесса)">🔒</text>
+                    )}
                     {showAnchors && anchors.map(({ ax, ay }, i) => (
                       <circle key={i} cx={ax} cy={ay} r={5}
                         fill="#6366f1" fillOpacity={0.85} stroke="white" strokeWidth={1.5}

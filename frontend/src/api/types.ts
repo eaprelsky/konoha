@@ -9,6 +9,8 @@ export interface Workflow {
   elements: WorkflowElement[];
   flow: [string, string, string?][];
   triggers?: WorkflowTrigger[];
+  parent_id?: string;
+  parent_function_id?: string;
 }
 
 export interface WorkflowElement {
@@ -33,6 +35,8 @@ export interface WorkflowElement {
     event_type?: string;
     webhook_path?: string;
   };
+  // Sub-process: immutable boundary events locked to parent interface
+  locked?: boolean;
 }
 
 export interface WorkflowTrigger {
