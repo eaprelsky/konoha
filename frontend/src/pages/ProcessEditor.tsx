@@ -238,6 +238,12 @@ const CSS = `
   .picker-footer button { flex:1; padding:7px; border:none; border-radius:4px; cursor:pointer; font-size:13px; }
   .picker-footer .btn-custom { background:#0066cc; color:white; }
   .picker-footer .btn-cancel { background:#e5e7eb; color:#374151; }
+  /* Draft warning popover */
+  .warn-wrap { position:relative; cursor:help; }
+  .warn-pop { display:none; position:absolute; top:calc(100% + 6px); left:0; background:#1e293b; border:1px solid #fbbf24; border-radius:6px; padding:8px 12px; min-width:300px; max-width:460px; z-index:200; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+  .warn-wrap:hover .warn-pop { display:block; }
+  .warn-pop ul { margin:0; padding:0 0 0 14px; }
+  .warn-pop li { color:#fde68a; font-size:11px; line-height:1.6; }
 `;
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -261,7 +267,7 @@ export function ProcessEditor() {
   const [editingValue, setEditingValue] = useState('');
   const [error,  setError]  = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [draftWarning, setDraftWarning] = useState<string | null>(null);
+  const [draftWarning, setDraftWarning] = useState<{ text: string; details: string[] } | null>(null);
   const [gatewayPickerId, setGatewayPickerId] = useState<string | null>(null);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [sideW,   setSideW]   = useState(240);
@@ -564,23 +570,28 @@ export function ProcessEditor() {
       id = slugify(name) || `process-${Date.now().toString(36)}`;
       setWfId(id);
     }
-    setSaving(true); setError(null); setDraftWarning(null);
+    setSaving(true); setError(null); setDraftWarning(null as any);
     try {
       const fresh = await api.workflows.list().catch(() => workflows);
       const exists = fresh.find(w => w.id === id);
       const body = { id, name, elements, flow, ...(exists ? {} : { version: '1.0.0' }) } as unknown as Workflow;
       let savedAsDraft = false;
+      let validationMsg: string | null = null;
       try {
         if (exists) await api.workflows.update(id, body, false);
         else        await api.workflows.create(body, false);
-      } catch {
+      } catch (validationErr: any) {
+        validationMsg = validationErr.message ?? null;
         // Validation failed — save as draft instead
         if (exists) await api.workflows.update(id, body, true);
         else        await api.workflows.create(body, true);
         savedAsDraft = true;
       }
       refreshList();
-      if (savedAsDraft) setDraftWarning('Процесс сохранён как черновик — схема некорректна, недоступна для запуска');
+      if (savedAsDraft) {
+        const details = validationMsg ? validationMsg.split('\n').map(s => s.trim()).filter(Boolean) : [];
+        setDraftWarning({ text: 'Процесс сохранён как черновик — схема некорректна, недоступна для запуска', details });
+      }
     } catch (err: any) { setError(err.message); }
     setSaving(false);
   }
@@ -630,7 +641,18 @@ export function ProcessEditor() {
             {saving ? 'Сохранение…' : isKnown ? '💾 Обновить' : '💾 Сохранить'}
           </button>
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}
-          {draftWarning && <span style={{ color: '#fbbf24', fontSize: 12 }}>{draftWarning}</span>}
+          {draftWarning && (
+            <span className="warn-wrap" style={{ color: '#fbbf24', fontSize: 12 }}>
+              ⚠ {draftWarning.text}{draftWarning.details.length > 0 ? ' ▾' : ''}
+              {draftWarning.details.length > 0 && (
+                <div className="warn-pop">
+                  <ul>
+                    {draftWarning.details.map((d, i) => <li key={i}>{d}</li>)}
+                  </ul>
+                </div>
+              )}
+            </span>
+          )}
         </div>
 
         <div className="ipe-body">
