@@ -119,6 +119,12 @@ function orthogonalPath(fp: Pos, tp: Pos, fromType?: EType, toType?: EType): str
 
 function snap(v: number, g = 20): number { return Math.round(v / g) * g; }
 
+function pinchDist(touches: TouchList): number {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 // ── Element shape SVG ─────────────────────────────────────────────────────────
 interface ShapeProps { el: WorkflowElement; selected: boolean; connectSrc: boolean }
 function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps & { isEditing?: boolean }) {
@@ -205,8 +211,8 @@ const CSS = `
   .props-field input,.props-field select { padding:5px 8px; border:1px solid #ddd; border-radius:4px; font-size:12px; font-family:inherit; width:100%; box-sizing:border-box; }
   .edge-item { display:flex; align-items:center; gap:4px; font-size:11px; padding:2px 0; font-family:monospace; }
   .edge-del { background:none; border:none; color:#ef4444; cursor:pointer; font-size:14px; padding:0 2px; flex-shrink:0; }
-  .ipe-canvas { flex:1; overflow:auto; }
-  .ipe-canvas svg { display:block; }
+  .ipe-canvas { flex:1; overflow:hidden; }
+  .ipe-canvas svg { display:block; width:100%; height:100%; touch-action:none; }
   .error-bar { background:#fee; color:#c33; padding:6px 10px; font-size:12px; border-left:3px solid #c33; }
   .btn-del-el { width:100%; padding:5px; font-size:12px; background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:6px; }
   .load-divider { border:none; border-top:1px solid #e2e8f0; margin:4px 0 10px; }
@@ -287,6 +293,11 @@ export function ProcessEditor() {
   const [newProcName,   setNewProcName]   = useState('');
   const [renamingWfId,  setRenamingWfId]  = useState<string | null>(null);
   const [renamingVal,   setRenamingVal]   = useState('');
+  // Pan / zoom
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [zoom, setZoom] = useState(1);
+
   const svgRef        = useRef<SVGSVGElement>(null);
   const resizing      = useRef(false);
   const resizeStartX  = useRef(0);
@@ -294,6 +305,12 @@ export function ProcessEditor() {
   const justMarqueed  = useRef(false);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveRef       = useRef<() => Promise<void>>(async () => {});
+  // Pan refs (capture at gesture start; used by global mousemove & touch handlers)
+  const panStart      = useRef<{ cx: number; cy: number; px: number; py: number } | null>(null);
+  const touchPinch    = useRef<{ dist: number; z: number } | null>(null);
+  const panXRef       = useRef(0);
+  const panYRef       = useRef(0);
+  const zoomRef       = useRef(1);
 
   // ── Load workflow list + registries ────────────────────────────────────────
   const refreshList = useCallback(() => {
@@ -383,11 +400,18 @@ export function ProcessEditor() {
   // ── Sidebar resize ──────────────────────────────────────────────────────────
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (!resizing.current) return;
-      const delta = e.clientX - resizeStartX.current;
-      setSideW(Math.max(160, Math.min(480, resizeStartW.current + delta)));
+      if (resizing.current) {
+        const delta = e.clientX - resizeStartX.current;
+        setSideW(Math.max(160, Math.min(480, resizeStartW.current + delta)));
+      }
+      if (panStart.current) {
+        const dx = e.clientX - panStart.current.cx;
+        const dy = e.clientY - panStart.current.cy;
+        setPanX(panStart.current.px + dx);
+        setPanY(panStart.current.py + dy);
+      }
     };
-    const onUp = () => { resizing.current = false; };
+    const onUp = () => { resizing.current = false; panStart.current = null; };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
@@ -399,6 +423,55 @@ export function ProcessEditor() {
     resizeStartX.current = e.clientX;
     resizeStartW.current = sideW;
   }
+
+  // ── Touch events (mobile pan + pinch zoom) ──────────────────────────────────
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        const target = e.target as Element;
+        // Only pan on background touches (not on element shapes)
+        if (target === svg || target.tagName === 'rect' || target.tagName === 'svg') {
+          panStart.current = { cx: t.clientX, cy: t.clientY, px: panXRef.current, py: panYRef.current };
+        }
+      } else if (e.touches.length === 2) {
+        touchPinch.current = { dist: pinchDist(e.touches), z: zoomRef.current };
+        panStart.current = null;
+      }
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      e.preventDefault();
+      if (e.touches.length === 1 && panStart.current) {
+        const t = e.touches[0];
+        const dx = t.clientX - panStart.current.cx;
+        const dy = t.clientY - panStart.current.cy;
+        setPanX(panStart.current.px + dx);
+        setPanY(panStart.current.py + dy);
+      } else if (e.touches.length === 2 && touchPinch.current) {
+        const newDist = pinchDist(e.touches);
+        const scale = newDist / touchPinch.current.dist;
+        setZoom(Math.max(0.25, Math.min(3, touchPinch.current.z * scale)));
+      }
+    }
+
+    function onTouchEnd() {
+      panStart.current = null;
+      touchPinch.current = null;
+    }
+
+    svg.addEventListener('touchstart', onTouchStart);
+    svg.addEventListener('touchmove', onTouchMove, { passive: false });
+    svg.addEventListener('touchend', onTouchEnd);
+    return () => {
+      svg.removeEventListener('touchstart', onTouchStart);
+      svg.removeEventListener('touchmove', onTouchMove);
+      svg.removeEventListener('touchend', onTouchEnd);
+    };
+  }, []); // refs used inside; no state deps needed
 
   // ── Element management ──────────────────────────────────────────────────────
   function addElement(type: EType, label?: string, refId?: string) {
@@ -454,7 +527,10 @@ export function ProcessEditor() {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const r = svg.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    return {
+      x: (e.clientX - r.left - panX) / zoom,
+      y: (e.clientY - r.top  - panY) / zoom,
+    };
   }
 
   // ── Element interaction ─────────────────────────────────────────────────────
@@ -496,6 +572,12 @@ export function ProcessEditor() {
   }
 
   function onSvgMouseDown(e: React.MouseEvent) {
+    if (e.button === 2) {
+      // Right-click: start pan
+      panStart.current = { cx: e.clientX, cy: e.clientY, px: panXRef.current, py: panYRef.current };
+      e.preventDefault();
+      return;
+    }
     if (mode !== 'select' || connectDrag) return;
     const pt = svgCoords(e);
     setMarquee({ sx: pt.x, sy: pt.y, ex: pt.x, ey: pt.y });
@@ -622,6 +704,8 @@ export function ProcessEditor() {
 
   // Keep saveRef current on every render so debounced timer always calls latest save
   saveRef.current = save;
+  // Keep pan/zoom refs current for gesture handlers registered with empty deps
+  panXRef.current = panX; panYRef.current = panY; zoomRef.current = zoom;
 
   const isKnown = workflows.some(w => w.id === wfId.trim());
 
@@ -880,16 +964,17 @@ export function ProcessEditor() {
           <div className="ipe-canvas">
             <svg
               ref={svgRef}
-              width={CW} height={CH}
               style={{ cursor: canvasCursor }}
               onMouseDown={onSvgMouseDown}
               onMouseMove={onSvgMouseMove}
               onMouseUp={onSvgMouseUp}
               onMouseLeave={onSvgMouseUp}
               onClick={onSvgClick}
+              onContextMenu={e => e.preventDefault()}
             >
               <defs>
-                <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
+                <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse"
+                  patternTransform={`translate(${panX % 20},${panY % 20})`}>
                   <circle cx="1" cy="1" r="1" fill="#cbd5e1" />
                 </pattern>
                 <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
@@ -900,8 +985,12 @@ export function ProcessEditor() {
                 </marker>
               </defs>
 
-              <rect width={CW} height={CH} fill="white" />
-              <rect width={CW} height={CH} fill="url(#dots)" />
+              {/* Fixed background — dots shift to align with panned content */}
+              <rect width="100%" height="100%" fill="white" />
+              <rect width="100%" height="100%" fill="url(#dots)" />
+
+              {/* Panned + zoomed content group */}
+              <g transform={`translate(${panX},${panY}) scale(${zoom})`}>
 
               {/* ── Edges ── */}
               {flow.map(([fId, tId], i) => {
@@ -1059,11 +1148,12 @@ export function ProcessEditor() {
               })()}
 
               {elements.length === 0 && (
-                <text x={CW / 2} y={CH / 2} textAnchor="middle" dominantBaseline="middle"
+                <text x={300} y={200} textAnchor="middle" dominantBaseline="middle"
                   fontSize={14} fill="#94a3b8" fontFamily="system-ui,-apple-system,sans-serif" pointerEvents="none">
                   Кликните элемент в палитре, чтобы добавить его на холст
                 </text>
               )}
+              </g>{/* end panned content group */}
             </svg>
           </div>
         </div>
