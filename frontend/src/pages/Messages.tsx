@@ -105,17 +105,17 @@ export function Messages() {
       <div className="msg-body">
         <div className="container">
           <div className="panel">
-            <h2>Send Message</h2>
+            <h2>Отправить сообщение</h2>
             {sendError && <div className="error-banner">{sendError}</div>}
-            {sendOk && <div className="success-banner">{sendOk}</div>}
+            {sendOk && <div className="success-banner">Отправлено: {sendOk.replace('Sent: ', '')}</div>}
             <form onSubmit={send}>
               <div className="send-grid">
                 <div className="form-group">
-                  <label>From</label>
+                  <label>От кого</label>
                   <input value={from} onChange={e => setFrom(e.target.value)} placeholder="admin" required />
                 </div>
                 <div className="form-group">
-                  <label>To (agent ID)</label>
+                  <label>Кому (ID агента)</label>
                   <input
                     value={to}
                     onChange={e => setTo(e.target.value)}
@@ -128,7 +128,7 @@ export function Messages() {
                   </datalist>
                 </div>
                 <div className="form-group">
-                  <label>Type</label>
+                  <label>Тип</label>
                   <select value={msgType} onChange={e => setMsgType(e.target.value)}>
                     <option value="message">message</option>
                     <option value="task">task</option>
@@ -140,11 +140,11 @@ export function Messages() {
               </div>
               <div className="send-row">
                 <div className="form-group">
-                  <label>Text</label>
-                  <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Message text..." required />
+                  <label>Текст</label>
+                  <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Текст сообщения…" required />
                 </div>
                 <button className="btn-send" type="submit" disabled={sending}>
-                  {sending ? 'Sending...' : 'Send'}
+                  {sending ? 'Отправка…' : 'Отправить'}
                 </button>
               </div>
             </form>
@@ -152,9 +152,9 @@ export function Messages() {
 
           <div className="panel">
             <div className="history-header">
-              <h2>Message History</h2>
+              <h2>История сообщений</h2>
               <button style={{ padding: '5px 14px', border: '1px solid #ddd', borderRadius: 4, background: 'white', cursor: 'pointer', fontSize: 13 }} onClick={loadHistory}>
-                Refresh
+                Обновить
               </button>
             </div>
             <div className="agent-tabs">
@@ -173,8 +173,8 @@ export function Messages() {
             </div>
             {historyError && <div className="error-banner" style={{ marginTop: 12 }}>{historyError}</div>}
             <div className="msg-list" style={{ marginTop: 14 }}>
-              {loadingHistory && history.length === 0 && <div className="empty">Loading...</div>}
-              {!loadingHistory && history.length === 0 && <div className="empty">No messages for {selectedAgent}</div>}
+              {loadingHistory && history.length === 0 && <div className="empty">Загрузка…</div>}
+              {!loadingHistory && history.length === 0 && <div className="empty">Нет сообщений для {selectedAgent}</div>}
               {[...history].reverse().map(m => (
                 <div key={m.id} className={`msg-item ${m.from === 'admin' ? 'sent' : 'received'}`}>
                   <div className="msg-meta">
@@ -187,7 +187,7 @@ export function Messages() {
                 </div>
               ))}
             </div>
-            <div className="refresh-info">Auto-refresh 10s · Last: {lastUpdate}</div>
+            <div className="refresh-info">Авто-обновление 10с · Обновлено: {lastUpdate}</div>
           </div>
         </div>
       </div>

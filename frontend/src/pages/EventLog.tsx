@@ -77,26 +77,26 @@ export function EventLog() {
       <div className="el-body">
         <div className="container">
           <div className="page-header">
-            <h1>Event Log <span className="count-badge">{events.length} events</span></h1>
+            <h1>Лог событий <span className="count-badge">{events.length} событий</span></h1>
           </div>
           {error && <div className="error-banner">{error}</div>}
 
           <div className="filters">
             <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-              <option value="">All event types</option>
+              <option value="">Все типы событий</option>
               {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             <select value={limit} onChange={e => setLimit(Number(e.target.value))}>
-              <option value={50}>Last 50</option>
-              <option value={100}>Last 100</option>
-              <option value={500}>Last 500</option>
+              <option value={50}>Последние 50</option>
+              <option value={100}>Последние 100</option>
+              <option value={500}>Последние 500</option>
             </select>
-            <button onClick={() => setAppliedType(typeFilter)}>Apply</button>
-            <button className="reset" onClick={() => { setTypeFilter(''); setAppliedType(''); }}>Reset</button>
+            <button onClick={() => setAppliedType(typeFilter)}>Применить</button>
+            <button className="reset" onClick={() => { setTypeFilter(''); setAppliedType(''); }}>Сбросить</button>
           </div>
 
-          {loading && <div className="empty">Loading...</div>}
-          {!loading && events.length === 0 && <div className="empty">No events found.</div>}
+          {loading && <div className="empty">Загрузка…</div>}
+          {!loading && events.length === 0 && <div className="empty">События не найдены.</div>}
 
           {events.length > 0 && (
             <div className="log-list">
@@ -114,7 +114,7 @@ export function EventLog() {
             </div>
           )}
 
-          <div className="refresh-info">Auto-refresh 10s • Last: {lastUpdate}</div>
+          <div className="refresh-info">Авто-обновление 10с • Обновлено: {lastUpdate}</div>
         </div>
       </div>
     </Layout>

@@ -7,6 +7,10 @@ import type { Agent } from '../api/types';
 
 interface BusStatus { status: string; ts: string; }
 
+const LIFECYCLE_LABELS: Record<string, string> = {
+  running: 'запущен', starting: 'запускается', stopped: 'остановлен', error: 'ошибка',
+};
+
 const styles = `
   .adm-body { padding: 20px; }
   .container { max-width: 1200px; margin: 0 auto; }
@@ -185,7 +189,7 @@ export function Admin() {
                     {a.lifecycle?.status && (
                       <div>
                         <span className={`dot ${a.lifecycle.status === 'running' ? 'dot-blue' : a.lifecycle.status === 'error' ? 'dot-red' : 'dot-gray'}`} />
-                        {a.lifecycle.status}
+                        {LIFECYCLE_LABELS[a.lifecycle.status] ?? a.lifecycle.status}
                       </div>
                     )}
                     {a.lastHeartbeat && (
@@ -207,9 +211,9 @@ export function Admin() {
                     <span style={{ fontWeight: 500, textTransform: 'capitalize' }}>{name}</span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       {h === true && <span className="status-ok">✓ OK</span>}
-                      {h === false && <span className="status-err">✗ Error</span>}
+                      {h === false && <span className="status-err">✗ Ошибка</span>}
                       {h === null || h === undefined ? <span className="status-unknown">–</span> : null}
-                      <button className="check-btn" onClick={() => checkAdapter(name)}>Check</button>
+                      <button className="check-btn" onClick={() => checkAdapter(name)}>Проверить</button>
                     </div>
                   </div>
                 );
