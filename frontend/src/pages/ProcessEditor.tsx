@@ -351,17 +351,25 @@ export function ProcessEditor() {
 
   // ── Save ────────────────────────────────────────────────────────────────────
   async function save() {
-    if (!wfId.trim() || !wfName.trim()) { setError('Process ID and name are required'); return; }
+    const id = wfId.trim(), name = wfName.trim();
+    if (!id)   { setError('Process ID is required'); return; }
+    if (!name) { setError('Process name is required'); return; }
+    if (/\s/.test(id)) { setError('Process ID must not contain spaces'); return; }
     setSaving(true); setError(null);
     try {
-      const body = { id: wfId.trim(), name: wfName.trim(), elements, flow } as unknown as Workflow;
-      const exists = workflows.find(w => w.id === wfId.trim());
-      if (exists) await api.workflows.update(wfId.trim(), body);
+      // Fetch fresh list to avoid stale-state POST/PUT mismatch
+      const fresh = await api.workflows.list().catch(() => workflows);
+      const body = { id, name, elements, flow } as unknown as Workflow;
+      const exists = fresh.find(w => w.id === id);
+      if (exists) await api.workflows.update(id, body);
       else        await api.workflows.create(body);
       refreshList();
     } catch (err: any) { setError(err.message); }
     setSaving(false);
   }
+
+  /** Whether current wfId matches a known workflow (may be stale — fresh check happens on save) */
+  const isKnown = workflows.some(w => w.id === wfId.trim());
 
   // ── Load existing ───────────────────────────────────────────────────────────
   function loadWorkflow(id: string) {
@@ -425,7 +433,7 @@ export function ProcessEditor() {
           </button>
           <div className="sep" />
           <button className="btn-save" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : '💾 Save'}
+            {saving ? 'Saving…' : isKnown ? '💾 Update' : '💾 Save New'}
           </button>
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}
           {mode === 'connect' && (
