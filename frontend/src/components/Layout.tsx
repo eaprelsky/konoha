@@ -25,7 +25,7 @@ const styles = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #1e293b; }
   header { background: #0f172a; color: #f8fafc; padding: 14px 28px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  header h1 { font-size: 18px; font-weight: 600; }
+  header h1 { font-size: 18px; font-weight: 600; color: #ffffff; }
   header span { font-size: 12px; color: #64748b; }
   header .spacer { flex: 1; }
   .lang-switch { display: flex; gap: 4px; }
