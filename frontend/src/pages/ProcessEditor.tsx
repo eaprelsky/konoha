@@ -286,6 +286,7 @@ export function ProcessEditor() {
   const [roles,    setRoles]    = useState<RoleDef[]>([]);
   const [docs,     setDocs]     = useState<DocTemplate[]>([]);
   const [adapters, setAdapters] = useState<string[]>([]);
+  const [wsFiles,  setWsFiles]  = useState<string[]>([]);
   const [picker,   setPicker]   = useState<'role' | 'document' | 'is' | null>(null);
   // Sidebar state
   const [sideSearch,    setSideSearch]    = useState('');
@@ -323,6 +324,7 @@ export function ProcessEditor() {
     api.roles.list().then(setRoles).catch(() => {});
     api.documents.list().then(setDocs).catch(() => {});
     api.adapters.list().then(r => setAdapters(r.adapters)).catch(() => {});
+    api.workspace.list().then(files => setWsFiles(files.map(f => f.name))).catch(() => {});
   }, [token]);
 
   // ── Process library CRUD ────────────────────────────────────────────────────
@@ -937,6 +939,53 @@ export function ProcessEditor() {
                         onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })} />
                     )}
                   </div>
+                )}
+                {selEl.type === 'document' && (
+                  <>
+                    <div className="props-field">
+                      <label>Тип документа</label>
+                      <select
+                        value={selEl.content_type || 'instruction'}
+                        onChange={e => updateElement(selEl.id, { content_type: e.target.value as 'instruction' | 'file', content: undefined, file_ref: undefined })}
+                      >
+                        <option value="instruction">Инструкция (текст)</option>
+                        <option value="file">Файл из Workspace</option>
+                      </select>
+                    </div>
+                    {(selEl.content_type || 'instruction') === 'instruction' && (
+                      <div className="props-field">
+                        <label>Содержание</label>
+                        <textarea
+                          value={selEl.content || ''}
+                          onChange={e => updateElement(selEl.id, { content: e.target.value || undefined })}
+                          placeholder="Текст инструкции для исполнителя…"
+                          rows={6}
+                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }}
+                        />
+                      </div>
+                    )}
+                    {selEl.content_type === 'file' && (
+                      <div className="props-field">
+                        <label>Файл</label>
+                        {wsFiles.length > 0 ? (
+                          <select
+                            value={selEl.file_ref || ''}
+                            onChange={e => updateElement(selEl.id, { file_ref: e.target.value || undefined })}
+                          >
+                            <option value="">— выбрать файл —</option>
+                            {wsFiles.map(f => <option key={f} value={f}>{f}</option>)}
+                          </select>
+                        ) : (
+                          <span style={{ fontSize: 12, color: '#94a3b8' }}>Нет файлов в Workspace</span>
+                        )}
+                        {selEl.file_ref && (
+                          <span style={{ fontSize: 11, color: '#64748b', marginTop: 4, display: 'block' }}>
+                            /opt/shared/workspace/{selEl.file_ref}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
                 <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', marginBottom: 4 }}>{selEl.id}</div>
                 <button className="btn-del-el" onClick={() => deleteElement(selEl.id)}>Удалить элемент</button>

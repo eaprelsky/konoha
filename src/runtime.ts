@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { redis } from "./redis";
 import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "./workflow-loader";
 import { getAdapter } from "./adapters/index";
+import { dispatchWorkItem } from "./dispatcher";
 
 // --- Event log ---
 
@@ -377,6 +378,18 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
         work_item_id: wi.work_item_id,
       });
       await saveCase(kase);
+
+      // Dispatch to agent or human (fire-and-forget)
+      if (nextEl.role) {
+        dispatchWorkItem({
+          role: nextEl.role,
+          label: nextEl.label,
+          work_item_id: wi.work_item_id,
+          case_id: kase.case_id,
+          process_id: kase.process_id,
+          docIds: nextEl.documents || [],
+        }).catch(e => console.error("[runtime] dispatch error:", e.message));
+      }
 
       // Auto-execute via adapters (systems array; legacy system string already normalized on load)
       const systemBindings = nextEl.systems ?? (nextEl.system ? [{ connector: nextEl.system, operation: "default" }] : []);

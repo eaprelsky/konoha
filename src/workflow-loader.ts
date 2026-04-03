@@ -16,6 +16,10 @@ export interface WorkflowElement {
   systems?: SystemBinding[]; // multi-system bindings (section 13 of spec)
   documents?: string[];
   operator?: "AND" | "OR" | "XOR"; // for gateways
+  // Document node inline content (used when type="document" in frontend schema)
+  content_type?: "instruction" | "file";
+  content?: string;          // inline text for instruction-type documents
+  file_ref?: string;         // workspace file name for file-type documents
 }
 
 export interface WorkflowTrigger {

@@ -20,6 +20,10 @@ export interface WorkflowElement {
   operator?: string;
   x?: number;
   y?: number;
+  // Document node inline content
+  content_type?: 'instruction' | 'file';
+  content?: string;
+  file_ref?: string;
 }
 
 export interface WorkflowTrigger {
