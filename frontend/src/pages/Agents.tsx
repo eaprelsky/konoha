@@ -143,8 +143,12 @@ function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
             </select>
           </div>
           <div className="form-group">
-            <label>System Prompt</label>
-            <textarea placeholder="System prompt..." value={prompt} onChange={e => setPrompt(e.target.value)} />
+            <div style={{ padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 4, marginBottom: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 2 }}>Системные инструкции (Layer 1)</div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>Авто-инжектируются Konoha при старте: регистрация, watchdog, память. Не редактируются.</div>
+            </div>
+            <label>Пользовательские инструкции (Layer 2)</label>
+            <textarea placeholder="Роль, специализация, типы задач, поведение..." value={prompt} onChange={e => setPrompt(e.target.value)} />
           </div>
           <div className="form-actions">
             <button type="button" className="btn-cancel-f" onClick={onClose}>Cancel</button>
