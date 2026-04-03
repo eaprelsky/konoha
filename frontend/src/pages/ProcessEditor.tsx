@@ -48,9 +48,12 @@ function genId(type: EType, els: WorkflowElement[]): string {
   return `${p}-${nums.length ? Math.max(...nums) + 1 : 1}`;
 }
 
-const CORNER_R = 10; // rounded corner radius for orthogonal routing
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
 
-/** VHV: vertical → horizontal → vertical path with rounded corners */
+const CORNER_R = 10;
+
 function routeVHV(x1: number, y1: number, x2: number, y2: number, midY: number): string {
   if (Math.abs(x1 - x2) < 0.5) return `M${x1},${y1} L${x2},${y2}`;
   const dy1 = midY - y1, dx = x2 - x1, dy2 = y2 - midY;
@@ -67,7 +70,6 @@ function routeVHV(x1: number, y1: number, x2: number, y2: number, midY: number):
   ].join(' ');
 }
 
-/** HVH: horizontal → vertical → horizontal path with rounded corners */
 function routeHVH(x1: number, y1: number, x2: number, y2: number, midX: number): string {
   if (Math.abs(y1 - y2) < 0.5) return `M${x1},${y1} L${x2},${y2}`;
   const dx1 = midX - x1, dy = y2 - y1, dx2 = x2 - midX;
@@ -84,20 +86,16 @@ function routeHVH(x1: number, y1: number, x2: number, y2: number, midX: number):
   ].join(' ');
 }
 
-/** Build an orthogonal SVG path between two element positions with rounded corners */
 function orthogonalPath(fp: Pos, tp: Pos): string {
   const fcx = fp.x + EW / 2, fcy = fp.y + EH / 2;
   const tcx = tp.x + EW / 2, tcy = tp.y + EH / 2;
   const dx = tcx - fcx, dy = tcy - fcy;
-
   if (Math.abs(dy) >= Math.abs(dx)) {
-    // Vertical dominant: exit bottom/top, enter top/bottom
     const goDown = dy >= 0;
     const x1 = fcx, y1 = goDown ? fp.y + EH : fp.y;
     const x2 = tcx, y2 = goDown ? tp.y       : tp.y + EH;
     return routeVHV(x1, y1, x2, y2, (y1 + y2) / 2);
   } else {
-    // Horizontal dominant: exit right/left, enter left/right
     const goRight = dx >= 0;
     const x1 = goRight ? fp.x + EW : fp.x, y1 = fcy;
     const x2 = goRight ? tp.x       : tp.x + EW, y2 = tcy;
@@ -105,7 +103,6 @@ function orthogonalPath(fp: Pos, tp: Pos): string {
   }
 }
 
-/** Grid snap helper */
 function snap(v: number, g = 20): number { return Math.round(v / g) * g; }
 
 // ── Element shape SVG ─────────────────────────────────────────────────────────
@@ -142,8 +139,6 @@ function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps & { isEditi
 
   const label = el.type === 'gateway' ? (el.operator || el.label) : el.label;
   const maxW = el.type === 'gateway' ? GR * 2 - 8 : EW - 16;
-
-  // Simple word-wrap for label
   const words = String(label).split(' ');
   const charW = 6.2;
   const lines: string[] = [];
@@ -176,7 +171,6 @@ function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps & { isEditi
 const CSS = `
   .ipe-root { display:flex; flex-direction:column; height:calc(100vh - 64px); overflow:hidden; background:#e2e8f0; }
   .ipe-bar { display:flex; gap:8px; align-items:center; padding:8px 14px; background:#1e293b; color:white; flex-shrink:0; flex-wrap:wrap; }
-  .ipe-bar input { padding:5px 9px; background:#0f172a; border:1px solid #475569; color:white; border-radius:4px; font-size:13px; }
   .ipe-bar .sep { width:1px; height:22px; background:#475569; flex-shrink:0; }
   .ipe-bar button { padding:5px 12px; border:1px solid #475569; background:#334155; color:white; border-radius:4px; cursor:pointer; font-size:12px; font-weight:500; white-space:nowrap; }
   .ipe-bar button:hover { background:#475569; }
@@ -200,24 +194,26 @@ const CSS = `
   .ipe-canvas { flex:1; overflow:auto; }
   .ipe-canvas svg { display:block; }
   .error-bar { background:#fee; color:#c33; padding:6px 10px; font-size:12px; border-left:3px solid #c33; }
-  .load-select { width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:4px; font-size:13px; box-sizing:border-box; margin-bottom:6px; }
-  .btn-load { width:100%; padding:7px; background:#0066cc; color:white; border:none; border-radius:4px; cursor:pointer; font-size:13px; font-weight:500; }
-  .btn-load:hover { background:#0052a3; }
-  .btn-load:disabled { background:#94a3b8; cursor:default; }
-  .load-divider { border:none; border-top:1px solid #e2e8f0; margin:4px 0 10px; }
   .btn-del-el { width:100%; padding:5px; font-size:12px; background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:6px; }
-  .proc-list { max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
-  .proc-item { padding:5px 8px; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .proc-item:hover { background:#eff6ff; border-color:#bfdbfe; }
-  .proc-item.active { background:#eff6ff; border-color:#6366f1; font-weight:600; }
-  .proc-actions { display:flex; gap:3px; flex-wrap:wrap; }
-  .proc-actions button { flex:1; padding:4px 4px; border:1px solid #ddd; background:white; border-radius:3px; cursor:pointer; font-size:11px; white-space:nowrap; min-width:0; }
-  .proc-actions button:hover { background:#f1f5f9; }
-  .proc-actions .btn-danger { color:#ef4444; border-color:#fca5a5; }
-  .proc-actions .btn-danger:hover { background:#fee2e2; }
+  .load-divider { border:none; border-top:1px solid #e2e8f0; margin:4px 0 10px; }
+  /* Process list */
+  .proc-search { width:100%; padding:5px 8px; border:1px solid #ddd; border-radius:4px; font-size:12px; box-sizing:border-box; margin-bottom:6px; }
   .proc-new-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
   .btn-proc-new { padding:3px 9px; background:#6366f1; color:white; border:none; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; }
   .btn-proc-new:hover { background:#4f46e5; }
+  .proc-list { max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; margin-bottom:4px; }
+  .proc-item { display:flex; align-items:center; gap:4px; padding:5px 8px; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer; font-size:12px; }
+  .proc-item:hover { background:#eff6ff; border-color:#bfdbfe; }
+  .proc-item.active { background:#eff6ff; border-color:#6366f1; font-weight:600; }
+  .proc-item-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .proc-row-acts { display:none; gap:2px; }
+  .proc-item:hover .proc-row-acts { display:flex; }
+  .proc-row-acts button { padding:1px 4px; font-size:11px; border:1px solid #ddd; background:white; border-radius:3px; cursor:pointer; line-height:1.4; }
+  .proc-row-acts button:hover { background:#f0f0f0; }
+  .proc-row-acts .del-btn { color:#ef4444; border-color:#fca5a5; }
+  .proc-new-input { width:100%; padding:5px 8px; border:1px solid #6366f1; border-radius:4px; font-size:12px; box-sizing:border-box; outline:none; }
+  .proc-rename-input { flex:1; padding:2px 5px; border:1px solid #6366f1; border-radius:3px; font-size:12px; outline:none; min-width:0; }
+  /* Picker */
   .picker-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:200; display:flex; align-items:center; justify-content:center; }
   .picker-box { background:white; border-radius:8px; padding:18px; width:340px; max-height:70vh; display:flex; flex-direction:column; box-shadow:0 20px 40px rgba(0,0,0,.2); }
   .picker-box h3 { font-size:14px; font-weight:700; margin-bottom:12px; }
@@ -239,9 +235,12 @@ export function ProcessEditor() {
   const [positions, setPositions] = useState<Record<string, Pos>>({});
   const [flow, setFlow] = useState<[string, string, string?][]>([]);
   const [selected,    setSelected]    = useState<string | null>(null);
+  const [multiSelected, setMultiSelected] = useState<string[]>([]);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('select');
   const [dragging, setDragging] = useState<{ id: string; ox: number; oy: number; mx: number; my: number } | null>(null);
+  const [groupDrag, setGroupDrag] = useState<{ ids: string[]; startPos: Record<string, Pos>; mx: number; my: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ sx: number; sy: number; ex: number; ey: number } | null>(null);
   const [hoveredEl, setHoveredEl] = useState<string | null>(null);
   const [connectDrag, setConnectDrag] = useState<{ fromId: string; startX: number; startY: number; curX: number; curY: number } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -254,6 +253,12 @@ export function ProcessEditor() {
   const [docs,     setDocs]     = useState<DocTemplate[]>([]);
   const [adapters, setAdapters] = useState<string[]>([]);
   const [picker,   setPicker]   = useState<'role' | 'document' | 'is' | null>(null);
+  // Sidebar state
+  const [sideSearch,    setSideSearch]    = useState('');
+  const [creatingNew,   setCreatingNew]   = useState(false);
+  const [newProcName,   setNewProcName]   = useState('');
+  const [renamingWfId,  setRenamingWfId]  = useState<string | null>(null);
+  const [renamingVal,   setRenamingVal]   = useState('');
   const svgRef    = useRef<SVGSVGElement>(null);
   const resizing  = useRef(false);
   const resizeStartX = useRef(0);
@@ -275,39 +280,54 @@ export function ProcessEditor() {
   // ── Process library CRUD ────────────────────────────────────────────────────
   function newProcess() {
     setWfId(''); setWfName(''); setElements([]); setFlow([]); setPositions({});
-    setSelected(null); setConnectFrom(null); setMode('select'); setError(null);
+    setSelected(null); setMultiSelected([]); setConnectFrom(null); setMode('select'); setError(null);
   }
 
-  async function renameProcess() {
-    if (!wfId) return;
-    const newName = window.prompt('Новое название:', wfName);
-    if (!newName?.trim() || newName.trim() === wfName) return;
-    setWfName(newName.trim());
+  function startCreatingNew() {
+    setCreatingNew(true); setNewProcName('');
+  }
+
+  function commitNewProc() {
+    const name = newProcName.trim();
+    setCreatingNew(false); setNewProcName('');
+    if (!name) return;
+    const id = slugify(name) || `process-${Date.now().toString(36)}`;
+    setWfId(id); setWfName(name); setElements([]); setFlow([]); setPositions({});
+    setSelected(null); setMultiSelected([]); setConnectFrom(null); setMode('select'); setError(null);
+  }
+
+  function startRename(wf: Workflow) {
+    setRenamingWfId(wf.id);
+    setRenamingVal(wf.name || wf.id);
+  }
+
+  async function commitRename(id: string) {
+    const name = renamingVal.trim();
+    setRenamingWfId(null);
+    if (!name || name === workflows.find(w => w.id === id)?.name) return;
+    if (wfId === id) setWfName(name);
+    const wf = workflows.find(w => w.id === id);
+    if (!wf) return;
     try {
-      const body = { id: wfId, name: newName.trim(), elements, flow } as unknown as Workflow;
-      await api.workflows.update(wfId, body);
+      await api.workflows.update(id, { ...wf, name } as unknown as Workflow);
       refreshList();
     } catch (err: any) { setError(err.message); }
   }
 
-  async function duplicateProcess() {
-    if (!wfId) return;
-    const newId = `${wfId}-copy`;
-    const newName = `${wfName} (копия)`;
+  async function dupWorkflow(wf: Workflow) {
+    const newId = `${wf.id}-copy`;
+    const newName = `${wf.name || wf.id} (копия)`;
     try {
-      const body = { id: newId, name: newName, elements: [...elements], flow: [...flow] } as unknown as Workflow;
-      await api.workflows.create(body);
+      await api.workflows.create({ ...wf, id: newId, name: newName } as unknown as Workflow);
       refreshList();
-      setWfId(newId); setWfName(newName);
     } catch (err: any) { setError(err.message); }
   }
 
-  async function deleteProcess() {
-    if (!wfId) return;
-    if (!confirm(`Удалить процесс "${wfName || wfId}"?`)) return;
+  async function delWorkflow(wf: Workflow) {
+    if (!confirm(`Удалить процесс "${wf.name || wf.id}"?`)) return;
     try {
-      await api.workflows.delete(wfId);
-      newProcess();
+      await api.workflows.delete(wf.id);
+      if (wfId === wf.id) newProcess();
       refreshList();
     } catch (err: any) { setError(err.message); }
   }
@@ -315,14 +335,14 @@ export function ProcessEditor() {
   // ── Keyboard delete ─────────────────────────────────────────────────────────
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (!selected) return;
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
-      deleteElement(selected);
+      const toDelete = multiSelected.length > 0 ? multiSelected : selected ? [selected] : [];
+      toDelete.forEach(id => deleteElement(id));
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [selected]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selected, multiSelected]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sidebar resize ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -355,11 +375,10 @@ export function ProcessEditor() {
     if (refId) (el as any).ref_id = refId;
     setElements(prev => [...prev, el]);
     setPositions(prev => ({ ...prev, [id]: pos }));
-    setSelected(id);
+    setSelected(id); setMultiSelected([id]);
     setMode('select');
   }
 
-  /** Click on palette — show picker for role/document/IS if registry available */
   function paletteClick(type: EType) {
     if (type === 'role'               && roles.length    > 0) { setPicker('role');     return; }
     if (type === 'document'           && docs.length     > 0) { setPicker('document'); return; }
@@ -377,7 +396,8 @@ export function ProcessEditor() {
     setElements(prev => prev.filter(e => e.id !== id));
     setFlow(prev => prev.filter(([f, t]) => f !== id && t !== id));
     setPositions(prev => { const n = { ...prev }; delete n[id]; return n; });
-    setSelected(null);
+    if (selected === id) setSelected(null);
+    setMultiSelected(prev => prev.filter(i => i !== id));
     setConnectFrom(null);
   }
 
@@ -404,31 +424,41 @@ export function ProcessEditor() {
 
     if (mode === 'connect') {
       if (!connectFrom) {
-        setConnectFrom(id);
-        setSelected(id);
+        setConnectFrom(id); setSelected(id);
       } else if (connectFrom !== id) {
         if (!flow.some(([f, t]) => f === connectFrom && t === id)) {
           setFlow(prev => [...prev, [connectFrom, id]]);
         }
-        // Auto-assign: when connecting Role ↔ Function, set function.role = role.label
         const srcEl = elements.find(e => e.id === connectFrom);
         const dstEl = elements.find(e => e.id === id);
-        if (srcEl?.type === 'role' && dstEl?.type === 'function') {
-          updateElement(dstEl.id, { role: srcEl.label });
-        } else if (srcEl?.type === 'function' && dstEl?.type === 'role') {
-          updateElement(srcEl.id, { role: dstEl.label });
-        }
-        setConnectFrom(null);
-        setSelected(id);
+        if (srcEl?.type === 'role' && dstEl?.type === 'function') updateElement(dstEl.id, { role: srcEl.label });
+        else if (srcEl?.type === 'function' && dstEl?.type === 'role') updateElement(srcEl.id, { role: dstEl.label });
+        setConnectFrom(null); setSelected(id);
       }
       return;
     }
 
-    // Select + drag
-    const pt  = svgCoords(e);
+    const pt = svgCoords(e);
+
+    // Group drag if element is part of multi-selection
+    if (multiSelected.length > 1 && multiSelected.includes(id)) {
+      const startPos: Record<string, Pos> = {};
+      multiSelected.forEach(sid => { startPos[sid] = positions[sid] || { x: 0, y: 0 }; });
+      setGroupDrag({ ids: multiSelected, startPos, mx: pt.x, my: pt.y });
+      return;
+    }
+
+    // Single drag
     const pos = positions[id] || { x: 0, y: 0 };
     setDragging({ id, ox: pos.x, oy: pos.y, mx: pt.x, my: pt.y });
-    setSelected(id);
+    setSelected(id); setMultiSelected([id]);
+  }
+
+  function onSvgMouseDown(e: React.MouseEvent) {
+    if (mode !== 'select' || connectDrag) return;
+    const pt = svgCoords(e);
+    setMarquee({ sx: pt.x, sy: pt.y, ex: pt.x, ey: pt.y });
+    setSelected(null); setMultiSelected([]);
   }
 
   function onSvgMouseMove(e: React.MouseEvent) {
@@ -438,12 +468,44 @@ export function ProcessEditor() {
       const ny = snap(Math.max(0, dragging.oy + (pt.y - dragging.my)));
       setPositions(prev => ({ ...prev, [dragging.id]: { x: nx, y: ny } }));
     }
+    if (groupDrag) {
+      const dx = pt.x - groupDrag.mx, dy = pt.y - groupDrag.my;
+      const newPos = { ...positions };
+      groupDrag.ids.forEach(id => {
+        const sp = groupDrag.startPos[id];
+        newPos[id] = { x: snap(Math.max(0, sp.x + dx)), y: snap(Math.max(0, sp.y + dy)) };
+      });
+      setPositions(newPos);
+    }
     if (connectDrag) {
       setConnectDrag(prev => prev ? { ...prev, curX: pt.x, curY: pt.y } : null);
     }
+    if (marquee) {
+      setMarquee(prev => prev ? { ...prev, ex: pt.x, ey: pt.y } : null);
+    }
   }
 
-  function onSvgMouseUp() { setDragging(null); setConnectDrag(null); }
+  function onSvgMouseUp() {
+    setDragging(null);
+    setGroupDrag(null);
+    setConnectDrag(null);
+    if (marquee) {
+      const minX = Math.min(marquee.sx, marquee.ex);
+      const maxX = Math.max(marquee.sx, marquee.ex);
+      const minY = Math.min(marquee.sy, marquee.ey);
+      const maxY = Math.max(marquee.sy, marquee.ey);
+      if (maxX - minX > 8 || maxY - minY > 8) {
+        const ids = elements.filter(el => {
+          const pos = positions[el.id];
+          if (!pos) return false;
+          return pos.x < maxX && pos.x + EW > minX && pos.y < maxY && pos.y + EH > minY;
+        }).map(el => el.id);
+        setMultiSelected(ids);
+        if (ids.length === 1) setSelected(ids[0]);
+      }
+      setMarquee(null);
+    }
+  }
 
   function onElMouseUp(e: React.MouseEvent, toId: string) {
     if (!connectDrag || connectDrag.fromId === toId) return;
@@ -454,41 +516,38 @@ export function ProcessEditor() {
     }
     const srcEl = elements.find(el => el.id === fromId);
     const dstEl = elements.find(el => el.id === toId);
-    if (srcEl?.type === 'role' && dstEl?.type === 'function') {
-      updateElement(dstEl.id, { role: srcEl.label });
-    } else if (srcEl?.type === 'function' && dstEl?.type === 'role') {
-      updateElement(srcEl.id, { role: dstEl.label });
-    }
+    if (srcEl?.type === 'role' && dstEl?.type === 'function') updateElement(dstEl.id, { role: srcEl.label });
+    else if (srcEl?.type === 'function' && dstEl?.type === 'role') updateElement(srcEl.id, { role: dstEl.label });
     setConnectDrag(null);
   }
 
   function onSvgClick() {
     if (mode === 'connect' && connectFrom) {
-      setConnectFrom(null); // cancel connection on background click
-    } else {
-      setSelected(null);
+      setConnectFrom(null);
+    } else if (!marquee) {
+      setSelected(null); setMultiSelected([]);
     }
   }
 
-  // ── Mode toggle ─────────────────────────────────────────────────────────────
   function switchMode(m: Mode) {
-    setMode(m);
-    setConnectFrom(null);
-    if (m === 'connect') setSelected(null);
+    setMode(m); setConnectFrom(null);
+    if (m === 'connect') { setSelected(null); setMultiSelected([]); }
   }
 
   // ── Save ────────────────────────────────────────────────────────────────────
   async function save() {
-    const id = wfId.trim(), name = wfName.trim();
-    if (!id)   { setError('Process ID is required'); return; }
-    if (!name) { setError('Process name is required'); return; }
-    if (/\s/.test(id)) { setError('Process ID must not contain spaces'); return; }
+    const name = wfName.trim();
+    if (!name) { setError('Введите название процесса'); return; }
+    let id = wfId.trim();
+    if (!id) {
+      id = slugify(name) || `process-${Date.now().toString(36)}`;
+      setWfId(id);
+    }
     setSaving(true); setError(null);
     try {
-      // Fetch fresh list to avoid stale-state POST/PUT mismatch
       const fresh = await api.workflows.list().catch(() => workflows);
       const exists = fresh.find(w => w.id === id);
-      const body = { id, name, elements, flow, ...(exists ? {} : { version: "1.0.0" }) } as unknown as Workflow;
+      const body = { id, name, elements, flow, ...(exists ? {} : { version: '1.0.0' }) } as unknown as Workflow;
       if (exists) await api.workflows.update(id, body);
       else        await api.workflows.create(body);
       refreshList();
@@ -496,21 +555,14 @@ export function ProcessEditor() {
     setSaving(false);
   }
 
-  /** Whether current wfId matches a known workflow (may be stale — fresh check happens on save) */
   const isKnown = workflows.some(w => w.id === wfId.trim());
 
-  // ── Load existing ───────────────────────────────────────────────────────────
   function loadWorkflow(id: string) {
     const wf = workflows.find(w => w.id === id);
     if (!wf) return;
-    setWfId(wf.id);
-    setWfName(wf.name || wf.id);
-    setElements([...wf.elements]);
-    setFlow([...(wf.flow || [])]);
-    setSelected(null);
-    setConnectFrom(null);
-    setMode('select');
-    // Auto-place elements in a grid
+    setWfId(wf.id); setWfName(wf.name || wf.id);
+    setElements([...wf.elements]); setFlow([...(wf.flow || [])]);
+    setSelected(null); setMultiSelected([]); setConnectFrom(null); setMode('select');
     const pos: Record<string, Pos> = {};
     wf.elements.forEach((el, i) => {
       const col = i % 6, row = Math.floor(i / 6);
@@ -519,11 +571,13 @@ export function ProcessEditor() {
     setPositions(pos);
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Derived ─────────────────────────────────────────────────────────────────
   const selEl = elements.find(e => e.id === selected);
-
   const canvasCursor = connectDrag ? 'crosshair' : mode === 'connect' ? 'crosshair'
-    : dragging ? 'grabbing' : 'default';
+    : (dragging || groupDrag) ? 'grabbing' : 'default';
+  const filteredWorkflows = sideSearch.trim()
+    ? workflows.filter(w => (w.name || w.id).toLowerCase().includes(sideSearch.toLowerCase()))
+    : workflows;
 
   return (
     <Layout activePage="editor.html">
@@ -533,30 +587,25 @@ export function ProcessEditor() {
         {/* ── Toolbar ── */}
         <div className="ipe-bar">
           <span style={{ color: '#94a3b8', fontSize: 12, flexShrink: 0 }}>Редактор процессов</span>
-          <div className="sep" />
-          <input
-            placeholder="Process name…"
-            value={wfName}
-            onChange={e => setWfName(e.target.value)}
-            style={{ width: 200 }}
-          />
-          <input
-            placeholder="ID (e.g. order-flow)…"
-            value={wfId}
-            onChange={e => setWfId(e.target.value)}
-            style={{ width: 180 }}
-          />
+          {wfName && (
+            <>
+              <div className="sep" />
+              <span style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 500, flexShrink: 0, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {wfName}
+              </span>
+            </>
+          )}
           <div className="sep" />
           <button
             className={mode === 'select' ? 'active' : ''}
             onClick={() => switchMode('select')}
-            title="Выбор и перемещение элементов (V)">
+            title="Выбор и перемещение элементов">
             ↖ Выбор
           </button>
           <button
             className={mode === 'connect' ? 'active' : ''}
             onClick={() => switchMode(mode === 'connect' ? 'select' : 'connect')}
-            title="Рисовать связи между элементами (C)">
+            title="Рисовать связи между элементами">
             ⟶ Связь
           </button>
           <div className="sep" />
@@ -582,30 +631,69 @@ export function ProcessEditor() {
             <div>
               <div className="proc-new-row">
                 <h3 style={{ margin: 0 }}>Процессы</h3>
-                <button className="btn-proc-new" onClick={newProcess}>+ Новый</button>
+                <button className="btn-proc-new" onClick={startCreatingNew}>+ Новый</button>
               </div>
+              {/* Search */}
+              <input
+                className="proc-search"
+                placeholder="Поиск по названию…"
+                value={sideSearch}
+                onChange={e => setSideSearch(e.target.value)}
+              />
+              {/* Inline new process input */}
+              {creatingNew && (
+                <input
+                  className="proc-new-input"
+                  autoFocus
+                  placeholder="Название нового процесса…"
+                  value={newProcName}
+                  onChange={e => setNewProcName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') commitNewProc();
+                    if (e.key === 'Escape') { setCreatingNew(false); setNewProcName(''); }
+                  }}
+                  onBlur={() => { if (!newProcName.trim()) { setCreatingNew(false); setNewProcName(''); } else commitNewProc(); }}
+                  style={{ marginBottom: 4 }}
+                />
+              )}
               <div className="proc-list">
-                {workflows.length === 0 && (
+                {filteredWorkflows.length === 0 && !creatingNew && (
                   <div style={{ fontSize: 11, color: '#94a3b8', padding: '4px 0' }}>Процессов пока нет</div>
                 )}
-                {workflows.map(w => (
+                {filteredWorkflows.map(w => (
                   <div
                     key={w.id}
                     className={`proc-item${wfId === w.id ? ' active' : ''}`}
-                    onClick={() => loadWorkflow(w.id)}
+                    onClick={() => { if (renamingWfId !== w.id) loadWorkflow(w.id); }}
+                    onDoubleClick={e => { e.stopPropagation(); startRename(w); }}
                     title={w.id}
                   >
-                    {w.name || w.id}
+                    {renamingWfId === w.id ? (
+                      <input
+                        className="proc-rename-input"
+                        autoFocus
+                        value={renamingVal}
+                        onChange={e => setRenamingVal(e.target.value)}
+                        onKeyDown={e => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') commitRename(w.id);
+                          if (e.key === 'Escape') setRenamingWfId(null);
+                        }}
+                        onBlur={() => commitRename(w.id)}
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="proc-item-name">{w.name || w.id}</span>
+                    )}
+                    {renamingWfId !== w.id && (
+                      <div className="proc-row-acts">
+                        <button title="Дублировать" onClick={e => { e.stopPropagation(); dupWorkflow(w); }}>📋</button>
+                        <button className="del-btn" title="Удалить" onClick={e => { e.stopPropagation(); delWorkflow(w); }}>🗑</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-              {wfId && (
-                <div className="proc-actions">
-                  <button onClick={renameProcess} title="Переименовать">✏️ Переименовать</button>
-                  <button onClick={duplicateProcess} title="Дублировать">⧉ Дублировать</button>
-                  <button className="btn-danger" onClick={deleteProcess} title="Удалить">🗑 Удалить</button>
-                </div>
-              )}
               <hr className="load-divider" />
             </div>
 
@@ -628,51 +716,37 @@ export function ProcessEditor() {
             {/* Properties panel */}
             {selEl && (
               <div>
-                <h3>Properties</h3>
+                <h3>Свойства</h3>
                 <div className="props-field">
-                  <label>Label</label>
-                  <input
-                    value={selEl.label}
-                    onChange={e => updateElement(selEl.id, { label: e.target.value })}
-                  />
+                  <label>Название</label>
+                  <input value={selEl.label} onChange={e => updateElement(selEl.id, { label: e.target.value })} />
                 </div>
                 {selEl.type === 'gateway' && (
                   <div className="props-field">
-                    <label>Operator</label>
-                    <select
-                      value={selEl.operator || 'AND'}
-                      onChange={e => updateElement(selEl.id, { operator: e.target.value })}>
-                      <option>AND</option>
-                      <option>OR</option>
-                      <option>XOR</option>
+                    <label>Оператор</label>
+                    <select value={selEl.operator || 'AND'} onChange={e => updateElement(selEl.id, { operator: e.target.value })}>
+                      <option>AND</option><option>OR</option><option>XOR</option>
                     </select>
                   </div>
                 )}
                 {selEl.type === 'function' && (
                   <div className="props-field">
-                    <label>Role</label>
+                    <label>Роль</label>
                     {roles.length > 0 ? (
-                      <select
-                        value={selEl.role || ''}
-                        onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })}>
-                        <option value="">— none —</option>
+                      <select value={selEl.role || ''} onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })}>
+                        <option value="">— нет —</option>
                         {roles.map(r => <option key={r.role_id} value={r.name}>{r.name}</option>)}
                         {selEl.role && !roles.some(r => r.name === selEl.role) &&
-                          <option value={selEl.role}>{selEl.role} (custom)</option>}
+                          <option value={selEl.role}>{selEl.role}</option>}
                       </select>
                     ) : (
-                      <input
-                        value={selEl.role || ''}
-                        placeholder="Assigned role…"
-                        onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })}
-                      />
+                      <input value={selEl.role || ''} placeholder="Назначенная роль…"
+                        onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })} />
                     )}
                   </div>
                 )}
                 <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', marginBottom: 4 }}>{selEl.id}</div>
-                <button className="btn-del-el" onClick={() => deleteElement(selEl.id)}>
-                  Удалить элемент
-                </button>
+                <button className="btn-del-el" onClick={() => deleteElement(selEl.id)}>Удалить элемент</button>
               </div>
             )}
 
@@ -682,9 +756,7 @@ export function ProcessEditor() {
                 <h3>Связи ({flow.length})</h3>
                 {flow.map(([f, t], i) => (
                   <div key={i} className="edge-item">
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {f} → {t}
-                    </span>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f} → {t}</span>
                     <button className="edge-del" onClick={() => removeEdge(f, t)}>✕</button>
                   </div>
                 ))}
@@ -693,40 +765,32 @@ export function ProcessEditor() {
           </div>
 
           {/* ── Resize handle ── */}
-          <div
-            className="ipe-resize"
-            onMouseDown={onResizeMouseDown}
-            title="Drag to resize panel"
-          />
+          <div className="ipe-resize" onMouseDown={onResizeMouseDown} title="Drag to resize panel" />
 
           {/* ── Canvas ── */}
           <div className="ipe-canvas">
             <svg
               ref={svgRef}
-              width={CW}
-              height={CH}
+              width={CW} height={CH}
               style={{ cursor: canvasCursor }}
+              onMouseDown={onSvgMouseDown}
               onMouseMove={onSvgMouseMove}
               onMouseUp={onSvgMouseUp}
               onMouseLeave={onSvgMouseUp}
               onClick={onSvgClick}
             >
               <defs>
-                {/* Dot grid */}
                 <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
                   <circle cx="1" cy="1" r="1" fill="#cbd5e1" />
                 </pattern>
-                {/* Arrowhead */}
                 <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
                   <path d="M0,0 L0,6 L8,3 z" fill="#6b7280" />
                 </marker>
-                {/* Highlighted arrowhead */}
                 <marker id="arr-hi" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
                   <path d="M0,0 L0,6 L8,3 z" fill="#6366f1" />
                 </marker>
               </defs>
 
-              {/* Background */}
               <rect width={CW} height={CH} fill="white" />
               <rect width={CW} height={CH} fill="url(#dots)" />
 
@@ -735,59 +799,59 @@ export function ProcessEditor() {
                 const fp = positions[fId], tp = positions[tId];
                 if (!fp || !tp) return null;
                 const d = orthogonalPath(fp, tp);
-                const isHighlighted = selected === fId || selected === tId;
-                // Role connections are undirected (ownership, not flow)
+                const isHighlighted = selected === fId || selected === tId
+                  || multiSelected.includes(fId) || multiSelected.includes(tId);
                 const srcType = elements.find(e => e.id === fId)?.type;
                 const dstType = elements.find(e => e.id === tId)?.type;
                 const isRoleEdge = srcType === 'role' || dstType === 'role';
-                const arrow = isRoleEdge ? undefined
-                  : isHighlighted ? 'url(#arr-hi)' : 'url(#arr)';
+                const arrow = isRoleEdge ? undefined : isHighlighted ? 'url(#arr-hi)' : 'url(#arr)';
                 return (
                   <g key={i}>
-                    <path
-                      d={d}
-                      stroke={isHighlighted ? '#6366f1' : isRoleEdge ? '#B7A000' : '#6b7280'}
-                      strokeWidth={isHighlighted ? 2 : 1.5}
-                      strokeDasharray={isRoleEdge ? '5 3' : undefined}
-                      fill="none"
-                      markerEnd={arrow}
-                    />
-                    {/* Wider invisible hit area for deletion */}
-                    <path
-                      d={d}
-                      stroke="transparent" strokeWidth={12} fill="none"
+                    <path d={d} stroke={isHighlighted ? '#6366f1' : isRoleEdge ? '#B7A000' : '#6b7280'}
+                      strokeWidth={isHighlighted ? 2 : 1.5} strokeDasharray={isRoleEdge ? '5 3' : undefined}
+                      fill="none" markerEnd={arrow} />
+                    <path d={d} stroke="transparent" strokeWidth={12} fill="none"
                       style={{ cursor: 'pointer' }}
-                      onClick={e => { e.stopPropagation(); removeEdge(fId, tId); }}
-                    />
+                      onClick={e => { e.stopPropagation(); removeEdge(fId, tId); }} />
                   </g>
                 );
               })}
 
               {/* ── Rubber-band connection line ── */}
               {connectDrag && (
-                <line
-                  x1={connectDrag.startX} y1={connectDrag.startY}
-                  x2={connectDrag.curX}   y2={connectDrag.curY}
-                  stroke="#6366f1" strokeWidth={1.5} strokeDasharray="6 3"
-                  pointerEvents="none"
-                />
+                <line x1={connectDrag.startX} y1={connectDrag.startY}
+                  x2={connectDrag.curX} y2={connectDrag.curY}
+                  stroke="#6366f1" strokeWidth={1.5} strokeDasharray="6 3" pointerEvents="none" />
               )}
+
+              {/* ── Marquee selection box ── */}
+              {marquee && (() => {
+                const x = Math.min(marquee.sx, marquee.ex);
+                const y = Math.min(marquee.sy, marquee.ey);
+                const w = Math.abs(marquee.ex - marquee.sx);
+                const h = Math.abs(marquee.ey - marquee.sy);
+                return (
+                  <rect x={x} y={y} width={w} height={h}
+                    fill="rgba(99,102,241,0.08)" stroke="#6366f1" strokeWidth={1.5}
+                    strokeDasharray="4 2" pointerEvents="none" />
+                );
+              })()}
 
               {/* ── Elements ── */}
               {elements.map(el => {
                 const pos = positions[el.id] || { x: 40, y: 40 };
-                const isSel   = selected    === el.id;
+                const isSel = selected === el.id || multiSelected.includes(el.id);
                 const isCFrom = connectFrom === el.id;
-                const elCursor = mode === 'select'
-                  ? (dragging?.id === el.id ? 'grabbing' : 'grab')
+                const elCursor = connectDrag ? 'crosshair'
+                  : mode === 'select' ? ((dragging?.id === el.id || groupDrag?.ids.includes(el.id)) ? 'grabbing' : 'grab')
                   : 'pointer';
                 const isEditingThis = editingId === el.id;
-                const showAnchors = hoveredEl === el.id && mode === 'select' && !dragging && !connectDrag;
+                const showAnchors = hoveredEl === el.id && mode === 'select' && !dragging && !groupDrag && !connectDrag && !marquee;
                 return (
                   <g
                     key={el.id}
                     transform={`translate(${pos.x},${pos.y})`}
-                    style={{ cursor: connectDrag ? 'crosshair' : elCursor }}
+                    style={{ cursor: elCursor }}
                     onMouseEnter={() => setHoveredEl(el.id)}
                     onMouseLeave={() => setHoveredEl(null)}
                     onMouseDown={e => { if (isEditingThis) e.stopPropagation(); else onElMouseDown(e, el.id); }}
@@ -808,14 +872,11 @@ export function ProcessEditor() {
                       { ax: 0,      ay: EH / 2 },
                       { ax: EW,     ay: EH / 2 },
                     ].map(({ ax, ay }, i) => (
-                      <circle
-                        key={i}
-                        cx={ax} cy={ay} r={5}
+                      <circle key={i} cx={ax} cy={ay} r={5}
                         fill="#6366f1" fillOpacity={0.85} stroke="white" strokeWidth={1.5}
                         style={{ cursor: 'crosshair' }}
                         onMouseDown={e2 => {
-                          e2.stopPropagation();
-                          e2.preventDefault();
+                          e2.stopPropagation(); e2.preventDefault();
                           const epos = positions[el.id] || { x: 0, y: 0 };
                           const sx = epos.x + ax, sy = epos.y + ay;
                           setConnectDrag({ fromId: el.id, startX: sx, startY: sy, curX: sx, curY: sy });
@@ -856,14 +917,9 @@ export function ProcessEditor() {
                 );
               })}
 
-              {/* Empty hint */}
               {elements.length === 0 && (
-                <text
-                  x={CW / 2} y={CH / 2}
-                  textAnchor="middle" dominantBaseline="middle"
-                  fontSize={14} fill="#94a3b8"
-                  fontFamily="system-ui,-apple-system,sans-serif"
-                  pointerEvents="none">
+                <text x={CW / 2} y={CH / 2} textAnchor="middle" dominantBaseline="middle"
+                  fontSize={14} fill="#94a3b8" fontFamily="system-ui,-apple-system,sans-serif" pointerEvents="none">
                   Кликните элемент в палитре, чтобы добавить его на холст
                 </text>
               )}
@@ -904,13 +960,10 @@ export function ProcessEditor() {
                   })}
             </div>
             <div className="picker-footer">
-              <button className="btn-custom" onClick={() => {
-                addElement(picker === 'is' ? 'information_system' : picker!);
-                setPicker(null);
-              }}>
-                + Add Custom
+              <button className="btn-custom" onClick={() => { addElement(picker === 'is' ? 'information_system' : picker!); setPicker(null); }}>
+                + Добавить своё
               </button>
-              <button className="btn-cancel" onClick={() => setPicker(null)}>Cancel</button>
+              <button className="btn-cancel" onClick={() => setPicker(null)}>Отмена</button>
             </div>
           </div>
         </div>
