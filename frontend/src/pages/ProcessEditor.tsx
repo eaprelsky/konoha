@@ -574,7 +574,12 @@ export function ProcessEditor() {
     try {
       const fresh = await api.workflows.list().catch(() => workflows);
       const exists = fresh.find(w => w.id === id);
-      const body = { id, name, elements, flow, ...(exists ? {} : { version: '1.0.0' }) } as unknown as Workflow;
+      const elementsWithPos = elements.map(el => ({
+        ...el,
+        x: positions[el.id]?.x ?? 0,
+        y: positions[el.id]?.y ?? 0,
+      }));
+      const body = { id, name, elements: elementsWithPos, flow, ...(exists ? {} : { version: '1.0.0' }) } as unknown as Workflow;
       let savedAsDraft = false;
       let validationMsg: string | null = null;
       try {
@@ -606,8 +611,12 @@ export function ProcessEditor() {
     setSelected(null); setMultiSelected([]); setConnectFrom(null); setMode('select');
     const pos: Record<string, Pos> = {};
     wf.elements.forEach((el, i) => {
-      const col = i % 6, row = Math.floor(i / 6);
-      pos[el.id] = { x: snap(40 + col * (EW + 60)), y: snap(40 + row * (EH + 80)) };
+      if (typeof el.x === 'number' && typeof el.y === 'number' && (el.x !== 0 || el.y !== 0)) {
+        pos[el.id] = { x: el.x, y: el.y };
+      } else {
+        const col = i % 6, row = Math.floor(i / 6);
+        pos[el.id] = { x: snap(40 + col * (EW + 60)), y: snap(40 + row * (EH + 80)) };
+      }
     });
     setPositions(pos);
   }

@@ -18,6 +18,8 @@ export interface WorkflowElement {
   role?: string;
   system?: string;
   operator?: string;
+  x?: number;
+  y?: number;
 }
 
 export interface WorkflowTrigger {
