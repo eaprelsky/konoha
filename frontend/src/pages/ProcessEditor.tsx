@@ -23,13 +23,22 @@ const CH = 960;   // canvas height
 
 // ── Element type palette ──────────────────────────────────────────────────────
 const PALETTE: { type: EType; label: string; fill: string; stroke: string }[] = [
-  { type: 'event',              label: 'Event',    fill: '#F5C4B3', stroke: '#993C1D' },
-  { type: 'function',           label: 'Function', fill: '#C0DD97', stroke: '#3B6D11' },
-  { type: 'gateway',            label: 'Gateway',  fill: '#E8F4FD', stroke: '#4B7BA8' },
-  { type: 'role',               label: 'Role',     fill: '#FFF9C4', stroke: '#B7A000' },
-  { type: 'document',           label: 'Document', fill: '#DBEAFE', stroke: '#3B82F6' },
+  { type: 'event',              label: 'Событие',  fill: '#F5C4B3', stroke: '#993C1D' },
+  { type: 'function',           label: 'Функция',  fill: '#C0DD97', stroke: '#3B6D11' },
+  { type: 'gateway',            label: 'Шлюз',     fill: '#E8F4FD', stroke: '#4B7BA8' },
+  { type: 'role',               label: 'Роль',     fill: '#FFF9C4', stroke: '#B7A000' },
+  { type: 'document',           label: 'Документ', fill: '#DBEAFE', stroke: '#3B82F6' },
   { type: 'information_system', label: 'IS',       fill: '#E0F2FE', stroke: '#0EA5E9' },
 ];
+
+const DEFAULT_LABELS: Record<EType, string> = {
+  event:              'Новое событие',
+  function:           'Новая функция',
+  gateway:            'Новый шлюз',
+  role:               'Новая роль',
+  document:           'Новый документ',
+  information_system: 'Новая ИС',
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function genId(type: EType, els: WorkflowElement[]): string {
@@ -341,7 +350,7 @@ export function ProcessEditor() {
     const idx = elements.length;
     const col = idx % 6, row = Math.floor(idx / 6);
     const pos: Pos = { x: snap(40 + col * (EW + 60)), y: snap(40 + row * (EH + 80)) };
-    const el: WorkflowElement = { id, type, label: label || `New ${PALETTE.find(p => p.type === type)?.label || type}` };
+    const el: WorkflowElement = { id, type, label: label || DEFAULT_LABELS[type] || type };
     if (type === 'gateway') el.operator = 'AND';
     if (refId) (el as any).ref_id = refId;
     setElements(prev => [...prev, el]);
@@ -523,7 +532,7 @@ export function ProcessEditor() {
 
         {/* ── Toolbar ── */}
         <div className="ipe-bar">
-          <span style={{ color: '#94a3b8', fontSize: 12, flexShrink: 0 }}>Process Editor</span>
+          <span style={{ color: '#94a3b8', fontSize: 12, flexShrink: 0 }}>Редактор процессов</span>
           <div className="sep" />
           <input
             placeholder="Process name…"
@@ -541,25 +550,25 @@ export function ProcessEditor() {
           <button
             className={mode === 'select' ? 'active' : ''}
             onClick={() => switchMode('select')}
-            title="Select & drag elements (V)">
-            ↖ Select
+            title="Выбор и перемещение элементов (V)">
+            ↖ Выбор
           </button>
           <button
             className={mode === 'connect' ? 'active' : ''}
             onClick={() => switchMode(mode === 'connect' ? 'select' : 'connect')}
-            title="Draw connections between elements (C)">
-            ⟶ Connect
+            title="Рисовать связи между элементами (C)">
+            ⟶ Связь
           </button>
           <div className="sep" />
           <button className="btn-save" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : isKnown ? '💾 Update' : '💾 Save New'}
+            {saving ? 'Сохранение…' : isKnown ? '💾 Обновить' : '💾 Сохранить'}
           </button>
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}
           {mode === 'connect' && (
             <span className="hint">
               {connectFrom
-                ? `Source: ${connectFrom} — click target element`
-                : 'Click source element…'}
+                ? `Источник: ${connectFrom} — кликните целевой элемент`
+                : 'Кликните исходный элемент…'}
             </span>
           )}
         </div>
@@ -592,9 +601,9 @@ export function ProcessEditor() {
               </div>
               {wfId && (
                 <div className="proc-actions">
-                  <button onClick={renameProcess} title="Переименовать">✏️ Rename</button>
-                  <button onClick={duplicateProcess} title="Дублировать">⧉ Dup</button>
-                  <button className="btn-danger" onClick={deleteProcess} title="Удалить">🗑 Del</button>
+                  <button onClick={renameProcess} title="Переименовать">✏️ Переименовать</button>
+                  <button onClick={duplicateProcess} title="Дублировать">⧉ Дублировать</button>
+                  <button className="btn-danger" onClick={deleteProcess} title="Удалить">🗑 Удалить</button>
                 </div>
               )}
               <hr className="load-divider" />
@@ -602,7 +611,7 @@ export function ProcessEditor() {
 
             {/* Element palette */}
             <div>
-              <h3>Add Element</h3>
+              <h3>Добавить элемент</h3>
               {PALETTE.map(p => (
                 <div key={p.type} className="pal-item" onClick={() => paletteClick(p.type)}>
                   <div className="pal-dot" style={{ background: p.fill, border: `1px solid ${p.stroke}` }} />
@@ -662,7 +671,7 @@ export function ProcessEditor() {
                 )}
                 <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', marginBottom: 4 }}>{selEl.id}</div>
                 <button className="btn-del-el" onClick={() => deleteElement(selEl.id)}>
-                  Delete Element
+                  Удалить элемент
                 </button>
               </div>
             )}
@@ -670,7 +679,7 @@ export function ProcessEditor() {
             {/* Connection list */}
             {flow.length > 0 && (
               <div>
-                <h3>Connections ({flow.length})</h3>
+                <h3>Связи ({flow.length})</h3>
                 {flow.map(([f, t], i) => (
                   <div key={i} className="edge-item">
                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -855,7 +864,7 @@ export function ProcessEditor() {
                   fontSize={14} fill="#94a3b8"
                   fontFamily="system-ui,-apple-system,sans-serif"
                   pointerEvents="none">
-                  Click elements in the palette to add them to the canvas
+                  Кликните элемент в палитре, чтобы добавить его на холст
                 </text>
               )}
             </svg>
@@ -868,9 +877,9 @@ export function ProcessEditor() {
         <div className="picker-overlay" onClick={() => setPicker(null)}>
           <div className="picker-box" onClick={e => e.stopPropagation()}>
             <h3>
-              {picker === 'role' ? '👤 Select Role'
-               : picker === 'document' ? '📄 Select Document'
-               : '🖥 Select Information System'}
+              {picker === 'role' ? '👤 Выбрать роль'
+               : picker === 'document' ? '📄 Выбрать документ'
+               : '🖥 Выбрать информационную систему'}
             </h3>
             <div className="picker-list">
               {picker === 'is'
