@@ -4,7 +4,7 @@ import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { Reminder, ReminderStatus } from '../api/types';
+import type { Reminder, ReminderStatus, Agent } from '../api/types';
 
 const styles = `
   .rm-body { padding: 20px; }
@@ -74,16 +74,28 @@ function NewReminderModal({ onClose, onCreated }: NewReminderModalProps) {
   const [channel, setChannel] = useState<'gui' | 'telegram' | 'email'>('gui');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [people, setPeople] = useState<{ name: string; label: string; group: string }[]>([]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', h);
+    Promise.all([
+      api.people.list().catch(() => []),
+      api.agents.list().catch(() => [] as Agent[]),
+    ]).then(([ps, ags]) => {
+      const opts = [
+        ...ps.map((p: any) => ({ name: p.name, label: p.name, group: 'Люди' })),
+        ...ags.map((a: Agent) => ({ name: a.name, label: a.name, group: 'Агенты' })),
+      ];
+      setPeople(opts);
+      if (opts.length > 0 && !recipient) setRecipient(opts[0].name);
+    });
     return () => document.removeEventListener('keydown', h);
-  }, [onClose]);
+  }, [onClose]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!recipient.trim() || !message.trim() || !scheduledAt) {
+    if (!recipient || !message.trim() || !scheduledAt) {
       setError('Заполните получателя, сообщение и время');
       return;
     }
@@ -91,7 +103,7 @@ function NewReminderModal({ onClose, onCreated }: NewReminderModalProps) {
     setError(null);
     try {
       await api.reminders.create({
-        recipient: recipient.trim(),
+        recipient,
         message: message.trim(),
         scheduled_at: new Date(scheduledAt).toISOString(),
         channel,
@@ -113,8 +125,18 @@ function NewReminderModal({ onClose, onCreated }: NewReminderModalProps) {
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>Получатель *</label>
-            <input type="text" placeholder="Роль, имя агента..." value={recipient}
-              onChange={e => setRecipient(e.target.value)} autoFocus required />
+            <select value={recipient} onChange={e => setRecipient(e.target.value)} autoFocus required>
+              {people.length === 0 && <option value="">Загрузка…</option>}
+              {['Люди', 'Агенты'].map(g => {
+                const grp = people.filter(p => p.group === g);
+                if (!grp.length) return null;
+                return (
+                  <optgroup key={g} label={g}>
+                    {grp.map(p => <option key={p.name} value={p.name}>{p.label}</option>)}
+                  </optgroup>
+                );
+              })}
+            </select>
           </div>
           <div className="form-group">
             <label>Сообщение *</label>
