@@ -134,22 +134,26 @@ const CSS = `
   .ipe-bar button.btn-save:hover { background:#15803d; }
   .ipe-bar .hint { font-size:11px; color:#fbbf24; }
   .ipe-body { display:flex; flex:1; overflow:hidden; }
-  .ipe-side { width:192px; flex-shrink:0; background:white; border-right:1px solid #e2e8f0; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:14px; }
+  .ipe-side { flex-shrink:0; background:white; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:14px; min-width:160px; max-width:480px; }
   .ipe-side h3 { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; margin:0 0 6px; letter-spacing:.05em; }
+  .ipe-resize { width:5px; flex-shrink:0; cursor:col-resize; background:#e2e8f0; transition:background .15s; z-index:10; }
+  .ipe-resize:hover, .ipe-resize.dragging { background:#94a3b8; }
   .pal-item { display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid #e2e8f0; border-radius:6px; cursor:pointer; font-size:13px; user-select:none; }
   .pal-item:hover { background:#eff6ff; border-color:#bfdbfe; }
   .pal-dot { width:13px; height:13px; border-radius:3px; flex-shrink:0; }
   .props-field { display:flex; flex-direction:column; gap:3px; margin-bottom:8px; }
   .props-field label { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; }
-  .props-field input,.props-field select { padding:5px 8px; border:1px solid #ddd; border-radius:4px; font-size:12px; font-family:inherit; }
+  .props-field input,.props-field select { padding:5px 8px; border:1px solid #ddd; border-radius:4px; font-size:12px; font-family:inherit; width:100%; box-sizing:border-box; }
   .edge-item { display:flex; align-items:center; gap:4px; font-size:11px; padding:2px 0; font-family:monospace; }
   .edge-del { background:none; border:none; color:#ef4444; cursor:pointer; font-size:14px; padding:0 2px; flex-shrink:0; }
   .ipe-canvas { flex:1; overflow:auto; }
   .ipe-canvas svg { display:block; }
   .error-bar { background:#fee; color:#c33; padding:6px 10px; font-size:12px; border-left:3px solid #c33; }
-  .load-row { display:flex; gap:6px; }
-  .load-row select { flex:1; padding:5px 7px; border:1px solid #ddd; border-radius:4px; font-size:12px; }
-  .load-row button { padding:5px 10px; background:#0066cc; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; }
+  .load-select { width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:4px; font-size:13px; box-sizing:border-box; margin-bottom:6px; }
+  .btn-load { width:100%; padding:7px; background:#0066cc; color:white; border:none; border-radius:4px; cursor:pointer; font-size:13px; font-weight:500; }
+  .btn-load:hover { background:#0052a3; }
+  .btn-load:disabled { background:#94a3b8; cursor:default; }
+  .load-divider { border:none; border-top:1px solid #e2e8f0; margin:4px 0 10px; }
   .btn-del-el { width:100%; padding:5px; font-size:12px; background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:6px; }
 `;
 
@@ -169,7 +173,11 @@ export function ProcessEditor() {
   const [saving, setSaving] = useState(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loadId,  setLoadId]  = useState('');
-  const svgRef = useRef<SVGSVGElement>(null);
+  const [sideW,   setSideW]   = useState(240);
+  const svgRef    = useRef<SVGSVGElement>(null);
+  const resizing  = useRef(false);
+  const resizeStartX = useRef(0);
+  const resizeStartW = useRef(240);
 
   // ── Load workflow list ──────────────────────────────────────────────────────
   const refreshList = useCallback(() => {
@@ -189,6 +197,26 @@ export function ProcessEditor() {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [selected]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Sidebar resize ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizing.current) return;
+      const delta = e.clientX - resizeStartX.current;
+      setSideW(Math.max(160, Math.min(480, resizeStartW.current + delta)));
+    };
+    const onUp = () => { resizing.current = false; };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  function onResizeMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    resizing.current = true;
+    resizeStartX.current = e.clientX;
+    resizeStartW.current = sideW;
+  }
 
   // ── Element management ──────────────────────────────────────────────────────
   function addElement(type: EType) {
@@ -370,20 +398,29 @@ export function ProcessEditor() {
         <div className="ipe-body">
 
           {/* ── Sidebar ── */}
-          <div className="ipe-side">
+          <div className="ipe-side" style={{ width: sideW }}>
 
             {/* Load process */}
             <div>
-              <h3>Load Process</h3>
-              <div className="load-row">
-                <select value={loadId} onChange={e => setLoadId(e.target.value)}>
-                  <option value="">— select —</option>
-                  {workflows.map(w => (
-                    <option key={w.id} value={w.id}>{w.name || w.id}</option>
-                  ))}
-                </select>
-                <button onClick={() => loadWorkflow(loadId)} disabled={!loadId}>Load</button>
-              </div>
+              <h3>📂 Load Existing Process</h3>
+              <select
+                className="load-select"
+                value={loadId}
+                onChange={e => setLoadId(e.target.value)}
+              >
+                <option value="">— choose a process —</option>
+                {workflows.map(w => (
+                  <option key={w.id} value={w.id}>{w.name || w.id}</option>
+                ))}
+              </select>
+              <button
+                className="btn-load"
+                onClick={() => { loadWorkflow(loadId); setLoadId(''); }}
+                disabled={!loadId}
+              >
+                ↓ Load Process
+              </button>
+              <hr className="load-divider" />
             </div>
 
             {/* Element palette */}
@@ -452,6 +489,13 @@ export function ProcessEditor() {
               </div>
             )}
           </div>
+
+          {/* ── Resize handle ── */}
+          <div
+            className="ipe-resize"
+            onMouseDown={onResizeMouseDown}
+            title="Drag to resize panel"
+          />
 
           {/* ── Canvas ── */}
           <div className="ipe-canvas">
