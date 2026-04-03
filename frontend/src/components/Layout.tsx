@@ -1,5 +1,17 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { useI18n } from '../context/I18nContext';
+
+export function isLoggedIn(): boolean {
+  return localStorage.getItem('konoha_dash_auth') === '1';
+}
+
+function useAuthGuard() {
+  useEffect(() => {
+    if (!isLoggedIn()) {
+      window.location.replace('/ui/login.html');
+    }
+  }, []);
+}
 
 // CSS matching vanilla HTML for e2e test compatibility
 const styles = `
@@ -13,6 +25,8 @@ const styles = `
   .lang-btn { padding: 3px 8px; border-radius: 4px; border: 1px solid #334155; background: transparent; color: #94a3b8; font-size: 12px; cursor: pointer; }
   .lang-btn.active { background: #334155; color: #f8fafc; }
   .lang-btn:hover { background: #1e293b; color: #f8fafc; }
+  .logout-btn { padding: 3px 10px; border-radius: 4px; border: 1px solid #334155; background: transparent; color: #94a3b8; font-size: 12px; cursor: pointer; margin-left: 8px; }
+  .logout-btn:hover { background: #7f1d1d; color: #fca5a5; border-color: #7f1d1d; }
   nav { display: flex; gap: 4px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }
   nav a { padding: 7px 16px; border-radius: 6px; text-decoration: none; color: #475569; font-size: 14px; }
   nav a:hover, nav a.active { background: #f1f5f9; color: #0f172a; font-weight: 500; }
@@ -43,6 +57,7 @@ interface LayoutProps {
 }
 
 export function Layout({ children, activePage, subtitle }: LayoutProps) {
+  useAuthGuard();
   const { lang, setLang, t } = useI18n();
 
   return (
@@ -56,6 +71,9 @@ export function Layout({ children, activePage, subtitle }: LayoutProps) {
           <button className={`lang-btn${lang === 'en' ? ' active' : ''}`} onClick={() => setLang('en')}>EN</button>
           <button className={`lang-btn${lang === 'ru' ? ' active' : ''}`} onClick={() => setLang('ru')}>RU</button>
         </div>
+        <button className="logout-btn" onClick={() => { localStorage.removeItem('konoha_dash_auth'); window.location.replace('/ui/login.html'); }}>
+          Logout
+        </button>
       </header>
       <nav>
         {NAV_LINKS.map(({ href, key, fallback }) => (
