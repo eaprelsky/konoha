@@ -9,7 +9,7 @@ import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions } from "./workflow-loader";
 import { normalizeElementNames } from "./normalizer";
-import { createCase, getCase, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, purgeAllWorkItems, createRole, listRoles, updateRole, deleteRole, createDoc, listDocs, updateDoc, deleteDoc, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType, type AssignmentStrategy, type DocType } from "./runtime";
+import { createCase, getCase, getWorkItem, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, purgeAllWorkItems, createRole, listRoles, updateRole, deleteRole, createDoc, listDocs, updateDoc, deleteDoc, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType, type AssignmentStrategy, type DocType } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
 import {
   registerAgent,
@@ -915,6 +915,142 @@ app.delete("/people/:id", requireAuth, async (c) => {
   const deleted = await redis.hdel(PEOPLE_CUSTOM_KEY, id);
   if (!deleted) return c.json({ error: "Not found" }, 404);
   return c.json({ ok: true });
+});
+
+// --- Process Mining ---
+
+app.use("/mining/*", requireAuth);
+
+app.get("/mining/process/:id", async (c) => {
+  const process_id = c.req.param("id");
+
+  // Load workflow definition for designed elements and edges
+  const wf = await getWorkflow(process_id).catch(() => null);
+  const designedElements = new Set<string>(wf?.elements.map(e => e.id) || []);
+  const designedEdges = new Set<string>((wf?.flow || []).map(([f, t]) => `${f}:${t}`));
+
+  // Load all cases for this process
+  const { cases } = await listCases({ process_id, limit: 1000 });
+
+  // Per-element stats
+  const elementVisits: Record<string, number> = {};
+  const edgeCounts: Record<string, number> = {};
+
+  for (const kase of cases) {
+    const history = kase.history;
+    for (const entry of history) {
+      elementVisits[entry.element_id] = (elementVisits[entry.element_id] || 0) + 1;
+    }
+    // Edge traversal from consecutive history entries
+    for (let i = 0; i < history.length - 1; i++) {
+      const edgeKey = `${history[i].element_id}:${history[i + 1].element_id}`;
+      edgeCounts[edgeKey] = (edgeCounts[edgeKey] || 0) + 1;
+    }
+  }
+
+  // Load work items for duration analysis
+  const workItems = await listWorkItems({ process_id });
+  const durationsByElement: Record<string, number[]> = {};
+  for (const wi of workItems) {
+    if (!wi.element_id || wi.status !== "done") continue;
+    const ms = new Date(wi.updated_at).getTime() - new Date(wi.created_at).getTime();
+    if (ms < 0) continue;
+    if (!durationsByElement[wi.element_id]) durationsByElement[wi.element_id] = [];
+    durationsByElement[wi.element_id].push(ms);
+  }
+
+  function median(arr: number[]): number | null {
+    if (!arr.length) return null;
+    const s = [...arr].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
+  }
+  function avg(arr: number[]): number | null {
+    if (!arr.length) return null;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  }
+
+  // Build per-element result
+  const allElementIds = new Set([...designedElements, ...Object.keys(elementVisits)]);
+  const elementStats: Record<string, {
+    label: string; type: string;
+    visit_count: number;
+    avg_duration_ms: number | null;
+    max_duration_ms: number | null;
+    p50_duration_ms: number | null;
+  }> = {};
+
+  for (const id of allElementIds) {
+    const el = wf?.elements.find(e => e.id === id);
+    const durations = durationsByElement[id] || [];
+    elementStats[id] = {
+      label: el?.label || id,
+      type: el?.type || "unknown",
+      visit_count: elementVisits[id] || 0,
+      avg_duration_ms: avg(durations),
+      max_duration_ms: durations.length ? Math.max(...durations) : null,
+      p50_duration_ms: median(durations),
+    };
+  }
+
+  // Bottleneck: highest avg_duration among function elements with data
+  let bottleneckId: string | null = null;
+  let maxAvg = -1;
+  for (const [id, stat] of Object.entries(elementStats)) {
+    if (stat.avg_duration_ms !== null && stat.avg_duration_ms > maxAvg) {
+      maxAvg = stat.avg_duration_ms;
+      bottleneckId = id;
+    }
+  }
+
+  // Deviation: visited elements not in designed schema
+  const deviationElements = Object.keys(elementVisits).filter(id => !designedElements.has(id));
+  // Skipped: designed elements never visited across all cases
+  const skippedElements = [...designedElements].filter(id => !elementVisits[id]);
+
+  // Build edge result
+  const allEdgeKeys = new Set([...designedEdges, ...Object.keys(edgeCounts)]);
+  const edges: Record<string, { count: number; is_designed: boolean }> = {};
+  for (const key of allEdgeKeys) {
+    edges[key] = {
+      count: edgeCounts[key] || 0,
+      is_designed: designedEdges.has(key),
+    };
+  }
+
+  return c.json({
+    process_id,
+    case_count: cases.length,
+    elements: elementStats,
+    edges,
+    bottleneck_element_id: bottleneckId,
+    deviation_elements: deviationElements,
+    skipped_elements: skippedElements,
+  });
+});
+
+app.get("/mining/case/:id", async (c) => {
+  const case_id = c.req.param("id");
+  const kase = await getCase(case_id);
+  if (!kase) return c.json({ error: "Case not found" }, 404);
+
+  // Enrich history with work item durations
+  const enriched = await Promise.all(kase.history.map(async entry => {
+    if (!entry.work_item_id) return { ...entry, duration_ms: null };
+    const wi = await getWorkItem(entry.work_item_id);
+    const duration_ms = wi && wi.status === "done"
+      ? new Date(wi.updated_at).getTime() - new Date(wi.created_at).getTime()
+      : null;
+    return { ...entry, duration_ms };
+  }));
+
+  return c.json({
+    case_id,
+    process_id: kase.process_id,
+    status: kase.status,
+    created_at: kase.created_at,
+    history: enriched,
+  });
 });
 
 // --- Avatar Generation ---

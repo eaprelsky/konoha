@@ -232,6 +232,25 @@ export interface KbNode {
   children?: KbNode[];
 }
 
+export interface MiningElementStat {
+  label: string;
+  type: string;
+  visit_count: number;
+  avg_duration_ms: number | null;
+  max_duration_ms: number | null;
+  p50_duration_ms: number | null;
+}
+
+export interface ProcessMiningData {
+  process_id: string;
+  case_count: number;
+  elements: Record<string, MiningElementStat>;
+  edges: Record<string, { count: number; is_designed: boolean }>;
+  bottleneck_element_id: string | null;
+  deviation_elements: string[];
+  skipped_elements: string[];
+}
+
 export interface KibaAction {
   label: string;
   type: 'start_agent' | 'stop_agent' | 'restart_agent' | 'delete_agent' | 'create_role' | 'delete_role';

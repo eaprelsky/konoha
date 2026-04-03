@@ -192,6 +192,11 @@ async function saveWorkItem(wi: WorkItem, prevStatus?: WorkItemStatus, prevAssig
   await redis.zadd(WORKITEMS_IDX_ALL, new Date(wi.created_at).getTime(), wi.work_item_id);
 }
 
+export async function getWorkItem(work_item_id: string): Promise<WorkItem | null> {
+  const raw = await redis.get(WORKITEM_KEY_PREFIX + work_item_id);
+  return raw ? JSON.parse(raw) : null;
+}
+
 async function loadWorkItem(work_item_id: string): Promise<WorkItem | null> {
   const raw = await redis.get(WORKITEM_KEY_PREFIX + work_item_id);
   return raw ? JSON.parse(raw) : null;

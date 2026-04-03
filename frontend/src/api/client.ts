@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction, Skill } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction, Skill, ProcessMiningData } from './types';
 export type { KibaAction };
 
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
@@ -208,6 +208,10 @@ export const api = {
       }),
     clearChat: (chat_id: string) =>
       apiFetch<{ ok: boolean }>(`${BASE}/ai/admin-chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+  },
+
+  mining: {
+    process: (id: string) => apiFetch<ProcessMiningData>(`${BASE}/mining/process/${encodeURIComponent(id)}`),
   },
 
   skills: {

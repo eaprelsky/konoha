@@ -7,7 +7,7 @@ import type React from 'react';
 import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
-import type { Workflow, WorkflowElement, RoleDef, DocTemplate } from '../api/types';
+import type { Workflow, WorkflowElement, RoleDef, DocTemplate, ProcessMiningData } from '../api/types';
 
 type EType = WorkflowElement['type'];
 type Pos = { x: number; y: number };
@@ -274,6 +274,8 @@ const CSS = `
   /* Sub-process drill-down badge on function node */
   .drill-badge { cursor:pointer; opacity:0; transition:opacity .15s; }
   .drill-badge:hover { opacity:1 !important; }
+  /* Process mining overlay */
+  .mining-badge { pointer-events:none; font-family:system-ui,-apple-system,sans-serif; }
   /* Draft warning popover */
   .warn-wrap { position:relative; cursor:help; }
   .warn-pop { display:none; position:absolute; top:calc(100% + 6px); left:0; background:#1e293b; border:1px solid #fbbf24; border-radius:6px; padding:8px 12px; min-width:300px; max-width:460px; z-index:200; box-shadow:0 8px 24px rgba(0,0,0,.4); }
@@ -337,6 +339,10 @@ export function ProcessEditor() {
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [zoom, setZoom] = useState(1);
+  // Process mining overlay
+  const [showMining, setShowMining] = useState(false);
+  const [miningData, setMiningData] = useState<ProcessMiningData | null>(null);
+  const [miningLoading, setMiningLoading] = useState(false);
 
   const svgRef        = useRef<SVGSVGElement>(null);
   const resizing      = useRef(false);
@@ -753,6 +759,30 @@ export function ProcessEditor() {
 
   const isKnown = workflows.some(w => w.id === wfId.trim());
 
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+  function formatDuration(ms: number): string {
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+    return `${(ms / 3600000).toFixed(1)}h`;
+  }
+
+  // ── Process mining ───────────────────────────────────────────────────────────
+  async function toggleMining() {
+    if (showMining) { setShowMining(false); return; }
+    if (!wfId.trim()) return;
+    setShowMining(true);
+    setMiningLoading(true);
+    try {
+      const data = await api.mining.process(wfId.trim());
+      setMiningData(data);
+    } catch {
+      setMiningData(null);
+    } finally {
+      setMiningLoading(false);
+    }
+  }
+
   // ── Tsunade chat ─────────────────────────────────────────────────────────────
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -764,7 +794,20 @@ export function ProcessEditor() {
     setChatInput('');
     setChatMsgs(prev => [...prev, { role: 'user', text: msg }]);
     setChatBusy(true);
-    const schema = { id: wfId, name: wfName, elements, flow, positions };
+    const schema: Record<string, unknown> = { id: wfId, name: wfName, elements, flow, positions };
+    if (showMining && miningData) {
+      schema.mining = {
+        case_count: miningData.case_count,
+        bottleneck_element_id: miningData.bottleneck_element_id,
+        skipped_elements: miningData.skipped_elements,
+        deviation_elements: miningData.deviation_elements,
+        elements: Object.fromEntries(
+          Object.entries(miningData.elements).map(([id, s]) => [id, {
+            label: s.label, visit_count: s.visit_count, avg_duration_ms: s.avg_duration_ms,
+          }])
+        ),
+      };
+    }
     try {
       const res = await api.tsunade.chat({ message: msg, schema, chat_id: chatId ?? undefined });
       if (!chatId) setChatId(res.chat_id);
@@ -1007,6 +1050,16 @@ export function ProcessEditor() {
           <button className={`btn-tsunade${showChat ? ' active' : ''}`} onClick={() => setShowChat(v => !v)}>
             💬 Цунаде
           </button>
+          {wfId.trim() && (
+            <button
+              className={showMining ? 'active' : ''}
+              onClick={toggleMining}
+              title="Process Mining — overlay actual execution stats on canvas"
+              style={{ background: showMining ? '#065f46' : '#1e3a2f', borderColor: '#10b981' }}
+            >
+              {miningLoading ? '⏳' : '⛏'} Mining
+            </button>
+          )}
           {autosavePending && !saving && <span style={{ color: '#94a3b8', fontSize: 11 }}>автосохранение…</span>}
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}
           {draftWarning && (
@@ -1289,6 +1342,34 @@ export function ProcessEditor() {
                 ))}
               </div>
             )}
+
+            {/* Mining summary panel */}
+            {showMining && miningData && (
+              <div>
+                <h3>⛏ Mining — {miningData.case_count} case(s)</h3>
+                {miningData.bottleneck_element_id && (
+                  <div style={{ fontSize: 11, color: '#fca5a5', background: '#450a0a', padding: '4px 8px', borderRadius: 4, marginBottom: 6 }}>
+                    🔥 Bottleneck: {miningData.elements[miningData.bottleneck_element_id]?.label || miningData.bottleneck_element_id}
+                    {miningData.elements[miningData.bottleneck_element_id]?.avg_duration_ms != null && (
+                      <span> — {formatDuration(miningData.elements[miningData.bottleneck_element_id]!.avg_duration_ms!)}</span>
+                    )}
+                  </div>
+                )}
+                {miningData.skipped_elements.length > 0 && (
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
+                    ⬜ Skipped: {miningData.skipped_elements.map(id => miningData.elements[id]?.label || id).join(', ')}
+                  </div>
+                )}
+                {miningData.deviation_elements.length > 0 && (
+                  <div style={{ fontSize: 11, color: '#fbbf24', marginBottom: 4 }}>
+                    ⚠ Deviation: {miningData.deviation_elements.map(id => miningData.elements[id]?.label || id).join(', ')}
+                  </div>
+                )}
+                <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>
+                  Hover elements on canvas for stats
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Resize handle ── */}
@@ -1337,10 +1418,26 @@ export function ProcessEditor() {
                   || multiSelected.includes(fId) || multiSelected.includes(tId);
                 const isRoleEdge = srcType === 'role' || dstType === 'role';
                 const arrow = isRoleEdge ? undefined : isHighlighted ? 'url(#arr-hi)' : 'url(#arr)';
+                // Mining edge overlay
+                const miningEdge = showMining && miningData
+                  ? miningData.edges[`${fId}:${tId}`]
+                  : null;
+                const edgeCount = miningEdge?.count ?? 0;
+                const maxEdgeCount = showMining && miningData
+                  ? Math.max(1, ...Object.values(miningData.edges).map(e => e.count))
+                  : 1;
+                const miningStroke = showMining && miningData
+                  ? (edgeCount === 0 ? '#374151' : `rgba(16,185,129,${0.3 + 0.7 * edgeCount / maxEdgeCount})`)
+                  : null;
+                const miningWidth = showMining && miningData
+                  ? (edgeCount === 0 ? 0.5 : 1.5 + 3 * edgeCount / maxEdgeCount)
+                  : null;
                 return (
                   <g key={i}>
-                    <path d={d} stroke={isHighlighted ? '#6366f1' : isRoleEdge ? '#B7A000' : '#6b7280'}
-                      strokeWidth={isHighlighted ? 2 : 1.5} strokeDasharray={isRoleEdge ? '5 3' : undefined}
+                    <path d={d}
+                      stroke={miningStroke || (isHighlighted ? '#6366f1' : isRoleEdge ? '#B7A000' : '#6b7280')}
+                      strokeWidth={miningWidth ?? (isHighlighted ? 2 : 1.5)}
+                      strokeDasharray={!showMining && isRoleEdge ? '5 3' : (showMining && edgeCount === 0 ? '4 3' : undefined)}
                       fill="none" markerEnd={arrow} />
                     <path d={d} stroke="transparent" strokeWidth={12} fill="none"
                       style={{ cursor: 'pointer' }}
@@ -1436,6 +1533,46 @@ export function ProcessEditor() {
                         fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none"
                         title="Заблокировано (граница под-процесса)">🔒</text>
                     )}
+                    {/* Mining overlay badges */}
+                    {showMining && miningData && (() => {
+                      const stat = miningData.elements[el.id];
+                      const isBottleneck = miningData.bottleneck_element_id === el.id;
+                      const isDeviation = miningData.deviation_elements.includes(el.id);
+                      const isSkipped = miningData.skipped_elements.includes(el.id);
+                      if (!stat && !isSkipped) return null;
+                      const visits = stat?.visit_count ?? 0;
+                      const avgMs = stat?.avg_duration_ms ?? null;
+                      // Bottleneck glow
+                      const glowColor = isBottleneck ? '#ef4444' : isDeviation ? '#f59e0b' : null;
+                      return (
+                        <g className="mining-badge">
+                          {/* Background glow for bottleneck/deviation */}
+                          {glowColor && (
+                            <rect x={-3} y={-3} width={EW + 6} height={EH + 6}
+                              rx={el.type === 'gateway' ? EH / 2 + 3 : 12}
+                              fill="none" stroke={glowColor} strokeWidth={3} opacity={0.6} />
+                          )}
+                          {/* Visit count badge (top-left) */}
+                          <rect x={0} y={0} width={28} height={16} rx={4}
+                            fill={visits > 0 ? '#1e40af' : '#374151'} opacity={0.9} />
+                          <text x={14} y={8} textAnchor="middle" dominantBaseline="middle"
+                            fontSize={9} fill="white">
+                            {visits > 0 ? `×${visits}` : 'skip'}
+                          </text>
+                          {/* Duration badge (bottom-center) */}
+                          {avgMs !== null && (
+                            <>
+                              <rect x={EW / 2 - 24} y={EH - 16} width={48} height={14} rx={3}
+                                fill={isBottleneck ? '#991b1b' : '#065f46'} opacity={0.9} />
+                              <text x={EW / 2} y={EH - 9} textAnchor="middle" dominantBaseline="middle"
+                                fontSize={8} fill="white">
+                                ⌛{formatDuration(avgMs)}
+                              </text>
+                            </>
+                          )}
+                        </g>
+                      );
+                    })()}
                     {showAnchors && anchors.map(({ ax, ay }, i) => (
                       <circle key={i} cx={ax} cy={ay} r={5}
                         fill="#6366f1" fillOpacity={0.85} stroke="white" strokeWidth={1.5}
