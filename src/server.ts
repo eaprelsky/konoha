@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { streamSSE } from "hono/streaming";
-import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync } from "fs";
-import { join, extname } from "path";
+import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync, unlinkSync } from "fs";
+import { join, extname, basename } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
@@ -262,6 +262,43 @@ app.get("/agents/:id/system-template", async (c) => {
   const def = await getAgentDef(id);
   const base = def ?? { id, name: id, model: "claude-sonnet-4-6" };
   return c.json({ template: renderSystemTemplate(base) });
+});
+
+// GET /agents/:id/memory — list memory files for agent
+app.get("/agents/:id/memory", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const dir = `/opt/shared/agent-memory/${basename(id)}`;
+  if (!existsSync(dir)) return c.json([]);
+  const files = readdirSync(dir)
+    .filter(f => !f.startsWith("."))
+    .map(f => {
+      const st = statSync(join(dir, f));
+      return { name: f, size: st.size, updated_at: st.mtime.toISOString() };
+    })
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  return c.json(files);
+});
+
+// GET /agents/:id/memory/:filename — read one memory file
+app.get("/agents/:id/memory/:filename", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const filename = basename(c.req.param("filename")); // prevent path traversal
+  const dir = `/opt/shared/agent-memory/${basename(id)}`;
+  const filepath = join(dir, filename);
+  if (!existsSync(filepath)) return c.json({ error: "Not found" }, 404);
+  const content = readFileSync(filepath, "utf-8");
+  return c.text(content);
+});
+
+// DELETE /agents/:id/memory/:filename — delete one memory file
+app.delete("/agents/:id/memory/:filename", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const filename = basename(c.req.param("filename")); // prevent path traversal
+  const dir = `/opt/shared/agent-memory/${basename(id)}`;
+  const filepath = join(dir, filename);
+  if (!existsSync(filepath)) return c.json({ error: "Not found" }, 404);
+  unlinkSync(filepath);
+  return c.json({ ok: true });
 });
 
 // GET /agents/:id — get single agent (bus data merged with def)

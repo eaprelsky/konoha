@@ -200,6 +200,7 @@ function TmuxModal({ agentId, onClose }: TmuxModalProps) {
 
 interface EditAgentModalProps { agent: Agent; onClose: () => void; onSaved: () => void; }
 function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
+  const [tab, setTab] = useState<'settings' | 'memory'>('settings');
   const [name, setName] = useState(agent.name);
   const [model, setModel] = useState(agent.model || 'claude-sonnet-4-6');
   const [prompt, setPrompt] = useState((agent as any).system_prompt || '');
@@ -207,20 +208,38 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const [sysExpanded, setSysExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [memFiles, setMemFiles] = useState<{ name: string; size: number; updated_at: string }[]>([]);
+  const [memContent, setMemContent] = useState<{ name: string; text: string } | null>(null);
+  const [memLoading, setMemLoading] = useState(false);
 
   useEffect(() => {
-    // Load full agent data (system_prompt may not be in list response)
-    api.agents.get(agent.id)
-      .then(d => { setPrompt((d as any).system_prompt || ''); })
-      .catch(() => {});
-    // Load system template
-    api.agents.systemTemplate(agent.id)
-      .then(d => setSysTemplate(d.template))
-      .catch(() => {});
+    api.agents.get(agent.id).then(d => { setPrompt((d as any).system_prompt || ''); }).catch(() => {});
+    api.agents.systemTemplate(agent.id).then(d => setSysTemplate(d.template)).catch(() => {});
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [agent.id, onClose]);
+
+  function loadMemory() {
+    setMemLoading(true);
+    api.agents.memoryList(agent.id)
+      .then(files => { setMemFiles(files); setMemLoading(false); })
+      .catch(() => setMemLoading(false));
+  }
+
+  useEffect(() => { if (tab === 'memory') loadMemory(); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function openFile(filename: string) {
+    const text = await api.agents.memoryRead(agent.id, filename).catch(() => '(ошибка чтения)');
+    setMemContent({ name: filename, text });
+  }
+
+  async function deleteFile(filename: string) {
+    if (!confirm(`Удалить файл памяти "${filename}"?`)) return;
+    await api.agents.memoryDelete(agent.id, filename).catch(() => {});
+    setMemContent(null);
+    loadMemory();
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -233,54 +252,96 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{ width: 580 }}>
-        <h2>Изменить агента — {agent.id}</h2>
+      <div className="modal" style={{ width: 620, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        <h2 style={{ marginBottom: 12 }}>Изменить агента — {agent.id}</h2>
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
+          {(['settings', 'memory'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              padding: '5px 14px', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              background: tab === t ? '#6366f1' : '#f1f5f9', color: tab === t ? 'white' : '#475569',
+            }}>
+              {t === 'settings' ? 'Настройки' : 'Память'}
+            </button>
+          ))}
+        </div>
         {error && <div className="error-banner">{error}</div>}
-        <form onSubmit={submit}>
-          <div className="form-group">
-            <label>Имя *</label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} required autoFocus />
-          </div>
-          <div className="form-group">
-            <label>Модель</label>
-            <select value={model} onChange={e => setModel(e.target.value)}>
-              <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
-              <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
-              <option value="claude-opus-4-6">claude-opus-4-6</option>
-            </select>
-          </div>
-          {sysTemplate !== null && (
+
+        {tab === 'settings' && (
+          <form onSubmit={submit} style={{ overflowY: 'auto', flex: 1 }}>
             <div className="form-group">
-              <div
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none', padding: '6px 0' }}
-                onClick={() => setSysExpanded(v => !v)}
-              >
-                <label style={{ cursor: 'pointer', color: '#64748b', marginBottom: 0 }}>Системные инструкции (управляются Konoha)</label>
-                <span style={{ fontSize: 12, color: '#94a3b8', flexShrink: 0 }}>{sysExpanded ? '▲ Свернуть' : '▼ Развернуть'}</span>
-              </div>
-              {sysExpanded && (
-                <textarea
-                  readOnly
-                  value={sysTemplate}
-                  style={{ minHeight: 160, background: '#f8fafc', color: '#475569', fontFamily: 'monospace', fontSize: 12, resize: 'vertical', border: '1px solid #e2e8f0', cursor: 'default' }}
-                />
-              )}
+              <label>Имя *</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} required autoFocus />
             </div>
-          )}
-          <div className="form-group">
-            <label>Пользовательские инструкции</label>
-            <textarea
-              placeholder="Роль, специализация, типы задач, поведение..."
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              style={{ minHeight: 180 }}
-            />
+            <div className="form-group">
+              <label>Модель</label>
+              <select value={model} onChange={e => setModel(e.target.value)}>
+                <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+                <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
+                <option value="claude-opus-4-6">claude-opus-4-6</option>
+              </select>
+            </div>
+            {sysTemplate !== null && (
+              <div className="form-group">
+                <div
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none', padding: '6px 0' }}
+                  onClick={() => setSysExpanded(v => !v)}
+                >
+                  <label style={{ cursor: 'pointer', color: '#64748b', marginBottom: 0 }}>Системные инструкции (управляются Konoha)</label>
+                  <span style={{ fontSize: 12, color: '#94a3b8', flexShrink: 0 }}>{sysExpanded ? '▲ Свернуть' : '▼ Развернуть'}</span>
+                </div>
+                {sysExpanded && (
+                  <textarea readOnly value={sysTemplate}
+                    style={{ minHeight: 160, background: '#f8fafc', color: '#475569', fontFamily: 'monospace', fontSize: 12, resize: 'vertical', border: '1px solid #e2e8f0', cursor: 'default' }}
+                  />
+                )}
+              </div>
+            )}
+            <div className="form-group">
+              <label>Пользовательские инструкции</label>
+              <textarea placeholder="Роль, специализация, типы задач, поведение..."
+                value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 180 }} />
+            </div>
+            <div className="form-actions">
+              <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
+              <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Сохранение…' : 'Сохранить'}</button>
+            </div>
+          </form>
+        )}
+
+        {tab === 'memory' && (
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {memLoading && <div style={{ color: '#94a3b8', fontSize: 13, padding: '12px 0' }}>Загрузка…</div>}
+            {!memLoading && memFiles.length === 0 && (
+              <div style={{ color: '#94a3b8', fontSize: 13, padding: '12px 0' }}>Память пуста.</div>
+            )}
+            {!memLoading && memFiles.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                {memFiles.map(f => (
+                  <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 4, cursor: 'pointer', background: memContent?.name === f.name ? '#eff6ff' : 'transparent' }}
+                    onMouseEnter={e => { if (memContent?.name !== f.name) (e.currentTarget as HTMLDivElement).style.background = '#f8fafc'; }}
+                    onMouseLeave={e => { if (memContent?.name !== f.name) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}>
+                    <span style={{ flex: 1, fontSize: 13, fontFamily: 'monospace', color: '#334155', cursor: 'pointer' }} onClick={() => openFile(f.name)}>{f.name}</span>
+                    <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0 }}>{(f.size / 1024).toFixed(1)} KB</span>
+                    <button onClick={() => deleteFile(f.name)} style={{ padding: '2px 6px', fontSize: 11, border: '1px solid #fca5a5', background: 'white', color: '#ef4444', borderRadius: 3, cursor: 'pointer' }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {memContent && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b', fontFamily: 'monospace' }}>{memContent.name}</span>
+                  <button onClick={() => setMemContent(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 16 }}>×</button>
+                </div>
+                <textarea readOnly value={memContent.text} style={{ width: '100%', minHeight: 240, fontFamily: 'monospace', fontSize: 12, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 4, padding: 10, resize: 'vertical', color: '#334155', cursor: 'default', boxSizing: 'border-box' }} />
+              </div>
+            )}
+            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn-cancel-f" onClick={onClose}>Закрыть</button>
+            </div>
           </div>
-          <div className="form-actions">
-            <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
-            <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Сохранение…' : 'Сохранить'}</button>
-          </div>
-        </form>
+        )}
       </div>
     </div>
   );

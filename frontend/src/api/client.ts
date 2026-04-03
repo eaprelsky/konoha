@@ -105,6 +105,13 @@ export const api = {
     status: (id: string) => apiFetch<AgentStatus>(`${BASE}/agents/${id}/status`),
     tmuxLog: (id: string) => apiFetch<{ session: string; lines: string }>(`${BASE}/agents/tmux/${id}`),
     systemTemplate: (id: string) => apiFetch<{ template: string }>(`${BASE}/agents/${id}/system-template`),
+    memoryList: (id: string) => apiFetch<{ name: string; size: number; updated_at: string }[]>(`${BASE}/agents/${id}/memory`),
+    memoryRead: async (id: string, filename: string): Promise<string> => {
+      const res = await fetch(`${BASE}/agents/${id}/memory/${encodeURIComponent(filename)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.text();
+    },
+    memoryDelete: (id: string, filename: string) => apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}/memory/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
   },
 
   roles: {
