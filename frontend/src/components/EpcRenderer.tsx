@@ -6,12 +6,12 @@ import { useEffect, useRef } from 'react';
 import type { Workflow, WorkflowElement, Case } from '../api/types';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
-const NODE_W  = 180;
-const NODE_H  =  60;
-const GW_R    =  28;
-const H_GAP   =  50;
-const V_GAP   =  90;
-const PADDING =  30;
+const NODE_W  = 220;
+const NODE_H  =  76;
+const GW_R    =  34;
+const H_GAP   =  60;
+const V_GAP   = 120;
+const PADDING =  40;
 const SVG_NS  = 'http://www.w3.org/2000/svg';
 
 // ── Status styles ─────────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ function applyStatus(shape: Element, s: StatusStyle) {
 
 function addLabel(g: Element, text: string, cx: number, cy: number, maxWidth: number) {
   const words = String(text).split(' ');
-  const lineH = 14, charW = 6.5;
+  const lineH = 15, charW = 6.5;
   const lines: string[] = [];
   let cur = '';
   for (const w of words) {
@@ -56,9 +56,17 @@ function addLabel(g: Element, text: string, cx: number, cy: number, maxWidth: nu
   if (cur) lines.push(cur);
   const startY = cy - ((lines.length - 1) * lineH) / 2;
   lines.forEach((line, i) => {
-    const t = el('text', { x: cx, y: startY + i * lineH, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 12, 'font-family': 'system-ui, -apple-system, sans-serif', fill: '#1a1a1a', 'pointer-events': 'none' }, g);
+    const t = el('text', { x: cx, y: startY + i * lineH, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 13, 'font-family': 'system-ui, -apple-system, sans-serif', fill: '#1a1a1a', 'pointer-events': 'none' }, g);
     t.textContent = line;
   });
+}
+
+// ── Ellipse vertical-line intersection helper ─────────────────────────────────
+// Returns [y_top, y_bottom] where a vertical line at x intersects the ellipse.
+function ellipseLineY(cx: number, cy: number, rx: number, ry: number, x: number): [number, number] {
+  const t = (x - cx) / rx;
+  const h = ry * Math.sqrt(Math.max(0, 1 - t * t));
+  return [cy - h, cy + h];
 }
 
 // ── Shape renderers ───────────────────────────────────────────────────────────
@@ -78,8 +86,10 @@ function renderFunction(g: Element, node: WorkflowElement, s: StatusStyle) {
     const RW = 68, RH = 32, GAP = 12;
     el('line', { x1: W, y1: H / 2, x2: W + GAP, y2: H / 2, stroke: '#9ca3af', 'stroke-width': 1, 'stroke-dasharray': '3 2', 'pointer-events': 'none' }, g);
     const rg = el('g', { transform: `translate(${W + GAP}, ${(H - RH) / 2})` }, g);
-    el('ellipse', { cx: RW / 2, cy: RH / 2, rx: RW / 2 - 1, ry: RH / 2 - 1, fill: '#FFF9C4', stroke: '#B7A000', 'stroke-width': 1 }, rg);
-    el('line', { x1: 10, y1: 3, x2: 10, y2: RH - 3, stroke: '#B7A000', 'stroke-width': 1.5 }, rg);
+    const rcx = RW / 2, rcy = RH / 2, rrx = RW / 2 - 1, rry = RH / 2 - 1;
+    el('ellipse', { cx: rcx, cy: rcy, rx: rrx, ry: rry, fill: '#FFF9C4', stroke: '#B7A000', 'stroke-width': 1 }, rg);
+    const [rly1, rly2] = ellipseLineY(rcx, rcy, rrx, rry, 10);
+    el('line', { x1: 10, y1: rly1, x2: 10, y2: rly2, stroke: '#B7A000', 'stroke-width': 1.5 }, rg);
     const rt = el('text', { x: RW / 2 + 4, y: RH / 2, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 9, 'font-family': 'system-ui, sans-serif', fill: '#78600a', 'pointer-events': 'none' }, rg);
     rt.textContent = node.role;
   }
@@ -95,9 +105,11 @@ function renderGateway(g: Element, node: WorkflowElement, s: StatusStyle) {
 
 function renderRole(g: Element, node: WorkflowElement, s: StatusStyle) {
   const W = NODE_W, H = NODE_H;
-  const shape = el('ellipse', { cx: W / 2, cy: H / 2, rx: W / 2 - 2, ry: H / 2 - 2, fill: '#FFF9C4', stroke: '#B7A000', 'stroke-width': 1 }, g);
+  const cx = W / 2, cy = H / 2, rx = W / 2 - 2, ry = H / 2 - 2;
+  const shape = el('ellipse', { cx, cy, rx, ry, fill: '#FFF9C4', stroke: '#B7A000', 'stroke-width': 1 }, g);
   applyStatus(shape, s);
-  el('line', { x1: 14, y1: 4, x2: 14, y2: H - 4, stroke: '#B7A000', 'stroke-width': 1.5 }, g);
+  const [ly1, ly2] = ellipseLineY(cx, cy, rx, ry, 14);
+  el('line', { x1: 14, y1: ly1, x2: 14, y2: ly2, stroke: '#B7A000', 'stroke-width': 1.5 }, g);
   addLabel(g, node.label, W / 2 + 4, H / 2, W - 30);
 }
 
@@ -113,8 +125,8 @@ function renderInfoSystem(g: Element, node: WorkflowElement, s: StatusStyle) {
   const W = NODE_W, H = NODE_H;
   const shape = el('rect', { width: W, height: H, fill: '#E0F2FE', stroke: '#0EA5E9', 'stroke-width': 1 }, g);
   applyStatus(shape, s);
-  el('line', { x1: 6, y1: 2, x2: 6, y2: H - 2, stroke: '#0EA5E9', 'stroke-width': 1 }, g);
-  el('line', { x1: W - 6, y1: 2, x2: W - 6, y2: H - 2, stroke: '#0EA5E9', 'stroke-width': 1 }, g);
+  el('line', { x1: 6, y1: 0, x2: 6, y2: H, stroke: '#0EA5E9', 'stroke-width': 1 }, g);
+  el('line', { x1: W - 6, y1: 0, x2: W - 6, y2: H, stroke: '#0EA5E9', 'stroke-width': 1 }, g);
   addLabel(g, node.label, W / 2, H / 2, W - 28);
 }
 
@@ -129,9 +141,11 @@ function drawNodeScaled(g: Element, node: WorkflowElement, s: StatusStyle, w: nu
   const H = NODE_H;
   switch (node.type) {
     case 'role': {
-      const shape = el('ellipse', { cx: w/2, cy: H/2, rx: w/2-2, ry: H/2-2, fill: '#FFF9C4', stroke: '#B7A000', 'stroke-width': 1 }, g);
+      const cx = w/2, cy = H/2, rx = w/2-2, ry = H/2-2;
+      const shape = el('ellipse', { cx, cy, rx, ry, fill: '#FFF9C4', stroke: '#B7A000', 'stroke-width': 1 }, g);
       applyStatus(shape, s);
-      el('line', { x1: 14, y1: 4, x2: 14, y2: H-4, stroke: '#B7A000', 'stroke-width': 1.5 }, g);
+      const [ly1, ly2] = ellipseLineY(cx, cy, rx, ry, 14);
+      el('line', { x1: 14, y1: ly1, x2: 14, y2: ly2, stroke: '#B7A000', 'stroke-width': 1.5 }, g);
       addLabel(g, node.label, w/2+4, H/2, w-30);
       break;
     }
@@ -146,8 +160,8 @@ function drawNodeScaled(g: Element, node: WorkflowElement, s: StatusStyle, w: nu
     case 'system': {
       const shape = el('rect', { width: w, height: H, fill: '#E0F2FE', stroke: '#0EA5E9', 'stroke-width': 1 }, g);
       applyStatus(shape, s);
-      el('line', { x1: 6, y1: 2, x2: 6, y2: H-2, stroke: '#0EA5E9', 'stroke-width': 1 }, g);
-      el('line', { x1: w-6, y1: 2, x2: w-6, y2: H-2, stroke: '#0EA5E9', 'stroke-width': 1 }, g);
+      el('line', { x1: 6, y1: 0, x2: 6, y2: H, stroke: '#0EA5E9', 'stroke-width': 1 }, g);
+      el('line', { x1: w-6, y1: 0, x2: w-6, y2: H, stroke: '#0EA5E9', 'stroke-width': 1 }, g);
       addLabel(g, node.label, w/2, H/2, w-28);
       break;
     }
@@ -201,8 +215,8 @@ function assignLayers(elements: WorkflowElement[], flow: [string, string, string
   return layer;
 }
 
-const SIDE_GAP = 16;   // gap between function and side element
-const SIDE_W   = 160;  // side element width (slightly narrower)
+const SIDE_GAP = 20;   // gap between function and side element
+const SIDE_W   = 190;  // side element width (slightly narrower)
 
 function computeLayout(elements: WorkflowElement[], flow: [string, string, string?][], layer: Record<string, number>) {
   const mainEls = elements.filter(e => !isSide(e));
@@ -251,7 +265,7 @@ function computeLayout(elements: WorkflowElement[], flow: [string, string, strin
     const fp = positions[funcId]; if (!fp) return;
     const colX = fp.x + NODE_W + SIDE_GAP;
     sids.forEach((sid, i) => {
-      positions[sid] = { x: colX, y: fp.y + i * (NODE_H + 8) };
+      positions[sid] = { x: colX, y: fp.y + i * (NODE_H + 16) };
     });
     maxRightCols[funcId] = SIDE_W + SIDE_GAP;
   });
@@ -260,7 +274,7 @@ function computeLayout(elements: WorkflowElement[], flow: [string, string, strin
     const fp = positions[funcId]; if (!fp) return;
     sids.forEach((sid, i) => {
       const colX = fp.x - SIDE_W - SIDE_GAP;
-      positions[sid] = { x: colX, y: fp.y + i * (NODE_H + 8) };
+      positions[sid] = { x: colX, y: fp.y + i * (NODE_H + 16) };
     });
     maxLeftCols[funcId] = SIDE_W + SIDE_GAP;
   });
