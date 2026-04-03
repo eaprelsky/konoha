@@ -22,7 +22,11 @@ export function listAdapters(): string[] {
 import { bitrix24Adapter } from "./bitrix24";
 import { telegramAdapter } from "./telegram";
 import { emailAdapter } from "./email";
+import { yonoteAdapter } from "./yonote";
+import { yandexTrackerAdapter } from "./yandex-tracker";
 
 registerAdapter("bitrix24", bitrix24Adapter);
 registerAdapter("telegram", telegramAdapter);
 registerAdapter("email", emailAdapter);
+registerAdapter("yonote", yonoteAdapter);
+registerAdapter("yandex-tracker", yandexTrackerAdapter);

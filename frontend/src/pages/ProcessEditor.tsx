@@ -226,9 +226,10 @@ export function ProcessEditor() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loadId,  setLoadId]  = useState('');
   const [sideW,   setSideW]   = useState(240);
-  const [roles,   setRoles]   = useState<RoleDef[]>([]);
-  const [docs,    setDocs]    = useState<DocTemplate[]>([]);
-  const [picker,  setPicker]  = useState<'role' | 'document' | null>(null);
+  const [roles,    setRoles]    = useState<RoleDef[]>([]);
+  const [docs,     setDocs]     = useState<DocTemplate[]>([]);
+  const [adapters, setAdapters] = useState<string[]>([]);
+  const [picker,   setPicker]   = useState<'role' | 'document' | 'is' | null>(null);
   const svgRef    = useRef<SVGSVGElement>(null);
   const resizing  = useRef(false);
   const resizeStartX = useRef(0);
@@ -244,6 +245,7 @@ export function ProcessEditor() {
     if (!token) return;
     api.roles.list().then(setRoles).catch(() => {});
     api.documents.list().then(setDocs).catch(() => {});
+    api.adapters.list().then(r => setAdapters(r.adapters)).catch(() => {});
   }, [token]);
 
   // ── Keyboard delete ─────────────────────────────────────────────────────────
@@ -293,15 +295,17 @@ export function ProcessEditor() {
     setMode('select');
   }
 
-  /** Click on palette — show picker for role/document if registry available */
+  /** Click on palette — show picker for role/document/IS if registry available */
   function paletteClick(type: EType) {
-    if (type === 'role'     && roles.length > 0) { setPicker('role');     return; }
-    if (type === 'document' && docs.length  > 0) { setPicker('document'); return; }
+    if (type === 'role'               && roles.length    > 0) { setPicker('role');     return; }
+    if (type === 'document'           && docs.length     > 0) { setPicker('document'); return; }
+    if (type === 'information_system' && adapters.length > 0) { setPicker('is');       return; }
     addElement(type);
   }
 
   function pickFromRegistry(name: string, refId: string) {
-    addElement(picker!, name, refId);
+    const elType: EType = picker === 'is' ? 'information_system' : picker!;
+    addElement(elType, name, refId);
     setPicker(null);
   }
 
@@ -519,7 +523,9 @@ export function ProcessEditor() {
                 <div key={p.type} className="pal-item" onClick={() => paletteClick(p.type)}>
                   <div className="pal-dot" style={{ background: p.fill, border: `1px solid ${p.stroke}` }} />
                   <span style={{ flex: 1 }}>{p.label}</span>
-                  {(p.type === 'role' && roles.length > 0) || (p.type === 'document' && docs.length > 0)
+                  {(p.type === 'role' && roles.length > 0) ||
+                   (p.type === 'document' && docs.length > 0) ||
+                   (p.type === 'information_system' && adapters.length > 0)
                     ? <span style={{ fontSize: 10, color: '#94a3b8' }}>▾ pick</span>
                     : null}
                 </div>
@@ -705,25 +711,38 @@ export function ProcessEditor() {
       {picker && (
         <div className="picker-overlay" onClick={() => setPicker(null)}>
           <div className="picker-box" onClick={e => e.stopPropagation()}>
-            <h3>{picker === 'role' ? '👤 Select Role' : '📄 Select Document'}</h3>
+            <h3>
+              {picker === 'role' ? '👤 Select Role'
+               : picker === 'document' ? '📄 Select Document'
+               : '🖥 Select Information System'}
+            </h3>
             <div className="picker-list">
-              {(picker === 'role' ? roles : docs).map(item => {
-                const id   = (item as any).role_id ?? (item as any).doc_id;
-                const name = (item as any).name;
-                return (
-                  <div key={id} className="picker-item" onClick={() => pickFromRegistry(name, id)}>
-                    <strong>{name}</strong>
-                    {(item as any).description && (
-                      <span style={{ color: '#64748b', fontSize: 11, marginLeft: 8 }}>
-                        {(item as any).description}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+              {picker === 'is'
+                ? adapters.map(name => (
+                    <div key={name} className="picker-item" onClick={() => pickFromRegistry(name, name)}>
+                      <strong>{name}</strong>
+                    </div>
+                  ))
+                : (picker === 'role' ? roles : docs).map(item => {
+                    const id   = (item as any).role_id ?? (item as any).doc_id;
+                    const name = (item as any).name;
+                    return (
+                      <div key={id} className="picker-item" onClick={() => pickFromRegistry(name, id)}>
+                        <strong>{name}</strong>
+                        {(item as any).description && (
+                          <span style={{ color: '#64748b', fontSize: 11, marginLeft: 8 }}>
+                            {(item as any).description}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
             </div>
             <div className="picker-footer">
-              <button className="btn-custom" onClick={() => { addElement(picker!); setPicker(null); }}>
+              <button className="btn-custom" onClick={() => {
+                addElement(picker === 'is' ? 'information_system' : picker!);
+                setPicker(null);
+              }}>
                 + Add Custom
               </button>
               <button className="btn-cancel" onClick={() => setPicker(null)}>Cancel</button>
