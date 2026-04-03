@@ -197,6 +197,18 @@ const CSS = `
   .btn-load:disabled { background:#94a3b8; cursor:default; }
   .load-divider { border:none; border-top:1px solid #e2e8f0; margin:4px 0 10px; }
   .btn-del-el { width:100%; padding:5px; font-size:12px; background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:6px; }
+  .proc-list { max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
+  .proc-item { padding:5px 8px; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .proc-item:hover { background:#eff6ff; border-color:#bfdbfe; }
+  .proc-item.active { background:#eff6ff; border-color:#6366f1; font-weight:600; }
+  .proc-actions { display:flex; gap:3px; flex-wrap:wrap; }
+  .proc-actions button { flex:1; padding:4px 4px; border:1px solid #ddd; background:white; border-radius:3px; cursor:pointer; font-size:11px; white-space:nowrap; min-width:0; }
+  .proc-actions button:hover { background:#f1f5f9; }
+  .proc-actions .btn-danger { color:#ef4444; border-color:#fca5a5; }
+  .proc-actions .btn-danger:hover { background:#fee2e2; }
+  .proc-new-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
+  .btn-proc-new { padding:3px 9px; background:#6366f1; color:white; border:none; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; }
+  .btn-proc-new:hover { background:#4f46e5; }
   .picker-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:200; display:flex; align-items:center; justify-content:center; }
   .picker-box { background:white; border-radius:8px; padding:18px; width:340px; max-height:70vh; display:flex; flex-direction:column; box-shadow:0 20px 40px rgba(0,0,0,.2); }
   .picker-box h3 { font-size:14px; font-weight:700; margin-bottom:12px; }
@@ -224,7 +236,6 @@ export function ProcessEditor() {
   const [error,  setError]  = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [loadId,  setLoadId]  = useState('');
   const [sideW,   setSideW]   = useState(240);
   const [roles,    setRoles]    = useState<RoleDef[]>([]);
   const [docs,     setDocs]     = useState<DocTemplate[]>([]);
@@ -247,6 +258,46 @@ export function ProcessEditor() {
     api.documents.list().then(setDocs).catch(() => {});
     api.adapters.list().then(r => setAdapters(r.adapters)).catch(() => {});
   }, [token]);
+
+  // ── Process library CRUD ────────────────────────────────────────────────────
+  function newProcess() {
+    setWfId(''); setWfName(''); setElements([]); setFlow([]); setPositions({});
+    setSelected(null); setConnectFrom(null); setMode('select'); setError(null);
+  }
+
+  async function renameProcess() {
+    if (!wfId) return;
+    const newName = window.prompt('Новое название:', wfName);
+    if (!newName?.trim() || newName.trim() === wfName) return;
+    setWfName(newName.trim());
+    try {
+      const body = { id: wfId, name: newName.trim(), elements, flow } as unknown as Workflow;
+      await api.workflows.update(wfId, body);
+      refreshList();
+    } catch (err: any) { setError(err.message); }
+  }
+
+  async function duplicateProcess() {
+    if (!wfId) return;
+    const newId = `${wfId}-copy`;
+    const newName = `${wfName} (копия)`;
+    try {
+      const body = { id: newId, name: newName, elements: [...elements], flow: [...flow] } as unknown as Workflow;
+      await api.workflows.create(body);
+      refreshList();
+      setWfId(newId); setWfName(newName);
+    } catch (err: any) { setError(err.message); }
+  }
+
+  async function deleteProcess() {
+    if (!wfId) return;
+    if (!confirm(`Удалить процесс "${wfName || wfId}"?`)) return;
+    try {
+      await api.workflows.delete(wfId);
+      newProcess();
+      refreshList();
+    } catch (err: any) { setError(err.message); }
+  }
 
   // ── Keyboard delete ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -493,26 +544,34 @@ export function ProcessEditor() {
           {/* ── Sidebar ── */}
           <div className="ipe-side" style={{ width: sideW }}>
 
-            {/* Load process */}
+            {/* Process library */}
             <div>
-              <h3>📂 Load Existing Process</h3>
-              <select
-                className="load-select"
-                value={loadId}
-                onChange={e => setLoadId(e.target.value)}
-              >
-                <option value="">— choose a process —</option>
+              <div className="proc-new-row">
+                <h3 style={{ margin: 0 }}>Процессы</h3>
+                <button className="btn-proc-new" onClick={newProcess}>+ Новый</button>
+              </div>
+              <div className="proc-list">
+                {workflows.length === 0 && (
+                  <div style={{ fontSize: 11, color: '#94a3b8', padding: '4px 0' }}>Процессов пока нет</div>
+                )}
                 {workflows.map(w => (
-                  <option key={w.id} value={w.id}>{w.name || w.id}</option>
+                  <div
+                    key={w.id}
+                    className={`proc-item${wfId === w.id ? ' active' : ''}`}
+                    onClick={() => loadWorkflow(w.id)}
+                    title={w.id}
+                  >
+                    {w.name || w.id}
+                  </div>
                 ))}
-              </select>
-              <button
-                className="btn-load"
-                onClick={() => { loadWorkflow(loadId); setLoadId(''); }}
-                disabled={!loadId}
-              >
-                ↓ Load Process
-              </button>
+              </div>
+              {wfId && (
+                <div className="proc-actions">
+                  <button onClick={renameProcess} title="Переименовать">✏️ Rename</button>
+                  <button onClick={duplicateProcess} title="Дублировать">⧉ Dup</button>
+                  <button className="btn-danger" onClick={deleteProcess} title="Удалить">🗑 Del</button>
+                </div>
+              )}
               <hr className="load-divider" />
             </div>
 
