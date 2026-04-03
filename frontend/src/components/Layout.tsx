@@ -46,6 +46,7 @@ const styles = `
 const MAIN_NAV = [
   { href: '/ui/index.html',      key: 'nav.dashboard',  fallback: 'Dashboard' },
   { href: '/ui/processes.html',  key: 'nav.processes',  fallback: 'Processes' },
+  { href: '/ui/monitor.html',    key: 'nav.monitor',    fallback: 'Монитор' },
   { href: '/ui/cases.html',      key: 'nav.cases',      fallback: 'Cases' },
   { href: '/ui/workitems.html',  key: 'nav.workitems',  fallback: 'Work Items' },
   { href: '/ui/reminders.html',  key: 'nav.reminders',  fallback: 'Reminders' },

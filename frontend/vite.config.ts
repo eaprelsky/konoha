@@ -29,6 +29,7 @@ export default defineConfig({
         health:     resolve(__dirname, 'src/health.html'),
         kb:         resolve(__dirname, 'src/kb.html'),
         workspace:  resolve(__dirname, 'src/workspace.html'),
+        monitor:    resolve(__dirname, 'src/monitor.html'),
         login:      resolve(__dirname, 'src/login.html'),
         people:     resolve(__dirname, 'src/people.html'),
       },
