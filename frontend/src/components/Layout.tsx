@@ -51,16 +51,16 @@ const MAIN_NAV = [
   { href: '/ui/cases.html',      key: 'nav.cases',      fallback: 'Cases' },
   { href: '/ui/roles.html',      key: 'nav.roles',      fallback: 'Roles' },
   { href: '/ui/documents.html',  key: 'nav.documents',  fallback: 'Documents' },
-  { href: '/ui/connectors.html', key: 'nav.connectors', fallback: 'Connectors' },
+  { href: '/ui/connectors.html', key: 'nav.connectors', fallback: 'IS' },
   { href: '/ui/people.html',     key: 'nav.people',     fallback: 'People' },
+  { href: '/ui/agents.html',     key: 'nav.agents',     fallback: 'Agents' },
+  { href: '/ui/editor.html',     key: 'nav.editor',     fallback: 'Editor' },
 ];
 
 const SYS_NAV = [
-  { href: '/ui/agents.html',     key: 'nav.agents',     fallback: 'Agents' },
   { href: '/ui/messages.html',   key: 'nav.messages',   fallback: 'Messages' },
   { href: '/ui/eventlog.html',   key: 'nav.eventlog',   fallback: 'Event Log' },
   { href: '/ui/kb.html',         key: 'nav.kb',         fallback: 'KB' },
-  { href: '/ui/editor.html',     key: 'nav.editor',     fallback: 'Editor' },
   { href: '/ui/admin.html',      key: 'nav.admin',      fallback: 'Admin' },
 ];
 

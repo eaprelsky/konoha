@@ -88,8 +88,8 @@ export function Connectors() {
       <div className="cn-body">
         <div className="container">
           <div className="page-header">
-            <h1>Connectors</h1>
-            <p>Information systems and integrations available to the workflow engine.</p>
+            <h1>Информационные системы</h1>
+            <p>Интеграции и адаптеры, доступные движку процессов.</p>
           </div>
           {error && <div className="error-banner">{error}</div>}
           {loading && <div className="empty">Loading...</div>}

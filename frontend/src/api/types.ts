@@ -124,6 +124,7 @@ export interface Agent {
   tags?: string[];
   lifecycle?: AgentLifecycle;
   lastHeartbeat?: number;
+  village_id?: string;
 }
 
 export interface AdapterHealth {

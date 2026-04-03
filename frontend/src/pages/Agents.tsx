@@ -36,6 +36,9 @@ const styles = `
   .actions .btn-del { background: #ef4444; color: white; border-color: #ef4444; }
   .actions .btn-del:hover { background: #dc2626; }
   .tag { display: inline-block; padding: 1px 6px; background: #f1f5f9; border-radius: 10px; font-size: 11px; color: #475569; margin: 1px; }
+  .badge-system { display: inline-block; padding: 1px 7px; background: #ede9fe; color: #5b21b6; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
+  .badge-external { display: inline-block; padding: 1px 7px; background: #fff7ed; color: #92400e; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
+  .badge-managed { display: inline-block; padding: 1px 7px; background: #f0fdf4; color: #166534; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
   .empty { text-align: center; padding: 40px; color: #999; }
   .error-banner { background: #fee; color: #c33; padding: 12px; border-radius: 4px; margin-bottom: 16px; border-left: 4px solid #c33; }
   .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
@@ -74,6 +77,21 @@ function formatUptime(sec?: number): string {
   if (sec < 60) return `${sec}s`;
   if (sec < 3600) return `${Math.floor(sec / 60)}m`;
   return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+}
+
+const SYSTEM_IDS = new Set(['naruto', 'sasuke', 'kakashi']);
+type AgentType = 'system' | 'external' | 'managed';
+
+function getAgentType(a: Agent): AgentType {
+  if (SYSTEM_IDS.has(a.id)) return 'system';
+  if (a.village_id && a.village_id !== 'comind.konoha') return 'external';
+  return 'managed';
+}
+
+function AgentTypeBadge({ type }: { type: AgentType }) {
+  if (type === 'system')   return <span className="badge-system">Системный</span>;
+  if (type === 'external') return <span className="badge-external">Внешний</span>;
+  return <span className="badge-managed">Управляемый</span>;
 }
 
 interface NewAgentModalProps { onClose: () => void; onCreated: () => void; }
@@ -267,15 +285,20 @@ export function Agents() {
                   <th>Bus Status</th>
                   <th>Lifecycle</th>
                   <th>Model</th>
-                  <th>Roles / Tags</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {agents.map(a => (
+                {agents.map(a => {
+                  const atype = getAgentType(a);
+                  const canEdit = atype === 'managed';
+                  return (
                   <tr key={a.id}>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{a.name}</div>
+                      <div style={{ fontWeight: 600 }}>
+                        {a.name}
+                        <AgentTypeBadge type={atype} />
+                      </div>
                       <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{a.id}</div>
                     </td>
                     <td>
@@ -295,23 +318,20 @@ export function Agents() {
                     </td>
                     <td style={{ fontSize: 12, color: '#555' }}>{a.model || '-'}</td>
                     <td>
-                      {(a.roles || []).map(r => <span key={r} className="tag">{r}</span>)}
-                      {(a.tags || []).map(t => <span key={t} className="tag" style={{ background: '#fef3c7', color: '#92400e' }}>{t}</span>)}
-                    </td>
-                    <td>
                       <div className="actions">
-                        {a.lifecycle && <>
+                        {canEdit && a.lifecycle && <>
                           <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start')}>▶ Start</button>
                           <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop')}>■ Stop</button>
                           <button className="btn-restart" onClick={() => action(a.id, () => api.agents.restart(a.id), 'Restart')}>↺</button>
                           <button onClick={() => setEditAgent(a)}>Edit</button>
                         </>}
                         <button onClick={() => setTmuxAgent(a.id)}>Logs</button>
-                        <button className="btn-del" onClick={() => action(a.id, () => api.agents.delete(a.id), 'Delete')}>🗑</button>
+                        {canEdit && <button className="btn-del" onClick={() => action(a.id, () => api.agents.delete(a.id), 'Delete')}>🗑</button>}
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
