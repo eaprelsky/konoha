@@ -836,6 +836,7 @@ app.get("/adapters/:name/health", async (c) => {
 // --- People Directory ---
 
 const PEOPLE_CUSTOM_KEY = "people:custom";
+const PEOPLE_AVATARS_KEY = "people:avatars";
 
 type PersonRecord = {
   id: string; name: string; tg_id: number; position: string;
@@ -879,6 +880,14 @@ app.get("/people", async (c) => {
     for (const val of Object.values(custom)) {
       const p: PersonRecord = JSON.parse(val);
       map.set(p.id, { ...p, source: "custom" });
+    }
+    // Merge avatars for file-based people
+    const avatars = await redis.hgetall(PEOPLE_AVATARS_KEY);
+    for (const [id, avatar_url] of Object.entries(avatars)) {
+      const existing = map.get(id);
+      if (existing && !existing.avatar_url) {
+        map.set(id, { ...existing, avatar_url });
+      }
     }
   } catch { /* redis unavailable — serve trusted only */ }
   return c.json([...map.values()]);
@@ -1061,6 +1070,25 @@ app.post("/agents/:id/avatar", requireAuth, async (c) => {
   const id = c.req.param("id");
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
+  const contentType = c.req.header("content-type") || "";
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File | null;
+    if (!file) return c.json({ error: "file required" }, 400);
+    const ext = extname(file.name).toLowerCase();
+    if (![".jpg", ".jpeg", ".png", ".gif", ".webp"].includes(ext)) {
+      return c.json({ error: "Only jpg/png/gif/webp allowed" }, 415);
+    }
+    const filename = `agent_${id.replace(/[^a-zA-Z0-9@.-]/g, "_")}_${Date.now()}${ext}`;
+    const buf = Buffer.from(await file.arrayBuffer());
+    writeFileSync(join(AVATARS_DIR, filename), buf);
+    const avatar_url = `/api/avatars/${filename}`;
+    const updated = { ...def, avatar_url, updated_at: new Date().toISOString() };
+    await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+    return c.json({ avatar_url });
+  }
+
   const body = await c.req.json<{ style?: string; description?: string }>().catch(() => ({}));
   try {
     const result = await generateAvatar({
@@ -1079,9 +1107,39 @@ app.post("/agents/:id/avatar", requireAuth, async (c) => {
 
 app.post("/people/:id/avatar", requireAuth, async (c) => {
   const id = c.req.param("id");
-  const raw = await redis.hget(PEOPLE_CUSTOM_KEY, id);
-  if (!raw) return c.json({ error: "Person not found or is file-based" }, 404);
-  const person: PersonRecord = JSON.parse(raw);
+  const contentType = c.req.header("content-type") || "";
+
+  // Resolve person (custom or file-based)
+  const rawCustom = await redis.hget(PEOPLE_CUSTOM_KEY, id).catch(() => null);
+  const trustedPeople = loadTrustedPeople();
+  const trustedPerson = trustedPeople.find(p => p.id === id);
+  const person: PersonRecord | null = rawCustom ? JSON.parse(rawCustom) : (trustedPerson || null);
+  if (!person) return c.json({ error: "Person not found" }, 404);
+  const isFileBased = !rawCustom;
+
+  if (contentType.includes("multipart/form-data")) {
+    // File upload path
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File | null;
+    if (!file) return c.json({ error: "file required" }, 400);
+    const ext = extname(file.name).toLowerCase();
+    if (![".jpg", ".jpeg", ".png", ".gif", ".webp"].includes(ext)) {
+      return c.json({ error: "Only jpg/png/gif/webp allowed" }, 415);
+    }
+    const filename = `${id.replace(/[^a-zA-Z0-9@.-]/g, "_")}_${Date.now()}${ext}`;
+    const buf = Buffer.from(await file.arrayBuffer());
+    writeFileSync(join(AVATARS_DIR, filename), buf);
+    const avatar_url = `/api/avatars/${filename}`;
+    if (isFileBased) {
+      await redis.hset(PEOPLE_AVATARS_KEY, id, avatar_url);
+    } else {
+      (person as PersonRecord).avatar_url = avatar_url;
+      await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(person));
+    }
+    return c.json({ avatar_url });
+  }
+
+  // Sai generation path
   const body = await c.req.json<{ style?: string; description?: string }>().catch(() => ({}));
   try {
     const result = await generateAvatar({
@@ -1090,8 +1148,12 @@ app.post("/people/:id/avatar", requireAuth, async (c) => {
       description: body.description || person.position,
       style: body.style,
     });
-    person.avatar_url = result.avatar_url;
-    await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(person));
+    if (isFileBased) {
+      await redis.hset(PEOPLE_AVATARS_KEY, id, result.avatar_url);
+    } else {
+      (person as PersonRecord).avatar_url = result.avatar_url;
+      await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(person));
+    }
     return c.json({ avatar_url: result.avatar_url });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -1587,10 +1649,26 @@ app.post("/trigger/:process_id{.+}", async (c) => {
 
 const WORKSPACE_DIR = "/opt/shared/workspace";
 const WORKSPACE_ALLOWED_EXT = new Set([".docx", ".xlsx", ".pdf", ".png", ".jpg", ".jpeg", ".wav", ".mp3", ".m4a", ".ogg"]);
+const AVATARS_DIR = "/opt/shared/avatars";
 
 if (!existsSync(WORKSPACE_DIR)) {
   mkdirSync(WORKSPACE_DIR, { recursive: true });
 }
+if (!existsSync(AVATARS_DIR)) {
+  mkdirSync(AVATARS_DIR, { recursive: true });
+}
+
+// Serve uploaded avatars
+app.get("/avatars/:filename", (c) => {
+  const filename = c.req.param("filename");
+  if (filename.includes("..") || filename.includes("/")) return c.text("Forbidden", 403);
+  const ext = extname(filename).toLowerCase();
+  const mimeMap: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp" };
+  const mime = mimeMap[ext] || "application/octet-stream";
+  const filePath = join(AVATARS_DIR, filename);
+  if (!existsSync(filePath)) return c.text("Not found", 404);
+  return c.body(readFileSync(filePath), 200, { "content-type": mime, "cache-control": "public, max-age=86400" });
+});
 
 app.use("/workspace", requireAuth);
 app.use("/workspace/*", requireAuth);

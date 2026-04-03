@@ -4,9 +4,10 @@ export type { KibaAction };
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const isFormData = options?.body instanceof FormData;
   const res = await fetch(path, {
     ...options,
-    headers: {
+    headers: isFormData ? (options?.headers || {}) : {
       'Content-Type': 'application/json',
       ...(options?.headers || {}),
     },
@@ -116,6 +117,10 @@ export const api = {
     memoryDelete: (id: string, filename: string) => apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}/memory/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
     generateAvatar: (id: string, params?: { style?: string; description?: string }) =>
       apiFetch<{ avatar_url: string }>(`${BASE}/agents/${id}/avatar`, { method: 'POST', body: JSON.stringify(params || {}) }),
+    uploadAvatar: (id: string, file: File) => {
+      const fd = new FormData(); fd.append('file', file);
+      return apiFetch<{ avatar_url: string }>(`${BASE}/agents/${id}/avatar`, { method: 'POST', body: fd });
+    },
   },
 
   roles: {
@@ -178,6 +183,10 @@ export const api = {
     delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/people/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     generateAvatar: (id: string, params?: { style?: string; description?: string }) =>
       apiFetch<{ avatar_url: string }>(`${BASE}/people/${encodeURIComponent(id)}/avatar`, { method: 'POST', body: JSON.stringify(params || {}) }),
+    uploadAvatar: (id: string, file: File) => {
+      const fd = new FormData(); fd.append('file', file);
+      return apiFetch<{ avatar_url: string }>(`${BASE}/people/${encodeURIComponent(id)}/avatar`, { method: 'POST', body: fd });
+    },
   },
 
   health: {

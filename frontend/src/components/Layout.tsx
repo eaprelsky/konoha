@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { useI18n } from '../context/I18nContext';
+import { ProfileModal } from './ProfileModal';
 
 export function isLoggedIn(): boolean {
   return localStorage.getItem('konoha_dash_auth') === '1';
@@ -34,6 +35,8 @@ const styles = `
   .lang-btn:hover { background: #1e293b; color: #f8fafc; }
   .logout-btn { padding: 3px 10px; border-radius: 4px; border: 1px solid #334155; background: transparent; color: #94a3b8; font-size: 12px; cursor: pointer; margin-left: 4px; }
   .logout-btn:hover { background: #7f1d1d; color: #fca5a5; border-color: #7f1d1d; }
+  .profile-btn { padding: 3px 10px; border-radius: 4px; border: 1px solid #334155; background: transparent; color: #94a3b8; font-size: 12px; cursor: pointer; }
+  .profile-btn:hover { background: #1e293b; color: #f8fafc; }
   .role-switch { display: flex; gap: 2px; background: #1e293b; border-radius: 6px; padding: 2px; }
   .role-btn { padding: 4px 10px; border-radius: 4px; border: none; background: transparent; color: #94a3b8; font-size: 12px; cursor: pointer; white-space: nowrap; transition: background 0.15s; }
   .role-btn.active { background: #334155; color: #f8fafc; font-weight: 600; }
@@ -76,6 +79,7 @@ interface LayoutProps {
 export function Layout({ children, activePage, subtitle }: LayoutProps) {
   useAuthGuard();
   const { lang, setLang, t } = useI18n();
+  const [showProfile, setShowProfile] = useState(false);
 
   // Determine initial role: if current page belongs to SYS_NAV, force admin view
   const pageInSys = SYS_NAV.some(({ href }) => href.endsWith(activePage));
@@ -113,10 +117,14 @@ export function Layout({ children, activePage, subtitle }: LayoutProps) {
           <button className={`lang-btn${lang === 'en' ? ' active' : ''}`} onClick={() => setLang('en')}>EN</button>
           <button className={`lang-btn${lang === 'ru' ? ' active' : ''}`} onClick={() => setLang('ru')}>RU</button>
         </div>
+        <button className="profile-btn" onClick={() => setShowProfile(true)}>
+          👤 Профиль
+        </button>
         <button className="logout-btn" onClick={() => { localStorage.removeItem('konoha_dash_auth'); window.location.replace('/ui/login.html'); }}>
           Выйти
         </button>
       </header>
+      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
       <nav>
         {navLinks.map(({ href, key, fallback }) => (
           <a
