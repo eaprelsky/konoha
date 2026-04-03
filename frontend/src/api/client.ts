@@ -104,6 +104,7 @@ export const api = {
     delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}?hard=true`, { method: 'DELETE' }),
     status: (id: string) => apiFetch<AgentStatus>(`${BASE}/agents/${id}/status`),
     tmuxLog: (id: string) => apiFetch<{ session: string; lines: string }>(`${BASE}/agents/tmux/${id}`),
+    systemTemplate: (id: string) => apiFetch<{ template: string }>(`${BASE}/agents/${id}/system-template`),
   },
 
   roles: {

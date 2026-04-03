@@ -49,6 +49,7 @@ const styles = `
   .form-group input, .form-group select, .form-group textarea { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; }
   .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #6366f1; }
   .form-group textarea { resize: vertical; min-height: 80px; }
+  .form-group textarea[readonly] { background: #f8fafc; color: #475569; cursor: default; }
   .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
   .form-actions button { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
   .btn-submit { background: #6366f1; color: white; }
@@ -186,6 +187,8 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const [name, setName] = useState(agent.name);
   const [model, setModel] = useState(agent.model || 'claude-sonnet-4-6');
   const [prompt, setPrompt] = useState((agent as any).system_prompt || '');
+  const [sysTemplate, setSysTemplate] = useState<string | null>(null);
+  const [sysExpanded, setSysExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -193,6 +196,10 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
     // Load full agent data (system_prompt may not be in list response)
     api.agents.get(agent.id)
       .then(d => { setPrompt((d as any).system_prompt || ''); })
+      .catch(() => {});
+    // Load system template
+    api.agents.systemTemplate(agent.id)
+      .then(d => setSysTemplate(d.template))
       .catch(() => {});
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', h);
@@ -210,7 +217,7 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{ width: 540 }}>
+      <div className="modal" style={{ width: 580 }}>
         <h2>Edit Agent — {agent.id}</h2>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
@@ -226,9 +233,32 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
               <option value="claude-opus-4-6">claude-opus-4-6</option>
             </select>
           </div>
+          {sysTemplate !== null && (
+            <div className="form-group">
+              <div
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none', padding: '6px 0' }}
+                onClick={() => setSysExpanded(v => !v)}
+              >
+                <label style={{ cursor: 'pointer', color: '#64748b', marginBottom: 0 }}>Системные инструкции (управляются Konoha)</label>
+                <span style={{ fontSize: 12, color: '#94a3b8', flexShrink: 0 }}>{sysExpanded ? '▲ Свернуть' : '▼ Развернуть'}</span>
+              </div>
+              {sysExpanded && (
+                <textarea
+                  readOnly
+                  value={sysTemplate}
+                  style={{ minHeight: 160, background: '#f8fafc', color: '#475569', fontFamily: 'monospace', fontSize: 12, resize: 'vertical', border: '1px solid #e2e8f0', cursor: 'default' }}
+                />
+              )}
+            </div>
+          )}
           <div className="form-group">
-            <label>System Prompt</label>
-            <textarea placeholder="System prompt..." value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 180 }} />
+            <label>Пользовательские инструкции</label>
+            <textarea
+              placeholder="Роль, специализация, типы задач, поведение..."
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              style={{ minHeight: 180 }}
+            />
           </div>
           <div className="form-actions">
             <button type="button" className="btn-cancel-f" onClick={onClose}>Cancel</button>
