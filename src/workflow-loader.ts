@@ -20,6 +20,15 @@ export interface WorkflowElement {
   content_type?: "instruction" | "file";
   content?: string;          // inline text for instruction-type documents
   file_ref?: string;         // workspace file name for file-type documents
+  // Trigger config (start event nodes only)
+  trigger?: {
+    type: "manual" | "telegram" | "schedule" | "event" | "webhook";
+    chat_id?: string;        // for telegram: Telegram chat_id to listen
+    keyword?: string;        // for telegram: keyword filter
+    cron?: string;           // for schedule: cron expression
+    event_type?: string;     // for event: upstream event type to react to
+    webhook_path?: string;   // for webhook: auto-generated URL suffix
+  };
 }
 
 export interface WorkflowTrigger {

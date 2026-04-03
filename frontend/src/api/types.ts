@@ -24,6 +24,15 @@ export interface WorkflowElement {
   content_type?: 'instruction' | 'file';
   content?: string;
   file_ref?: string;
+  // Trigger config (start event nodes only)
+  trigger?: {
+    type: 'manual' | 'telegram' | 'schedule' | 'event' | 'webhook';
+    chat_id?: string;
+    keyword?: string;
+    cron?: string;
+    event_type?: string;
+    webhook_path?: string;
+  };
 }
 
 export interface WorkflowTrigger {

@@ -852,6 +852,22 @@ app.delete("/people/:id", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// --- Webhook Trigger ---
+// Public endpoint — no auth (protected by unpredictable process_id)
+// POST /trigger/:process_id?subject=...  → creates a case and returns case_id
+app.post("/trigger/:process_id{.+}", async (c) => {
+  const process_id = c.req.param("process_id");
+  const body = await c.req.json().catch(() => ({}));
+  const subject = (body.subject as string) || c.req.query("subject") || `webhook-${Date.now()}`;
+  const payload = (body.payload && typeof body.payload === "object") ? body.payload : body;
+  try {
+    const kase = await createCase(process_id, subject, payload);
+    return c.json({ case_id: kase.case_id, status: kase.status }, 201);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 400);
+  }
+});
+
 // --- Workspace ---
 
 const WORKSPACE_DIR = "/opt/shared/workspace";

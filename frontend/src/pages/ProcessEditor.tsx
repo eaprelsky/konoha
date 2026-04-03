@@ -940,6 +940,78 @@ export function ProcessEditor() {
                     )}
                   </div>
                 )}
+                {selEl.type === 'event' && !flow.some(([, to]) => to === selEl.id) && (
+                  // Start event — show trigger configuration
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.05em', margin: '14px 0 8px', paddingBottom: 4, borderBottom: '1px solid #f1f5f9' }}>Триггер запуска</div>
+                    <div className="props-field">
+                      <label>Тип триггера</label>
+                      <select
+                        value={selEl.trigger?.type || 'manual'}
+                        onChange={e => updateElement(selEl.id, { trigger: { ...selEl.trigger, type: e.target.value as any } })}
+                      >
+                        <option value="manual">Manual — кнопка / API</option>
+                        <option value="webhook">Webhook — HTTP POST</option>
+                        <option value="schedule">Schedule — расписание</option>
+                        <option value="telegram">Telegram — входящее сообщение</option>
+                        <option value="event">Event — завершение другого процесса</option>
+                      </select>
+                    </div>
+                    {selEl.trigger?.type === 'webhook' && (
+                      <div className="props-field">
+                        <label>URL вебхука</label>
+                        <input
+                          readOnly
+                          value={`POST /trigger/${wfId || '<process_id>'}`}
+                          style={{ background: '#f8fafc', fontFamily: 'monospace', fontSize: 12, color: '#475569' }}
+                          onClick={e => (e.target as HTMLInputElement).select()}
+                        />
+                        <span style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, display: 'block' }}>Тело: {"{ subject, payload }"}</span>
+                      </div>
+                    )}
+                    {selEl.trigger?.type === 'schedule' && (
+                      <div className="props-field">
+                        <label>Cron-выражение</label>
+                        <input
+                          value={selEl.trigger?.cron || ''}
+                          onChange={e => updateElement(selEl.id, { trigger: { ...selEl.trigger, type: 'schedule', cron: e.target.value } })}
+                          placeholder="0 9 * * MON"
+                        />
+                        <span style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, display: 'block' }}>Пример: 0 9 * * 1-5 — каждый будний день в 9:00</span>
+                      </div>
+                    )}
+                    {selEl.trigger?.type === 'telegram' && (
+                      <>
+                        <div className="props-field">
+                          <label>Chat ID</label>
+                          <input
+                            value={selEl.trigger?.chat_id || ''}
+                            onChange={e => updateElement(selEl.id, { trigger: { ...selEl.trigger, type: 'telegram', chat_id: e.target.value } })}
+                            placeholder="Числовой ID чата"
+                          />
+                        </div>
+                        <div className="props-field">
+                          <label>Ключевое слово (опционально)</label>
+                          <input
+                            value={selEl.trigger?.keyword || ''}
+                            onChange={e => updateElement(selEl.id, { trigger: { ...selEl.trigger, type: 'telegram', keyword: e.target.value } })}
+                            placeholder="Фильтр по тексту сообщения"
+                          />
+                        </div>
+                      </>
+                    )}
+                    {selEl.trigger?.type === 'event' && (
+                      <div className="props-field">
+                        <label>Тип события</label>
+                        <input
+                          value={selEl.trigger?.event_type || ''}
+                          onChange={e => updateElement(selEl.id, { trigger: { ...selEl.trigger, type: 'event', event_type: e.target.value } })}
+                          placeholder="Например: lead.qualified"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
                 {selEl.type === 'document' && (
                   <>
                     <div className="props-field">
