@@ -1098,6 +1098,14 @@ app.post("/people/:id/avatar", requireAuth, async (c) => {
   }
 });
 
+// --- AI Chat helpers ---
+
+/** Strip markdown code fences that LLMs sometimes wrap JSON in */
+function stripMarkdownFences(raw: string): string {
+  const m = raw.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/);
+  return m ? m[1].trim() : raw;
+}
+
 // --- Tsunade Chat API ---
 
 const TSUNADE_CHAT_PREFIX = "tsunade:chat:";
@@ -1171,12 +1179,12 @@ app.post("/tsunade/chat", async (c) => {
 
     const rawReply = (response.content[0] as any).text.trim();
 
-    // Parse JSON reply
+    // Parse JSON reply (strip markdown fences the model may have added)
     let reply = rawReply;
     let schema_patch: unknown = undefined;
     try {
-      const parsed = JSON.parse(rawReply);
-      reply = parsed.reply || rawReply;
+      const parsed = JSON.parse(stripMarkdownFences(rawReply));
+      reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message || rawReply;
       if (parsed.schema_patch) schema_patch = parsed.schema_patch;
     } catch { /* not JSON, use raw text */ }
 
@@ -1193,6 +1201,65 @@ app.post("/tsunade/chat", async (c) => {
 });
 
 app.delete("/tsunade/chat/:chat_id", requireAuth, async (c) => {
+  const chatId = c.req.param("chat_id");
+  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(() => {});
+  return c.json({ ok: true });
+});
+
+// Alias: /ai/process-chat → same Tsunade logic (used by TsunadePanel component)
+app.use("/ai/process-chat", requireAuth);
+app.post("/ai/process-chat", async (c) => {
+  // Delegate to the same handler as /tsunade/chat by re-using the same logic
+  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string }>().catch(() => null);
+  if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
+
+  const chatId = body.chat_id || randomUUID();
+  const histKey = TSUNADE_CHAT_PREFIX + chatId;
+
+  const rawHistory = await redis.lrange(histKey, 0, -1).catch(() => [] as string[]);
+  const history: { role: "user" | "assistant"; content: string }[] = rawHistory.map(r => {
+    try { return JSON.parse(r); } catch { return null; }
+  }).filter(Boolean);
+
+  const schemaContext = body.schema
+    ? `\nТекущая схема процесса:\n${JSON.stringify(body.schema, null, 2)}`
+    : "";
+
+  const userMsg = body.message + schemaContext;
+  const messages: { role: "user" | "assistant"; content: string }[] = [
+    ...history,
+    { role: "user", content: userMsg },
+  ];
+
+  try {
+    const response = await _anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 2000,
+      system: TSUNADE_SYSTEM,
+      messages,
+    });
+
+    const rawReply = (response.content[0] as any).text.trim();
+    let reply = rawReply;
+    let schema_patch: unknown = undefined;
+    try {
+      const parsed = JSON.parse(stripMarkdownFences(rawReply));
+      reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message || rawReply;
+      if (parsed.schema_patch) schema_patch = parsed.schema_patch;
+    } catch { /* not JSON, use raw text */ }
+
+    await redis.rpush(histKey, JSON.stringify({ role: "user", content: body.message }));
+    await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));
+    await redis.ltrim(histKey, -CHAT_MAX_HISTORY * 2, -1);
+    await redis.expire(histKey, 7 * 24 * 3600);
+
+    return c.json({ reply, chat_id: chatId, schema_patch: schema_patch ?? null });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete("/ai/process-chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
   await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(() => {});
   return c.json({ ok: true });
@@ -1268,8 +1335,8 @@ app.post("/ai/admin-chat", async (c) => {
     let reply = rawReply;
     let actions: unknown[] = [];
     try {
-      const parsed = JSON.parse(rawReply);
-      reply = parsed.reply || rawReply;
+      const parsed = JSON.parse(stripMarkdownFences(rawReply));
+      reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message || rawReply;
       if (Array.isArray(parsed.actions)) actions = parsed.actions;
     } catch { /* not JSON, use raw text */ }
 
@@ -1478,8 +1545,8 @@ app.post("/ai/kb-chat", async (c) => {
     let reply = rawReply;
     let replySources: string[] = sources.slice(0, 5);
     try {
-      const parsed = JSON.parse(rawReply);
-      reply = parsed.reply || rawReply;
+      const parsed = JSON.parse(stripMarkdownFences(rawReply));
+      reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message || rawReply;
       if (Array.isArray(parsed.sources)) replySources = parsed.sources;
     } catch { /* use raw */ }
 

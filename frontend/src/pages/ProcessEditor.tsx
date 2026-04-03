@@ -235,21 +235,21 @@ const CSS = `
   .proc-rename-input { flex:1; padding:2px 5px; border:1px solid #6366f1; border-radius:3px; font-size:12px; outline:none; min-width:0; }
   /* Picker */
   /* Tsunade chat panel */
-  .tsunade-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#0f172a; border-left:1px solid #1e293b; height:100%; }
-  .tsunade-header { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #1e293b; }
-  .tsunade-title { font-size:13px; font-weight:600; color:#e2e8f0; }
-  .tsunade-btn-close { background:none; border:none; color:#64748b; cursor:pointer; font-size:16px; padding:0 4px; line-height:1; }
-  .tsunade-btn-close:hover { color:#94a3b8; }
-  .tsunade-messages { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
+  .tsunade-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#fff; border-left:1px solid #e2e8f0; height:100%; }
+  .tsunade-header { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #e2e8f0; background:#f8fafc; }
+  .tsunade-title { font-size:13px; font-weight:600; color:#1e293b; }
+  .tsunade-btn-close { background:none; border:none; color:#94a3b8; cursor:pointer; font-size:16px; padding:0 4px; line-height:1; }
+  .tsunade-btn-close:hover { color:#475569; }
+  .tsunade-messages { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px; background:#f8fafc; }
   .tsunade-msg { max-width:90%; padding:8px 10px; border-radius:8px; font-size:13px; line-height:1.5; }
-  .tsunade-msg.user { align-self:flex-end; background:#334155; color:#e2e8f0; border-bottom-right-radius:2px; }
-  .tsunade-msg.assistant { align-self:flex-start; background:#1e3a5f; color:#bfdbfe; border-bottom-left-radius:2px; }
-  .tsunade-msg.system { align-self:center; background:#064e3b; color:#6ee7b7; font-size:11px; padding:4px 10px; border-radius:12px; }
-  .tsunade-msg.error { align-self:center; background:#7f1d1d; color:#fca5a5; font-size:11px; padding:4px 10px; border-radius:12px; }
-  .tsunade-input-row { display:flex; gap:6px; padding:10px 12px; border-top:1px solid #1e293b; }
-  .tsunade-input { flex:1; background:#1e293b; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:13px; padding:7px 10px; outline:none; resize:none; font-family:inherit; }
+  .tsunade-msg.user { align-self:flex-end; background:#eff6ff; color:#1d4ed8; border-bottom-right-radius:2px; }
+  .tsunade-msg.assistant { align-self:flex-start; background:#fff; color:#1e293b; border:1px solid #e2e8f0; border-bottom-left-radius:2px; }
+  .tsunade-msg.system { align-self:center; background:#f0fdf4; color:#15803d; font-size:11px; padding:4px 10px; border-radius:12px; }
+  .tsunade-msg.error { align-self:center; background:#fef2f2; color:#dc2626; font-size:11px; padding:4px 10px; border-radius:12px; }
+  .tsunade-input-row { display:flex; gap:6px; padding:10px 12px; border-top:1px solid #e2e8f0; background:#fff; }
+  .tsunade-input { flex:1; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; color:#1e293b; font-size:13px; padding:7px 10px; outline:none; resize:none; font-family:inherit; }
   .tsunade-input:focus { border-color:#6366f1; }
-  .tsunade-input::placeholder { color:#475569; }
+  .tsunade-input::placeholder { color:#94a3b8; }
   .tsunade-send { background:#6366f1; border:none; color:white; border-radius:6px; padding:7px 12px; cursor:pointer; font-size:13px; font-weight:600; flex-shrink:0; }
   .tsunade-send:hover { background:#4f46e5; }
   .tsunade-send:disabled { opacity:.5; cursor:not-allowed; }
@@ -809,7 +809,7 @@ export function ProcessEditor() {
       };
     }
     try {
-      const res = await api.tsunade.chat({ message: msg, schema, chat_id: chatId ?? undefined });
+      const res = await api.tsunade.processChat({ message: msg, schema, chat_id: chatId ?? undefined });
       if (!chatId) setChatId(res.chat_id);
       setChatMsgs(prev => [...prev, { role: 'assistant', text: res.reply }]);
 
@@ -1686,7 +1686,7 @@ export function ProcessEditor() {
               </div>
               <div className="tsunade-messages">
                 {chatMsgs.length === 0 && (
-                  <div style={{ color: '#475569', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>
+                  <div style={{ color: '#94a3b8', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>
                     Спросите Цунаде о схеме.<br />
                     Например: «Выровняй элементы вертикально» или «Добавь шлюз XOR после функции X».
                   </div>

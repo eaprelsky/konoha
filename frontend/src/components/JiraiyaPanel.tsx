@@ -6,29 +6,29 @@ import { useState, useRef, useEffect } from 'react';
 import { api } from '../api/client';
 
 export const JIRAIYA_CSS = `
-  .jiraiya-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#0f172a; border-left:1px solid #1e293b; height:calc(100vh - 64px); }
-  .jiraiya-header { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #1e293b; }
-  .jiraiya-title { font-size:13px; font-weight:600; color:#e2e8f0; }
-  .jiraiya-btn-close { background:none; border:none; color:#64748b; cursor:pointer; font-size:16px; padding:0 4px; line-height:1; }
-  .jiraiya-btn-close:hover { color:#94a3b8; }
-  .jiraiya-messages { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
+  .jiraiya-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#fff; border-left:1px solid #e2e8f0; height:calc(100vh - 64px); }
+  .jiraiya-header { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #e2e8f0; background:#f8fafc; }
+  .jiraiya-title { font-size:13px; font-weight:600; color:#1e293b; }
+  .jiraiya-btn-close { background:none; border:none; color:#94a3b8; cursor:pointer; font-size:16px; padding:0 4px; line-height:1; }
+  .jiraiya-btn-close:hover { color:#475569; }
+  .jiraiya-messages { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px; background:#f8fafc; }
   .jiraiya-msg { max-width:95%; padding:8px 10px; border-radius:8px; font-size:12px; line-height:1.5; word-break:break-word; }
-  .jiraiya-msg.user { align-self:flex-end; background:#334155; color:#e2e8f0; border-bottom-right-radius:2px; }
-  .jiraiya-msg.assistant { align-self:flex-start; background:#1e3a5f; color:#bfdbfe; border-bottom-left-radius:2px; }
-  .jiraiya-msg.system { align-self:center; background:#064e3b; color:#6ee7b7; font-size:11px; padding:4px 10px; border-radius:12px; }
-  .jiraiya-msg.error { align-self:center; background:#7f1d1d; color:#fca5a5; font-size:11px; padding:4px 10px; border-radius:12px; }
+  .jiraiya-msg.user { align-self:flex-end; background:#eff6ff; color:#1d4ed8; border-bottom-right-radius:2px; }
+  .jiraiya-msg.assistant { align-self:flex-start; background:#fff; color:#1e293b; border:1px solid #e2e8f0; border-bottom-left-radius:2px; }
+  .jiraiya-msg.system { align-self:center; background:#f0fdf4; color:#15803d; font-size:11px; padding:4px 10px; border-radius:12px; }
+  .jiraiya-msg.error { align-self:center; background:#fef2f2; color:#dc2626; font-size:11px; padding:4px 10px; border-radius:12px; }
   .jiraiya-sources { margin-top:6px; display:flex; flex-direction:column; gap:2px; }
-  .jiraiya-source { display:flex; align-items:center; gap:4px; font-size:10px; color:#94a3b8; font-family:monospace; padding:2px 0; }
-  .jiraiya-source-link { color:#60a5fa; cursor:pointer; text-decoration:none; }
-  .jiraiya-source-link:hover { text-decoration:underline; color:#93c5fd; }
-  .jiraiya-input-row { display:flex; gap:6px; padding:10px 12px; border-top:1px solid #1e293b; }
-  .jiraiya-input { flex:1; background:#1e293b; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:12px; padding:6px 10px; outline:none; resize:none; font-family:inherit; }
+  .jiraiya-source { display:flex; align-items:center; gap:4px; font-size:10px; color:#64748b; font-family:monospace; padding:2px 0; }
+  .jiraiya-source-link { color:#6366f1; cursor:pointer; text-decoration:none; }
+  .jiraiya-source-link:hover { text-decoration:underline; color:#4f46e5; }
+  .jiraiya-input-row { display:flex; gap:6px; padding:10px 12px; border-top:1px solid #e2e8f0; background:#fff; }
+  .jiraiya-input { flex:1; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; color:#1e293b; font-size:12px; padding:6px 10px; outline:none; resize:none; font-family:inherit; }
   .jiraiya-input:focus { border-color:#6366f1; }
-  .jiraiya-input::placeholder { color:#475569; }
+  .jiraiya-input::placeholder { color:#94a3b8; }
   .jiraiya-send { background:#6366f1; border:none; color:white; border-radius:6px; padding:6px 10px; cursor:pointer; font-size:12px; font-weight:600; flex-shrink:0; }
   .jiraiya-send:hover { background:#4f46e5; }
   .jiraiya-send:disabled { opacity:.5; cursor:not-allowed; }
-  .jiraiya-context-bar { padding:6px 12px; border-bottom:1px solid #1e293b; font-size:10px; color:#475569; font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .jiraiya-context-bar { padding:6px 12px; border-bottom:1px solid #e2e8f0; font-size:10px; color:#64748b; font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:#f8fafc; }
 `;
 
 interface JiraiyaPanelProps {
@@ -86,7 +86,7 @@ export function JiraiyaPanel({ filePath, onFileSelect, onClose }: JiraiyaPanelPr
       )}
       <div className="jiraiya-messages">
         {msgs.length === 0 && (
-          <div style={{ color: '#475569', fontSize: 11, textAlign: 'center', padding: '16px 0', lineHeight: 1.7 }}>
+          <div style={{ color: '#94a3b8', fontSize: 11, textAlign: 'center', padding: '16px 0', lineHeight: 1.7 }}>
             Задайте вопрос по базе знаний.<br />
             Например: «Как настроить агента?»<br />
             или «Резюмируй этот документ».
@@ -97,7 +97,7 @@ export function JiraiyaPanel({ filePath, onFileSelect, onClose }: JiraiyaPanelPr
             <div>{m.text}</div>
             {m.sources && m.sources.length > 0 && (
               <div className="jiraiya-sources">
-                <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>Источники:</div>
+                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>Источники:</div>
                 {m.sources.map((src, j) => (
                   <div key={j} className="jiraiya-source">
                     <span>📄</span>

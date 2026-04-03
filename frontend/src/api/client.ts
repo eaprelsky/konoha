@@ -198,6 +198,13 @@ export const api = {
       }),
     clearChat: (chat_id: string) =>
       apiFetch<{ ok: boolean }>(`${BASE}/tsunade/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+    processChat: (params: { message: string; schema?: unknown; chat_id?: string }) =>
+      apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null }>(`${BASE}/ai/process-chat`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }),
+    clearProcessChat: (chat_id: string) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/ai/process-chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
   },
 
   kiba: {
