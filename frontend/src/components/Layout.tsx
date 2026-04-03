@@ -29,8 +29,11 @@ const NAV_LINKS = [
   { href: '/ui/connectors.html', key: 'nav.connectors', fallback: 'Connectors' },
   { href: '/ui/eventlog.html',   key: 'nav.eventlog',   fallback: 'Event Log' },
   { href: '/ui/agents.html',     key: 'nav.agents',     fallback: 'Agents' },
+  { href: '/ui/messages.html',   key: 'nav.messages',   fallback: 'Messages' },
+  { href: '/ui/health.html',     key: 'nav.health',     fallback: 'Health' },
+  { href: '/ui/kb.html',         key: 'nav.kb',         fallback: 'KB' },
   { href: '/ui/admin.html',      key: 'nav.admin',      fallback: 'Admin' },
-  { href: '/ui/editor.html',    key: 'nav.editor',     fallback: 'Editor' },
+  { href: '/ui/editor.html',     key: 'nav.editor',     fallback: 'Editor' },
 ];
 
 interface LayoutProps {

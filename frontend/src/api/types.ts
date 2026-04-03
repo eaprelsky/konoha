@@ -149,3 +149,29 @@ export interface Reminder {
   created_at: string;
   updated_at: string;
 }
+
+export interface KonohaMessage {
+  id: string;
+  from: string;
+  to: string;
+  text: string;
+  type: string;
+  ts: number;
+  channel?: string;
+}
+
+export interface AgentStatus {
+  status: string;
+  pid?: number;
+  uptime_seconds?: number;
+  started_at?: string;
+}
+
+export interface KbNode {
+  type: 'file' | 'dir';
+  name: string;
+  path: string;
+  size?: number;
+  ext?: string;
+  children?: KbNode[];
+}

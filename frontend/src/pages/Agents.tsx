@@ -139,6 +139,30 @@ function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
 
 import { useEffect } from 'react';
 
+interface TmuxModalProps { agentId: string; onClose: () => void; }
+function TmuxModal({ agentId, onClose }: TmuxModalProps) {
+  const [lines, setLines] = useState('Loading...');
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    api.agents.tmuxLog(agentId)
+      .then(d => setLines(d.lines || '(empty)'))
+      .catch(e => setLines('Error: ' + e.message));
+    return () => document.removeEventListener('keydown', h);
+  }, [agentId, onClose]);
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ width: 700, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ fontSize: 16 }}>tmux: {agentId}</h2>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#888' }} onClick={onClose}>×</button>
+        </div>
+        <pre style={{ flex: 1, overflow: 'auto', background: '#0d1117', color: '#e6edf3', padding: 16, borderRadius: 6, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{lines}</pre>
+      </div>
+    </div>
+  );
+}
+
 export function Agents() {
   const token = useToken();
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -146,6 +170,7 @@ export function Agents() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState('-');
   const [showNew, setShowNew] = useState(false);
+  const [tmuxAgent, setTmuxAgent] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -218,6 +243,7 @@ export function Agents() {
                         <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start')}>▶ Start</button>
                         <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop')}>■ Stop</button>
                         <button className="btn-restart" onClick={() => action(a.id, () => api.agents.restart(a.id), 'Restart')}>↺</button>
+                        <button onClick={() => setTmuxAgent(a.id)}>Logs</button>
                         <button className="btn-del" onClick={() => action(a.id, () => api.agents.delete(a.id), 'Delete')}>🗑</button>
                       </div>
                     </td>
@@ -230,6 +256,7 @@ export function Agents() {
         </div>
       </div>
       {showNew && <NewAgentModal onClose={() => setShowNew(false)} onCreated={load} />}
+      {tmuxAgent && <TmuxModal agentId={tmuxAgent} onClose={() => setTmuxAgent(null)} />}
     </Layout>
   );
 }

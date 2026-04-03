@@ -35,18 +35,20 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+const BASE = '/api';
+
 // ── Workflows ─────────────────────────────────────────────────────────────────
 
 export const api = {
   workflows: {
-    list: () => apiFetch<Workflow[]>('/workflows'),
-    get: (id: string) => apiFetch<Workflow>(`/workflows/${id}`),
+    list: () => apiFetch<Workflow[]>(`${BASE}/workflows`),
+    get: (id: string) => apiFetch<Workflow>(`${BASE}/workflows/${id}`),
     create: (body: Partial<Workflow> & { id: string; name: string }) =>
-      apiFetch<Workflow>('/workflows', { method: 'POST', body: JSON.stringify(body) }),
+      apiFetch<Workflow>(`${BASE}/workflows`, { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: Partial<Workflow>) =>
-      apiFetch<Workflow>(`/workflows/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+      apiFetch<Workflow>(`${BASE}/workflows/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: string) =>
-      apiFetch<{ ok: boolean }>(`/workflows/${id}`, { method: 'DELETE' }),
+      apiFetch<{ ok: boolean }>(`${BASE}/workflows/${id}`, { method: 'DELETE' }),
   },
 
   workitems: {
@@ -57,15 +59,15 @@ export const api = {
       if (filters?.status)         p.set('status', filters.status);
       if (filters?.deadline_before) p.set('deadline_before', filters.deadline_before);
       const qs = p.toString();
-      return apiFetch<WorkItem[]>(`/workitems${qs ? '?' + qs : ''}`);
+      return apiFetch<WorkItem[]>(`${BASE}/workitems${qs ? '?' + qs : ''}`);
     },
     complete: (id: string, output?: Record<string, unknown>) =>
-      apiFetch<WorkItem>(`/workitems/${id}/complete`, {
+      apiFetch<WorkItem>(`${BASE}/workitems/${id}/complete`, {
         method: 'POST',
         body: JSON.stringify({ output: output || {} }),
       }),
     create: (params: { label: string; assignee: string; deadline?: string; input?: Record<string, unknown> }) =>
-      apiFetch<WorkItem>('/workitems', {
+      apiFetch<WorkItem>(`${BASE}/workitems`, {
         method: 'POST',
         body: JSON.stringify(params),
       }),
@@ -81,9 +83,9 @@ export const api = {
       if (filters?.limit)      p.set('limit', String(filters.limit));
       if (filters?.offset)     p.set('offset', String(filters.offset));
       const qs = p.toString();
-      return apiFetch<{ cases: Case[]; total: number }>(`/cases${qs ? '?' + qs : ''}`);
+      return apiFetch<{ cases: Case[]; total: number }>(`${BASE}/cases${qs ? '?' + qs : ''}`);
     },
-    get: (id: string) => apiFetch<Case>(`/cases/${id}`),
+    get: (id: string) => apiFetch<Case>(`${BASE}/cases/${id}`),
   },
 
   events: {
@@ -94,42 +96,43 @@ export const api = {
       if (filters?.before) p.set('before', filters.before);
       if (filters?.limit)  p.set('limit', String(filters.limit));
       const qs = p.toString();
-      return apiFetch<RuntimeEvent[]>(`/events/log${qs ? '?' + qs : ''}`);
+      return apiFetch<RuntimeEvent[]>(`${BASE}/events/log${qs ? '?' + qs : ''}`);
     },
   },
 
   agents: {
-    list: () => apiFetch<Agent[]>('/agents'),
+    list: () => apiFetch<Agent[]>(`${BASE}/agents`),
     create: (params: { id: string; name: string; system_prompt?: string; model?: string }) =>
-      apiFetch<Agent>('/agents', { method: 'POST', body: JSON.stringify(params) }),
-    start: (id: string) => apiFetch<unknown>(`/agents/${id}/start`, { method: 'POST', body: '{}' }),
-    stop: (id: string) => apiFetch<unknown>(`/agents/${id}/stop`, { method: 'POST', body: '{}' }),
-    restart: (id: string) => apiFetch<unknown>(`/agents/${id}/restart`, { method: 'POST', body: '{}' }),
-    delete: (id: string) => apiFetch<{ ok: boolean }>(`/agents/${id}`, { method: 'DELETE' }),
-    status: (id: string) => apiFetch<unknown>(`/agents/${id}/status`),
+      apiFetch<Agent>(`${BASE}/agents`, { method: 'POST', body: JSON.stringify(params) }),
+    start: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/start`, { method: 'POST', body: '{}' }),
+    stop: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/stop`, { method: 'POST', body: '{}' }),
+    restart: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/restart`, { method: 'POST', body: '{}' }),
+    delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}`, { method: 'DELETE' }),
+    status: (id: string) => apiFetch<AgentStatus>(`${BASE}/agents/${id}/status`),
+    tmuxLog: (id: string) => apiFetch<{ session: string; lines: string }>(`${BASE}/agents/tmux/${id}`),
   },
 
   roles: {
-    list: () => apiFetch<RoleDef[]>('/roles'),
+    list: () => apiFetch<RoleDef[]>(`${BASE}/roles`),
     create: (params: { role_id: string; name: string; description?: string; assignees?: string[]; strategy?: string }) =>
-      apiFetch<RoleDef>('/roles', { method: 'POST', body: JSON.stringify(params) }),
+      apiFetch<RoleDef>(`${BASE}/roles`, { method: 'POST', body: JSON.stringify(params) }),
     update: (id: string, patch: Partial<RoleDef>) =>
-      apiFetch<RoleDef>(`/roles/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-    delete: (id: string) => apiFetch<{ ok: boolean }>(`/roles/${id}`, { method: 'DELETE' }),
+      apiFetch<RoleDef>(`${BASE}/roles/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/roles/${id}`, { method: 'DELETE' }),
   },
 
   documents: {
-    list: () => apiFetch<DocTemplate[]>('/documents'),
+    list: () => apiFetch<DocTemplate[]>(`${BASE}/documents`),
     create: (params: { name: string; type?: string; content?: string }) =>
-      apiFetch<DocTemplate>('/documents', { method: 'POST', body: JSON.stringify(params) }),
+      apiFetch<DocTemplate>(`${BASE}/documents`, { method: 'POST', body: JSON.stringify(params) }),
     update: (id: string, patch: Partial<DocTemplate>) =>
-      apiFetch<DocTemplate>(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-    delete: (id: string) => apiFetch<{ ok: boolean }>(`/documents/${id}`, { method: 'DELETE' }),
+      apiFetch<DocTemplate>(`${BASE}/documents/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/documents/${id}`, { method: 'DELETE' }),
   },
 
   adapters: {
-    list: () => apiFetch<{ adapters: string[] }>('/adapters'),
-    health: (name: string) => apiFetch<{ adapter: string; healthy: boolean }>(`/adapters/${name}/health`),
+    list: () => apiFetch<{ adapters: string[] }>(`${BASE}/adapters`),
+    health: (name: string) => apiFetch<{ adapter: string; healthy: boolean }>(`${BASE}/adapters/${name}/health`),
   },
 
   reminders: {
@@ -138,7 +141,7 @@ export const api = {
       if (filters?.status)    p.set('status', filters.status);
       if (filters?.recipient) p.set('recipient', filters.recipient);
       const qs = p.toString();
-      return apiFetch<Reminder[]>(`/reminders${qs ? '?' + qs : ''}`);
+      return apiFetch<Reminder[]>(`${BASE}/reminders${qs ? '?' + qs : ''}`);
     },
     create: (params: {
       recipient: string;
@@ -146,14 +149,31 @@ export const api = {
       scheduled_at: string;
       channel?: string;
       type?: string;
-    }) => apiFetch<Reminder>('/reminders', { method: 'POST', body: JSON.stringify(params) }),
+    }) => apiFetch<Reminder>(`${BASE}/reminders`, { method: 'POST', body: JSON.stringify(params) }),
     acknowledge: (id: string) =>
-      apiFetch<Reminder>(`/reminders/${id}/status`, {
+      apiFetch<Reminder>(`${BASE}/reminders/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'acknowledged' }),
       }),
     delete: (id: string) =>
-      apiFetch<{ ok: boolean }>(`/reminders/${id}`, { method: 'DELETE' }),
+      apiFetch<{ ok: boolean }>(`${BASE}/reminders/${id}`, { method: 'DELETE' }),
+  },
+
+  messages: {
+    history: (agentId: string, count = 50) =>
+      apiFetch<KonohaMessage[]>(`${BASE}/messages/${agentId}/history?count=${count}`),
+    send: (params: { from: string; to: string; text: string; type?: string }) =>
+      apiFetch<{ id: string }>(`${BASE}/messages`, { method: 'POST', body: JSON.stringify(params) }),
+  },
+
+  health: {
+    bus: () => apiFetch<{ status: string; ts: string }>(`${BASE}/health`),
+  },
+
+  kb: {
+    tree: () => apiFetch<KbNode[]>(`${BASE}/kb/tree`),
+    file: (path: string) => apiFetch<{ content: string; path: string }>(`${BASE}/kb/file?path=${encodeURIComponent(path)}`),
+    search: (q: string) => apiFetch<{ path: string }[]>(`${BASE}/kb/search?q=${encodeURIComponent(q)}`),
   },
 };
 
