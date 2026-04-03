@@ -523,7 +523,7 @@ export function ProcessEditor() {
           </button>
           <button
             className={mode === 'connect' ? 'active' : ''}
-            onClick={() => switchMode('connect')}
+            onClick={() => switchMode(mode === 'connect' ? 'select' : 'connect')}
             title="Draw connections between elements (C)">
             ⟶ Connect
           </button>
