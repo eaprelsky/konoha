@@ -70,16 +70,10 @@ export const yonoteAdapter: Adapter = {
   async healthcheck() {
     if (!API_KEY) return false;
     try {
-      await yonoteFetch("/api/v1/ping");
-      return true;
+      const res = await fetch(BASE_URL, { method: "HEAD" });
+      return res.ok;
     } catch {
-      // try a lightweight authenticated request as fallback
-      try {
-        await yonoteFetch("/api/v1/doc?limit=1");
-        return true;
-      } catch {
-        return false;
-      }
+      return false;
     }
   },
 };
