@@ -39,18 +39,60 @@ function genId(type: EType, els: WorkflowElement[]): string {
   return `${p}-${nums.length ? Math.max(...nums) + 1 : 1}`;
 }
 
-/** Compute the point where a line from element center toward (tx,ty) exits the bounding box. */
-function edgePoint(pos: Pos, tx: number, ty: number): Pos {
-  const cx = pos.x + EW / 2, cy = pos.y + EH / 2;
-  const dx = tx - cx, dy = ty - cy;
-  if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) return { x: cx, y: cy };
-  const ax = Math.abs(dx), ay = Math.abs(dy);
-  if (ax * EH > ay * EW) {
-    const sx = dx > 0 ? 1 : -1;
-    return { x: cx + sx * EW / 2, y: cy + (dy * (EW / 2)) / ax };
+const CORNER_R = 10; // rounded corner radius for orthogonal routing
+
+/** VHV: vertical → horizontal → vertical path with rounded corners */
+function routeVHV(x1: number, y1: number, x2: number, y2: number, midY: number): string {
+  if (Math.abs(x1 - x2) < 0.5) return `M${x1},${y1} L${x2},${y2}`;
+  const dy1 = midY - y1, dx = x2 - x1, dy2 = y2 - midY;
+  const r1 = Math.min(CORNER_R, Math.abs(dy1) / 2, Math.abs(dx) / 2);
+  const r2 = Math.min(CORNER_R, Math.abs(dx) / 2, Math.abs(dy2) / 2);
+  const s1 = dy1 >= 0 ? 1 : -1, sx = dx >= 0 ? 1 : -1, s2 = dy2 >= 0 ? 1 : -1;
+  return [
+    `M${x1},${y1}`,
+    `L${x1},${midY - s1 * r1}`,
+    `Q${x1},${midY} ${x1 + sx * r1},${midY}`,
+    `L${x2 - sx * r2},${midY}`,
+    `Q${x2},${midY} ${x2},${midY + s2 * r2}`,
+    `L${x2},${y2}`,
+  ].join(' ');
+}
+
+/** HVH: horizontal → vertical → horizontal path with rounded corners */
+function routeHVH(x1: number, y1: number, x2: number, y2: number, midX: number): string {
+  if (Math.abs(y1 - y2) < 0.5) return `M${x1},${y1} L${x2},${y2}`;
+  const dx1 = midX - x1, dy = y2 - y1, dx2 = x2 - midX;
+  const r1 = Math.min(CORNER_R, Math.abs(dx1) / 2, Math.abs(dy) / 2);
+  const r2 = Math.min(CORNER_R, Math.abs(dy) / 2, Math.abs(dx2) / 2);
+  const sx1 = dx1 >= 0 ? 1 : -1, sy = dy >= 0 ? 1 : -1, sx2 = dx2 >= 0 ? 1 : -1;
+  return [
+    `M${x1},${y1}`,
+    `L${midX - sx1 * r1},${y1}`,
+    `Q${midX},${y1} ${midX},${y1 + sy * r1}`,
+    `L${midX},${y2 - sy * r2}`,
+    `Q${midX},${y2} ${midX + sx2 * r2},${y2}`,
+    `L${x2},${y2}`,
+  ].join(' ');
+}
+
+/** Build an orthogonal SVG path between two element positions with rounded corners */
+function orthogonalPath(fp: Pos, tp: Pos): string {
+  const fcx = fp.x + EW / 2, fcy = fp.y + EH / 2;
+  const tcx = tp.x + EW / 2, tcy = tp.y + EH / 2;
+  const dx = tcx - fcx, dy = tcy - fcy;
+
+  if (Math.abs(dy) >= Math.abs(dx)) {
+    // Vertical dominant: exit bottom/top, enter top/bottom
+    const goDown = dy >= 0;
+    const x1 = fcx, y1 = goDown ? fp.y + EH : fp.y;
+    const x2 = tcx, y2 = goDown ? tp.y       : tp.y + EH;
+    return routeVHV(x1, y1, x2, y2, (y1 + y2) / 2);
   } else {
-    const sy = dy > 0 ? 1 : -1;
-    return { x: cx + (dx * (EH / 2)) / ay, y: cy + sy * EH / 2 };
+    // Horizontal dominant: exit right/left, enter left/right
+    const goRight = dx >= 0;
+    const x1 = goRight ? fp.x + EW : fp.x, y1 = fcy;
+    const x2 = goRight ? tp.x       : tp.x + EW, y2 = tcy;
+    return routeHVH(x1, y1, x2, y2, (x1 + x2) / 2);
   }
 }
 
@@ -532,23 +574,21 @@ export function ProcessEditor() {
               {flow.map(([fId, tId], i) => {
                 const fp = positions[fId], tp = positions[tId];
                 if (!fp || !tp) return null;
-                const tcx = tp.x + EW / 2, tcy = tp.y + EH / 2;
-                const fcx = fp.x + EW / 2, fcy = fp.y + EH / 2;
-                const src = edgePoint(fp, tcx, tcy);
-                const dst = edgePoint(tp, fcx, fcy);
+                const d = orthogonalPath(fp, tp);
                 const isHighlighted = selected === fId || selected === tId;
                 return (
                   <g key={i}>
-                    <line
-                      x1={src.x} y1={src.y} x2={dst.x} y2={dst.y}
+                    <path
+                      d={d}
                       stroke={isHighlighted ? '#6366f1' : '#6b7280'}
                       strokeWidth={isHighlighted ? 2 : 1.5}
+                      fill="none"
                       markerEnd={isHighlighted ? 'url(#arr-hi)' : 'url(#arr)'}
                     />
                     {/* Wider invisible hit area for deletion */}
-                    <line
-                      x1={src.x} y1={src.y} x2={dst.x} y2={dst.y}
-                      stroke="transparent" strokeWidth={12}
+                    <path
+                      d={d}
+                      stroke="transparent" strokeWidth={12} fill="none"
                       style={{ cursor: 'pointer' }}
                       onClick={e => { e.stopPropagation(); removeEdge(fId, tId); }}
                     />

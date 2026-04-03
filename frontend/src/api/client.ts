@@ -11,7 +11,18 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     },
   });
   if (res.status === 401) throw new Error('Unauthorized — invalid API token');
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}: ${res.statusText}`;
+    try {
+      const body = await res.json();
+      if (Array.isArray(body?.details) && body.details.length > 0) {
+        msg = body.details.join('; ');
+      } else if (typeof body?.error === 'string') {
+        msg = body.error;
+      }
+    } catch { /* body not JSON — keep default message */ }
+    throw new Error(msg);
+  }
   return res.json() as Promise<T>;
 }
 
