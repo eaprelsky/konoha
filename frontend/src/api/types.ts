@@ -99,6 +99,18 @@ export interface RoleDef {
   description?: string;
   assignees: string[];
   strategy: AssignmentStrategy;
+  required_capabilities?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  name_en?: string;
+  description?: string;
+  prompt_snippet?: string;
+  tools?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -200,6 +212,7 @@ export interface Person {
   tracker_login?: string;
   yonote_id?: string;
   channel?: 'telegram' | 'email';
+  capabilities?: string[];
 }
 
 export interface WorkspaceFile {

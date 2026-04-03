@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction, Skill } from './types';
 export type { KibaAction };
 
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
@@ -204,6 +204,16 @@ export const api = {
       }),
     clearChat: (chat_id: string) =>
       apiFetch<{ ok: boolean }>(`${BASE}/ai/admin-chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+  },
+
+  skills: {
+    list: () => apiFetch<Skill[]>(`${BASE}/skills`),
+    create: (params: { id?: string; name: string; name_en?: string; description?: string; prompt_snippet?: string; tools?: string[] }) =>
+      apiFetch<Skill>(`${BASE}/skills`, { method: 'POST', body: JSON.stringify(params) }),
+    update: (id: string, patch: Partial<Omit<Skill, 'id' | 'created_at' | 'updated_at'>>) =>
+      apiFetch<Skill>(`${BASE}/skills/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    delete: (id: string) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/skills/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
 
   jiraiya: {

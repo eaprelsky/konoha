@@ -70,6 +70,7 @@ export interface AgentDef {
   model: string;
   env?: Record<string, string>;
   tags?: string[];
+  capabilities?: string[];  // skill IDs assigned to this agent
   created_at: string;
   updated_at: string;
 }
@@ -197,7 +198,21 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     // Prepare per-agent working directory with two-level CLAUDE.md
     const workdir = join(AGENT_WORKDIR_ROOT, id);
     mkdirSync(workdir, { recursive: true });
-    const claudeMd = renderSystemTemplate(def) + "\n" + (def.system_prompt?.trim() || "");
+    let skillSnippets = "";
+    if (def.capabilities && def.capabilities.length > 0) {
+      const snippets: string[] = [];
+      for (const skillId of def.capabilities) {
+        const raw = await redis.get(`konoha:skill:${skillId}`).catch(() => null);
+        if (raw) {
+          const skill = JSON.parse(raw) as { prompt_snippet?: string; name?: string };
+          if (skill.prompt_snippet?.trim()) {
+            snippets.push(`## Skill: ${skill.name || skillId}\n${skill.prompt_snippet.trim()}`);
+          }
+        }
+      }
+      if (snippets.length > 0) skillSnippets = "\n\n" + snippets.join("\n\n");
+    }
+    const claudeMd = renderSystemTemplate(def) + "\n" + (def.system_prompt?.trim() || "") + skillSnippets;
     writeFileSync(join(workdir, "CLAUDE.md"), claudeMd, "utf-8");
 
     const r = await sh("tmux", ["new-session", "-d", "-s", session, "-c", workdir, fullCmd]);

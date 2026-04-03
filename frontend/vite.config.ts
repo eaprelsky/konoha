@@ -32,6 +32,7 @@ export default defineConfig({
         monitor:    resolve(__dirname, 'src/monitor.html'),
         login:      resolve(__dirname, 'src/login.html'),
         people:     resolve(__dirname, 'src/people.html'),
+        skills:     resolve(__dirname, 'src/skills.html'),
       },
     },
   },

@@ -51,6 +51,7 @@ const MAIN_NAV = [
   { href: '/ui/workitems.html',  key: 'nav.workitems',  fallback: 'Work Items' },
   { href: '/ui/reminders.html',  key: 'nav.reminders',  fallback: 'Reminders' },
   { href: '/ui/roles.html',      key: 'nav.roles',      fallback: 'Roles' },
+  { href: '/ui/skills.html',     key: 'nav.skills',     fallback: 'Skills' },
   { href: '/ui/documents.html',  key: 'nav.documents',  fallback: 'Documents' },
   { href: '/ui/connectors.html', key: 'nav.connectors', fallback: 'IS' },
   { href: '/ui/people.html',     key: 'nav.people',     fallback: 'People' },

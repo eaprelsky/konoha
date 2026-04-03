@@ -5,7 +5,7 @@ import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { RoleDef, AssignmentStrategy, Agent, Person } from '../api/types';
+import type { RoleDef, AssignmentStrategy, Agent, Person, Skill } from '../api/types';
 import { KibaPanel, KIBA_CSS } from '../components/KibaPanel';
 
 const STRATEGIES: { value: AssignmentStrategy; label: string }[] = [
@@ -178,16 +178,18 @@ interface RoleModalProps {
   role?: RoleDef | null;
   agents: Agent[];
   people: Person[];
+  skills: Skill[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-function RoleModal({ role, agents, people, onClose, onSaved }: RoleModalProps) {
+function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModalProps) {
   const [name, setName] = useState(role?.name || '');
   const [description, setDescription] = useState(role?.description || '');
   const [showDesc, setShowDesc] = useState(!!role?.description);
   const [assignees, setAssignees] = useState<string[]>(role?.assignees || []);
   const [strategy, setStrategy] = useState<AssignmentStrategy>(role?.strategy || 'manual');
+  const [requiredCaps, setRequiredCaps] = useState<string[]>(role?.required_capabilities || []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -196,6 +198,10 @@ function RoleModal({ role, agents, people, onClose, onSaved }: RoleModalProps) {
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [onClose]);
+
+  function toggleCap(id: string) {
+    setRequiredCaps(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
+  }
 
   const assigneeOptions: AssigneeOption[] = [
     ...agents.map(a => ({ id: a.id, label: a.name, group: 'Агенты' })),
@@ -208,7 +214,7 @@ function RoleModal({ role, agents, people, onClose, onSaved }: RoleModalProps) {
     setSubmitting(true); setError(null);
     try {
       if (role) {
-        await api.roles.update(role.role_id, { name, description: description || undefined, assignees, strategy });
+        await api.roles.update(role.role_id, { name, description: description || undefined, assignees, strategy, required_capabilities: requiredCaps });
       } else {
         const role_id = crypto.randomUUID();
         await api.roles.create({ role_id, name, description: description || undefined, assignees, strategy });
@@ -272,6 +278,21 @@ function RoleModal({ role, agents, people, onClose, onSaved }: RoleModalProps) {
             </select>
           </div>
 
+          {skills.length > 0 && (
+            <div className="form-group">
+              <label>Требуемые навыки</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 0' }}>
+                {skills.map(s => (
+                  <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 10px', border: `1px solid ${requiredCaps.includes(s.id) ? '#0066cc' : '#ddd'}`, borderRadius: 16, cursor: 'pointer', fontSize: 13, background: requiredCaps.includes(s.id) ? '#eff6ff' : 'white', color: requiredCaps.includes(s.id) ? '#1d4ed8' : '#374151', userSelect: 'none' }}>
+                    <input type="checkbox" checked={requiredCaps.includes(s.id)} onChange={() => toggleCap(s.id)} style={{ display: 'none' }} />
+                    {requiredCaps.includes(s.id) ? '✓ ' : ''}{s.name}
+                  </label>
+                ))}
+              </div>
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>Навыки, которые должен иметь исполнитель этой роли</span>
+            </div>
+          )}
+
           <div className="form-actions">
             <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
             <button type="submit" className="btn-submit" disabled={submitting}>
@@ -290,6 +311,7 @@ export function Roles() {
   const [roles,   setRoles]   = useState<RoleDef[]>([]);
   const [agents,  setAgents]  = useState<Agent[]>([]);
   const [people,  setPeople]  = useState<Person[]>([]);
+  const [skills,  setSkills]  = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -310,6 +332,7 @@ export function Roles() {
     if (!token) return;
     api.agents.list().then(setAgents).catch(() => {});
     api.people.list().then(setPeople).catch(() => {});
+    api.skills.list().then(setSkills).catch(() => {});
   }, [token]);
 
   async function deleteRole(id: string) {
@@ -388,6 +411,7 @@ export function Roles() {
           role={editRole}
           agents={agents}
           people={people}
+          skills={skills}
           onClose={() => setShowModal(false)}
           onSaved={load}
         />

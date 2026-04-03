@@ -4,7 +4,7 @@ import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { Agent } from '../api/types';
+import type { Agent, Skill } from '../api/types';
 import { KibaPanel, KIBA_CSS } from '../components/KibaPanel';
 
 const styles = `
@@ -212,10 +212,16 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const [memFiles, setMemFiles] = useState<{ name: string; size: number; updated_at: string }[]>([]);
   const [memContent, setMemContent] = useState<{ name: string; text: string } | null>(null);
   const [memLoading, setMemLoading] = useState(false);
+  const [allSkills, setAllSkills] = useState<Skill[]>([]);
+  const [capabilities, setCapabilities] = useState<string[]>((agent as any).capabilities || []);
 
   useEffect(() => {
-    api.agents.get(agent.id).then(d => { setPrompt((d as any).system_prompt || ''); }).catch(() => {});
+    api.agents.get(agent.id).then(d => {
+      setPrompt((d as any).system_prompt || '');
+      setCapabilities((d as any).capabilities || []);
+    }).catch(() => {});
     api.agents.systemTemplate(agent.id).then(d => setSysTemplate(d.template)).catch(() => {});
+    api.skills.list().then(setAllSkills).catch(() => {});
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
@@ -242,11 +248,15 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
     loadMemory();
   }
 
+  function toggleCapability(id: string) {
+    setCapabilities(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true); setError(null);
     try {
-      await api.agents.update(agent.id, { name: name.trim(), model, system_prompt: prompt });
+      await api.agents.update(agent.id, { name: name.trim(), model, system_prompt: prompt, capabilities });
       onSaved(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
   }
@@ -303,6 +313,20 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
               <textarea placeholder="Роль, специализация, типы задач, поведение..."
                 value={prompt} onChange={e => setPrompt(e.target.value)} style={{ minHeight: 180 }} />
             </div>
+            {allSkills.length > 0 && (
+              <div className="form-group">
+                <label>Навыки / Capabilities</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 0' }}>
+                  {allSkills.map(s => (
+                    <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 10px', border: `1px solid ${capabilities.includes(s.id) ? '#6366f1' : '#ddd'}`, borderRadius: 16, cursor: 'pointer', fontSize: 13, background: capabilities.includes(s.id) ? '#ede9fe' : 'white', color: capabilities.includes(s.id) ? '#4f46e5' : '#374151', userSelect: 'none' }}>
+                      <input type="checkbox" checked={capabilities.includes(s.id)} onChange={() => toggleCapability(s.id)} style={{ display: 'none' }} />
+                      {capabilities.includes(s.id) ? '✓ ' : ''}{s.name}
+                    </label>
+                  ))}
+                </div>
+                <span style={{ fontSize: 11, color: '#94a3b8' }}>Prompt snippet навыков инжектируется в CLAUDE.md при старте агента</span>
+              </div>
+            )}
             <div className="form-actions">
               <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
               <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Сохранение…' : 'Сохранить'}</button>

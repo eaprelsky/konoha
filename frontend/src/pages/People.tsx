@@ -4,7 +4,7 @@ import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { Person } from '../api/types';
+import type { Person, Skill } from '../api/types';
 import { KibaPanel, KIBA_CSS } from '../components/KibaPanel';
 
 const styles = `
@@ -50,11 +50,12 @@ const styles = `
 
 interface PersonModalProps {
   person?: Person | null;
+  skills: Skill[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
+function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
   const isFile = person?.source === 'file';
   const isNew = !person;
 
@@ -67,6 +68,7 @@ function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
   const [trackerLogin, setTrackerLogin] = useState(person?.tracker_login || '');
   const [yonoteId, setYonoteId] = useState(person?.yonote_id || '');
   const [channel, setChannel] = useState<'telegram' | 'email'>(person?.channel || 'telegram');
+  const [capabilities, setCapabilities] = useState<string[]>(person?.capabilities || []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,6 +94,7 @@ function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
         tracker_login: trackerLogin.trim() || undefined,
         yonote_id: yonoteId.trim() || undefined,
         channel,
+        capabilities: capabilities.length > 0 ? capabilities : undefined,
       });
       onSaved(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
@@ -165,6 +168,22 @@ function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
             <span className="form-hint">ID пользователя в Yonote</span>
           </div>
 
+          {skills.length > 0 && (
+            <>
+              <div className="form-section">Навыки</div>
+              <div className="form-group">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 0' }}>
+                  {skills.map(s => (
+                    <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 10px', border: `1px solid ${capabilities.includes(s.id) ? '#6366f1' : '#ddd'}`, borderRadius: 16, cursor: 'pointer', fontSize: 13, background: capabilities.includes(s.id) ? '#ede9fe' : 'white', color: capabilities.includes(s.id) ? '#4f46e5' : '#374151', userSelect: 'none' }}>
+                      <input type="checkbox" checked={capabilities.includes(s.id)} onChange={() => setCapabilities(prev => prev.includes(s.id) ? prev.filter(c => c !== s.id) : [...prev, s.id])} style={{ display: 'none' }} />
+                      {capabilities.includes(s.id) ? '✓ ' : ''}{s.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
           <div className="form-actions">
             <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
             <button type="submit" className="btn-submit" disabled={submitting}>
@@ -180,6 +199,7 @@ function PersonModal({ person, onClose, onSaved }: PersonModalProps) {
 export function People() {
   const token = useToken();
   const [people, setPeople] = useState<Person[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -196,6 +216,11 @@ export function People() {
 
   useEffect(() => { load(); }, [load]);
   useInterval(load, 60000);
+
+  useEffect(() => {
+    if (!token) return;
+    api.skills.list().then(setSkills).catch(() => {});
+  }, [token]);
 
   const q = search.toLowerCase();
   const filtered = people.filter(p =>
@@ -309,6 +334,7 @@ export function People() {
       {showModal && (
         <PersonModal
           person={editPerson}
+          skills={skills}
           onClose={() => setShowModal(false)}
           onSaved={load}
         />

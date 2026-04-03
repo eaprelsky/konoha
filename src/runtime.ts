@@ -1036,6 +1036,7 @@ export interface RoleDef {
   description?: string;
   assignees: string[];          // agent IDs or user handles
   strategy: AssignmentStrategy;
+  required_capabilities?: string[];  // skill IDs required for this role
   created_at: string;
   updated_at: string;
 }
@@ -1063,13 +1064,14 @@ export async function listRoles(): Promise<RoleDef[]> {
   return roles.filter((r): r is RoleDef => r !== null);
 }
 
-export async function updateRole(role_id: string, patch: Partial<Pick<RoleDef, "name" | "description" | "assignees" | "strategy">>): Promise<RoleDef> {
+export async function updateRole(role_id: string, patch: Partial<Pick<RoleDef, "name" | "description" | "assignees" | "strategy" | "required_capabilities">>): Promise<RoleDef> {
   const r = await loadRole(role_id);
   if (!r) throw new Error(`Role "${role_id}" not found`);
-  if (patch.name !== undefined)        r.name = patch.name;
-  if (patch.description !== undefined) r.description = patch.description;
-  if (patch.assignees !== undefined)   r.assignees = patch.assignees;
-  if (patch.strategy !== undefined)    r.strategy = patch.strategy;
+  if (patch.name !== undefined)                   r.name = patch.name;
+  if (patch.description !== undefined)            r.description = patch.description;
+  if (patch.assignees !== undefined)              r.assignees = patch.assignees;
+  if (patch.strategy !== undefined)               r.strategy = patch.strategy;
+  if (patch.required_capabilities !== undefined)  r.required_capabilities = patch.required_capabilities;
   r.updated_at = new Date().toISOString();
   await saveRole(r);
   return r;

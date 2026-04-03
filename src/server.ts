@@ -732,6 +732,67 @@ app.delete("/roles/:id", async (c) => {
   catch (e: any) { return c.json({ error: e.message }, 404); }
 });
 
+// --- Skills / Capabilities ---
+
+const SKILL_KEY_PREFIX = "konoha:skill:";
+const SKILLS_IDX_ALL   = "konoha:skills:all";
+
+type SkillRecord = {
+  id: string; name: string; name_en?: string; description?: string;
+  prompt_snippet?: string; tools?: string[];
+  created_at: string; updated_at: string;
+};
+
+app.use("/skills/*", requireAuth);
+app.use("/skills", requireAuth);
+
+app.get("/skills", async (c) => {
+  const ids = await redis.zrange(SKILLS_IDX_ALL, 0, -1);
+  const raws = await Promise.all(ids.map(id => redis.get(SKILL_KEY_PREFIX + id)));
+  return c.json(raws.filter(Boolean).map(r => JSON.parse(r!)));
+});
+
+app.post("/skills", async (c) => {
+  const body = await c.req.json<Partial<SkillRecord>>();
+  if (!body.name?.trim()) return c.json({ error: "name required" }, 400);
+  const id = body.id?.trim() || body.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  const now = new Date().toISOString();
+  const skill: SkillRecord = {
+    id, name: body.name.trim(),
+    name_en: body.name_en?.trim() || undefined,
+    description: body.description?.trim() || undefined,
+    prompt_snippet: body.prompt_snippet?.trim() || undefined,
+    tools: Array.isArray(body.tools) ? body.tools : undefined,
+    created_at: now, updated_at: now,
+  };
+  await redis.set(SKILL_KEY_PREFIX + id, JSON.stringify(skill));
+  await redis.zadd(SKILLS_IDX_ALL, new Date(now).getTime(), id);
+  return c.json(skill, 201);
+});
+
+app.patch("/skills/:id", async (c) => {
+  const id = c.req.param("id");
+  const raw = await redis.get(SKILL_KEY_PREFIX + id);
+  if (!raw) return c.json({ error: "Skill not found" }, 404);
+  const skill: SkillRecord = JSON.parse(raw);
+  const body = await c.req.json<Partial<SkillRecord>>().catch(() => ({}));
+  if (body.name !== undefined)           skill.name = body.name.trim();
+  if (body.name_en !== undefined)        skill.name_en = body.name_en?.trim() || undefined;
+  if (body.description !== undefined)    skill.description = body.description?.trim() || undefined;
+  if (body.prompt_snippet !== undefined) skill.prompt_snippet = body.prompt_snippet?.trim() || undefined;
+  if (body.tools !== undefined)          skill.tools = Array.isArray(body.tools) ? body.tools : undefined;
+  skill.updated_at = new Date().toISOString();
+  await redis.set(SKILL_KEY_PREFIX + id, JSON.stringify(skill));
+  return c.json(skill);
+});
+
+app.delete("/skills/:id", async (c) => {
+  const id = c.req.param("id");
+  await redis.del(SKILL_KEY_PREFIX + id);
+  await redis.zrem(SKILLS_IDX_ALL, id);
+  return c.json({ ok: true });
+});
+
 // --- Documents Directory ---
 
 app.use("/documents/*", requireAuth);
@@ -781,6 +842,7 @@ type PersonRecord = {
   tg_username?: string; email?: string; source?: "file" | "custom";
   bitrix24_id?: string; tracker_login?: string; yonote_id?: string;
   channel?: "telegram" | "email";
+  capabilities?: string[];  // skill IDs
 };
 
 function loadTrustedPeople(): PersonRecord[] {
@@ -837,6 +899,7 @@ app.post("/people", async (c) => {
     tracker_login: body.tracker_login?.trim() || undefined,
     yonote_id: body.yonote_id?.trim() || undefined,
     channel: (body.channel === "telegram" || body.channel === "email") ? body.channel : undefined,
+    capabilities: Array.isArray(body.capabilities) ? body.capabilities : undefined,
   };
   await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(record));
   return c.json(record, 201);
