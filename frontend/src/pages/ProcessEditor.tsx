@@ -101,7 +101,7 @@ function snap(v: number, g = 20): number { return Math.round(v / g) * g; }
 
 // ── Element shape SVG ─────────────────────────────────────────────────────────
 interface ShapeProps { el: WorkflowElement; selected: boolean; connectSrc: boolean }
-function ElShape({ el, selected, connectSrc }: ShapeProps) {
+function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps & { isEditing?: boolean }) {
   const pt = PALETTE.find(p => p.type === el.type);
   const fill  = pt?.fill   || '#f3f4f6';
   const str   = pt?.stroke || '#9ca3af';
@@ -151,7 +151,7 @@ function ElShape({ el, selected, connectSrc }: ShapeProps) {
   return (
     <>
       {shape}
-      {lines.map((line, i) => (
+      {!isEditing && lines.map((line, i) => (
         <text key={i} x={EW/2} y={startY + i * lineH}
           textAnchor="middle" dominantBaseline="middle"
           fontSize={12} fontFamily="system-ui,-apple-system,sans-serif"
@@ -233,6 +233,8 @@ export function ProcessEditor() {
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('select');
   const [dragging, setDragging] = useState<{ id: string; ox: number; oy: number; mx: number; my: number } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
   const [error,  setError]  = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -453,8 +455,8 @@ export function ProcessEditor() {
     try {
       // Fetch fresh list to avoid stale-state POST/PUT mismatch
       const fresh = await api.workflows.list().catch(() => workflows);
-      const body = { id, name, elements, flow } as unknown as Workflow;
       const exists = fresh.find(w => w.id === id);
+      const body = { id, name, elements, flow, ...(exists ? {} : { version: "1.0.0" }) } as unknown as Workflow;
       if (exists) await api.workflows.update(id, body);
       else        await api.workflows.create(body);
       refreshList();
@@ -737,15 +739,53 @@ export function ProcessEditor() {
                 const elCursor = mode === 'select'
                   ? (dragging?.id === el.id ? 'grabbing' : 'grab')
                   : 'pointer';
+                const isEditingThis = editingId === el.id;
                 return (
                   <g
                     key={el.id}
                     transform={`translate(${pos.x},${pos.y})`}
                     style={{ cursor: elCursor }}
-                    onMouseDown={e => onElMouseDown(e, el.id)}
+                    onMouseDown={e => { if (isEditingThis) e.stopPropagation(); else onElMouseDown(e, el.id); }}
                     onClick={e => e.stopPropagation()}
+                    onDoubleClick={e => {
+                      if (mode !== 'select') return;
+                      e.stopPropagation();
+                      const field = el.type === 'gateway' ? (el.operator ?? el.label) : el.label;
+                      setEditingId(el.id);
+                      setEditingValue(String(field ?? ''));
+                    }}
                   >
-                    <ElShape el={el} selected={isSel} connectSrc={isCFrom} />
+                    <ElShape el={el} selected={isSel} connectSrc={isCFrom} isEditing={isEditingThis} />
+                    {isEditingThis && (
+                      <foreignObject x={4} y={EH / 2 - 13} width={EW - 8} height={26}>
+                        <input
+                          // @ts-ignore
+                          xmlns="http://www.w3.org/1999/xhtml"
+                          autoFocus
+                          value={editingValue}
+                          onChange={e2 => setEditingValue((e2.target as HTMLInputElement).value)}
+                          onBlur={() => {
+                            const v = editingValue.trim();
+                            if (v) {
+                              el.type === 'gateway'
+                                ? updateElement(el.id, { operator: v, label: v })
+                                : updateElement(el.id, { label: v });
+                            }
+                            setEditingId(null);
+                          }}
+                          onKeyDown={e2 => {
+                            if (e2.key === 'Enter') { (e2.target as HTMLInputElement).blur(); }
+                            if (e2.key === 'Escape') { setEditingId(null); }
+                          }}
+                          style={{
+                            width: '100%', height: '100%', boxSizing: 'border-box',
+                            background: 'white', border: '1.5px solid #6366f1', borderRadius: 4,
+                            padding: '2px 6px', fontSize: 12, textAlign: 'center',
+                            fontFamily: 'system-ui,-apple-system,sans-serif', outline: 'none',
+                          }}
+                        />
+                      </foreignObject>
+                    )}
                   </g>
                 );
               })}
