@@ -233,6 +233,8 @@ export function ProcessEditor() {
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('select');
   const [dragging, setDragging] = useState<{ id: string; ox: number; oy: number; mx: number; my: number } | null>(null);
+  const [hoveredEl, setHoveredEl] = useState<string | null>(null);
+  const [connectDrag, setConnectDrag] = useState<{ fromId: string; startX: number; startY: number; curX: number; curY: number } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [error,  setError]  = useState<string | null>(null);
@@ -421,14 +423,35 @@ export function ProcessEditor() {
   }
 
   function onSvgMouseMove(e: React.MouseEvent) {
-    if (!dragging) return;
     const pt = svgCoords(e);
-    const nx = snap(Math.max(0, dragging.ox + (pt.x - dragging.mx)));
-    const ny = snap(Math.max(0, dragging.oy + (pt.y - dragging.my)));
-    setPositions(prev => ({ ...prev, [dragging.id]: { x: nx, y: ny } }));
+    if (dragging) {
+      const nx = snap(Math.max(0, dragging.ox + (pt.x - dragging.mx)));
+      const ny = snap(Math.max(0, dragging.oy + (pt.y - dragging.my)));
+      setPositions(prev => ({ ...prev, [dragging.id]: { x: nx, y: ny } }));
+    }
+    if (connectDrag) {
+      setConnectDrag(prev => prev ? { ...prev, curX: pt.x, curY: pt.y } : null);
+    }
   }
 
-  function onSvgMouseUp() { setDragging(null); }
+  function onSvgMouseUp() { setDragging(null); setConnectDrag(null); }
+
+  function onElMouseUp(e: React.MouseEvent, toId: string) {
+    if (!connectDrag || connectDrag.fromId === toId) return;
+    e.stopPropagation();
+    const fromId = connectDrag.fromId;
+    if (!flow.some(([f, t]) => f === fromId && t === toId)) {
+      setFlow(prev => [...prev, [fromId, toId]]);
+    }
+    const srcEl = elements.find(el => el.id === fromId);
+    const dstEl = elements.find(el => el.id === toId);
+    if (srcEl?.type === 'role' && dstEl?.type === 'function') {
+      updateElement(dstEl.id, { role: srcEl.label });
+    } else if (srcEl?.type === 'function' && dstEl?.type === 'role') {
+      updateElement(srcEl.id, { role: dstEl.label });
+    }
+    setConnectDrag(null);
+  }
 
   function onSvgClick() {
     if (mode === 'connect' && connectFrom) {
@@ -490,7 +513,7 @@ export function ProcessEditor() {
   // ── Render ──────────────────────────────────────────────────────────────────
   const selEl = elements.find(e => e.id === selected);
 
-  const canvasCursor = mode === 'connect' ? 'crosshair'
+  const canvasCursor = connectDrag ? 'crosshair' : mode === 'connect' ? 'crosshair'
     : dragging ? 'grabbing' : 'default';
 
   return (
@@ -731,6 +754,16 @@ export function ProcessEditor() {
                 );
               })}
 
+              {/* ── Rubber-band connection line ── */}
+              {connectDrag && (
+                <line
+                  x1={connectDrag.startX} y1={connectDrag.startY}
+                  x2={connectDrag.curX}   y2={connectDrag.curY}
+                  stroke="#6366f1" strokeWidth={1.5} strokeDasharray="6 3"
+                  pointerEvents="none"
+                />
+              )}
+
               {/* ── Elements ── */}
               {elements.map(el => {
                 const pos = positions[el.id] || { x: 40, y: 40 };
@@ -740,12 +773,16 @@ export function ProcessEditor() {
                   ? (dragging?.id === el.id ? 'grabbing' : 'grab')
                   : 'pointer';
                 const isEditingThis = editingId === el.id;
+                const showAnchors = hoveredEl === el.id && mode === 'select' && !dragging && !connectDrag;
                 return (
                   <g
                     key={el.id}
                     transform={`translate(${pos.x},${pos.y})`}
-                    style={{ cursor: elCursor }}
+                    style={{ cursor: connectDrag ? 'crosshair' : elCursor }}
+                    onMouseEnter={() => setHoveredEl(el.id)}
+                    onMouseLeave={() => setHoveredEl(null)}
                     onMouseDown={e => { if (isEditingThis) e.stopPropagation(); else onElMouseDown(e, el.id); }}
+                    onMouseUp={e => onElMouseUp(e, el.id)}
                     onClick={e => e.stopPropagation()}
                     onDoubleClick={e => {
                       if (mode !== 'select') return;
@@ -756,6 +793,26 @@ export function ProcessEditor() {
                     }}
                   >
                     <ElShape el={el} selected={isSel} connectSrc={isCFrom} isEditing={isEditingThis} />
+                    {showAnchors && [
+                      { ax: EW / 2, ay: 0 },
+                      { ax: EW / 2, ay: EH },
+                      { ax: 0,      ay: EH / 2 },
+                      { ax: EW,     ay: EH / 2 },
+                    ].map(({ ax, ay }, i) => (
+                      <circle
+                        key={i}
+                        cx={ax} cy={ay} r={5}
+                        fill="#6366f1" fillOpacity={0.85} stroke="white" strokeWidth={1.5}
+                        style={{ cursor: 'crosshair' }}
+                        onMouseDown={e2 => {
+                          e2.stopPropagation();
+                          e2.preventDefault();
+                          const epos = positions[el.id] || { x: 0, y: 0 };
+                          const sx = epos.x + ax, sy = epos.y + ay;
+                          setConnectDrag({ fromId: el.id, startX: sx, startY: sy, curX: sx, curY: sy });
+                        }}
+                      />
+                    ))}
                     {isEditingThis && (
                       <foreignObject x={4} y={EH / 2 - 13} width={EW - 8} height={26}>
                         <input
