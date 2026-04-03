@@ -1,268 +1,550 @@
 /**
- * ProcessEditor — form-based eEPC process editor (#158)
- * Allows creating/editing processes: add elements, define flow connections,
- * preview diagram live via EpcRenderer.
+ * ProcessEditor — interactive visual eEPC process editor
+ * Drag elements from palette, connect with arrows, save to API.
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type React from 'react';
 import { Layout } from '../components/Layout';
-import { EpcRenderer } from '../components/EpcRenderer';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
 import type { Workflow, WorkflowElement } from '../api/types';
 
-type ElementType = WorkflowElement['type'];
-const ELEMENT_TYPES: { value: ElementType; label: string; color: string }[] = [
-  { value: 'event',              label: 'Event',            color: '#F5C4B3' },
-  { value: 'function',           label: 'Function',         color: '#C0DD97' },
-  { value: 'gateway',            label: 'Gateway',          color: '#E8F4FD' },
-  { value: 'role',               label: 'Role (side)',      color: '#FFF9C4' },
-  { value: 'document',           label: 'Document (side)',  color: '#DBEAFE' },
-  { value: 'information_system', label: 'IS (side)',        color: '#E0F2FE' },
+type EType = WorkflowElement['type'];
+type Pos = { x: number; y: number };
+type Mode = 'select' | 'connect';
+
+// ── Canvas constants ──────────────────────────────────────────────────────────
+const EW = 160;   // element width
+const EH = 58;    // element height
+const GR = 24;    // gateway radius
+const HD = 20;    // hexagon indent (event)
+const CW = 1600;  // canvas width
+const CH = 960;   // canvas height
+
+// ── Element type palette ──────────────────────────────────────────────────────
+const PALETTE: { type: EType; label: string; fill: string; stroke: string }[] = [
+  { type: 'event',              label: 'Event',    fill: '#F5C4B3', stroke: '#993C1D' },
+  { type: 'function',           label: 'Function', fill: '#C0DD97', stroke: '#3B6D11' },
+  { type: 'gateway',            label: 'Gateway',  fill: '#E8F4FD', stroke: '#4B7BA8' },
+  { type: 'role',               label: 'Role',     fill: '#FFF9C4', stroke: '#B7A000' },
+  { type: 'document',           label: 'Document', fill: '#DBEAFE', stroke: '#3B82F6' },
+  { type: 'information_system', label: 'IS',       fill: '#E0F2FE', stroke: '#0EA5E9' },
 ];
 
-const styles = `
-  .pe-body { padding: 0; display: flex; flex-direction: column; height: calc(100vh - 100px); }
-  .pe-toolbar { background: #1e293b; color: white; padding: 10px 20px; display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
-  .pe-toolbar select, .pe-toolbar input { padding: 6px 10px; border: 1px solid #475569; background: #0f172a; color: white; border-radius: 4px; font-size: 13px; }
-  .pe-toolbar select option { background: #1e293b; }
-  .pe-toolbar button { padding: 6px 14px; border: 1px solid #475569; background: #334155; color: white; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; }
-  .pe-toolbar button:hover { background: #475569; }
-  .pe-toolbar button.btn-save { background: #16a34a; border-color: #16a34a; }
-  .pe-toolbar button.btn-save:hover { background: #15803d; }
-  .pe-toolbar button.btn-del { background: #dc2626; border-color: #dc2626; }
-  .pe-toolbar .sep { width: 1px; background: #475569; height: 24px; }
-  .pe-toolbar .wf-name { font-weight: 600; font-size: 14px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pe-main { display: flex; flex: 1; overflow: hidden; }
-  .pe-sidebar { width: 320px; background: #fff; border-right: 1px solid #e2e8f0; overflow-y: auto; padding: 16px; flex-shrink: 0; }
-  .pe-sidebar h3 { font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #eee; }
-  .element-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
-  .element-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; font-size: 13px; }
-  .element-item:hover { background: #f8fafc; }
-  .element-item.selected { background: #eff6ff; border-color: #bfdbfe; }
-  .element-dot { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
-  .element-id { font-family: monospace; font-size: 11px; color: #94a3b8; }
-  .element-del { margin-left: auto; background: none; border: none; color: #ef4444; cursor: pointer; font-size: 14px; padding: 0 2px; }
-  .form-group { margin-bottom: 12px; }
-  .form-group label { display: block; font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; margin-bottom: 4px; }
-  .form-group input, .form-group select { width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; font-family: inherit; box-sizing: border-box; }
-  .form-group input:focus, .form-group select:focus { outline: none; border-color: #0066cc; }
-  .btn-add { width: 100%; padding: 7px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; margin-top: 4px; }
-  .flow-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 12px; border: 1px solid #e2e8f0; border-radius: 4px; }
-  .flow-item .arrow { color: #9ca3af; }
-  .flow-del { margin-left: auto; background: none; border: none; color: #ef4444; cursor: pointer; font-size: 14px; }
-  .pe-canvas { flex: 1; overflow: auto; padding: 24px; background: #f8fafc; }
-  .pe-canvas .preview-box { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; min-height: 200px; }
-  .pe-canvas .empty-hint { color: #94a3b8; text-align: center; padding: 60px 20px; font-size: 14px; }
-  .error-banner { background: #fee; color: #c33; padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; font-size: 12px; border-left: 3px solid #c33; }
-  .load-select { display: flex; gap: 8px; margin-bottom: 16px; }
-  .load-select select { flex: 1; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
-  .load-select button { padding: 6px 12px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-`;
-
-function genId(type: ElementType, existing: WorkflowElement[]): string {
-  const prefix = type.replace('_', '-');
-  const nums = existing.filter(e => e.id.startsWith(prefix)).map(e => parseInt(e.id.split('-').pop() || '0', 10));
-  const next = nums.length ? Math.max(...nums) + 1 : 1;
-  return `${prefix}-${next}`;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function genId(type: EType, els: WorkflowElement[]): string {
+  const p = type.replace('_', '-');
+  const nums = els.filter(e => e.id.startsWith(p + '-'))
+    .map(e => parseInt(e.id.split('-').pop() || '0', 10));
+  return `${p}-${nums.length ? Math.max(...nums) + 1 : 1}`;
 }
 
+/** Compute the point where a line from element center toward (tx,ty) exits the bounding box. */
+function edgePoint(pos: Pos, tx: number, ty: number): Pos {
+  const cx = pos.x + EW / 2, cy = pos.y + EH / 2;
+  const dx = tx - cx, dy = ty - cy;
+  if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) return { x: cx, y: cy };
+  const ax = Math.abs(dx), ay = Math.abs(dy);
+  if (ax * EH > ay * EW) {
+    const sx = dx > 0 ? 1 : -1;
+    return { x: cx + sx * EW / 2, y: cy + (dy * (EW / 2)) / ax };
+  } else {
+    const sy = dy > 0 ? 1 : -1;
+    return { x: cx + (dx * (EH / 2)) / ay, y: cy + sy * EH / 2 };
+  }
+}
+
+/** Grid snap helper */
+function snap(v: number, g = 20): number { return Math.round(v / g) * g; }
+
+// ── Element shape SVG ─────────────────────────────────────────────────────────
+interface ShapeProps { el: WorkflowElement; selected: boolean; connectSrc: boolean }
+function ElShape({ el, selected, connectSrc }: ShapeProps) {
+  const pt = PALETTE.find(p => p.type === el.type);
+  const fill  = pt?.fill   || '#f3f4f6';
+  const str   = pt?.stroke || '#9ca3af';
+  const sw    = selected || connectSrc ? 2.5 : 1.5;
+  const outln = selected ? '#6366f1' : connectSrc ? '#f59e0b' : str;
+
+  let shape: React.ReactNode;
+  switch (el.type) {
+    case 'event':
+      shape = <polygon points={`${HD},0 ${EW-HD},0 ${EW},${EH/2} ${EW-HD},${EH} ${HD},${EH} 0,${EH/2}`} fill={fill} stroke={outln} strokeWidth={sw} />;
+      break;
+    case 'function':
+      shape = <rect width={EW} height={EH} rx={10} fill={fill} stroke={outln} strokeWidth={sw} />;
+      break;
+    case 'gateway':
+      shape = <circle cx={EW/2} cy={EH/2} r={GR} fill={fill} stroke={outln} strokeWidth={sw} />;
+      break;
+    case 'role':
+      shape = <ellipse cx={EW/2} cy={EH/2} rx={EW/2-2} ry={EH/2-2} fill={fill} stroke={outln} strokeWidth={sw} />;
+      break;
+    case 'document': {
+      const wave = `M0,${EH-10} Q${EW/4},${EH+4} ${EW/2},${EH-10} Q${3*EW/4},${EH-24} ${EW},${EH-10} L${EW},0 L0,0 Z`;
+      shape = <path d={wave} fill={fill} stroke={outln} strokeWidth={sw} />;
+      break;
+    }
+    default:
+      shape = <rect width={EW} height={EH} fill={fill} stroke={outln} strokeWidth={sw} />;
+  }
+
+  const label = el.type === 'gateway' ? (el.operator || el.label) : el.label;
+  const maxW = el.type === 'gateway' ? GR * 2 - 8 : EW - 16;
+
+  // Simple word-wrap for label
+  const words = String(label).split(' ');
+  const charW = 6.2;
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    const cand = cur ? cur + ' ' + w : w;
+    if (cand.length * charW > maxW && cur) { lines.push(cur); cur = w; }
+    else cur = cand;
+  }
+  if (cur) lines.push(cur);
+  const lineH = 14;
+  const startY = EH / 2 - ((lines.length - 1) * lineH) / 2;
+
+  return (
+    <>
+      {shape}
+      {lines.map((line, i) => (
+        <text key={i} x={EW/2} y={startY + i * lineH}
+          textAnchor="middle" dominantBaseline="middle"
+          fontSize={12} fontFamily="system-ui,-apple-system,sans-serif"
+          fill="#1a1a1a" pointerEvents="none">
+          {line}
+        </text>
+      ))}
+    </>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+const CSS = `
+  .ipe-root { display:flex; flex-direction:column; height:calc(100vh - 64px); overflow:hidden; background:#e2e8f0; }
+  .ipe-bar { display:flex; gap:8px; align-items:center; padding:8px 14px; background:#1e293b; color:white; flex-shrink:0; flex-wrap:wrap; }
+  .ipe-bar input { padding:5px 9px; background:#0f172a; border:1px solid #475569; color:white; border-radius:4px; font-size:13px; }
+  .ipe-bar .sep { width:1px; height:22px; background:#475569; flex-shrink:0; }
+  .ipe-bar button { padding:5px 12px; border:1px solid #475569; background:#334155; color:white; border-radius:4px; cursor:pointer; font-size:12px; font-weight:500; white-space:nowrap; }
+  .ipe-bar button:hover { background:#475569; }
+  .ipe-bar button.active { background:#6366f1; border-color:#6366f1; }
+  .ipe-bar button.btn-save { background:#16a34a; border-color:#16a34a; }
+  .ipe-bar button.btn-save:hover { background:#15803d; }
+  .ipe-bar .hint { font-size:11px; color:#fbbf24; }
+  .ipe-body { display:flex; flex:1; overflow:hidden; }
+  .ipe-side { width:192px; flex-shrink:0; background:white; border-right:1px solid #e2e8f0; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:14px; }
+  .ipe-side h3 { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; margin:0 0 6px; letter-spacing:.05em; }
+  .pal-item { display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid #e2e8f0; border-radius:6px; cursor:pointer; font-size:13px; user-select:none; }
+  .pal-item:hover { background:#eff6ff; border-color:#bfdbfe; }
+  .pal-dot { width:13px; height:13px; border-radius:3px; flex-shrink:0; }
+  .props-field { display:flex; flex-direction:column; gap:3px; margin-bottom:8px; }
+  .props-field label { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; }
+  .props-field input,.props-field select { padding:5px 8px; border:1px solid #ddd; border-radius:4px; font-size:12px; font-family:inherit; }
+  .edge-item { display:flex; align-items:center; gap:4px; font-size:11px; padding:2px 0; font-family:monospace; }
+  .edge-del { background:none; border:none; color:#ef4444; cursor:pointer; font-size:14px; padding:0 2px; flex-shrink:0; }
+  .ipe-canvas { flex:1; overflow:auto; }
+  .ipe-canvas svg { display:block; }
+  .error-bar { background:#fee; color:#c33; padding:6px 10px; font-size:12px; border-left:3px solid #c33; }
+  .load-row { display:flex; gap:6px; }
+  .load-row select { flex:1; padding:5px 7px; border:1px solid #ddd; border-radius:4px; font-size:12px; }
+  .load-row button { padding:5px 10px; background:#0066cc; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px; }
+  .btn-del-el { width:100%; padding:5px; font-size:12px; background:#ef4444; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:6px; }
+`;
+
+// ── Main component ────────────────────────────────────────────────────────────
 export function ProcessEditor() {
   const token = useToken();
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [selectedWfId, setSelectedWfId] = useState('');
-  const [elements, setElements] = useState<WorkflowElement[]>([]);
-  const [flow, setFlow] = useState<[string, string, string?][]>([]);
+  const [wfId,   setWfId]   = useState('');
   const [wfName, setWfName] = useState('');
-  const [wfId, setWfId] = useState('');
-  const [selectedEl, setSelectedEl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [elements, setElements] = useState<WorkflowElement[]>([]);
+  const [positions, setPositions] = useState<Record<string, Pos>>({});
+  const [flow, setFlow] = useState<[string, string, string?][]>([]);
+  const [selected,    setSelected]    = useState<string | null>(null);
+  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>('select');
+  const [dragging, setDragging] = useState<{ id: string; ox: number; oy: number; mx: number; my: number } | null>(null);
+  const [error,  setError]  = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // New element form
-  const [newType, setNewType] = useState<ElementType>('function');
-  const [newLabel, setNewLabel] = useState('');
-  const [newRole, setNewRole] = useState('');
-  const [newOperator, setNewOperator] = useState('AND');
-  // New flow form
-  const [flowFrom, setFlowFrom] = useState('');
-  const [flowTo, setFlowTo] = useState('');
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [loadId,  setLoadId]  = useState('');
+  const svgRef = useRef<SVGSVGElement>(null);
 
-  const loadWorkflows = useCallback(() => {
+  // ── Load workflow list ──────────────────────────────────────────────────────
+  const refreshList = useCallback(() => {
     if (!token) return;
     api.workflows.list().then(setWorkflows).catch(() => {});
   }, [token]);
+  useEffect(() => { refreshList(); }, [refreshList]);
 
-  useEffect(() => { loadWorkflows(); }, [loadWorkflows]);
+  // ── Keyboard delete ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (!selected) return;
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      deleteElement(selected);
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [selected]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  function loadWorkflow(id: string) {
-    const wf = workflows.find(w => w.id === id);
-    if (!wf) return;
-    setWfId(wf.id); setWfName(wf.name || wf.id);
-    setElements([...wf.elements]);
-    setFlow([...(wf.flow || [])]);
-    setSelectedEl(null); setError(null);
-  }
-
-  function addElement(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newLabel.trim()) return;
-    const id = genId(newType, elements);
-    const el: WorkflowElement = { id, type: newType, label: newLabel.trim() };
-    if (newType === 'function' && newRole) el.role = newRole;
-    if (newType === 'gateway') el.operator = newOperator;
+  // ── Element management ──────────────────────────────────────────────────────
+  function addElement(type: EType) {
+    const id  = genId(type, elements);
+    const idx = elements.length;
+    const col = idx % 6, row = Math.floor(idx / 6);
+    const pos: Pos = { x: snap(40 + col * (EW + 60)), y: snap(40 + row * (EH + 80)) };
+    const el: WorkflowElement = { id, type, label: `New ${PALETTE.find(p => p.type === type)?.label || type}` };
+    if (type === 'gateway') el.operator = 'AND';
     setElements(prev => [...prev, el]);
-    setNewLabel(''); setNewRole('');
+    setPositions(prev => ({ ...prev, [id]: pos }));
+    setSelected(id);
+    setMode('select');
   }
 
-  function removeElement(id: string) {
+  function deleteElement(id: string) {
     setElements(prev => prev.filter(e => e.id !== id));
     setFlow(prev => prev.filter(([f, t]) => f !== id && t !== id));
-    if (selectedEl === id) setSelectedEl(null);
+    setPositions(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setSelected(null);
+    setConnectFrom(null);
   }
 
-  function addFlow(e: React.FormEvent) {
+  function updateElement(id: string, patch: Partial<WorkflowElement>) {
+    setElements(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+  }
+
+  function removeEdge(f: string, t: string) {
+    setFlow(prev => prev.filter(([a, b]) => !(a === f && b === t)));
+  }
+
+  // ── SVG mouse helpers ───────────────────────────────────────────────────────
+  function svgCoords(e: React.MouseEvent): Pos {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const r = svg.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  // ── Element interaction ─────────────────────────────────────────────────────
+  function onElMouseDown(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
     e.preventDefault();
-    if (!flowFrom || !flowTo || flowFrom === flowTo) return;
-    if (flow.some(([f, t]) => f === flowFrom && t === flowTo)) return;
-    setFlow(prev => [...prev, [flowFrom, flowTo]]);
-    setFlowTo('');
+
+    if (mode === 'connect') {
+      if (!connectFrom) {
+        setConnectFrom(id);
+        setSelected(id);
+      } else if (connectFrom !== id) {
+        if (!flow.some(([f, t]) => f === connectFrom && t === id)) {
+          setFlow(prev => [...prev, [connectFrom, id]]);
+        }
+        setConnectFrom(null);
+        setSelected(id);
+      }
+      return;
+    }
+
+    // Select + drag
+    const pt  = svgCoords(e);
+    const pos = positions[id] || { x: 0, y: 0 };
+    setDragging({ id, ox: pos.x, oy: pos.y, mx: pt.x, my: pt.y });
+    setSelected(id);
   }
 
-  function removeFlow(idx: number) { setFlow(prev => prev.filter((_, i) => i !== idx)); }
+  function onSvgMouseMove(e: React.MouseEvent) {
+    if (!dragging) return;
+    const pt = svgCoords(e);
+    const nx = snap(Math.max(0, dragging.ox + (pt.x - dragging.mx)));
+    const ny = snap(Math.max(0, dragging.oy + (pt.y - dragging.my)));
+    setPositions(prev => ({ ...prev, [dragging.id]: { x: nx, y: ny } }));
+  }
 
+  function onSvgMouseUp() { setDragging(null); }
+
+  function onSvgClick() {
+    if (mode === 'connect' && connectFrom) {
+      setConnectFrom(null); // cancel connection on background click
+    } else {
+      setSelected(null);
+    }
+  }
+
+  // ── Mode toggle ─────────────────────────────────────────────────────────────
+  function switchMode(m: Mode) {
+    setMode(m);
+    setConnectFrom(null);
+    if (m === 'connect') setSelected(null);
+  }
+
+  // ── Save ────────────────────────────────────────────────────────────────────
   async function save() {
-    if (!wfId || !wfName) { setError('Process needs an ID and name'); return; }
+    if (!wfId.trim() || !wfName.trim()) { setError('Process ID and name are required'); return; }
     setSaving(true); setError(null);
     try {
-      const body = { id: wfId, name: wfName, elements, flow } as any;
-      const existing = workflows.find(w => w.id === wfId);
-      if (existing) { await api.workflows.update(wfId, body); }
-      else { await api.workflows.create(body); }
-      loadWorkflows();
-    } catch (e: any) { setError(e.message); }
+      const body = { id: wfId.trim(), name: wfName.trim(), elements, flow } as unknown as Workflow;
+      const exists = workflows.find(w => w.id === wfId.trim());
+      if (exists) await api.workflows.update(wfId.trim(), body);
+      else        await api.workflows.create(body);
+      refreshList();
+    } catch (err: any) { setError(err.message); }
     setSaving(false);
   }
 
-  const preview: Workflow = { id: wfId || 'preview', name: wfName || 'Preview', elements, flow, version: '1' };
-  const selEl = elements.find(e => e.id === selectedEl);
+  // ── Load existing ───────────────────────────────────────────────────────────
+  function loadWorkflow(id: string) {
+    const wf = workflows.find(w => w.id === id);
+    if (!wf) return;
+    setWfId(wf.id);
+    setWfName(wf.name || wf.id);
+    setElements([...wf.elements]);
+    setFlow([...(wf.flow || [])]);
+    setSelected(null);
+    setConnectFrom(null);
+    setMode('select');
+    // Auto-place elements in a grid
+    const pos: Record<string, Pos> = {};
+    wf.elements.forEach((el, i) => {
+      const col = i % 6, row = Math.floor(i / 6);
+      pos[el.id] = { x: snap(40 + col * (EW + 60)), y: snap(40 + row * (EH + 80)) };
+    });
+    setPositions(pos);
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  const selEl = elements.find(e => e.id === selected);
+
+  const canvasCursor = mode === 'connect' ? 'crosshair'
+    : dragging ? 'grabbing' : 'default';
 
   return (
     <Layout activePage="editor.html">
-      <style>{styles}</style>
-      <div className="pe-body">
-        <div className="pe-toolbar">
-          <span style={{ color: '#94a3b8', fontSize: 12 }}>Process Editor</span>
+      <style>{CSS}</style>
+      <div className="ipe-root">
+
+        {/* ── Toolbar ── */}
+        <div className="ipe-bar">
+          <span style={{ color: '#94a3b8', fontSize: 12, flexShrink: 0 }}>Process Editor</span>
           <div className="sep" />
-          <input type="text" placeholder="Process name..." value={wfName} onChange={e => setWfName(e.target.value)} style={{ width: 200 }} />
-          <input type="text" placeholder="ID..." value={wfId} onChange={e => setWfId(e.target.value)} style={{ width: 160 }} />
+          <input
+            placeholder="Process name…"
+            value={wfName}
+            onChange={e => setWfName(e.target.value)}
+            style={{ width: 200 }}
+          />
+          <input
+            placeholder="ID (e.g. order-flow)…"
+            value={wfId}
+            onChange={e => setWfId(e.target.value)}
+            style={{ width: 180 }}
+          />
           <div className="sep" />
-          <button className="btn-save" onClick={save} disabled={saving}>{saving ? 'Saving...' : '💾 Save'}</button>
+          <button
+            className={mode === 'select' ? 'active' : ''}
+            onClick={() => switchMode('select')}
+            title="Select & drag elements (V)">
+            ↖ Select
+          </button>
+          <button
+            className={mode === 'connect' ? 'active' : ''}
+            onClick={() => switchMode('connect')}
+            title="Draw connections between elements (C)">
+            ⟶ Connect
+          </button>
+          <div className="sep" />
+          <button className="btn-save" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : '💾 Save'}
+          </button>
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}
+          {mode === 'connect' && (
+            <span className="hint">
+              {connectFrom
+                ? `Source: ${connectFrom} — click target element`
+                : 'Click source element…'}
+            </span>
+          )}
         </div>
 
-        <div className="pe-main">
-          <div className="pe-sidebar">
-            {/* Load existing */}
-            <h3>Load Process</h3>
-            <div className="load-select">
-              <select value={selectedWfId} onChange={e => setSelectedWfId(e.target.value)}>
-                <option value="">— Select —</option>
-                {workflows.map(w => <option key={w.id} value={w.id}>{w.name || w.id}</option>)}
-              </select>
-              <button onClick={() => loadWorkflow(selectedWfId)} disabled={!selectedWfId}>Load</button>
+        <div className="ipe-body">
+
+          {/* ── Sidebar ── */}
+          <div className="ipe-side">
+
+            {/* Load process */}
+            <div>
+              <h3>Load Process</h3>
+              <div className="load-row">
+                <select value={loadId} onChange={e => setLoadId(e.target.value)}>
+                  <option value="">— select —</option>
+                  {workflows.map(w => (
+                    <option key={w.id} value={w.id}>{w.name || w.id}</option>
+                  ))}
+                </select>
+                <button onClick={() => loadWorkflow(loadId)} disabled={!loadId}>Load</button>
+              </div>
             </div>
 
-            {/* Elements */}
-            <h3>Elements ({elements.length})</h3>
-            <div className="element-list">
-              {elements.map(el => (
-                <div key={el.id} className={`element-item${selectedEl === el.id ? ' selected' : ''}`}
-                  onClick={() => setSelectedEl(el.id === selectedEl ? null : el.id)}>
-                  <div className="element-dot" style={{ background: ELEMENT_TYPES.find(t => t.value === el.type)?.color || '#e2e8f0' }} />
-                  <div>
-                    <div style={{ fontSize: 13 }}>{el.label}</div>
-                    <div className="element-id">{el.id} · {el.type}</div>
-                  </div>
-                  <button className="element-del" onClick={e => { e.stopPropagation(); removeElement(el.id); }}>✕</button>
+            {/* Element palette */}
+            <div>
+              <h3>Add Element</h3>
+              {PALETTE.map(p => (
+                <div key={p.type} className="pal-item" onClick={() => addElement(p.type)}>
+                  <div className="pal-dot" style={{ background: p.fill, border: `1px solid ${p.stroke}` }} />
+                  {p.label}
                 </div>
               ))}
             </div>
 
-            {/* Add element form */}
-            <form onSubmit={addElement}>
-              <div className="form-group">
-                <label>Type</label>
-                <select value={newType} onChange={e => setNewType(e.target.value as ElementType)}>
-                  {ELEMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Label *</label>
-                <input type="text" placeholder="Element label..." value={newLabel} onChange={e => setNewLabel(e.target.value)} required />
-              </div>
-              {newType === 'function' && (
-                <div className="form-group">
-                  <label>Role</label>
-                  <input type="text" placeholder="Assigned role..." value={newRole} onChange={e => setNewRole(e.target.value)} />
+            {/* Properties panel */}
+            {selEl && (
+              <div>
+                <h3>Properties</h3>
+                <div className="props-field">
+                  <label>Label</label>
+                  <input
+                    value={selEl.label}
+                    onChange={e => updateElement(selEl.id, { label: e.target.value })}
+                  />
                 </div>
-              )}
-              {newType === 'gateway' && (
-                <div className="form-group">
-                  <label>Operator</label>
-                  <select value={newOperator} onChange={e => setNewOperator(e.target.value)}>
-                    <option value="AND">AND</option>
-                    <option value="OR">OR</option>
-                    <option value="XOR">XOR</option>
-                  </select>
-                </div>
-              )}
-              <button type="submit" className="btn-add">+ Add Element</button>
-            </form>
+                {selEl.type === 'gateway' && (
+                  <div className="props-field">
+                    <label>Operator</label>
+                    <select
+                      value={selEl.operator || 'AND'}
+                      onChange={e => updateElement(selEl.id, { operator: e.target.value })}>
+                      <option>AND</option>
+                      <option>OR</option>
+                      <option>XOR</option>
+                    </select>
+                  </div>
+                )}
+                {selEl.type === 'function' && (
+                  <div className="props-field">
+                    <label>Role</label>
+                    <input
+                      value={selEl.role || ''}
+                      placeholder="Assigned role…"
+                      onChange={e => updateElement(selEl.id, { role: e.target.value || undefined })}
+                    />
+                  </div>
+                )}
+                <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', marginBottom: 4 }}>{selEl.id}</div>
+                <button className="btn-del-el" onClick={() => deleteElement(selEl.id)}>
+                  Delete Element
+                </button>
+              </div>
+            )}
 
-            <div style={{ marginTop: 20 }}>
-              <h3>Flow ({flow.length} edges)</h3>
-              <div className="element-list">
-                {flow.map(([f, t, lbl], i) => (
-                  <div key={i} className="flow-item">
-                    <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{f}</span>
-                    <span className="arrow">→</span>
-                    <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{t}</span>
-                    {lbl && <span style={{ color: '#888', fontSize: 11 }}>{lbl}</span>}
-                    <button className="flow-del" onClick={() => removeFlow(i)}>✕</button>
+            {/* Connection list */}
+            {flow.length > 0 && (
+              <div>
+                <h3>Connections ({flow.length})</h3>
+                {flow.map(([f, t], i) => (
+                  <div key={i} className="edge-item">
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {f} → {t}
+                    </span>
+                    <button className="edge-del" onClick={() => removeEdge(f, t)}>✕</button>
                   </div>
                 ))}
               </div>
-              <form onSubmit={addFlow}>
-                <div className="form-group">
-                  <label>From</label>
-                  <select value={flowFrom} onChange={e => setFlowFrom(e.target.value)}>
-                    <option value="">— select —</option>
-                    {elements.map(e => <option key={e.id} value={e.id}>{e.label} ({e.id})</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>To</label>
-                  <select value={flowTo} onChange={e => setFlowTo(e.target.value)}>
-                    <option value="">— select —</option>
-                    {elements.map(e => <option key={e.id} value={e.id}>{e.label} ({e.id})</option>)}
-                  </select>
-                </div>
-                <button type="submit" className="btn-add">+ Add Connection</button>
-              </form>
-            </div>
+            )}
           </div>
 
-          <div className="pe-canvas">
-            {elements.length === 0 ? (
-              <div className="preview-box">
-                <div className="empty-hint">Add elements in the panel to the left, then connect them.<br />The diagram will appear here as you build.</div>
-              </div>
-            ) : (
-              <div className="preview-box">
-                <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>Live Preview — {wfName || 'Untitled'}</div>
-                <EpcRenderer workflow={preview} />
-              </div>
-            )}
+          {/* ── Canvas ── */}
+          <div className="ipe-canvas">
+            <svg
+              ref={svgRef}
+              width={CW}
+              height={CH}
+              style={{ cursor: canvasCursor }}
+              onMouseMove={onSvgMouseMove}
+              onMouseUp={onSvgMouseUp}
+              onMouseLeave={onSvgMouseUp}
+              onClick={onSvgClick}
+            >
+              <defs>
+                {/* Dot grid */}
+                <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
+                  <circle cx="1" cy="1" r="1" fill="#cbd5e1" />
+                </pattern>
+                {/* Arrowhead */}
+                <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L8,3 z" fill="#6b7280" />
+                </marker>
+                {/* Highlighted arrowhead */}
+                <marker id="arr-hi" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L8,3 z" fill="#6366f1" />
+                </marker>
+              </defs>
+
+              {/* Background */}
+              <rect width={CW} height={CH} fill="white" />
+              <rect width={CW} height={CH} fill="url(#dots)" />
+
+              {/* ── Edges ── */}
+              {flow.map(([fId, tId], i) => {
+                const fp = positions[fId], tp = positions[tId];
+                if (!fp || !tp) return null;
+                const tcx = tp.x + EW / 2, tcy = tp.y + EH / 2;
+                const fcx = fp.x + EW / 2, fcy = fp.y + EH / 2;
+                const src = edgePoint(fp, tcx, tcy);
+                const dst = edgePoint(tp, fcx, fcy);
+                const isHighlighted = selected === fId || selected === tId;
+                return (
+                  <g key={i}>
+                    <line
+                      x1={src.x} y1={src.y} x2={dst.x} y2={dst.y}
+                      stroke={isHighlighted ? '#6366f1' : '#6b7280'}
+                      strokeWidth={isHighlighted ? 2 : 1.5}
+                      markerEnd={isHighlighted ? 'url(#arr-hi)' : 'url(#arr)'}
+                    />
+                    {/* Wider invisible hit area for deletion */}
+                    <line
+                      x1={src.x} y1={src.y} x2={dst.x} y2={dst.y}
+                      stroke="transparent" strokeWidth={12}
+                      style={{ cursor: 'pointer' }}
+                      onClick={e => { e.stopPropagation(); removeEdge(fId, tId); }}
+                    />
+                  </g>
+                );
+              })}
+
+              {/* ── Elements ── */}
+              {elements.map(el => {
+                const pos = positions[el.id] || { x: 40, y: 40 };
+                const isSel   = selected    === el.id;
+                const isCFrom = connectFrom === el.id;
+                const elCursor = mode === 'select'
+                  ? (dragging?.id === el.id ? 'grabbing' : 'grab')
+                  : 'pointer';
+                return (
+                  <g
+                    key={el.id}
+                    transform={`translate(${pos.x},${pos.y})`}
+                    style={{ cursor: elCursor }}
+                    onMouseDown={e => onElMouseDown(e, el.id)}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <ElShape el={el} selected={isSel} connectSrc={isCFrom} />
+                  </g>
+                );
+              })}
+
+              {/* Empty hint */}
+              {elements.length === 0 && (
+                <text
+                  x={CW / 2} y={CH / 2}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={14} fill="#94a3b8"
+                  fontFamily="system-ui,-apple-system,sans-serif"
+                  pointerEvents="none">
+                  Click elements in the palette to add them to the canvas
+                </text>
+              )}
+            </svg>
           </div>
         </div>
       </div>
