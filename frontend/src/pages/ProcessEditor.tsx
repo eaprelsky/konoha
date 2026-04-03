@@ -535,7 +535,7 @@ export function ProcessEditor() {
   }
 
   // ── Save ────────────────────────────────────────────────────────────────────
-  async function save() {
+  async function save(draft = false) {
     const name = wfName.trim();
     if (!name) { setError('Введите название процесса'); return; }
     let id = wfId.trim();
@@ -548,8 +548,8 @@ export function ProcessEditor() {
       const fresh = await api.workflows.list().catch(() => workflows);
       const exists = fresh.find(w => w.id === id);
       const body = { id, name, elements, flow, ...(exists ? {} : { version: '1.0.0' }) } as unknown as Workflow;
-      if (exists) await api.workflows.update(id, body);
-      else        await api.workflows.create(body);
+      if (exists) await api.workflows.update(id, body, draft);
+      else        await api.workflows.create(body, draft);
       refreshList();
     } catch (err: any) { setError(err.message); }
     setSaving(false);
@@ -609,8 +609,12 @@ export function ProcessEditor() {
             ⟶ Связь
           </button>
           <div className="sep" />
-          <button className="btn-save" onClick={save} disabled={saving}>
+          <button className="btn-save" onClick={() => save(false)} disabled={saving}>
             {saving ? 'Сохранение…' : isKnown ? '💾 Обновить' : '💾 Сохранить'}
+          </button>
+          <button onClick={() => save(true)} disabled={saving}
+            title="Сохранить без валидации как черновик" style={{ opacity: 0.8 }}>
+            📝 Черновик
           </button>
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}
           {mode === 'connect' && (

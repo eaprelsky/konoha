@@ -870,7 +870,8 @@ app.post("/workflows", requireAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
   if (!body.id || !body.name) return c.json({ error: "id and name required" }, 400);
-  const result = await createWorkflow(body);
+  const draft = c.req.query("draft") === "true";
+  const result = await createWorkflow(body, { draft });
   if (result.errors.length > 0) return c.json({ error: "Validation failed", details: result.errors }, 422);
   return c.json(result.workflow, 201);
 });
@@ -879,7 +880,8 @@ app.put("/workflows/:id{.+}", requireAuth, async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
-  const result = await updateWorkflow(id, body);
+  const draft = c.req.query("draft") === "true";
+  const result = await updateWorkflow(id, body, { draft });
   if (result === null) return c.json({ error: "Workflow not found" }, 404);
   if (result.errors.length > 0) return c.json({ error: "Validation failed", details: result.errors }, 422);
   return c.json(result.workflow);

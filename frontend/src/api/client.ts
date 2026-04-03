@@ -34,10 +34,10 @@ export const api = {
   workflows: {
     list: () => apiFetch<Workflow[]>(`${BASE}/workflows`),
     get: (id: string) => apiFetch<Workflow>(`${BASE}/workflows/${id}`),
-    create: (body: Partial<Workflow> & { id: string; name: string }) =>
-      apiFetch<Workflow>(`${BASE}/workflows`, { method: 'POST', body: JSON.stringify(body) }),
-    update: (id: string, body: Partial<Workflow>) =>
-      apiFetch<Workflow>(`${BASE}/workflows/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    create: (body: Partial<Workflow> & { id: string; name: string }, draft = false) =>
+      apiFetch<Workflow>(`${BASE}/workflows${draft ? '?draft=true' : ''}`, { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: Partial<Workflow>, draft = false) =>
+      apiFetch<Workflow>(`${BASE}/workflows/${id}${draft ? '?draft=true' : ''}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: string) =>
       apiFetch<{ ok: boolean }>(`${BASE}/workflows/${id}`, { method: 'DELETE' }),
   },

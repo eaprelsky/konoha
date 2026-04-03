@@ -249,8 +249,14 @@ export async function listWorkflows(): Promise<WorkflowDefinition[]> {
 const WORKFLOW_VERSION_KEY_PREFIX = "workflow:version:"; // workflow:{id}:v{N}
 const WORKFLOW_VERSION_CTR_PREFIX = "konoha:workflow:versionctr:"; // INCR counter per workflow id
 
-export async function createWorkflow(def: WorkflowDefinition): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] }> {
+export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: boolean } = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] }> {
   def = normalizeSystems(def);
+  if (opts.draft) {
+    const saved = { ...def, status: 'draft' };
+    await redis.set(WORKFLOW_KEY_PREFIX + saved.id, JSON.stringify(saved));
+    await redis.sadd(WORKFLOW_INDEX_KEY, saved.id);
+    return { workflow: saved, errors: [] };
+  }
   const errors = validateWorkflow(def);
   if (errors.length > 0) return { workflow: def, errors };
   await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
@@ -258,7 +264,7 @@ export async function createWorkflow(def: WorkflowDefinition): Promise<{ workflo
   return { workflow: def, errors: [] };
 }
 
-export async function updateWorkflow(id: string, patch: Partial<WorkflowDefinition>): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] } | null> {
+export async function updateWorkflow(id: string, patch: Partial<WorkflowDefinition>, opts: { draft?: boolean } = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] } | null> {
   const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
   if (!raw) return null;
 
@@ -270,6 +276,13 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
 
   const updated: WorkflowDefinition = { ...current, ...patch, id }; // id is immutable
   const normalized = normalizeSystems(updated);
+
+  if (opts.draft) {
+    const saved = { ...normalized, status: 'draft' };
+    await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
+    return { workflow: saved, errors: [] };
+  }
+
   const errors = validateWorkflow(normalized);
   if (errors.length > 0) return { workflow: normalized, errors };
 
