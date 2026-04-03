@@ -5,6 +5,7 @@ import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Agent } from '../api/types';
+import { KibaPanel, KIBA_CSS } from '../components/KibaPanel';
 
 const styles = `
   .ag-body { padding: 20px; }
@@ -356,6 +357,7 @@ export function Agents() {
   const [showNew, setShowNew] = useState(false);
   const [tmuxAgent, setTmuxAgent] = useState<string | null>(null);
   const [editAgent, setEditAgent] = useState<Agent | null>(null);
+  const [showKiba, setShowKiba] = useState(false);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -374,12 +376,16 @@ export function Agents() {
 
   return (
     <Layout activePage="agents.html">
-      <style>{styles}</style>
-      <div className="ag-body">
+      <style>{styles + KIBA_CSS}</style>
+      <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      <div className="ag-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="page-header">
             <h1>Агенты</h1>
-            <button className="btn-new" onClick={() => setShowNew(true)}>+ Новый агент</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-new" onClick={() => setShowNew(true)}>+ Новый агент</button>
+              <button style={{ padding: '8px 14px', background: showKiba ? '#4f46e5' : '#1e293b', color: 'white', border: '1px solid #6366f1', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 600 }} onClick={() => setShowKiba(v => !v)}>🐕 Киба</button>
+            </div>
           </div>
           {error && <div className="error-banner">{error}</div>}
           {loading && <div className="empty">Загрузка…</div>}
@@ -444,6 +450,15 @@ export function Agents() {
           )}
           <div className="refresh-info">Авто-обновление 10с • Последнее: {lastUpdate}</div>
         </div>
+      </div>
+      {showKiba && (
+        <KibaPanel
+          page="agents"
+          contextData={agents}
+          onClose={() => setShowKiba(false)}
+          onActionDone={load}
+        />
+      )}
       </div>
       {showNew && <NewAgentModal onClose={() => setShowNew(false)} onCreated={load} />}
       {tmuxAgent && <TmuxModal agentId={tmuxAgent} onClose={() => setTmuxAgent(null)} />}

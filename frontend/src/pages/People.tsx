@@ -5,6 +5,7 @@ import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Person } from '../api/types';
+import { KibaPanel, KIBA_CSS } from '../components/KibaPanel';
 
 const styles = `
   .ppl-body { padding: 20px; }
@@ -184,6 +185,7 @@ export function People() {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editPerson, setEditPerson] = useState<Person | null>(null);
+  const [showKiba, setShowKiba] = useState(false);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -219,8 +221,9 @@ export function People() {
 
   return (
     <Layout activePage="people.html">
-      <style>{styles}</style>
-      <div className="ppl-body">
+      <style>{styles + KIBA_CSS}</style>
+      <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      <div className="ppl-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="page-header">
             <h1>Люди</h1>
@@ -232,6 +235,7 @@ export function People() {
                 onChange={e => setSearch(e.target.value)}
               />
               <button className="btn-new" onClick={openNew}>+ Добавить</button>
+              <button style={{ padding: '7px 14px', background: showKiba ? '#004499' : '#1e293b', color: 'white', border: '1px solid #0066cc', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 600 }} onClick={() => setShowKiba(v => !v)}>🐕 Киба</button>
             </div>
           </div>
           {error && <div className="error-banner">{error}</div>}
@@ -292,6 +296,15 @@ export function People() {
             </table>
           )}
         </div>
+      </div>
+      {showKiba && (
+        <KibaPanel
+          page="people"
+          contextData={people}
+          onClose={() => setShowKiba(false)}
+          onActionDone={load}
+        />
+      )}
       </div>
       {showModal && (
         <PersonModal

@@ -1,4 +1,5 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction } from './types';
+export type { KibaAction };
 
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
 
@@ -193,6 +194,16 @@ export const api = {
       }),
     clearChat: (chat_id: string) =>
       apiFetch<{ ok: boolean }>(`${BASE}/tsunade/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+  },
+
+  kiba: {
+    chat: (params: { message: string; context?: { page: string; data: unknown[] }; chat_id?: string }) =>
+      apiFetch<{ reply: string; chat_id: string; actions: KibaAction[] }>(`${BASE}/ai/admin-chat`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }),
+    clearChat: (chat_id: string) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/ai/admin-chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
   },
 
   workspace: {

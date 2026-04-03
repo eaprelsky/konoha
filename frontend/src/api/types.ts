@@ -216,3 +216,9 @@ export interface KbNode {
   ext?: string;
   children?: KbNode[];
 }
+
+export interface KibaAction {
+  label: string;
+  type: 'start_agent' | 'stop_agent' | 'restart_agent' | 'delete_agent' | 'create_role' | 'delete_role';
+  args: Record<string, unknown>;
+}

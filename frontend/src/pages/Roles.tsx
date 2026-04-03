@@ -6,6 +6,7 @@ import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { RoleDef, AssignmentStrategy, Agent, Person } from '../api/types';
+import { KibaPanel, KIBA_CSS } from '../components/KibaPanel';
 
 const STRATEGIES: { value: AssignmentStrategy; label: string }[] = [
   { value: 'manual',          label: 'Вручную' },
@@ -293,6 +294,7 @@ export function Roles() {
   const [error,   setError]   = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editRole,  setEditRole]  = useState<RoleDef | null>(null);
+  const [showKiba,  setShowKiba]  = useState(false);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -320,12 +322,16 @@ export function Roles() {
 
   return (
     <Layout activePage="roles.html">
-      <style>{styles}</style>
-      <div className="rl-body">
+      <style>{styles + KIBA_CSS}</style>
+      <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+      <div className="rl-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="page-header">
             <h1>Роли</h1>
-            <button className="btn-new" onClick={openNew}>+ Новая роль</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-new" onClick={openNew}>+ Новая роль</button>
+              <button style={{ padding: '8px 14px', background: showKiba ? '#004499' : '#1e293b', color: 'white', border: '1px solid #0066cc', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 600 }} onClick={() => setShowKiba(v => !v)}>🐕 Киба</button>
+            </div>
           </div>
           {error && <div className="error-banner">{error}</div>}
           {loading && <div className="empty">Загрузка…</div>}
@@ -367,6 +373,15 @@ export function Roles() {
             </table>
           )}
         </div>
+      </div>
+      {showKiba && (
+        <KibaPanel
+          page="roles"
+          contextData={roles}
+          onClose={() => setShowKiba(false)}
+          onActionDone={load}
+        />
+      )}
       </div>
       {showModal && (
         <RoleModal
