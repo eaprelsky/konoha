@@ -9,6 +9,10 @@ import { redis } from "./redis";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
+import { mkdirSync, writeFileSync } from "fs";
+import { join } from "path";
+
+const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
 
 const execFileAsync = promisify(execFile);
 
@@ -152,7 +156,14 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const envVars = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : "";
     const fullCmd = envVars ? `env ${envVars}${launchCmd}` : launchCmd;
 
-    const r = await sh("tmux", ["new-session", "-d", "-s", session, fullCmd]);
+    // Prepare per-agent working directory with CLAUDE.md if system_prompt is set
+    const workdir = join(AGENT_WORKDIR_ROOT, id);
+    mkdirSync(workdir, { recursive: true });
+    if (def.system_prompt?.trim()) {
+      writeFileSync(join(workdir, "CLAUDE.md"), def.system_prompt.trim(), "utf-8");
+    }
+
+    const r = await sh("tmux", ["new-session", "-d", "-s", session, "-c", workdir, fullCmd]);
     if (!r.ok) throw new Error(r.stderr || "tmux new-session failed");
 
     // Brief wait for session to settle
