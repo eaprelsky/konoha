@@ -41,6 +41,7 @@ import {
   stopAgent,
   restartAgent,
   renderSystemTemplate,
+  isTmuxRunning,
 } from "./agent-lifecycle";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
@@ -365,6 +366,7 @@ app.put("/agents/:id", async (c) => {
 app.delete("/agents/:id", async (c) => {
   const id = c.req.param("id");
   const def = await getAgentDef(id);
+  if (def?.protected) return c.json({ error: "Cannot delete a protected system agent" }, 403);
   if (def) {
     // Stop if running
     const state = await getAgentState(id);
@@ -389,13 +391,22 @@ app.get("/agents", async (c) => {
   ]);
   // Build a map from managed defs for quick lookup
   const defMap = new Map(defs.map(d => [d.id, d]));
+  async function lifecycleForDef(id: string, def: { protected?: boolean; tmux_session_override?: string }) {
+    if (def.tmux_session_override) {
+      const running = await isTmuxRunning(def.tmux_session_override);
+      return { status: running ? "running" : "stopped" };
+    }
+    const state = await getAgentState(id);
+    return { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds };
+  }
+
   // Merge lifecycle state into bus agents
   const agentsWithState = await Promise.all(
     busAgents.map(async (a) => {
       const def = defMap.get(a.id);
       if (!def) return a;
-      const state = await getAgentState(a.id);
-      return { ...a, lifecycle: { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds } };
+      const lifecycle = await lifecycleForDef(a.id, def);
+      return { ...a, ...def, lifecycle };
     })
   );
   // Also include managed agents not yet on the bus
@@ -403,8 +414,8 @@ app.get("/agents", async (c) => {
   const unmatchedDefs = defs.filter(d => !busIds.has(d.id));
   const unmatchedWithState = await Promise.all(
     unmatchedDefs.map(async (d) => {
-      const state = await getAgentState(d.id);
-      return { ...d, status: "offline", lifecycle: { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds } };
+      const lifecycle = await lifecycleForDef(d.id, d);
+      return { ...d, status: "offline", lifecycle };
     })
   );
   return c.json([...agentsWithState, ...unmatchedWithState]);
@@ -1832,6 +1843,43 @@ initTsunade().catch((e) => {
 });
 
 startReminderScheduler();
+
+// ── Seed system agents ──────────────────────────────────────────────────────
+
+const SYSTEM_AGENTS = [
+  { id: "naruto", name: "Наруто (Оркестратор)", model: "claude-sonnet-4-6", tags: ["system"], tmux_session_override: "naruto", gender: "male" as const },
+  { id: "sasuke", name: "Саске", model: "claude-sonnet-4-6", tags: ["system"], tmux_session_override: "sasuke", gender: "male" as const },
+  { id: "kakashi", name: "Какаши (Мастер багфиксинга)", model: "claude-sonnet-4-6", tags: ["system"], tmux_session_override: "kakashi", gender: "male" as const },
+  { id: "mirai", name: "Мирай", model: "claude-haiku-4-5-20251001", tags: ["system"], tmux_session_override: "mirai", gender: "female" as const },
+];
+
+async function seedSystemAgents() {
+  for (const ag of SYSTEM_AGENTS) {
+    const existing = await getAgentDef(ag.id).catch(() => null);
+    if (!existing) {
+      await createAgentDef({ ...ag, protected: true }).catch((e: any) => {
+        console.error(`[seed] failed to create agent def for ${ag.id}:`, e.message);
+      });
+      console.log(`[seed] created system AgentDef: ${ag.id}`);
+    }
+  }
+}
+seedSystemAgents().catch(e => console.error("[seed] system agents error:", e.message));
+
+// POST /admin/seed-system-agents — re-run seed (idempotent)
+app.post("/admin/seed-system-agents", requireAuth, async (c) => {
+  const results: string[] = [];
+  for (const ag of SYSTEM_AGENTS) {
+    const existing = await getAgentDef(ag.id).catch(() => null);
+    if (!existing) {
+      await createAgentDef({ ...ag, protected: true });
+      results.push(`created: ${ag.id}`);
+    } else {
+      results.push(`exists: ${ag.id}`);
+    }
+  }
+  return c.json({ ok: true, results });
+});
 
 console.log(`Konoha bus listening on port ${PORT}`);
 export { app };

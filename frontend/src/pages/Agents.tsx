@@ -578,8 +578,14 @@ export function Agents() {
   useEffect(() => { load(); }, [load]);
   useInterval(load, 10000);
 
-  async function action(id: string, fn: () => Promise<unknown>, label: string) {
-    if (label === 'Delete' && !confirm(`Удалить агента "${id}"? Это действие необратимо.`)) return;
+  async function action(id: string, fn: () => Promise<unknown>, label: string, isProtected?: boolean) {
+    if (label === 'Delete') {
+      if (isProtected) { setError(`Агент "${id}" является системным и не может быть удалён.`); return; }
+      if (!confirm(`Удалить агента "${id}"? Это действие необратимо.`)) return;
+    }
+    if ((label === 'Start' || label === 'Stop' || label === 'Restart') && isProtected) {
+      if (!confirm(`Агент "${id}" — системный. Управление через konoha.service / systemd.\nПродолжить?`)) return;
+    }
     try { await fn(); load(); } catch (e: any) { setError(e.message); }
   }
 
@@ -669,19 +675,23 @@ export function Agents() {
               <tbody>
                 {filteredAgents.map(a => {
                   const atype = getAgentType(a);
-                  const canEdit = atype === 'managed';
+                  const isProtected = !!(a as any).protected;
+                  const canEdit = atype === 'managed' || isProtected;
                   return (
                   <tr key={a.id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         {(a as any).avatar_url
                           ? <img src={(a as any).avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
-                          : <div style={{ width: 36, height: 36, borderRadius: 6, background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'white', fontWeight: 700, flexShrink: 0 }}>{a.name.charAt(0).toUpperCase()}</div>
+                          : <div style={{ width: 36, height: 36, borderRadius: 6, background: isProtected ? '#0f172a' : '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'white', fontWeight: 700, flexShrink: 0 }}>{a.name.charAt(0).toUpperCase()}</div>
                         }
                         <div>
                           <div style={{ fontWeight: 600 }}>
                             {a.name}
-                            <AgentTypeBadge type={atype} />
+                            {isProtected
+                              ? <span className="badge-system">system</span>
+                              : <AgentTypeBadge type={atype} />
+                            }
                           </div>
                           <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{a.id}</div>
                         </div>
@@ -706,13 +716,13 @@ export function Agents() {
                     <td>
                       <div className="actions">
                         {canEdit && a.lifecycle && <>
-                          <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start')}>▶ Запустить</button>
-                          <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop')}>■ Остановить</button>
-                          <button className="btn-restart" onClick={() => action(a.id, () => api.agents.restart(a.id), 'Restart')}>↺</button>
+                          <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start', isProtected)}>▶ Запустить</button>
+                          <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop', isProtected)}>■ Остановить</button>
+                          <button className="btn-restart" onClick={() => action(a.id, () => api.agents.restart(a.id), 'Restart', isProtected)}>↺</button>
                           <button onClick={() => setEditAgent(a)}>Изменить</button>
                         </>}
                         <button onClick={() => setTmuxAgent(a.id)}>Логи</button>
-                        {canEdit && <button className="btn-del" onClick={() => action(a.id, () => api.agents.delete(a.id), 'Delete')}>🗑</button>}
+                        {canEdit && !isProtected && <button className="btn-del" onClick={() => action(a.id, () => api.agents.delete(a.id), 'Delete')}>🗑</button>}
                       </div>
                     </td>
                   </tr>

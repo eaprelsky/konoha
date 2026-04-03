@@ -160,6 +160,7 @@ export interface Agent {
   village_id?: string;
   avatar_url?: string;
   gender?: 'male' | 'female' | 'neutral';
+  protected?: boolean;
 }
 
 export interface AdapterHealth {

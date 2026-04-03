@@ -73,6 +73,8 @@ export interface AgentDef {
   capabilities?: string[];  // skill IDs assigned to this agent
   avatar_url?: string;
   gender?: 'male' | 'female' | 'neutral';
+  protected?: boolean;          // system agents — cannot be deleted, start/stop requires confirmation
+  tmux_session_override?: string; // check this tmux session for live status instead of konoha-{id}
   created_at: string;
   updated_at: string;
 }
@@ -102,7 +104,7 @@ async function sh(cmd: string, args: string[]): Promise<{ ok: boolean; stdout: s
   }
 }
 
-async function isTmuxRunning(session: string): Promise<boolean> {
+export async function isTmuxRunning(session: string): Promise<boolean> {
   const r = await sh("tmux", ["has-session", "-t", session]);
   return r.ok;
 }
