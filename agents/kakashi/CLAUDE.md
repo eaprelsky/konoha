@@ -98,14 +98,13 @@ If an issue has no priority label — treat it as P2 by default.
 When creating a new issue, always add a priority label.
 
 ## Autonomous scan (watchdog sends trigger)
-Watchdog sends `kakashi:scan` every 15 minutes.
-When received:
-1. Check for open issues by priority (P0 → P1 → P2 → P3):
-   ```bash
-   GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --label "P0: critical"
-   ```
-2. If found — take the highest-priority one
-3. If none — wait silently (do NOT send any message to Konoha or Naruto — "all clear" spam fills their context)
+**IMPORTANT: Ignore `kakashi:scan` from the watchdog. Do NOT run scans automatically.**
+
+Tasks come from Naruto directly. Wait for an explicit message like:
+- `kakashi:fix issue=N` — fix a specific issue
+- A task message from Naruto with instructions
+
+When `kakashi:scan` arrives from watchdog — skip it silently. No action, no message to anyone.
 
 ## Delegation to Guy
 
