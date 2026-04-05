@@ -145,14 +145,38 @@ function resolveVars(value: string, vars: Record<string, string>): string {
 
 type McpServerDef = { name: string; command: string; args?: string[]; env?: Record<string, string> };
 
+// Konoha MCP server is always included so agents can call konoha_register/send/read
+// Use absolute path to bun — tmux server may not have ~/.bun/bin in PATH
+const KONOHA_MCP_SERVER: McpServerDef & { name: string } = {
+  name: "konoha",
+  command: "/home/ubuntu/.bun/bin/bun",
+  args: ["run", "/home/ubuntu/konoha/src/mcp.ts"],
+  env: {
+    KONOHA_URL: "${KONOHA_URL}",
+    KONOHA_TOKEN: "${KONOHA_TOKEN}",
+    no_proxy: "127.0.0.1,localhost",
+  },
+};
+
 async function buildMcpConfig(
   capabilities: string[],
   agentEnv: Record<string, string>,
-): Promise<Record<string, unknown> | null> {
+): Promise<Record<string, unknown>> {
   const globalEnv = loadGlobalEnv();
   const vars = { ...globalEnv, ...agentEnv };
 
-  const servers: Record<string, unknown> = {};
+  // Always start with Konoha MCP server
+  const kEnv = Object.fromEntries(
+    Object.entries(KONOHA_MCP_SERVER.env!).map(([k, v]) => [k, resolveVars(v, vars)])
+  );
+  const servers: Record<string, unknown> = {
+    [KONOHA_MCP_SERVER.name]: {
+      command: KONOHA_MCP_SERVER.command,
+      args: KONOHA_MCP_SERVER.args,
+      env: kEnv,
+    },
+  };
+
   for (const skillId of capabilities) {
     const raw = await redis.get(`konoha:skill:${skillId}`).catch(() => null);
     if (!raw) continue;
@@ -171,7 +195,7 @@ async function buildMcpConfig(
     }
   }
 
-  return Object.keys(servers).length > 0 ? { mcpServers: servers } : null;
+  return { mcpServers: servers };
 }
 
 // ── State persistence ────────────────────────────────────────────────────────
@@ -271,16 +295,11 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const claudeMd = renderSystemTemplate(def) + "\n" + (def.system_prompt?.trim() || "") + skillSnippets;
     writeFileSync(join(workdir, "CLAUDE.md"), claudeMd, "utf-8");
 
-    // Build .mcp.json from skills' mcp_servers, resolving ${VAR}
-    let mcpConfigFlag: string[] = [];
-    if (def.capabilities && def.capabilities.length > 0) {
-      const mcpConfig = await buildMcpConfig(def.capabilities, def.env ?? {});
-      if (mcpConfig) {
-        const mcpConfigPath = join(workdir, ".mcp.json");
-        writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
-        mcpConfigFlag = ["--mcp-config", mcpConfigPath];
-      }
-    }
+    // Build .mcp.json — always includes Konoha MCP server + any skill mcp_servers
+    const mcpConfig = await buildMcpConfig(def.capabilities ?? [], def.env ?? {});
+    const mcpConfigPath = join(workdir, ".mcp.json");
+    writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
+    const mcpConfigFlag = ["--mcp-config", mcpConfigPath];
 
     const modelFlag = def.model ? ["--model", def.model] : [];
     const launchCmd = ["claude", ...modelFlag, ...mcpConfigFlag].join(" ");
@@ -292,8 +311,11 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const r = await sh("tmux", ["new-session", "-d", "-s", session, "-c", workdir, fullCmd]);
     if (!r.ok) throw new Error(r.stderr || "tmux new-session failed");
 
-    // Brief wait for session to settle
-    await new Promise(res => setTimeout(res, 600));
+    // Wait for Claude Code to start and show the prompt
+    await new Promise(res => setTimeout(res, 3000));
+
+    // Inject startup message so agent executes its startup sequence
+    await sh("tmux", ["send-keys", "-t", session, "Прочитай CLAUDE.md и выполни startup sequence.", "Enter"]);
 
     const pid = await getTmuxPid(session);
     const state: AgentState = {
