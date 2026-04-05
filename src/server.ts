@@ -393,7 +393,10 @@ app.get("/agents", async (c) => {
   const defMap = new Map(defs.map(d => [d.id, d]));
   async function lifecycleForDef(id: string, def: { protected?: boolean; tmux_session_override?: string }) {
     if (def.tmux_session_override) {
-      const running = await isTmuxRunning(def.tmux_session_override);
+      const sess = def.tmux_session_override;
+      // System agents (naruto/sasuke/mirai) use named tmux sockets (-L <session>)
+      const runningNamedSocket = await execFileAsync("tmux", ["-L", sess, "has-session", "-t", sess]).then(() => true).catch(() => false);
+      const running = runningNamedSocket || await isTmuxRunning(sess);
       return { status: running ? "running" : "stopped" };
     }
     const state = await getAgentState(id);
@@ -1886,6 +1889,10 @@ import { initTsunade } from "./tsunade";
 initTsunade().catch((e) => {
   console.error("[tsunade] init error:", e.message);
 });
+
+// Register Trigger Resolver routes
+import { registerTriggerResolverRoutes } from "./trigger-resolver";
+registerTriggerResolverRoutes(app, requireAuth);
 
 startReminderScheduler();
 
