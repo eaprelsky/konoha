@@ -11,6 +11,8 @@ export interface Workflow {
   triggers?: WorkflowTrigger[];
   parent_id?: string;
   parent_function_id?: string;
+  /** Set by trigger-resolver when deploy is blocked and manual review is required */
+  needs_review?: boolean;
 }
 
 export interface WorkflowElement {
@@ -28,7 +30,19 @@ export interface WorkflowElement {
   file_ref?: string;
   // Trigger config (start event nodes only)
   trigger?: {
-    type: 'manual' | 'telegram' | 'schedule' | 'event' | 'webhook';
+    // Legacy type field (kept for backward compat)
+    type?: 'manual' | 'telegram' | 'schedule' | 'event' | 'webhook';
+    // Extended trigger kind from event-manager
+    kind?: 'timer' | 'message' | 'condition' | 'delay_after' | 'manual' | 'ambiguous';
+    /** 0–1 confidence score from trigger-resolver */
+    confidence?: number;
+    /** Candidates when kind=ambiguous */
+    candidates?: Array<{ kind: string; description: string; confidence: number }>;
+    /** Set when user has manually chosen/overridden the trigger */
+    manual_override?: boolean;
+    /** mode=manual means condition trigger has no registered adapter */
+    mode?: 'auto' | 'manual';
+    // Legacy fields
     chat_id?: string;
     keyword?: string;
     cron?: string;

@@ -150,7 +150,16 @@ function CategoryNode({ cat, items, selectedId, onSelect, onDuplicate, onDelete,
         <div className="category-items open">
           {items.map(wf => (
             <div key={wf.id} className={`process-item${selectedId === wf.id ? ' active' : ''}`} onClick={() => onSelect(wf)}>
-              <span>{wf.name || wf.id}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{wf.name || wf.id}</span>
+                {(wf as any).needs_review && (
+                  <span title="Требует проверки — деплой заблокирован" style={{
+                    flexShrink: 0, fontSize: 9, fontWeight: 700, padding: '1px 5px',
+                    background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca',
+                    borderRadius: 8, letterSpacing: '.03em', whiteSpace: 'nowrap',
+                  }}>⚠ review</span>
+                )}
+              </span>
               <div className="proc-actions" onClick={e => e.stopPropagation()}>
                 <button title="Копировать" onClick={() => onDuplicate(wf)}>⎘</button>
                 <button title="Экспорт JSON" onClick={() => onExport(wf)}>↓</button>

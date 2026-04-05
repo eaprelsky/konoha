@@ -1225,11 +1225,92 @@ export function ProcessEditor() {
                   // Start event — show trigger configuration
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.05em', margin: '14px 0 8px', paddingBottom: 4, borderBottom: '1px solid #f1f5f9' }}>Триггер запуска</div>
+
+                    {/* ── "Trigger not defined" indicator ── */}
+                    {(!selEl.trigger || (!selEl.trigger.kind && !selEl.trigger.type)) && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 6, marginBottom: 10, fontSize: 12, color: '#92400e' }}>
+                        <span>⚠</span> Триггер не определён — процесс не может быть запущен автоматически
+                      </div>
+                    )}
+
+                    {/* ── Confidence indicator ── */}
+                    {selEl.trigger && selEl.trigger.confidence !== undefined && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', marginBottom: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12 }}>
+                        <span style={{ fontSize: 10 }}>Уверенность:</span>
+                        {(() => {
+                          const c = selEl.trigger.confidence!;
+                          const color = c >= 0.9 ? '#22c55e' : c >= 0.7 ? '#f59e0b' : '#ef4444';
+                          const label = c >= 0.9 ? 'высокая' : c >= 0.7 ? 'средняя' : 'низкая';
+                          return (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, display: 'inline-block' }} />
+                              <strong style={{ color }}>{Math.round(c * 100)}%</strong>
+                              <span style={{ color: '#64748b' }}>({label})</span>
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* ── "Tracked manually" label (condition without adapter) ── */}
+                    {selEl.trigger?.mode === 'manual' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, marginBottom: 10, fontSize: 12, color: '#0369a1' }}>
+                        <span>👁</span> Отслеживается вручную — адаптер для источника не зарегистрирован
+                      </div>
+                    )}
+
+                    {/* ── manual_override indicator ── */}
+                    {selEl.trigger?.manual_override && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 6, marginBottom: 10, fontSize: 12, color: '#92400e' }}>
+                        <span>🔒</span>
+                        <span style={{ flex: 1 }}>Триггер задан вручную</span>
+                        <button
+                          style={{ padding: '2px 8px', fontSize: 11, border: '1px solid #fbbf24', borderRadius: 4, background: 'white', cursor: 'pointer', color: '#92400e', whiteSpace: 'nowrap' }}
+                          onClick={() => updateElement(selEl.id, { trigger: { ...selEl.trigger, manual_override: false } })}
+                        >
+                          Сбросить на авто
+                        </button>
+                      </div>
+                    )}
+
+                    {/* ── Ambiguous correction UI ── */}
+                    {selEl.trigger?.kind === 'ambiguous' && (
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#991b1b', marginBottom: 8 }}>
+                          ⚠ Неоднозначный триггер — выберите вариант
+                        </div>
+                        {(selEl.trigger.candidates || []).map((c, i) => {
+                          const confColor = c.confidence >= 0.9 ? '#22c55e' : c.confidence >= 0.7 ? '#f59e0b' : '#ef4444';
+                          return (
+                            <button key={i}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '6px 10px', marginBottom: 4, background: 'white', border: '1px solid #fca5a5', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+                              onClick={() => updateElement(selEl.id, { trigger: { ...selEl.trigger, kind: c.kind as any, confidence: c.confidence, candidates: undefined, manual_override: true } })}
+                            >
+                              <span style={{ width: 8, height: 8, borderRadius: '50%', background: confColor, display: 'inline-block', flexShrink: 0 }} />
+                              <span style={{ flex: 1 }}>{c.description}</span>
+                              <span style={{ color: confColor, fontWeight: 600 }}>{Math.round(c.confidence * 100)}%</span>
+                            </button>
+                          );
+                        })}
+                        <div style={{ marginTop: 6, fontSize: 11, color: '#9ca3af' }}>— или введите кастомный тип триггера ниже —</div>
+                        <input
+                          style={{ width: '100%', marginTop: 4, padding: '4px 8px', border: '1px solid #fca5a5', borderRadius: 4, fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }}
+                          placeholder="Кастомный тип, например: timer, message, condition…"
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                              const val = (e.target as HTMLInputElement).value.trim();
+                              updateElement(selEl.id, { trigger: { ...selEl.trigger, kind: val as any, candidates: undefined, manual_override: true } });
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+
                     <div className="props-field">
                       <label>Тип триггера</label>
                       <select
                         value={selEl.trigger?.type || 'manual'}
-                        onChange={e => updateElement(selEl.id, { trigger: { ...selEl.trigger, type: e.target.value as any } })}
+                        onChange={e => updateElement(selEl.id, { trigger: { ...selEl.trigger, type: e.target.value as any, manual_override: true } })}
                       >
                         <option value="manual">Manual — кнопка / API</option>
                         <option value="webhook">Webhook — HTTP POST</option>
@@ -1564,6 +1645,46 @@ export function ProcessEditor() {
                         fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none"
                         title="Заблокировано (граница под-процесса)">🔒</text>
                     )}
+                    {/* Trigger confidence badge on event nodes */}
+                    {el.type === 'event' && !isEditingThis && (() => {
+                      const tr = el.trigger;
+                      const isStartEvt = !flow.some(([, to]) => to === el.id);
+                      if (!isStartEvt) return null;
+                      // No trigger defined
+                      if (!tr || (!tr.kind && !tr.type)) {
+                        return (
+                          <g title="Триггер не определён">
+                            <circle cx={EW - 10} cy={10} r={8} fill="#94a3b8" stroke="white" strokeWidth={1.5} />
+                            <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle"
+                              fontSize={9} fill="white" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">?</text>
+                          </g>
+                        );
+                      }
+                      // manual_override lock icon
+                      if (tr.manual_override) {
+                        return (
+                          <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle"
+                            fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none"
+                            title="Триггер задан вручную">🔒</text>
+                        );
+                      }
+                      // Confidence dot
+                      const conf = tr.confidence;
+                      const isAmbiguous = tr.kind === 'ambiguous';
+                      if (conf === undefined && !isAmbiguous) return null;
+                      const dotColor = isAmbiguous || (conf !== undefined && conf < 0.7) ? '#ef4444'
+                        : conf !== undefined && conf < 0.9 ? '#f59e0b' : '#22c55e';
+                      const pct = conf !== undefined ? `${Math.round(conf * 100)}%` : '?';
+                      return (
+                        <g title={isAmbiguous ? 'Триггер неоднозначен — требует уточнения' : `Уверенность: ${pct}`}>
+                          <circle cx={EW - 10} cy={10} r={8} fill={dotColor} stroke="white" strokeWidth={1.5} />
+                          <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle"
+                            fontSize={7} fill="white" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">
+                            {isAmbiguous ? '!' : pct}
+                          </text>
+                        </g>
+                      );
+                    })()}
                     {/* Mining overlay badges */}
                     {showMining && miningData && (() => {
                       const stat = miningData.elements[el.id];
