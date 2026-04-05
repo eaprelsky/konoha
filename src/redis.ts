@@ -55,13 +55,17 @@ export interface Message {
   village_id?: string; // originating village; defaults to DEFAULT_VILLAGE
 }
 
-function createRedis(): Redis {
-  const r = new Redis({ host: "127.0.0.1", port: 6379, maxRetriesPerRequest: 3, lazyConnect: false });
+const REDIS_DB = parseInt(process.env.REDIS_DB ?? "0", 10);
+
+export function createRedis(): Redis {
+  const r = new Redis({ host: "127.0.0.1", port: 6379, db: REDIS_DB, maxRetriesPerRequest: 3, lazyConnect: false });
   r.on("error", (err) => {
     console.error("[Redis error]", err.message);
   });
   return r;
 }
+
+export const REDIS_CONNECTION_OPTS = { host: "127.0.0.1", port: 6379, db: REDIS_DB };
 
 export const redis = createRedis();
 export const redisSub = createRedis(); // separate connection for blocking reads

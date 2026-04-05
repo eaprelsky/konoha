@@ -5,7 +5,7 @@
 // Actions: log + notify naruto (exceptions) or work item assignee (stuck/overdue)
 
 import Redis from "ioredis";
-import { registerAgent, sendMessage } from "./redis";
+import { registerAgent, sendMessage, REDIS_CONNECTION_OPTS } from "./redis";
 
 const NOTIFY_CHANNEL = "konoha:notify:tsunade";
 const TSUNADE_ID = "tsunade";
@@ -77,23 +77,12 @@ async function handleEvent(event: KonohaEvent): Promise<void> {
 }
 
 export async function initTsunade(): Promise<void> {
-  // Register Tsunade as a bus participant
-  await registerAgent({
-    id: TSUNADE_ID,
-    name: "Цунаде (Process Monitor)",
-    roles: ["architect"],
-    capabilities: ["process-monitoring", "event-handler"],
-    eventSubscriptions: ["process.exception", "workitem.stuck", "workitem.overdue"],
-    village_id: "comind.konoha",
-  });
-
-  console.log("[Tsunade] registered on bus, listening for process/workitem events");
-
-  // Subscribe to Tsunade's pub/sub notification channel
-  const sub = new Redis({ host: "127.0.0.1", port: 6379 });
+  // Subscribe to Tsunade's pub/sub notification channel BEFORE registering,
+  // so the subscription is ready when the first event may arrive.
+  const sub = new Redis(REDIS_CONNECTION_OPTS);
   sub.on("error", () => {}); // swallow connection errors
 
-  sub.subscribe(NOTIFY_CHANNEL).catch(() => {});
+  await sub.subscribe(NOTIFY_CHANNEL);
 
   sub.on("message", (_channel, raw) => {
     try {
@@ -108,4 +97,17 @@ export async function initTsunade(): Promise<void> {
       console.error("[Tsunade] message parse error:", e.message);
     }
   });
+
+  // Register on bus AFTER subscription is active — tests check the registry
+  // entry as a signal that Tsunade is ready to receive events.
+  await registerAgent({
+    id: TSUNADE_ID,
+    name: "Цунаде (Process Monitor)",
+    roles: ["architect"],
+    capabilities: ["process-monitoring", "event-handler"],
+    eventSubscriptions: ["process.exception", "workitem.stuck", "workitem.overdue"],
+    village_id: "comind.konoha",
+  });
+
+  console.log("[Tsunade] registered on bus, listening for process/workitem events");
 }

@@ -15,7 +15,8 @@
 import { randomUUID } from "crypto";
 import * as nodeCron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
-import { redis, sendMessage } from "./redis";
+import { Queue, Worker } from "bullmq";
+import { redis, sendMessage, REDIS_CONNECTION_OPTS } from "./redis";
 import type { Hono } from "hono";
 import type { DataAdapter, ListenerHandle } from "./adapters/data-adapter";
 import { listenerRegistry } from "./adapters/data-adapter";
@@ -48,10 +49,17 @@ export interface ConditionTrigger {
   poll_interval: string;  // ISO 8601 duration, e.g. "PT30S"
 }
 
+export interface DelayAfterTrigger {
+  kind: "delay_after";
+  duration: string;   // ISO 8601 duration, e.g. "PT1H"
+  ref_event?: string; // metadata only — countdown starts at subscribe time
+}
+
 export type TriggerDef =
   | TimerTrigger
   | MessageTrigger
   | ConditionTrigger
+  | DelayAfterTrigger
   | { kind: string; [key: string]: unknown };
 
 export interface Subscription {
@@ -83,6 +91,71 @@ const activeListeners = new Map<string, ListenerHandle>();
 
 // Maps subscriptionId → condition poll timer
 const conditionTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+// ── BullMQ queue for delay_after triggers ────────────────────────────────────
+
+const DELAY_QUEUE_NAME = "event-manager-delay";
+
+const delayQueue = new Queue(DELAY_QUEUE_NAME, { connection: REDIS_CONNECTION_OPTS });
+
+let delayWorker: Worker | null = null;
+
+export function startDelayWorker(): void {
+  if (delayWorker) return;
+
+  delayWorker = new Worker(
+    DELAY_QUEUE_NAME,
+    async (job) => {
+      const { subscription_id } = job.data as { subscription_id: string };
+      const raw = await redis.hget(SUBSCRIPTIONS_KEY, subscription_id);
+      if (!raw) return; // already gone
+      const sub: Subscription = JSON.parse(raw);
+      if (sub.status !== "active") return; // already cancelled
+
+      const trigger = sub.trigger as DelayAfterTrigger;
+      await publishEventFired(sub, {
+        duration: trigger.duration,
+        ref_event: trigger.ref_event ?? null,
+      });
+
+      // delay_after fires once — auto-cancel
+      sub.status = "cancelled";
+      await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
+      console.log(`[event-manager] delay_after fired and cancelled sub=${sub.id}`);
+    },
+    { connection: REDIS_CONNECTION_OPTS },
+  );
+
+  delayWorker.on("failed", (job, err) => {
+    console.error(`[event-manager] delay job failed job=${job?.id}: ${err.message}`);
+  });
+
+  console.log("[event-manager] delay_after worker started");
+}
+
+// ── Retry with exponential backoff ───────────────────────────────────────────
+
+const MAX_RETRY_ATTEMPTS = 5;
+const RETRY_BASE_MS = 1000;
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  maxAttempts = MAX_RETRY_ATTEMPTS,
+): Promise<T> {
+  let lastError: Error = new Error("unknown");
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      lastError = e;
+      const delayMs = RETRY_BASE_MS * Math.pow(2, attempt);
+      console.warn(`[event-manager] ${label} attempt ${attempt + 1}/${maxAttempts} failed: ${e.message}. Retrying in ${delayMs}ms…`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw lastError;
+}
 
 // ── ISO 8601 duration parser (subset: PT<n>S / PT<n>M / PT<n>H / P<n>D) ─────
 
@@ -233,13 +306,42 @@ async function checkMissedFirings(sub: Subscription): Promise<void> {
   }
 }
 
+// ── Activate delay_after trigger ─────────────────────────────────────────────
+
+async function activateDelayAfterTrigger(sub: Subscription): Promise<void> {
+  const trigger = sub.trigger as DelayAfterTrigger;
+  let delayMs: number;
+  try {
+    delayMs = parseDurationMs(trigger.duration);
+  } catch (e: any) {
+    console.warn(`[event-manager] invalid delay_after duration sub=${sub.id}: ${e.message}`);
+    return;
+  }
+
+  // Check if a job already exists (idempotent)
+  const existingJob = await delayQueue.getJob(sub.id).catch(() => null);
+  if (existingJob) {
+    console.log(`[event-manager] delay_after job already queued sub=${sub.id}`);
+    return;
+  }
+
+  await delayQueue.add("fire", { subscription_id: sub.id }, {
+    jobId: sub.id,
+    delay: delayMs,
+    removeOnComplete: true,
+    removeOnFail: { count: 5 },
+  });
+
+  console.log(`[event-manager] delay_after queued sub=${sub.id} delay=${delayMs}ms`);
+}
+
 // ── Activate message trigger ──────────────────────────────────────────────────
 
 async function activateMessageTrigger(sub: Subscription): Promise<void> {
   const trigger = sub.trigger as MessageTrigger;
   const adapter = dataAdapters.get(trigger.source);
   if (!adapter) {
-    console.warn(`[event-manager] no DataAdapter for source="${trigger.source}" sub=${sub.id}`);
+    console.warn(`[event-manager] no DataAdapter for source="${trigger.source}" sub=${sub.id} → manual mode`);
     return;
   }
 
@@ -250,14 +352,22 @@ async function activateMessageTrigger(sub: Subscription): Promise<void> {
     activeListeners.delete(sub.id);
   }
 
-  const handle = await adapter.setupListener(trigger.filter, async (payload) => {
-    await publishEventFired(sub, { payload }).catch(e =>
-      console.error(`[event-manager] message fire error sub=${sub.id}: ${e.message}`),
+  try {
+    const handle = await withRetry(
+      () => adapter.setupListener(trigger.filter, async (payload) => {
+        await publishEventFired(sub, { payload }).catch(e =>
+          console.error(`[event-manager] message fire error sub=${sub.id}: ${e.message}`),
+        );
+      }),
+      `setupListener sub=${sub.id} source=${trigger.source}`,
     );
-  });
-
-  activeListeners.set(sub.id, handle);
-  console.log(`[event-manager] message listener activated sub=${sub.id} source=${trigger.source}`);
+    activeListeners.set(sub.id, handle);
+    console.log(`[event-manager] message listener activated sub=${sub.id} source=${trigger.source}`);
+  } catch (e: any) {
+    console.error(`[event-manager] message listener setup exhausted retries sub=${sub.id}: ${e.message} → switching to manual mode`);
+    sub.mode = "manual";
+    await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
+  }
 }
 
 // ── Activate condition trigger ─────────────────────────────────────────────────
@@ -266,7 +376,7 @@ async function activateConditionTrigger(sub: Subscription): Promise<void> {
   const trigger = sub.trigger as ConditionTrigger;
   const adapter = dataAdapters.get(trigger.data_source);
   if (!adapter) {
-    console.warn(`[event-manager] no DataAdapter for data_source="${trigger.data_source}" sub=${sub.id}`);
+    console.warn(`[event-manager] no DataAdapter for data_source="${trigger.data_source}" sub=${sub.id} → manual mode`);
     return;
   }
 
@@ -287,12 +397,15 @@ async function activateConditionTrigger(sub: Subscription): Promise<void> {
 
   const timer = setInterval(async () => {
     try {
-      const value = await adapter.executeQuery({
-        entity: trigger.query.entity,
-        filter: trigger.query.filter,
-        metric: trigger.query.metric as any,
-        sum_field: trigger.query.sum_field,
-      });
+      const value = await withRetry(
+        () => adapter.executeQuery({
+          entity: trigger.query.entity,
+          filter: trigger.query.filter,
+          metric: trigger.query.metric as any,
+          sum_field: trigger.query.sum_field,
+        }),
+        `executeQuery sub=${sub.id} source=${trigger.data_source}`,
+      );
 
       if (evalCondition(value, trigger.operator, trigger.threshold)) {
         await publishEventFired(sub, {
@@ -301,9 +414,20 @@ async function activateConditionTrigger(sub: Subscription): Promise<void> {
           operator: trigger.operator,
           threshold: trigger.threshold,
         });
+
+        // Condition fires once: cancel subscription after match
+        sub.status = "cancelled";
+        await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
+        clearInterval(timer);
+        conditionTimers.delete(sub.id);
+        console.log(`[event-manager] condition matched and unsubscribed sub=${sub.id}`);
       }
     } catch (e: any) {
-      console.error(`[event-manager] condition poll error sub=${sub.id}: ${e.message}`);
+      console.error(`[event-manager] condition poll exhausted retries sub=${sub.id}: ${e.message} → switching to manual mode`);
+      sub.mode = "manual";
+      await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
+      clearInterval(timer);
+      conditionTimers.delete(sub.id);
     }
   }, pollMs);
 
@@ -331,6 +455,51 @@ async function cancelSubscriptionResources(sub: Subscription): Promise<void> {
       clearInterval(timer);
       conditionTimers.delete(id);
     }
+  } else if (trigger.kind === "delay_after") {
+    const job = await delayQueue.getJob(id).catch(() => null);
+    await job?.remove().catch(() => {});
+    console.log(`[event-manager] delay_after job removed sub=${id}`);
+  }
+}
+
+// ── Restore delay_after subscription ─────────────────────────────────────────
+
+async function restoreDelayAfterSub(sub: Subscription): Promise<void> {
+  const trigger = sub.trigger as DelayAfterTrigger;
+
+  // Job is stored in Redis by BullMQ — check if it's still there
+  const existingJob = await delayQueue.getJob(sub.id).catch(() => null);
+  if (existingJob) {
+    console.log(`[event-manager] delay_after job still queued in BullMQ sub=${sub.id}`);
+    return;
+  }
+
+  // Job was lost — compute remaining delay and re-add
+  let durationMs: number;
+  try {
+    durationMs = parseDurationMs(trigger.duration);
+  } catch (e: any) {
+    console.warn(`[event-manager] delay_after restore: invalid duration sub=${sub.id}: ${e.message}`);
+    return;
+  }
+
+  const subscribedAt = new Date(sub.subscribed_at).getTime();
+  const remainingMs = subscribedAt + durationMs - Date.now();
+
+  if (remainingMs <= 0) {
+    // Already past due — fire immediately
+    console.log(`[event-manager] delay_after past due on restore sub=${sub.id} — firing now`);
+    await publishEventFired(sub, { duration: trigger.duration, ref_event: trigger.ref_event ?? null, missed: true });
+    sub.status = "cancelled";
+    await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
+  } else {
+    await delayQueue.add("fire", { subscription_id: sub.id }, {
+      jobId: sub.id,
+      delay: remainingMs,
+      removeOnComplete: true,
+      removeOnFail: { count: 5 },
+    });
+    console.log(`[event-manager] delay_after re-queued sub=${sub.id} remaining=${remainingMs}ms`);
   }
 }
 
@@ -358,6 +527,12 @@ export async function restoreSubscriptions(): Promise<void> {
     } else if (sub.trigger.kind === "condition") {
       await activateConditionTrigger(sub).catch(e =>
         console.error(`[event-manager] condition poller restore failed sub=${sub.id}: ${e.message}`),
+      );
+    } else if (sub.trigger.kind === "delay_after") {
+      // BullMQ jobs survive in Redis across restarts — check if job still exists,
+      // re-add with remaining time if it was lost (e.g. Redis flush).
+      await restoreDelayAfterSub(sub).catch(e =>
+        console.error(`[event-manager] delay_after restore failed sub=${sub.id}: ${e.message}`),
       );
     } else {
       console.log(`[event-manager] sub=${sub.id} kind=${sub.trigger.kind} → manual mode`);
@@ -414,6 +589,13 @@ export function registerEventManagerRoutes(
       if (ct.threshold === undefined) return c.json({ error: "trigger.threshold required" }, 400);
       if (!ct.poll_interval) return c.json({ error: "trigger.poll_interval required (ISO 8601 duration)" }, 400);
       mode = "auto";
+    } else if (trigger.kind === "delay_after") {
+      const dt = trigger as DelayAfterTrigger;
+      if (!dt.duration) return c.json({ error: "trigger.duration required for delay_after kind (ISO 8601)" }, 400);
+      try { parseDurationMs(dt.duration); } catch {
+        return c.json({ error: `invalid ISO 8601 duration: "${dt.duration}"` }, 400);
+      }
+      mode = "auto";
     }
 
     const sub: Subscription = {
@@ -439,6 +621,10 @@ export function registerEventManagerRoutes(
       } else if (trigger.kind === "condition") {
         await activateConditionTrigger(sub).catch(e =>
           console.error(`[event-manager] condition poller setup failed sub=${sub.id}: ${e.message}`),
+        );
+      } else if (trigger.kind === "delay_after") {
+        await activateDelayAfterTrigger(sub).catch(e =>
+          console.error(`[event-manager] delay_after queue failed sub=${sub.id}: ${e.message}`),
         );
       }
     }
@@ -526,6 +712,9 @@ export async function createSubscriptionProgrammatic(params: {
   } else if (trigger.kind === "condition") {
     const ct = trigger as ConditionTrigger;
     if (ct.data_source && dataAdapters.has(ct.data_source)) mode = "auto";
+  } else if (trigger.kind === "delay_after") {
+    const dt = trigger as DelayAfterTrigger;
+    try { parseDurationMs(dt.duration); mode = "auto"; } catch {}
   }
 
   const sub: Subscription = {
@@ -551,6 +740,10 @@ export async function createSubscriptionProgrammatic(params: {
     } else if (trigger.kind === "condition") {
       await activateConditionTrigger(sub).catch(e =>
         console.error(`[event-manager] condition poller setup failed sub=${sub.id}: ${e.message}`),
+      );
+    } else if (trigger.kind === "delay_after") {
+      await activateDelayAfterTrigger(sub).catch(e =>
+        console.error(`[event-manager] delay_after queue failed sub=${sub.id}: ${e.message}`),
       );
     }
   }

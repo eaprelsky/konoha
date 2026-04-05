@@ -2027,7 +2027,7 @@ loadWorkflows(WORKFLOWS_DIR).then(({ loaded, errors }) => {
 
 // Initialize Tsunade event handler (KWE-006)
 import { initTsunade } from "./tsunade";
-initTsunade().catch((e) => {
+export const tsunadeReady: Promise<void> = initTsunade().catch((e) => {
   console.error("[tsunade] init error:", e.message);
 });
 
@@ -2037,8 +2037,9 @@ import type { ProcessContext } from "./trigger-resolver";
 registerTriggerResolverRoutes(app, requireAuth);
 
 // Register Event Manager routes and restore subscriptions on startup
-import { registerEventManagerRoutes, restoreSubscriptions, createSubscriptionProgrammatic } from "./event-manager";
+import { registerEventManagerRoutes, restoreSubscriptions, createSubscriptionProgrammatic, startDelayWorker } from "./event-manager";
 registerEventManagerRoutes(app, requireAuth);
+startDelayWorker();
 restoreSubscriptions().catch(e => console.error("[event-manager] restore error:", e.message));
 
 // Import workflow engine event_fired handler

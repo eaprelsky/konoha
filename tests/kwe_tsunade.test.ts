@@ -14,9 +14,11 @@ import Redis from "ioredis";
 const TEST_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 process.env.KONOHA_PORT = "0";
 
-const { app } = await import("../src/server");
+const { app, tsunadeReady } = await import("../src/server");
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379 });
+// Use the same Redis DB as the server (set via REDIS_DB env in tests/setup.ts)
+const REDIS_DB = parseInt(process.env.REDIS_DB ?? "0", 10);
+const redis = new Redis({ host: "127.0.0.1", port: 6379, db: REDIS_DB });
 
 function adminHeaders() {
   return { Authorization: `Bearer ${TEST_TOKEN}`, "Content-Type": "application/json" };
@@ -64,6 +66,11 @@ describe("Tsunade registration", () => {
 });
 
 describe("Tsunade event routing", () => {
+  // Wait for Tsunade's pub/sub subscriber to be fully active before running routing tests
+  beforeAll(async () => {
+    await tsunadeReady;
+  }, 30_000);
+
   test("process.exception event delivers message to naruto", async () => {
     // Register naruto for this test (or use existing)
     await req("POST", "/agents/register", { id: "naruto", name: "Naruto Test" });
@@ -84,9 +91,9 @@ describe("Tsunade event routing", () => {
         for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
         return obj.from === "tsunade" && obj.text?.includes("case-test-001");
       });
-    });
+    }, 30_000);
     expect(delivered).toBe(true);
-  });
+  }, 35_000);
 
   test("workitem.stuck event delivers message to assignee", async () => {
     const assigneeId = `test-stuck-assignee-${Date.now()}`;
@@ -106,12 +113,12 @@ describe("Tsunade event routing", () => {
         for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
         return obj.from === "tsunade" && obj.text?.includes("wi-stuck-001");
       });
-    });
+    }, 30_000);
     expect(delivered).toBe(true);
 
     // Cleanup
     await req("DELETE", `/agents/${assigneeId}?hard=true`);
-  });
+  }, 35_000);
 
   test("workitem.overdue event delivers message to assignee with deadline", async () => {
     const assigneeId = `test-overdue-assignee-${Date.now()}`;
@@ -136,10 +143,10 @@ describe("Tsunade event routing", () => {
         for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
         return obj.from === "tsunade" && obj.text?.includes("wi-overdue-001") && obj.text?.includes("2026-03-31");
       });
-    });
+    }, 30_000);
     expect(delivered).toBe(true);
 
     // Cleanup
     await req("DELETE", `/agents/${assigneeId}?hard=true`);
-  });
+  }, 35_000);
 });
