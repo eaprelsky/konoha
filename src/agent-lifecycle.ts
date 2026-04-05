@@ -311,8 +311,8 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const r = await sh("tmux", ["new-session", "-d", "-s", session, "-c", workdir, fullCmd]);
     if (!r.ok) throw new Error(r.stderr || "tmux new-session failed");
 
-    // Wait for Claude Code to start and show the prompt
-    await new Promise(res => setTimeout(res, 3000));
+    // Wait for Claude Code to start and show the prompt (7s to be safe on slow init)
+    await new Promise(res => setTimeout(res, 7000));
 
     // Inject startup message so agent executes its startup sequence
     await sh("tmux", ["send-keys", "-t", session, "Прочитай CLAUDE.md и выполни startup sequence.", "Enter"]);
