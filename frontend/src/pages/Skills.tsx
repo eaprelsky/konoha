@@ -3,7 +3,7 @@ import type React from 'react';
 import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
-import type { Skill } from '../api/types';
+import type { Skill, McpServerDef } from '../api/types';
 
 const styles = `
   .skills-body { padding: 20px; }
@@ -38,6 +38,8 @@ const styles = `
   .form-actions button { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
   .btn-submit { background: #6366f1; color: white; }
   .btn-cancel-f { background: #e5e7eb; color: #374151; }
+  .mcp-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .mcp-json-error { color: #dc2626; font-size: 11px; margin-top: 2px; }
 `;
 
 interface SkillModalProps {
@@ -54,6 +56,12 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
   const [description, setDescription] = useState(skill?.description || '');
   const [promptSnippet, setPromptSnippet] = useState(skill?.prompt_snippet || '');
   const [tools, setTools] = useState((skill?.tools || []).join(', '));
+  const [mcpServersJson, setMcpServersJson] = useState(
+    skill?.mcp_servers && skill.mcp_servers.length > 0
+      ? JSON.stringify(skill.mcp_servers, null, 2)
+      : ''
+  );
+  const [mcpJsonError, setMcpJsonError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,8 +74,18 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) { setError('Название обязательно'); return; }
-    setSubmitting(true); setError(null);
+    setSubmitting(true); setError(null); setMcpJsonError(null);
     const toolsList = tools.split(',').map(t => t.trim()).filter(Boolean);
+    let mcpServers: McpServerDef[] | undefined;
+    if (mcpServersJson.trim()) {
+      try {
+        const parsed = JSON.parse(mcpServersJson);
+        mcpServers = Array.isArray(parsed) ? parsed : undefined;
+        if (!mcpServers) { setMcpJsonError('Должен быть массив объектов []'); setSubmitting(false); return; }
+      } catch {
+        setMcpJsonError('Невалидный JSON'); setSubmitting(false); return;
+      }
+    }
     try {
       if (isNew) {
         await api.skills.create({
@@ -77,6 +95,7 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
           description: description.trim() || undefined,
           prompt_snippet: promptSnippet.trim() || undefined,
           tools: toolsList.length > 0 ? toolsList : undefined,
+          mcp_servers: mcpServers,
         });
       } else {
         await api.skills.update(skill!.id, {
@@ -85,6 +104,7 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
           description: description.trim() || undefined,
           prompt_snippet: promptSnippet.trim() || undefined,
           tools: toolsList.length > 0 ? toolsList : undefined,
+          mcp_servers: mcpServers,
         });
       }
       onSaved(); onClose();
@@ -142,6 +162,18 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
             <label>Инструменты (через запятую)</label>
             <input value={tools} onChange={e => setTools(e.target.value)} placeholder="bash, read, write" />
             <span className="form-hint">Список MCP-инструментов, используемых в этом навыке</span>
+          </div>
+          <div className="form-group">
+            <label>MCP Servers (JSON)</label>
+            <textarea
+              value={mcpServersJson}
+              onChange={e => { setMcpServersJson(e.target.value); setMcpJsonError(null); }}
+              rows={5}
+              style={{ fontFamily: 'monospace', fontSize: 12 }}
+              placeholder={'[\n  {\n    "name": "my-server",\n    "command": "node",\n    "args": ["/path/to/server.js"],\n    "env": {"KEY": "${VAR}"}\n  }\n]'}
+            />
+            {mcpJsonError && <span className="mcp-json-error">{mcpJsonError}</span>}
+            <span className="form-hint">Массив MCP-серверов для агентов с этим навыком. Поддерживается {"${VAR}"} из env агента или /opt/konoha/.env.global</span>
           </div>
           <div className="form-actions">
             <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
@@ -209,6 +241,7 @@ export function Skills() {
                   <th>Описание</th>
                   <th>Prompt Snippet</th>
                   <th>Инструменты</th>
+                  <th>MCP Servers</th>
                   <th></th>
                 </tr>
               </thead>
@@ -229,6 +262,11 @@ export function Skills() {
                     <td>
                       {(s.tools || []).map(t => <span key={t} className="tag">{t}</span>)}
                       {(!s.tools || s.tools.length === 0) && <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>}
+                    </td>
+                    <td>
+                      {s.mcp_servers && s.mcp_servers.length > 0
+                        ? <span className="mcp-badge">⚙ {s.mcp_servers.length}</span>
+                        : <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>}
                     </td>
                     <td style={{ width: 70, textAlign: 'right' }}>
                       <button className="btn-delete" onClick={e => deleteSkill(e, s)}>Удалить</button>

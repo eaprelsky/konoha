@@ -9,7 +9,7 @@ import { redis } from "./redis";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
-import { mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 
 const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
@@ -71,6 +71,7 @@ export interface AgentDef {
   env?: Record<string, string>;
   tags?: string[];
   capabilities?: string[];  // skill IDs assigned to this agent
+  memory?: string;           // path to agent memory file (e.g. /opt/shared/agent-memory/{id}/MEMORY.md)
   avatar_url?: string;
   gender?: 'male' | 'female' | 'neutral';
   protected?: boolean;          // system agents — cannot be deleted, start/stop requires confirmation
@@ -114,6 +115,63 @@ async function getTmuxPid(session: string): Promise<number | null> {
   if (!r.ok || !r.stdout) return null;
   const pid = parseInt(r.stdout.split("\n")[0], 10);
   return isNaN(pid) ? null : pid;
+}
+
+// ── MCP config helpers ───────────────────────────────────────────────────────
+
+const GLOBAL_ENV_PATH = "/opt/konoha/.env.global";
+
+function loadGlobalEnv(): Record<string, string> {
+  if (!existsSync(GLOBAL_ENV_PATH)) return {};
+  try {
+    return readFileSync(GLOBAL_ENV_PATH, "utf-8")
+      .split("\n")
+      .filter(l => l.trim() && !l.startsWith("#") && l.includes("="))
+      .reduce<Record<string, string>>((acc, line) => {
+        const eq = line.indexOf("=");
+        const key = line.slice(0, eq).trim();
+        const val = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+        if (key) acc[key] = val;
+        return acc;
+      }, {});
+  } catch {
+    return {};
+  }
+}
+
+function resolveVars(value: string, vars: Record<string, string>): string {
+  return value.replace(/\$\{([^}]+)\}/g, (_, key) => vars[key] ?? `\${${key}}`);
+}
+
+type McpServerDef = { name: string; command: string; args?: string[]; env?: Record<string, string> };
+
+async function buildMcpConfig(
+  capabilities: string[],
+  agentEnv: Record<string, string>,
+): Promise<Record<string, unknown> | null> {
+  const globalEnv = loadGlobalEnv();
+  const vars = { ...globalEnv, ...agentEnv };
+
+  const servers: Record<string, unknown> = {};
+  for (const skillId of capabilities) {
+    const raw = await redis.get(`konoha:skill:${skillId}`).catch(() => null);
+    if (!raw) continue;
+    const skill = JSON.parse(raw) as { mcp_servers?: McpServerDef[] };
+    if (!skill.mcp_servers?.length) continue;
+    for (const srv of skill.mcp_servers) {
+      const resolvedEnv = srv.env
+        ? Object.fromEntries(Object.entries(srv.env).map(([k, v]) => [k, resolveVars(v, vars)]))
+        : undefined;
+      const resolvedArgs = srv.args?.map(a => resolveVars(a, vars));
+      servers[srv.name] = {
+        command: resolveVars(srv.command, vars),
+        ...(resolvedArgs?.length ? { args: resolvedArgs } : {}),
+        ...(resolvedEnv && Object.keys(resolvedEnv).length ? { env: resolvedEnv } : {}),
+      };
+    }
+  }
+
+  return Object.keys(servers).length > 0 ? { mcpServers: servers } : null;
 }
 
 // ── State persistence ────────────────────────────────────────────────────────
@@ -192,16 +250,10 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
   await saveState({ agent_id: id, status: "starting", tmux_session: session });
 
   try {
-    const modelFlag = def.model ? ["--model", def.model] : [];
-    const launchCmd = ["claude", ...modelFlag].join(" ");
-
-    // Build env prefix if custom env vars provided
-    const envVars = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : "";
-    const fullCmd = envVars ? `env ${envVars}${launchCmd}` : launchCmd;
-
     // Prepare per-agent working directory with two-level CLAUDE.md
     const workdir = join(AGENT_WORKDIR_ROOT, id);
     mkdirSync(workdir, { recursive: true });
+
     let skillSnippets = "";
     if (def.capabilities && def.capabilities.length > 0) {
       const snippets: string[] = [];
@@ -218,6 +270,24 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     }
     const claudeMd = renderSystemTemplate(def) + "\n" + (def.system_prompt?.trim() || "") + skillSnippets;
     writeFileSync(join(workdir, "CLAUDE.md"), claudeMd, "utf-8");
+
+    // Build .mcp.json from skills' mcp_servers, resolving ${VAR}
+    let mcpConfigFlag: string[] = [];
+    if (def.capabilities && def.capabilities.length > 0) {
+      const mcpConfig = await buildMcpConfig(def.capabilities, def.env ?? {});
+      if (mcpConfig) {
+        const mcpConfigPath = join(workdir, ".mcp.json");
+        writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
+        mcpConfigFlag = ["--mcp-config", mcpConfigPath];
+      }
+    }
+
+    const modelFlag = def.model ? ["--model", def.model] : [];
+    const launchCmd = ["claude", ...modelFlag, ...mcpConfigFlag].join(" ");
+
+    // Build env prefix if custom env vars provided
+    const envVars = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : "";
+    const fullCmd = envVars ? `env ${envVars}${launchCmd}` : launchCmd;
 
     const r = await sh("tmux", ["new-session", "-d", "-s", session, "-c", workdir, fullCmd]);
     if (!r.ok) throw new Error(r.stderr || "tmux new-session failed");

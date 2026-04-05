@@ -106,6 +106,13 @@ export interface RoleDef {
   updated_at: string;
 }
 
+export interface McpServerDef {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
 export interface Skill {
   id: string;
   name: string;
@@ -113,6 +120,7 @@ export interface Skill {
   description?: string;
   prompt_snippet?: string;
   tools?: string[];
+  mcp_servers?: McpServerDef[];
   created_at: string;
   updated_at: string;
 }

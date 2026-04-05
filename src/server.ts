@@ -179,9 +179,9 @@ app.post("/agents/register", async (c) => {
 // POST /agents — create a managed agent definition
 app.post("/agents", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const { id, name, system_prompt, model = "claude-sonnet-4-6", env, tags } = body;
+  const { id, name, system_prompt, model = "claude-sonnet-4-6", env, tags, capabilities, memory } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
-  const def = await createAgentDef({ id, name, system_prompt, model, env, tags });
+  const def = await createAgentDef({ id, name, system_prompt, model, env, tags, capabilities, memory });
   // Prepare personal memory directory
   mkdirSync(`/opt/shared/agent-memory/${id}`, { recursive: true });
   return c.json(def, 201);
@@ -779,9 +779,16 @@ app.delete("/roles/:id", async (c) => {
 const SKILL_KEY_PREFIX = "konoha:skill:";
 const SKILLS_IDX_ALL   = "konoha:skills:all";
 
+type McpServerDef = {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+};
+
 type SkillRecord = {
   id: string; name: string; name_en?: string; description?: string;
-  prompt_snippet?: string; tools?: string[];
+  prompt_snippet?: string; tools?: string[]; mcp_servers?: McpServerDef[];
   created_at: string; updated_at: string;
 };
 
@@ -805,6 +812,7 @@ app.post("/skills", async (c) => {
     description: body.description?.trim() || undefined,
     prompt_snippet: body.prompt_snippet?.trim() || undefined,
     tools: Array.isArray(body.tools) ? body.tools : undefined,
+    mcp_servers: Array.isArray(body.mcp_servers) ? body.mcp_servers : undefined,
     created_at: now, updated_at: now,
   };
   await redis.set(SKILL_KEY_PREFIX + id, JSON.stringify(skill));
@@ -823,6 +831,7 @@ app.patch("/skills/:id", async (c) => {
   if (body.description !== undefined)    skill.description = body.description?.trim() || undefined;
   if (body.prompt_snippet !== undefined) skill.prompt_snippet = body.prompt_snippet?.trim() || undefined;
   if (body.tools !== undefined)          skill.tools = Array.isArray(body.tools) ? body.tools : undefined;
+  if (body.mcp_servers !== undefined)    skill.mcp_servers = Array.isArray(body.mcp_servers) ? body.mcp_servers : undefined;
   skill.updated_at = new Date().toISOString();
   await redis.set(SKILL_KEY_PREFIX + id, JSON.stringify(skill));
   return c.json(skill);
