@@ -305,10 +305,14 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const launchCmd = ["claude", ...modelFlag, ...mcpConfigFlag].join(" ");
 
     // Build env prefix if custom env vars provided
-    const envVars = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : "";
-    const fullCmd = envVars ? `env ${envVars}${launchCmd}` : launchCmd;
+    const envPrefix = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : "";
+    const claudeCmd = envPrefix ? `env ${envPrefix}${launchCmd}` : launchCmd;
 
-    const r = await sh("tmux", ["new-session", "-d", "-s", session, "-c", workdir, fullCmd]);
+    // Wrap in restart loop — without it Claude exits after processing the startup message
+    // and the tmux session dies within ~15s (fixes #236).
+    const loopScript = `while true; do ${claudeCmd}; echo "[$(date)] Claude exited (code $?), restarting in 5s..."; sleep 5; done`;
+
+    const r = await sh("tmux", ["new-session", "-d", "-s", session, "-c", workdir, "bash", "-c", loopScript]);
     if (!r.ok) throw new Error(r.stderr || "tmux new-session failed");
 
     // Wait for Claude Code to start and show the prompt (7s to be safe on slow init)
