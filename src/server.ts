@@ -358,7 +358,7 @@ app.put("/agents/:id", async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON" }, 400);
   const updated = { ...def, ...body, id, updated_at: new Date().toISOString() };
-  await redis.hset("konoha:agent:defs", id, JSON.stringify(updated));
+  await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
   return c.json(updated);
 });
 
@@ -1832,6 +1832,89 @@ app.get("/workflows/:id{.+}", requireAuth, async (c) => {
   return c.json(wf);
 });
 
+// ── Workflow deploy helpers (issue #229) ────────────────────────────────────
+
+/**
+ * Run Trigger Resolver batch for all event nodes that lack a `trigger` field.
+ * Writes resolved triggers back into the elements array.
+ * Returns { needs_review: true } if any event resolved to ambiguous or confidence < 0.7.
+ * Throws if Haiku is unavailable (deploy must fail).
+ */
+async function resolveTriggers(
+  elements: any[],
+  processContext?: ProcessContext,
+): Promise<{ elements: any[]; needs_review: boolean }> {
+  const { buildAdjacency } = await import("./workflow-loader").then(m => {
+    // Re-use buildAdjacency via a small local helper to identify start nodes
+    return { buildAdjacency: null };
+  });
+
+  // Build edge maps inline to identify event nodes needing resolve
+  const outCount = new Map<string, number>();
+  const inCount = new Map<string, number>();
+  for (const el of elements) { outCount.set(el.id, 0); inCount.set(el.id, 0); }
+
+  const updatedElements = [...elements];
+
+  const eventsToResolve = updatedElements
+    .filter(el => el.type === "event" && !el.trigger?.kind && !el.trigger?.manual_override);
+
+  if (eventsToResolve.length === 0) return { elements: updatedElements, needs_review: false };
+
+  const ctx: ProcessContext = processContext ?? {};
+  const results = await resolveBatchProgrammatic(
+    eventsToResolve.map(el => ({ id: el.id, label: el.label, manual_override: el.trigger?.manual_override })),
+    ctx,
+  );
+
+  let needs_review = false;
+  const resultMap = new Map(results.map(r => [r.id, r.trigger]));
+
+  for (let i = 0; i < updatedElements.length; i++) {
+    const el = updatedElements[i];
+    if (el.type !== "event") continue;
+    const resolved = resultMap.get(el.id);
+    if (!resolved) continue;
+
+    updatedElements[i] = { ...el, trigger: resolved };
+
+    if (resolved.kind === "ambiguous" || (resolved.confidence ?? 1) < 0.7) {
+      needs_review = true;
+    }
+  }
+
+  return { elements: updatedElements, needs_review };
+}
+
+/**
+ * Subscribe all start event nodes (no incoming edges) of a process to Event Manager.
+ * Called after a successful non-draft deploy.
+ */
+async function subscribeStartEvents(def: any): Promise<void> {
+  // Build inEdge count
+  const inCount = new Map<string, number>();
+  for (const el of def.elements) inCount.set(el.id, 0);
+  for (const [, to] of def.flow ?? []) inCount.set(to, (inCount.get(to) ?? 0) + 1);
+
+  const startEvents = def.elements.filter((el: any) =>
+    el.type === "event" && (inCount.get(el.id) ?? 0) === 0 && el.trigger?.kind && !el.trigger?.manual_override,
+  );
+
+  for (const el of startEvents) {
+    try {
+      await createSubscriptionProgrammatic({
+        event_id: el.id,
+        process_id: def.id,
+        instance_id: "new", // no instance yet — engine will create one on event_fired
+        trigger: el.trigger,
+      });
+      console.log(`[workflow-deploy] subscribed start event ${el.id} for process ${def.id}`);
+    } catch (e: any) {
+      console.error(`[workflow-deploy] failed to subscribe start event ${el.id}: ${e.message}`);
+    }
+  }
+}
+
 app.post("/workflows", requireAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
@@ -1845,8 +1928,37 @@ app.post("/workflows", requireAuth, async (c) => {
       normalized = true;
     }
   }
+
+  // On non-draft deploy: resolve triggers for event nodes, save before making available
+  if (!draft && body.elements?.length) {
+    try {
+      const ctx: ProcessContext = {
+        process_id: body.id,
+        process_name: body.name,
+        events: body.elements.filter((el: any) => el.type === "event").map((el: any) => ({ id: el.id, label: el.label })),
+        functions: body.elements.filter((el: any) => el.type === "function").map((el: any) => ({ id: el.id, label: el.label })),
+      };
+      const { elements, needs_review } = await resolveTriggers(body.elements, ctx);
+      body.elements = elements;
+      if (needs_review) {
+        (body as any).status = "needs_review";
+      }
+    } catch (e: any) {
+      console.error(`[workflow-deploy] trigger resolve failed: ${e.message}`);
+      return c.json({ error: `Trigger resolve failed (Haiku unavailable): ${e.message}` }, 503);
+    }
+  }
+
   const result = await createWorkflow(body, { draft });
   if (result.errors.length > 0) return c.json({ error: "Validation failed", details: result.errors }, 422);
+
+  // Subscribe start events on successful non-draft deploy without needs_review
+  if (!draft && !(result.workflow as any).status?.includes("needs_review")) {
+    subscribeStartEvents(result.workflow).catch(e =>
+      console.error(`[workflow-deploy] subscribeStartEvents error: ${e.message}`),
+    );
+  }
+
   return c.json({ ...result.workflow, normalized }, 201);
 });
 
@@ -1863,9 +1975,38 @@ app.put("/workflows/:id{.+}", requireAuth, async (c) => {
       normalized = true;
     }
   }
+
+  // On non-draft deploy: resolve triggers for event nodes
+  if (!draft && body.elements?.length) {
+    try {
+      const ctx: ProcessContext = {
+        process_id: id,
+        process_name: body.name,
+        events: body.elements.filter((el: any) => el.type === "event").map((el: any) => ({ id: el.id, label: el.label })),
+        functions: body.elements.filter((el: any) => el.type === "function").map((el: any) => ({ id: el.id, label: el.label })),
+      };
+      const { elements, needs_review } = await resolveTriggers(body.elements, ctx);
+      body.elements = elements;
+      if (needs_review) {
+        (body as any).status = "needs_review";
+      }
+    } catch (e: any) {
+      console.error(`[workflow-deploy] trigger resolve failed on update: ${e.message}`);
+      return c.json({ error: `Trigger resolve failed (Haiku unavailable): ${e.message}` }, 503);
+    }
+  }
+
   const result = await updateWorkflow(id, body, { draft });
   if (result === null) return c.json({ error: "Workflow not found" }, 404);
   if (result.errors.length > 0) return c.json({ error: "Validation failed", details: result.errors }, 422);
+
+  // Subscribe start events on successful non-draft deploy without needs_review
+  if (!draft && !(result.workflow as any).status?.includes("needs_review")) {
+    subscribeStartEvents(result.workflow).catch(e =>
+      console.error(`[workflow-deploy] subscribeStartEvents update error: ${e.message}`),
+    );
+  }
+
   return c.json({ ...result.workflow, normalized });
 });
 
@@ -1891,13 +2032,84 @@ initTsunade().catch((e) => {
 });
 
 // Register Trigger Resolver routes
-import { registerTriggerResolverRoutes } from "./trigger-resolver";
+import { registerTriggerResolverRoutes, resolveBatchProgrammatic } from "./trigger-resolver";
+import type { ProcessContext } from "./trigger-resolver";
 registerTriggerResolverRoutes(app, requireAuth);
 
 // Register Event Manager routes and restore subscriptions on startup
-import { registerEventManagerRoutes, restoreSubscriptions } from "./event-manager";
+import { registerEventManagerRoutes, restoreSubscriptions, createSubscriptionProgrammatic } from "./event-manager";
 registerEventManagerRoutes(app, requireAuth);
 restoreSubscriptions().catch(e => console.error("[event-manager] restore error:", e.message));
+
+// Import workflow engine event_fired handler
+import { handleEventFired } from "./runtime";
+
+// ── event_fired bus listener (issue #229) ───────────────────────────────────
+// Polls the konoha:agent:workflow-engine stream for event_fired messages.
+const ENGINE_STREAM = "konoha:agent:workflow-engine";
+const ENGINE_GROUP  = "workflow-engine";
+
+async function startEventFiredListener(): Promise<void> {
+  // Ensure consumer group exists (MKSTREAM creates the stream if absent)
+  try {
+    await redis.xgroup("CREATE", ENGINE_STREAM, ENGINE_GROUP, "$", "MKSTREAM");
+    console.log("[workflow-engine] consumer group created");
+  } catch (e: any) {
+    if (!e.message?.includes("BUSYGROUP")) {
+      console.error("[workflow-engine] consumer group error:", e.message);
+    }
+  }
+
+  // Blocking poll loop — reads new messages as they arrive
+  const poll = async () => {
+    while (true) {
+      try {
+        // XREADGROUP with 2s blocking timeout, count 10
+        const result = await redis.xreadgroup(
+          "GROUP", ENGINE_GROUP, "worker",
+          "COUNT", 10,
+          "BLOCK", 2000,
+          "STREAMS", ENGINE_STREAM, ">",
+        ) as [string, [string, string[]][]][] | null;
+
+        if (!result) continue;
+
+        for (const [, entries] of result) {
+          for (const [entryId, fields] of entries) {
+            // Parse flat fields array into object
+            const obj: Record<string, string> = {};
+            for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
+
+            if (obj.type !== "event_fired") {
+              // ACK and skip non-event_fired messages
+              await redis.xack(ENGINE_STREAM, ENGINE_GROUP, entryId).catch(() => {});
+              continue;
+            }
+
+            try {
+              const payload = JSON.parse(obj.text ?? "{}");
+              await handleEventFired(payload);
+            } catch (e: any) {
+              console.error("[workflow-engine] event_fired handler error:", e.message);
+            }
+
+            await redis.xack(ENGINE_STREAM, ENGINE_GROUP, entryId).catch(() => {});
+          }
+        }
+      } catch (e: any) {
+        if (!e.message?.includes("Connection")) {
+          console.error("[workflow-engine] bus poll error:", e.message);
+        }
+        await new Promise(res => setTimeout(res, 2000));
+      }
+    }
+  };
+
+  poll().catch(e => console.error("[workflow-engine] poll loop crashed:", e.message));
+  console.log("[workflow-engine] event_fired listener started");
+}
+
+startEventFiredListener().catch(e => console.error("[workflow-engine] listener start error:", e.message));
 
 startReminderScheduler();
 

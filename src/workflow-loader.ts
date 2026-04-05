@@ -20,14 +20,38 @@ export interface WorkflowElement {
   content_type?: "instruction" | "file";
   content?: string;          // inline text for instruction-type documents
   file_ref?: string;         // workspace file name for file-type documents
-  // Trigger config (start event nodes only)
+  // Trigger config (start/intermediate event nodes)
+  // Uses `kind` (new). Legacy `type` field is migrated to `kind` on read.
   trigger?: {
-    type: "manual" | "telegram" | "schedule" | "event" | "webhook";
-    chat_id?: string;        // for telegram: Telegram chat_id to listen
-    keyword?: string;        // for telegram: keyword filter
-    cron?: string;           // for schedule: cron expression
-    event_type?: string;     // for event: upstream event type to react to
-    webhook_path?: string;   // for webhook: auto-generated URL suffix
+    kind?: "timer" | "message" | "condition" | "system" | "manual" | "ambiguous";
+    confidence?: number;
+    manual_override?: boolean;
+    // timer
+    cron?: string;
+    delay_after?: { ref_event?: string; duration: string };
+    // message
+    source?: string;
+    filter?: Record<string, unknown>;
+    // condition
+    data_source?: string;
+    query?: { entity: string; filter: Record<string, unknown>; metric: string; sum_field?: string };
+    operator?: ">" | "<" | ">=" | "<=" | "==" | "!=";
+    threshold?: number;
+    poll_interval?: string;
+    // manual
+    action?: string;
+    role?: string;
+    // system
+    event_name?: string;
+    process_ref?: string;
+    function_ref?: string;
+    // Legacy fields (auto-migrated to `kind` on read, never used in new code)
+    /** @deprecated use kind instead */
+    type?: "manual" | "telegram" | "schedule" | "event" | "webhook";
+    chat_id?: string;
+    keyword?: string;
+    event_type?: string;
+    webhook_path?: string;
   };
   // Sub-process: immutable boundary events locked to parent interface
   locked?: boolean;
@@ -211,17 +235,60 @@ function loadWorkflowsFromDir(dir: string): WorkflowDefinition[] {
   return results;
 }
 
+// ── trigger.type → trigger.kind migration (issue #229) ───────────────────────
+// Applied at READ time so all downstream code works only with `kind`.
+
+type LegacyTrigger = NonNullable<WorkflowElement["trigger"]> & { type?: string };
+
+function migrateTriggerKind(trigger: LegacyTrigger): NonNullable<WorkflowElement["trigger"]> {
+  if (!trigger.type || trigger.kind) return trigger; // already migrated or no legacy field
+
+  const { type, chat_id, keyword, event_type, webhook_path, ...rest } = trigger as any;
+
+  switch (type) {
+    case "schedule":
+      return { ...rest, kind: "timer" };
+    case "event":
+      return { ...rest, kind: "system", event_name: event_type ?? "process_completed", confidence: 0.9 };
+    case "telegram":
+      return {
+        ...rest, kind: "message", source: "telegram",
+        filter: { message_type: "text", ...(chat_id ? { chat_id } : {}), ...(keyword ? { keyword } : {}) },
+        confidence: 0.9,
+      };
+    case "webhook":
+      return {
+        ...rest, kind: "message", source: "webhook",
+        filter: { ...(webhook_path ? { path: webhook_path } : {}) },
+        confidence: 0.9,
+      };
+    case "manual":
+      return { ...rest, kind: "manual", action: "complete", role: "user", confidence: 1.0 };
+    default:
+      return trigger;
+  }
+}
+
 // Normalize legacy `system` string → `systems` array (backward compat for issue #156)
-function normalizeSystems(def: WorkflowDefinition): WorkflowDefinition {
+// Also applies trigger.type → trigger.kind migration at read time.
+function normalizeWorkflow(def: WorkflowDefinition): WorkflowDefinition {
   const elements = def.elements.map(el => {
-    if (el.type !== "function") return el;
-    if (el.system && !el.systems) {
-      return { ...el, systems: [{ connector: el.system, operation: "default" }] };
+    let out = { ...el };
+    // systems normalization
+    if (out.type === "function" && out.system && !out.systems) {
+      out = { ...out, systems: [{ connector: out.system, operation: "default" }] };
     }
-    return el;
+    // trigger migration
+    if (out.trigger) {
+      out = { ...out, trigger: migrateTriggerKind(out.trigger as LegacyTrigger) };
+    }
+    return out;
   });
   return { ...def, elements };
 }
+
+/** @deprecated use normalizeWorkflow instead */
+const normalizeSystems = normalizeWorkflow;
 
 export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: number; errors: number }> {
   const defs = loadWorkflowsFromDir(workflowsDir);
@@ -251,7 +318,7 @@ export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: num
 export async function getWorkflow(id: string): Promise<WorkflowDefinition | null> {
   const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
   if (!raw) return null;
-  return JSON.parse(raw);
+  return normalizeWorkflow(JSON.parse(raw));
 }
 
 export async function listWorkflows(): Promise<WorkflowDefinition[]> {
@@ -262,7 +329,7 @@ export async function listWorkflows(): Promise<WorkflowDefinition[]> {
   const results: WorkflowDefinition[] = [];
   for (const v of values) {
     if (v) {
-      try { results.push(JSON.parse(v)); } catch { /* skip corrupt entries */ }
+      try { results.push(normalizeWorkflow(JSON.parse(v))); } catch { /* skip corrupt entries */ }
     }
   }
   return results;

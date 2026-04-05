@@ -189,6 +189,32 @@ async function resolveLabel(label: string, ctx?: ProcessContext): Promise<Trigge
   return parsed as TriggerDescriptor;
 }
 
+// ── Programmatic API (used by workflow deploy in server.ts) ──────────────────
+
+/**
+ * Resolve triggers for a batch of events without calling HTTP.
+ * Throws if LLM is unavailable (deploy must fail in that case).
+ */
+export async function resolveBatchProgrammatic(
+  events: { id: string; label: string; manual_override?: boolean }[],
+  processContext?: ProcessContext,
+): Promise<{ id: string; trigger: TriggerDescriptor | null }[]> {
+  const results: { id: string; trigger: TriggerDescriptor | null }[] = [];
+
+  for (const evt of events) {
+    if (evt.manual_override) {
+      results.push({ id: evt.id, trigger: null });
+      continue;
+    }
+    // Let errors propagate — caller (deploy) should abort on Haiku unavailability
+    const trigger = await resolveLabel(evt.label, processContext);
+    console.log(`[trigger-resolver] programmatic id=${evt.id} label="${evt.label}" kind=${trigger.kind} confidence=${trigger.confidence}`);
+    results.push({ id: evt.id, trigger });
+  }
+
+  return results;
+}
+
 // ── Route registration ────────────────────────────────────────────────────────
 
 export function registerTriggerResolverRoutes(

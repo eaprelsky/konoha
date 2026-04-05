@@ -47,7 +47,7 @@ export interface Message {
   from: string;  // agent id or agent@village.konoha
   to: string;    // agent id, "all", "role:<role>", or agent@village.konoha
   channel?: string;
-  type: "message" | "task" | "result" | "status" | "event";
+  type: "message" | "task" | "result" | "status" | "event" | "event_fired";
   text: string;
   replyTo?: string;
   timestamp?: string;
