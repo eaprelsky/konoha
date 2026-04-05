@@ -11,8 +11,11 @@
     "@anthropic-ai/sdk": "^0.82.0",
     "@modelcontextprotocol/sdk": "^1",
     "@playwright/test": "^1.58.2",
+    "@types/node-cron": "^3.0.11",
+    "cron-parser": "^5.5.0",
     "hono": "^4",
     "ioredis": "^5",
+    "node-cron": "^4.2.1",
     "nodemailer": "^8.0.4"
   },
   "devDependencies": {

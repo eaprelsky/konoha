@@ -1894,6 +1894,11 @@ initTsunade().catch((e) => {
 import { registerTriggerResolverRoutes } from "./trigger-resolver";
 registerTriggerResolverRoutes(app, requireAuth);
 
+// Register Event Manager routes and restore subscriptions on startup
+import { registerEventManagerRoutes, restoreSubscriptions } from "./event-manager";
+registerEventManagerRoutes(app, requireAuth);
+restoreSubscriptions().catch(e => console.error("[event-manager] restore error:", e.message));
+
 startReminderScheduler();
 
 // ── Seed system agents ──────────────────────────────────────────────────────
