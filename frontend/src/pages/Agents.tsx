@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type React from 'react';
 import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
@@ -227,8 +227,13 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const [allSkills, setAllSkills] = useState<Skill[]>([]);
   const [capabilities, setCapabilities] = useState<string[]>((agent as any).capabilities || []);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>((agent as any).avatar_url);
+  const [avatarMode, setAvatarMode] = useState<'upload' | 'generate' | 'img2img'>('generate');
   const [avatarStyle, setAvatarStyle] = useState('anime ninja');
+  const [avatarPrompt, setAvatarPrompt] = useState('');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
+  const avatarImg2ImgRef = useRef<HTMLInputElement>(null);
   const [gender, setGender] = useState<'male' | 'female' | 'neutral'>((agent as any).gender || 'neutral');
 
   useEffect(() => {
@@ -306,15 +311,45 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
     setCapabilities(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
   }
 
-  async function doGenerateAvatar() {
-    setGeneratingAvatar(true);
+  async function doAvatarAction() {
+    setGeneratingAvatar(true); setError(null);
     try {
-      const res = await api.agents.generateAvatar(agent.id, { style: avatarStyle, description: prompt.slice(0, 100) || undefined });
+      if (avatarMode === 'upload') {
+        avatarFileRef.current?.click();
+        setGeneratingAvatar(false);
+        return;
+      }
+      if (avatarMode === 'generate') {
+        const res = await api.agents.generateAvatar(agent.id, {
+          style: avatarStyle,
+          prompt: avatarPrompt || undefined,
+          description: prompt.slice(0, 100) || undefined,
+        });
+        setAvatarUrl(res.avatar_url);
+      } else if (avatarMode === 'img2img') {
+        if (!avatarFile) { setError('Выберите фото для img2img'); return; }
+        const res = await api.agents.generateAvatarImg2Img(agent.id, avatarFile, avatarPrompt || `Portrait avatar in ${avatarStyle} style`);
+        setAvatarUrl(res.avatar_url);
+      }
+    } catch (e: any) {
+      setError(`Аватар: ${e.message}`);
+    } finally {
+      setGeneratingAvatar(false);
+    }
+  }
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !agent.id) return;
+    setGeneratingAvatar(true); setError(null);
+    try {
+      const res = await api.agents.uploadAvatar(agent.id, file);
       setAvatarUrl(res.avatar_url);
     } catch (e: any) {
       setError(`Аватар: ${e.message}`);
     } finally {
       setGeneratingAvatar(false);
+      if (avatarFileRef.current) avatarFileRef.current.value = '';
     }
   }
 
@@ -357,21 +392,62 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Аватар</div>
-                <input
-                  type="text"
-                  value={avatarStyle}
-                  onChange={e => setAvatarStyle(e.target.value)}
-                  placeholder="anime ninja, pixel art, portrait…"
-                  style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }}
-                />
-                <button
-                  type="button"
-                  onClick={doGenerateAvatar}
-                  disabled={generatingAvatar}
-                  style={{ padding: '5px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: generatingAvatar ? 0.6 : 1 }}
-                >
-                  {generatingAvatar ? '⏳ Генерируется…' : '✨ Сгенерировать аватар'}
-                </button>
+                {/* Mode tabs */}
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {(['upload', 'generate', 'img2img'] as const).map(m => (
+                    <button key={m} type="button" onClick={() => setAvatarMode(m)} style={{
+                      padding: '3px 10px', border: '1px solid', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+                      background: avatarMode === m ? '#6366f1' : 'white',
+                      color: avatarMode === m ? 'white' : '#475569',
+                      borderColor: avatarMode === m ? '#6366f1' : '#e2e8f0',
+                    }}>
+                      {m === 'upload' ? 'Upload' : m === 'generate' ? 'Generate' : 'From photo'}
+                    </button>
+                  ))}
+                </div>
+                {avatarMode === 'upload' && (
+                  <>
+                    <input ref={avatarFileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+                    <button type="button" onClick={() => avatarFileRef.current?.click()} disabled={generatingAvatar}
+                      style={{ padding: '5px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: generatingAvatar ? 0.6 : 1 }}>
+                      {generatingAvatar ? '⏳ Загрузка…' : '📁 Выбрать файл'}
+                    </button>
+                  </>
+                )}
+                {avatarMode === 'generate' && (
+                  <>
+                    <input type="text" value={avatarStyle} onChange={e => setAvatarStyle(e.target.value)}
+                      placeholder="anime ninja, pixel art, portrait…"
+                      style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }} />
+                    <input type="text" value={avatarPrompt} onChange={e => setAvatarPrompt(e.target.value)}
+                      placeholder="Свой промпт (необязательно)"
+                      style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }} />
+                    <button type="button" onClick={doAvatarAction} disabled={generatingAvatar}
+                      style={{ padding: '5px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: generatingAvatar ? 0.6 : 1 }}>
+                      {generatingAvatar ? '⏳ Генерируется…' : '✨ Сгенерировать'}
+                    </button>
+                  </>
+                )}
+                {avatarMode === 'img2img' && (
+                  <>
+                    <input ref={avatarImg2ImgRef} type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={e => setAvatarFile(e.target.files?.[0] || null)} />
+                    <button type="button" onClick={() => avatarImg2ImgRef.current?.click()}
+                      style={{ padding: '5px 10px', background: 'white', color: '#374151', border: '1px solid #d1d5db', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                      {avatarFile ? avatarFile.name : '📎 Выбрать фото'}
+                    </button>
+                    <input type="text" value={avatarPrompt} onChange={e => setAvatarPrompt(e.target.value)}
+                      placeholder="Описание стиля / изменений"
+                      style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }} />
+                    <input type="text" value={avatarStyle} onChange={e => setAvatarStyle(e.target.value)}
+                      placeholder="anime ninja, pixel art, portrait…"
+                      style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }} />
+                    <button type="button" onClick={doAvatarAction} disabled={generatingAvatar || !avatarFile}
+                      style={{ padding: '5px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: (generatingAvatar || !avatarFile) ? 0.6 : 1 }}>
+                      {generatingAvatar ? '⏳ Генерируется…' : '✨ Сгенерировать из фото'}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             <div className="form-group">

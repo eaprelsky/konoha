@@ -66,12 +66,16 @@ export function ProfileModal({ onClose }: Props) {
   const [position, setPosition] = useState('');
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>();
+  const [avatarMode, setAvatarMode] = useState<'upload' | 'generate' | 'img2img'>('generate');
   const [avatarStyle, setAvatarStyle] = useState('professional photo');
+  const [avatarPrompt, setAvatarPrompt] = useState('');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const img2ImgRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -113,12 +117,23 @@ export function ProfileModal({ onClose }: Props) {
     setCapabilities(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
   }
 
-  async function generateAvatar() {
+  async function doAvatarAction() {
     if (!person) return;
+    if (avatarMode === 'upload') { fileInputRef.current?.click(); return; }
     setGeneratingAvatar(true); setError(null);
     try {
-      const res = await api.people.generateAvatar(person.id, { style: avatarStyle, description: position || undefined });
-      setAvatarUrl(res.avatar_url);
+      if (avatarMode === 'generate') {
+        const res = await api.people.generateAvatar(person.id, {
+          style: avatarStyle,
+          prompt: avatarPrompt || undefined,
+          description: position || undefined,
+        });
+        setAvatarUrl(res.avatar_url);
+      } else if (avatarMode === 'img2img') {
+        if (!avatarFile) { setError('Выберите фото для генерации'); return; }
+        const res = await api.people.generateAvatarImg2Img(person.id, avatarFile, avatarPrompt || `Portrait in ${avatarStyle} style`);
+        setAvatarUrl(res.avatar_url);
+      }
     } catch (e: any) {
       setError(`Ошибка генерации: ${e.message}`);
     } finally {
@@ -208,22 +223,62 @@ export function ProfileModal({ onClose }: Props) {
               }
               <div className="profile-avatar-actions">
                 <div className="profile-avatar-label">Аватар</div>
-                <input
-                  type="text"
-                  className="profile-avatar-style"
-                  value={avatarStyle}
-                  onChange={e => setAvatarStyle(e.target.value)}
-                  placeholder="professional photo, anime, pixel art…"
-                />
-                <div className="profile-avatar-btns">
-                  <button type="button" className="btn-avatar-gen" onClick={generateAvatar} disabled={generatingAvatar}>
-                    {generatingAvatar ? '⏳ Генерация…' : '✨ Сгенерировать'}
-                  </button>
-                  <button type="button" className="btn-avatar-upload" onClick={() => fileInputRef.current?.click()} disabled={generatingAvatar}>
-                    📁 Загрузить файл
-                  </button>
-                  <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadAvatar} />
+                {/* Mode tabs */}
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {(['upload', 'generate', 'img2img'] as const).map(m => (
+                    <button key={m} type="button" onClick={() => setAvatarMode(m)} style={{
+                      padding: '3px 10px', border: '1px solid', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+                      background: avatarMode === m ? '#6366f1' : 'white',
+                      color: avatarMode === m ? 'white' : '#475569',
+                      borderColor: avatarMode === m ? '#6366f1' : '#e2e8f0',
+                    }}>
+                      {m === 'upload' ? 'Upload' : m === 'generate' ? 'Generate' : 'From photo'}
+                    </button>
+                  ))}
                 </div>
+                {avatarMode === 'upload' && (
+                  <div className="profile-avatar-btns">
+                    <button type="button" className="btn-avatar-upload" onClick={() => fileInputRef.current?.click()} disabled={generatingAvatar}>
+                      {generatingAvatar ? '⏳ Загрузка…' : '📁 Загрузить файл'}
+                    </button>
+                    <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadAvatar} />
+                  </div>
+                )}
+                {avatarMode === 'generate' && (
+                  <>
+                    <input type="text" className="profile-avatar-style" value={avatarStyle}
+                      onChange={e => setAvatarStyle(e.target.value)}
+                      placeholder="professional photo, anime, pixel art…" />
+                    <input type="text" className="profile-avatar-style" value={avatarPrompt}
+                      onChange={e => setAvatarPrompt(e.target.value)}
+                      placeholder="Свой промпт (необязательно)" />
+                    <div className="profile-avatar-btns">
+                      <button type="button" className="btn-avatar-gen" onClick={doAvatarAction} disabled={generatingAvatar}>
+                        {generatingAvatar ? '⏳ Генерация…' : '✨ Сгенерировать'}
+                      </button>
+                    </div>
+                  </>
+                )}
+                {avatarMode === 'img2img' && (
+                  <>
+                    <input ref={img2ImgRef} type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={e => setAvatarFile(e.target.files?.[0] || null)} />
+                    <button type="button" className="btn-avatar-upload" onClick={() => img2ImgRef.current?.click()}>
+                      {avatarFile ? avatarFile.name : '📎 Выбрать фото'}
+                    </button>
+                    <input type="text" className="profile-avatar-style" value={avatarPrompt}
+                      onChange={e => setAvatarPrompt(e.target.value)}
+                      placeholder="Описание стиля / изменений" />
+                    <input type="text" className="profile-avatar-style" value={avatarStyle}
+                      onChange={e => setAvatarStyle(e.target.value)}
+                      placeholder="professional photo, anime…" />
+                    <div className="profile-avatar-btns">
+                      <button type="button" className="btn-avatar-gen" onClick={doAvatarAction} disabled={generatingAvatar || !avatarFile}>
+                        {generatingAvatar ? '⏳ Генерация…' : '✨ Из фото'}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 

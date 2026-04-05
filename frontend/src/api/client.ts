@@ -119,10 +119,14 @@ export const api = {
       apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}/memory/${encodeURIComponent(filename)}`, { method: 'PUT', body: content }),
     memoryCreate: (id: string, filename: string, content: string) =>
       apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}/memory/${encodeURIComponent(filename)}`, { method: 'POST', body: content }),
-    generateAvatar: (id: string, params?: { style?: string; description?: string }) =>
+    generateAvatar: (id: string, params?: { style?: string; description?: string; prompt?: string }) =>
       apiFetch<{ avatar_url: string }>(`${BASE}/agents/${id}/avatar`, { method: 'POST', body: JSON.stringify(params || {}) }),
     uploadAvatar: (id: string, file: File) => {
       const fd = new FormData(); fd.append('file', file);
+      return apiFetch<{ avatar_url: string }>(`${BASE}/agents/${id}/avatar`, { method: 'POST', body: fd });
+    },
+    generateAvatarImg2Img: (id: string, file: File, prompt: string) => {
+      const fd = new FormData(); fd.append('file', file); fd.append('prompt', prompt);
       return apiFetch<{ avatar_url: string }>(`${BASE}/agents/${id}/avatar`, { method: 'POST', body: fd });
     },
   },
@@ -185,10 +189,14 @@ export const api = {
     list: () => apiFetch<Person[]>(`${BASE}/people`),
     save: (p: Partial<Person>) => apiFetch<Person>(`${BASE}/people`, { method: 'POST', body: JSON.stringify(p) }),
     delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/people/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    generateAvatar: (id: string, params?: { style?: string; description?: string }) =>
+    generateAvatar: (id: string, params?: { style?: string; description?: string; prompt?: string }) =>
       apiFetch<{ avatar_url: string }>(`${BASE}/people/${encodeURIComponent(id)}/avatar`, { method: 'POST', body: JSON.stringify(params || {}) }),
     uploadAvatar: (id: string, file: File) => {
       const fd = new FormData(); fd.append('file', file);
+      return apiFetch<{ avatar_url: string }>(`${BASE}/people/${encodeURIComponent(id)}/avatar`, { method: 'POST', body: fd });
+    },
+    generateAvatarImg2Img: (id: string, file: File, prompt: string) => {
+      const fd = new FormData(); fd.append('file', file); fd.append('prompt', prompt);
       return apiFetch<{ avatar_url: string }>(`${BASE}/people/${encodeURIComponent(id)}/avatar`, { method: 'POST', body: fd });
     },
   },
