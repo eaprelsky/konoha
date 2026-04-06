@@ -3,9 +3,22 @@ export type { KibaAction };
 
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
 
-// ── Simple in-memory GET cache (TTL 10s) ─────────────────────────────────────
+// ── Simple in-memory GET cache with per-path TTL ─────────────────────────────
 const _cache = new Map<string, { data: unknown; ts: number }>();
-const CACHE_TTL_MS = 10_000;
+const CACHE_TTL_MS = 10_000; // default 10s
+// Static/rarely-changing data gets longer TTL
+const CACHE_TTL_OVERRIDES: Array<[string, number]> = [
+  ['/api/skills', 5 * 60_000],  // 5 min — skills change only on explicit edit
+  ['/api/roles',  60_000],       // 1 min — roles change infrequently
+  ['/api/people', 60_000],       // 1 min — people list changes infrequently
+];
+
+function cacheTtl(path: string): number {
+  for (const [prefix, ttl] of CACHE_TTL_OVERRIDES) {
+    if (path.startsWith(prefix)) return ttl;
+  }
+  return CACHE_TTL_MS;
+}
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = options?.body instanceof FormData;
@@ -14,7 +27,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   // Cache GET requests
   if (method === 'GET') {
     const cached = _cache.get(path);
-    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    if (cached && Date.now() - cached.ts < cacheTtl(path)) {
       return cached.data as T;
     }
   } else {

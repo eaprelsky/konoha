@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
+import { compress } from "hono/compress";
 import { streamSSE } from "hono/streaming";
 import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync, unlinkSync } from "fs";
 import { join, extname, basename } from "path";
@@ -59,6 +60,9 @@ const ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 const PORT = parseInt(process.env.KONOHA_PORT || "3100");
 
 const app = new Hono();
+
+// Gzip compression for all JSON and text responses
+app.use(compress());
 
 // Resolve caller identity from Bearer token.
 // Returns { isAdmin: true } for master token, or { isAdmin: false, agentId } for per-agent token.
@@ -383,6 +387,10 @@ app.delete("/agents/:id", async (c) => {
 });
 
 // GET /agents — list with lifecycle status merged in
+// In-memory cache for tmux lifecycle status — avoids spawning N processes per request
+const _lifecycleCache = new Map<string, { data: object; ts: number }>();
+const LIFECYCLE_CACHE_TTL_MS = 5_000;
+
 app.get("/agents", async (c) => {
   const onlineOnly = c.req.query("online") === "true";
   const [busAgents, defs] = await Promise.all([
@@ -392,15 +400,24 @@ app.get("/agents", async (c) => {
   // Build a map from managed defs for quick lookup
   const defMap = new Map(defs.map(d => [d.id, d]));
   async function lifecycleForDef(id: string, def: { protected?: boolean; tmux_session_override?: string }) {
+    const cacheKey = def.tmux_session_override ? `tmux:${def.tmux_session_override}` : `agent:${id}`;
+    const cached = _lifecycleCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < LIFECYCLE_CACHE_TTL_MS) {
+      return cached.data;
+    }
+    let result: object;
     if (def.tmux_session_override) {
       const sess = def.tmux_session_override;
       // System agents (naruto/sasuke/mirai) use named tmux sockets (-L <session>)
       const runningNamedSocket = await execFileAsync("tmux", ["-L", sess, "has-session", "-t", sess]).then(() => true).catch(() => false);
       const running = runningNamedSocket || await isTmuxRunning(sess);
-      return { status: running ? "running" : "stopped" };
+      result = { status: running ? "running" : "stopped" };
+    } else {
+      const state = await getAgentState(id);
+      result = { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds };
     }
-    const state = await getAgentState(id);
-    return { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds };
+    _lifecycleCache.set(cacheKey, { data: result, ts: Date.now() });
+    return result;
   }
 
   // Merge lifecycle state into bus agents
@@ -756,6 +773,7 @@ app.use("/roles/*", requireAuth);
 app.use("/roles", requireAuth);
 
 app.get("/roles", async (c) => {
+  c.header("Cache-Control", "public, max-age=60, stale-while-revalidate=30");
   return c.json(await listRoles());
 });
 app.post("/roles", async (c) => {
@@ -799,6 +817,7 @@ app.use("/skills/*", requireAuth);
 app.use("/skills", requireAuth);
 
 app.get("/skills", async (c) => {
+  c.header("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
   const ids = await redis.zrange(SKILLS_IDX_ALL, 0, -1);
   const raws = await Promise.all(ids.map(id => redis.get(SKILL_KEY_PREFIX + id)));
   return c.json(raws.filter(Boolean).map(r => JSON.parse(r!)));
