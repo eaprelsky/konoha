@@ -51,14 +51,6 @@ export class TelegramClient {
     return data.result;
   }
 
-  async getUpdates(offset?: number, timeout?: number): Promise<TgUpdate[]> {
-    return this.callMethod("getUpdates", {
-      ...(offset !== undefined ? { offset } : {}),
-      ...(timeout !== undefined ? { timeout } : {}),
-      allowed_updates: ["message", "callback_query"],
-    }) as Promise<TgUpdate[]>;
-  }
-
   async getChatMemberCount(chatId: string | number): Promise<number> {
     return this.callMethod("getChatMembersCount", { chat_id: chatId }) as Promise<number>;
   }
