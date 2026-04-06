@@ -363,7 +363,8 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
 
   // Archive current version before overwriting
   const versionNum = await redis.incr(WORKFLOW_VERSION_CTR_PREFIX + id);
-  await redis.set(`${WORKFLOW_VERSION_KEY_PREFIX}${id}:v${versionNum}`, raw);
+  const archived = { ...JSON.parse(raw), saved_at: new Date().toISOString() };
+  await redis.set(`${WORKFLOW_VERSION_KEY_PREFIX}${id}:v${versionNum}`, JSON.stringify(archived));
 
   const updated: WorkflowDefinition = { ...current, ...patch, id }; // id is immutable
   const normalized = normalizeSystems(updated);
@@ -389,16 +390,28 @@ export async function archiveWorkflow(id: string): Promise<boolean> {
   return true;
 }
 
-export async function listWorkflowVersions(id: string): Promise<WorkflowDefinition[]> {
+export async function listWorkflowVersions(id: string): Promise<{ version: string; saved_at?: string }[]> {
   const pattern = `${WORKFLOW_VERSION_KEY_PREFIX}${id}:v*`;
   const keys = await redis.keys(pattern);
   if (keys.length === 0) return [];
   const values = await redis.mget(...keys);
-  const results: WorkflowDefinition[] = [];
-  for (const v of values) {
+  const prefix = `${WORKFLOW_VERSION_KEY_PREFIX}${id}:v`;
+  const results: { version: string; saved_at?: string }[] = [];
+  for (let i = 0; i < keys.length; i++) {
+    const v = values[i];
     if (v) {
-      try { results.push(JSON.parse(v)); } catch { /* skip */ }
+      try {
+        const parsed = JSON.parse(v);
+        const snapshotNum = keys[i].slice(prefix.length);
+        results.push({ version: snapshotNum, saved_at: parsed.saved_at });
+      } catch { /* skip */ }
     }
   }
-  return results.sort((a, b) => a.version.localeCompare(b.version));
+  return results.sort((a, b) => Number(a.version) - Number(b.version));
+}
+
+export async function getWorkflowVersion(id: string, snapshotNum: string): Promise<WorkflowDefinition | null> {
+  const raw = await redis.get(`${WORKFLOW_VERSION_KEY_PREFIX}${id}:v${snapshotNum}`);
+  if (!raw) return null;
+  return normalizeWorkflow(JSON.parse(raw));
 }

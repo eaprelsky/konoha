@@ -1,14 +1,14 @@
 import { randomUUID } from "crypto";
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
-import { compress } from "hono/compress";
+// compress removed: nginx handles gzip; Hono compress + nginx caused ERR_CONTENT_DECODING_FAILED
 import { streamSSE } from "hono/streaming";
 import { mkdirSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync, unlinkSync } from "fs";
 import { join, extname, basename } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
-import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions } from "./workflow-loader";
+import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions, getWorkflowVersion } from "./workflow-loader";
 import { normalizeElementNames } from "./normalizer";
 import { createCase, getCase, getWorkItem, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, purgeAllWorkItems, createRole, listRoles, updateRole, deleteRole, createDoc, listDocs, updateDoc, deleteDoc, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType, type AssignmentStrategy, type DocType } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
@@ -61,8 +61,7 @@ const PORT = parseInt(process.env.KONOHA_PORT || "3100");
 
 const app = new Hono();
 
-// Gzip compression for all JSON and text responses
-app.use(compress());
+// Gzip removed: nginx handles compression; Hono compress caused ERR_CONTENT_DECODING_FAILED
 
 // Resolve caller identity from Bearer token.
 // Returns { isAdmin: true } for master token, or { isAdmin: false, agentId } for per-agent token.
@@ -1846,6 +1845,12 @@ app.get("/workflows/:id{.+}/versions", requireAuth, async (c) => {
 // :id{.+} captures slashes so IDs like "general/reflection" work correctly
 app.get("/workflows/:id{.+}", requireAuth, async (c) => {
   const id = c.req.param("id");
+  const snapshot = c.req.query("snapshot");
+  if (snapshot) {
+    const vwf = await getWorkflowVersion(id, snapshot);
+    if (!vwf) return c.json({ error: "Snapshot not found" }, 404);
+    return c.json(vwf);
+  }
   const wf = await getWorkflow(id);
   if (!wf) return c.json({ error: "Workflow not found" }, 404);
   return c.json(wf);

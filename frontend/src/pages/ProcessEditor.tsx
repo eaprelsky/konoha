@@ -1100,7 +1100,7 @@ export function ProcessEditor() {
                   const v = e.target.value;
                   if (!v) { setViewingVersion(null); loadWorkflow(wfId); return; }
                   setViewingVersion(v);
-                  api.workflows.get(`${wfId}?version=${v}`).then(vwf => {
+                  api.workflows.get(`${wfId}?snapshot=${v}`).then(vwf => {
                     setElements([...vwf.elements]);
                     setFlow([...(vwf.flow || [])]);
                     const pos: Record<string, Pos> = {};
@@ -1120,7 +1120,7 @@ export function ProcessEditor() {
                 <option value="">📋 Текущая версия</option>
                 {versions.map(v => (
                   <option key={v.version} value={v.version}>
-                    v{v.version}{v.saved_at ? ` (${new Date(v.saved_at).toLocaleDateString('ru-RU')})` : ''}
+                    #{v.version}{v.saved_at ? ` (${new Date(v.saved_at).toLocaleDateString('ru-RU')})` : ''}
                   </option>
                 ))}
               </select>

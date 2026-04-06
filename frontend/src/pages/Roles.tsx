@@ -86,10 +86,13 @@ function Multiselect({ options, value, onChange, placeholder = 'Выберите
   const [search, setSearch] = useState('');
   const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
   const ref = useRef<HTMLDivElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const inTrigger = ref.current?.contains(e.target as Node) ?? false;
+      const inDrop = dropRef.current?.contains(e.target as Node) ?? false;
+      if (!inTrigger && !inDrop) setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -117,6 +120,7 @@ function Multiselect({ options, value, onChange, placeholder = 'Выберите
 
   const dropdown = (
     <div
+      ref={dropRef}
       className="ms-dropdown"
       style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width }}
     >
@@ -190,6 +194,7 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
   const [assignees, setAssignees] = useState<string[]>(role?.assignees || []);
   const [strategy, setStrategy] = useState<AssignmentStrategy>(role?.strategy || 'manual');
   const [requiredCaps, setRequiredCaps] = useState<string[]>(role?.required_capabilities || []);
+  const [skillSearch, setSkillSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -281,8 +286,19 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
           {skills.length > 0 && (
             <div className="form-group">
               <label>Требуемые навыки</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 0' }}>
-                {skills.map(s => (
+              <input
+                type="text"
+                placeholder="Поиск навыков…"
+                value={skillSearch}
+                onChange={e => setSkillSearch(e.target.value)}
+                style={{ padding: '6px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13, marginBottom: 8, width: '100%' }}
+              />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 0', maxHeight: 200, overflowY: 'auto' }}>
+                {skills.filter(s => {
+                  if (!skillSearch.trim()) return true;
+                  const q = skillSearch.toLowerCase();
+                  return s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
+                }).map(s => (
                   <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 10px', border: `1px solid ${requiredCaps.includes(s.id) ? '#0066cc' : '#ddd'}`, borderRadius: 16, cursor: 'pointer', fontSize: 13, background: requiredCaps.includes(s.id) ? '#eff6ff' : 'white', color: requiredCaps.includes(s.id) ? '#1d4ed8' : '#374151', userSelect: 'none' }}>
                     <input type="checkbox" checked={requiredCaps.includes(s.id)} onChange={() => toggleCap(s.id)} style={{ display: 'none' }} />
                     {requiredCaps.includes(s.id) ? '✓ ' : ''}{s.name}

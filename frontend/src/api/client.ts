@@ -31,10 +31,12 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       return cached.data as T;
     }
   } else {
-    // Invalidate cache for the same base path on mutating requests
+    // Invalidate cache: remove entries that are prefixes of the mutated path
+    // OR that start with the mutated path (sub-resources).
+    // e.g., PUT /api/agents/id/avatar also invalidates /api/agents list cache.
     const base = path.split('?')[0];
     for (const key of _cache.keys()) {
-      if (key.startsWith(base)) _cache.delete(key);
+      if (key.startsWith(base) || base.startsWith(key)) _cache.delete(key);
     }
   }
 
