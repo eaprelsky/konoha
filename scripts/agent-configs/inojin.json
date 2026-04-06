@@ -1,0 +1,1 @@
+{"agent_id": "inojin", "tmux_session": "inojin", "debounce_window": 3.0, "idle_timeout": 600, "sources": ["konoha-sse"], "message_prefix": "", "message_suffix": ""}

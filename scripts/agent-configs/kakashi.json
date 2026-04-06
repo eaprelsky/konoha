@@ -1,0 +1,14 @@
+{
+  "agent_id": "kakashi",
+  "tmux_session": "kakashi",
+  "debounce_window": 3.0,
+  "idle_timeout": 1800,
+  "sources": ["konoha-sse", "github-issues"],
+  "github": {
+    "repo": "eaprelsky/konoha",
+    "scan_interval": 900,
+    "labels": ["bug", "P0: critical", "P1: high"]
+  },
+  "message_prefix": "Задание для Какаши:",
+  "message_suffix": "Выполни задание согласно CLAUDE.md. Результат сообщи в Коноха."
+}

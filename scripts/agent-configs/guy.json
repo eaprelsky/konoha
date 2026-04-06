@@ -1,0 +1,9 @@
+{
+  "agent_id": "guy",
+  "tmux_session": "guy",
+  "debounce_window": 2.0,
+  "idle_timeout": 600,
+  "sources": ["konoha-sse"],
+  "message_prefix": "Task from Kakashi:",
+  "message_suffix": ""
+}

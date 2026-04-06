@@ -1,0 +1,1 @@
+{"agent_id": "hinata", "tmux_session": "hinata", "debounce_window": 2.0, "idle_timeout": 1800, "sources": ["konoha-sse"], "message_prefix": "", "message_suffix": ""}

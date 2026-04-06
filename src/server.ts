@@ -9,6 +9,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 import { loadWorkflows, getWorkflow, listWorkflows, createWorkflow, updateWorkflow, archiveWorkflow, listWorkflowVersions, getWorkflowVersion } from "./workflow-loader";
+import { pgUpsertSkill, pgDeleteSkill } from "./storage/pg";
 import { normalizeElementNames } from "./normalizer";
 import { createCase, getCase, getWorkItem, completeWorkItem, listWorkItems, listCases, listEvents, createStandaloneWorkItem, updateWorkItem, processEvent, createReminder, listReminders, updateReminderStatus, deleteReminder, startReminderScheduler, purgeAllWorkItems, createRole, listRoles, updateRole, deleteRole, createDoc, listDocs, updateDoc, deleteDoc, type WorkItemStatus, type CaseStatus, type ReminderStatus, type ReminderChannel, type ReminderType, type AssignmentStrategy, type DocType } from "./runtime";
 import { getAdapter, listAdapters } from "./adapters/index";
@@ -838,6 +839,7 @@ app.post("/skills", async (c) => {
   };
   await redis.set(SKILL_KEY_PREFIX + id, JSON.stringify(skill));
   await redis.zadd(SKILLS_IDX_ALL, new Date(now).getTime(), id);
+  pgUpsertSkill(skill as any);
   return c.json(skill, 201);
 });
 
@@ -855,6 +857,7 @@ app.patch("/skills/:id", async (c) => {
   if (body.mcp_servers !== undefined)    skill.mcp_servers = Array.isArray(body.mcp_servers) ? body.mcp_servers : undefined;
   skill.updated_at = new Date().toISOString();
   await redis.set(SKILL_KEY_PREFIX + id, JSON.stringify(skill));
+  pgUpsertSkill(skill as any);
   return c.json(skill);
 });
 
@@ -862,6 +865,7 @@ app.delete("/skills/:id", async (c) => {
   const id = c.req.param("id");
   await redis.del(SKILL_KEY_PREFIX + id);
   await redis.zrem(SKILLS_IDX_ALL, id);
+  pgDeleteSkill(id);
   return c.json({ ok: true });
 });
 

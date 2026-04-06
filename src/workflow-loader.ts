@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { redis } from "./redis";
+import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot } from "./storage/pg";
 
 export interface SystemBinding {
   connector: string;  // adapter name (e.g. "telegram", "bitrix24")
@@ -346,12 +347,14 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
     const saved = { ...def, status: 'draft' };
     await redis.set(WORKFLOW_KEY_PREFIX + saved.id, JSON.stringify(saved));
     await redis.sadd(WORKFLOW_INDEX_KEY, saved.id);
+    pgUpsertWorkflow(saved as any);
     return { workflow: saved, errors: [] };
   }
   const errors = validateWorkflow(def);
   if (errors.length > 0) return { workflow: def, errors };
   await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
   await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
+  pgUpsertWorkflow(def as any);
   return { workflow: def, errors: [] };
 }
 
@@ -365,6 +368,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   const versionNum = await redis.incr(WORKFLOW_VERSION_CTR_PREFIX + id);
   const archived = { ...JSON.parse(raw), saved_at: new Date().toISOString() };
   await redis.set(`${WORKFLOW_VERSION_KEY_PREFIX}${id}:v${versionNum}`, JSON.stringify(archived));
+  pgSaveWorkflowSnapshot(id, Number(versionNum), archived as any);
 
   const updated: WorkflowDefinition = { ...current, ...patch, id }; // id is immutable
   const normalized = normalizeSystems(updated);
@@ -372,6 +376,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   if (opts.draft) {
     const saved = { ...normalized, status: 'draft' };
     await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
+    pgUpsertWorkflow(saved as any);
     return { workflow: saved, errors: [] };
   }
 
@@ -379,6 +384,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   if (errors.length > 0) return { workflow: normalized, errors };
 
   await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(normalized));
+  pgUpsertWorkflow(normalized as any);
   return { workflow: normalized, errors: [] };
 }
 

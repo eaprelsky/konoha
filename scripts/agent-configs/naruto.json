@@ -1,0 +1,11 @@
+{
+  "agent_id": "naruto",
+  "tmux_session": "naruto",
+  "debounce_window": 2.0,
+  "idle_timeout": 600,
+  "sources": ["konoha-sse", "telegram-file", "telegram-reactions-file"],
+  "telegram_file": "~/.claude/channels/telegram/message-queue.jsonl",
+  "reaction_file": "~/.claude/channels/telegram/reaction-queue.jsonl",
+  "message_prefix": "",
+  "message_suffix": ""
+}

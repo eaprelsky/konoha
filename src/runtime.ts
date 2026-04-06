@@ -5,6 +5,11 @@ import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type Workflow
 import { getAdapter } from "./adapters/index";
 import { dispatchWorkItem } from "./dispatcher";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByInstance } from "./event-manager";
+import {
+  pgUpsertCase, pgUpsertWorkItem, pgDeleteWorkItem, pgPurgeAllWorkItems,
+  pgUpsertRole, pgDeleteRole, pgUpsertDoc, pgDeleteDoc,
+  pgUpsertReminder, pgDeleteReminder,
+} from "./storage/pg";
 
 // --- Event log ---
 
@@ -153,6 +158,7 @@ export interface Reminder {
 
 async function saveCase(c: Case): Promise<void> {
   await redis.set(CASE_KEY_PREFIX + c.case_id, JSON.stringify(c));
+  pgUpsertCase({ case_id: c.case_id, process_id: c.process_id, version: c.process_version, subject: c.subject, status: c.status, position: c.position, payload: c.payload, history: c.history, created_at: c.created_at, updated_at: new Date().toISOString() });
   // Maintain indexes (idempotent — always re-sync)
   await redis.zadd(CASES_IDX_ALL, new Date(c.created_at).getTime(), c.case_id);
   // Remove from all status sets then add to current (handles status transitions)
@@ -171,6 +177,7 @@ async function loadCase(case_id: string): Promise<Case | null> {
 
 async function saveWorkItem(wi: WorkItem, prevStatus?: WorkItemStatus, prevAssignee?: string): Promise<void> {
   await redis.set(WORKITEM_KEY_PREFIX + wi.work_item_id, JSON.stringify(wi));
+  pgUpsertWorkItem({ id: wi.work_item_id, case_id: wi.case_id, process_id: wi.process_id, element_id: wi.element_id, label: wi.label, assignee: wi.assignee, status: wi.status, input: wi.input || {}, output: wi.output || {}, deadline: wi.deadline, created_at: wi.created_at, updated_at: new Date().toISOString() });
 
   // Update assignee index (handle reassignment)
   if (prevAssignee && prevAssignee !== wi.assignee) {
@@ -998,6 +1005,7 @@ export async function listCases(filters: {
 
 async function saveReminder(r: Reminder, prevStatus?: ReminderStatus): Promise<void> {
   await redis.set(REMINDER_KEY_PREFIX + r.reminder_id, JSON.stringify(r));
+  pgUpsertReminder({ id: r.reminder_id, type: r.type, recipient: r.recipient, message: r.message, scheduled_at: r.scheduled_at, channel: r.channel, status: r.status, case_id: r.case_id, process_id: r.process_id, element_id: r.element_id, work_item_id: r.work_item_id, updated_at: new Date().toISOString() });
   if (prevStatus && prevStatus !== r.status) {
     await redis.srem(REMINDERS_IDX_STATUS + prevStatus, r.reminder_id);
   }
@@ -1079,6 +1087,7 @@ export async function deleteReminder(reminder_id: string): Promise<void> {
   await redis.del(REMINDER_KEY_PREFIX + reminder_id);
   await redis.srem(REMINDERS_IDX_STATUS + r.status, reminder_id);
   await redis.zrem(REMINDERS_IDX_ALL, reminder_id);
+  pgDeleteReminder(reminder_id);
 }
 
 // Scheduler: check every 60s, mark overdue/sent pending reminders
@@ -1159,6 +1168,7 @@ export interface RoleDef {
 async function saveRole(r: RoleDef): Promise<void> {
   await redis.set(ROLE_KEY_PREFIX + r.role_id, JSON.stringify(r));
   await redis.zadd(ROLES_IDX_ALL, new Date(r.created_at).getTime(), r.role_id);
+  pgUpsertRole({ id: r.role_id, name: r.name, description: r.description, assignees: r.assignees || [], strategy: r.strategy, updated_at: new Date().toISOString() });
 }
 
 async function loadRole(role_id: string): Promise<RoleDef | null> {
@@ -1195,6 +1205,7 @@ export async function updateRole(role_id: string, patch: Partial<Pick<RoleDef, "
 export async function deleteRole(role_id: string): Promise<void> {
   await redis.del(ROLE_KEY_PREFIX + role_id);
   await redis.zrem(ROLES_IDX_ALL, role_id);
+  pgDeleteRole(role_id);
 }
 
 // --- Documents Directory ---
@@ -1223,6 +1234,7 @@ async function saveDoc(d: DocTemplate): Promise<void> {
   d.parameters = extractParameters(d.content);
   await redis.set(DOC_KEY_PREFIX + d.doc_id, JSON.stringify(d));
   await redis.zadd(DOCS_IDX_ALL, new Date(d.created_at).getTime(), d.doc_id);
+  pgUpsertDoc({ id: d.doc_id, name: d.name, type: d.type, content: d.content, parameters: {}, updated_at: new Date().toISOString() });
 }
 
 async function loadDoc(doc_id: string): Promise<DocTemplate | null> {
@@ -1265,6 +1277,7 @@ export async function updateDoc(doc_id: string, patch: Partial<Pick<DocTemplate,
 export async function deleteDoc(doc_id: string): Promise<void> {
   await redis.del(DOC_KEY_PREFIX + doc_id);
   await redis.zrem(DOCS_IDX_ALL, doc_id);
+  pgDeleteDoc(doc_id);
 }
 
 export async function purgeAllWorkItems(): Promise<number> {
@@ -1278,5 +1291,6 @@ export async function purgeAllWorkItems(): Promise<number> {
   const processKeys = await redis.keys(WORKITEMS_IDX_PROCESS + "*");
   const extraKeys = [...statusKeys, ...assigneeKeys, ...processKeys, WORKITEMS_IDX_ALL];
   if (extraKeys.length > 0) await redis.del(...extraKeys);
+  pgPurgeAllWorkItems();
   return ids.length;
 }

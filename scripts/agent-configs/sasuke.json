@@ -1,0 +1,11 @@
+{
+  "agent_id": "sasuke",
+  "tmux_session": "sasuke",
+  "debounce_window": 2.0,
+  "idle_timeout": 600,
+  "sources": ["konoha-sse", "redis-stream", "redis-reactions"],
+  "redis_stream": {"stream": "telegram:incoming", "group": "sasuke", "consumer": "sasuke-worker"},
+  "reaction_stream": {"stream": "telegram:reactions", "group": "sasuke", "consumer": "sasuke-reactions"},
+  "message_prefix": "",
+  "message_suffix": ""
+}
