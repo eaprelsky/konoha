@@ -892,7 +892,10 @@ export async function handleEventFired(payload: {
 
   // Start event: no existing instance → create a new case
   if (!instance_id || instance_id === "new") {
-    const subject = `${process_id} instance`;
+    // Use workflow name if available, otherwise fall back to process_id
+    const wfDef = await getWorkflow(process_id).catch(() => null);
+    const displayName = wfDef?.name || process_id;
+    const subject = `${displayName} #${Date.now().toString(36).slice(-4)}`;
     const initPayload = source_data ?? {};
     try {
       const kase = await createCase(process_id, subject, initPayload, event_id);
