@@ -25,7 +25,76 @@ import { telegramBotAdapter } from "./adapters/telegram-bot";
 import { trackerAdapter } from "./adapters/tracker";
 
 const SUBSCRIPTIONS_KEY = "event-manager:subscriptions";
+const HISTORY_KEY = "event-manager:history";
+const HISTORY_MAX_ENTRIES = 500;
 const SENDER = "event-manager";
+
+// ── Adapter stats (in-memory) ─────────────────────────────────────────────────
+
+interface AdapterStats {
+  name: string;
+  last_success_at?: string;
+  last_error_at?: string;
+  last_error?: string;
+  error_count: number;
+  active_listeners: number;
+}
+
+const adapterStats = new Map<string, AdapterStats>();
+
+function getAdapterStats(name: string): AdapterStats {
+  if (!adapterStats.has(name)) {
+    adapterStats.set(name, { name, error_count: 0, active_listeners: 0 });
+  }
+  return adapterStats.get(name)!;
+}
+
+function recordAdapterSuccess(name: string): void {
+  const s = getAdapterStats(name);
+  s.last_success_at = new Date().toISOString();
+}
+
+function recordAdapterError(name: string, msg: string): void {
+  const s = getAdapterStats(name);
+  s.last_error_at = new Date().toISOString();
+  s.last_error = msg;
+  s.error_count++;
+}
+
+// ── Compute next fire time for timer triggers ─────────────────────────────────
+
+function computeNextFireAt(trigger: TriggerDef, subscribedAt?: string): string | undefined {
+  if (trigger.kind === "timer") {
+    const t = trigger as TimerTrigger;
+    if (t.cron) {
+      try {
+        const interval = CronExpressionParser.parse(t.cron, { currentDate: new Date() });
+        return interval.next().toDate().toISOString();
+      } catch { return undefined; }
+    }
+  }
+  if (trigger.kind === "delay_after") {
+    const t = trigger as DelayAfterTrigger;
+    if (t.duration && subscribedAt) {
+      try {
+        const ms = parseDurationMs(t.duration);
+        return new Date(new Date(subscribedAt).getTime() + ms).toISOString();
+      } catch { return undefined; }
+    }
+  }
+  return undefined;
+}
+
+// ── Compute UI status ─────────────────────────────────────────────────────────
+
+type UiStatus = "waiting" | "fired" | "error" | "manual_fallback";
+
+function computeUiStatus(sub: Subscription): UiStatus {
+  if (sub.error) return "error";
+  if (sub.status === "cancelled" && sub.last_fired_at) return "fired";
+  if (sub.mode === "manual") return "manual_fallback";
+  return "waiting";
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,13 +134,44 @@ export type TriggerDef =
 export interface Subscription {
   id: string;
   event_id: string;
+  event_label?: string;      // human-readable event label from process definition
   process_id: string;
+  process_name?: string;     // human-readable process name
   instance_id: string;
   trigger: TriggerDef;
   status: "active" | "cancelled";
   mode: "auto" | "manual";
   subscribed_at: string;
+  next_fire_at?: string;     // computed: next scheduled fire time (timers)
   last_fired_at?: string;
+  fire_count?: number;       // total number of times fired
+  last_poll_at?: string;     // last condition poll time
+  last_poll_result?: unknown; // last condition poll result
+  error?: string;            // last error message
+}
+
+// ── Summary builder ───────────────────────────────────────────────────────────
+
+function buildSummary(
+  subs: Array<Subscription & { ui_status: UiStatus }>,
+  todayStart: Date,
+  todayEnd: Date,
+): Record<string, number> {
+  const waiting = subs.filter(s => s.ui_status === "waiting").length;
+  const errors = subs.filter(s => s.ui_status === "error").length;
+  const manual_fallback = subs.filter(s => s.ui_status === "manual_fallback").length;
+  const fired_today = subs.filter(s =>
+    s.last_fired_at &&
+    new Date(s.last_fired_at) >= todayStart &&
+    new Date(s.last_fired_at) <= todayEnd,
+  ).length;
+  return {
+    total: subs.length,
+    waiting,
+    fired_today,
+    errors,
+    manual_fallback,
+  };
 }
 
 // ── In-memory cron task registry ─────────────────────────────────────────────
@@ -209,9 +309,31 @@ async function publishEventFired(
     text: JSON.stringify(payload),
   });
 
-  // Persist last_fired_at
+  // Persist last_fired_at and increment fire_count
   sub.last_fired_at = firedAt;
+  sub.fire_count = (sub.fire_count ?? 0) + 1;
+  // Update next_fire_at for repeating timers
+  if (sub.trigger.kind === "timer") {
+    sub.next_fire_at = computeNextFireAt(sub.trigger);
+  }
   await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
+
+  // Record to history (capped list via sorted set by timestamp)
+  const historyEntry = JSON.stringify({
+    subscription_id: sub.id,
+    event_id: sub.event_id,
+    event_label: sub.event_label,
+    process_id: sub.process_id,
+    process_name: sub.process_name,
+    instance_id: sub.instance_id,
+    trigger_kind: sub.trigger.kind,
+    fired_at: firedAt,
+    source_data: sourceData,
+  });
+  const score = Date.now();
+  await redis.zadd(HISTORY_KEY, score, historyEntry);
+  // Trim to last HISTORY_MAX_ENTRIES entries
+  await redis.zremrangebyrank(HISTORY_KEY, 0, -(HISTORY_MAX_ENTRIES + 1));
 
   console.log(
     `[event-manager] event_fired sub=${sub.id} event_id=${sub.event_id} process_id=${sub.process_id} kind=${sub.trigger.kind}`,
@@ -407,6 +529,18 @@ async function activateConditionTrigger(sub: Subscription): Promise<void> {
         `executeQuery sub=${sub.id} source=${trigger.data_source}`,
       );
 
+      // Track poll stats
+      recordAdapterSuccess(trigger.data_source);
+      const pollAt = new Date().toISOString();
+      const freshPoll = await redis.hget(SUBSCRIPTIONS_KEY, sub.id);
+      if (freshPoll) {
+        const sp: Subscription = JSON.parse(freshPoll);
+        sp.last_poll_at = pollAt;
+        sp.last_poll_result = value;
+        await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sp));
+        Object.assign(sub, sp);
+      }
+
       if (evalCondition(value, trigger.operator, trigger.threshold)) {
         await publishEventFired(sub, {
           data_source: trigger.data_source,
@@ -423,6 +557,7 @@ async function activateConditionTrigger(sub: Subscription): Promise<void> {
         console.log(`[event-manager] condition matched and unsubscribed sub=${sub.id}`);
       }
     } catch (e: any) {
+      recordAdapterError(trigger.data_source, e.message);
       console.error(`[event-manager] condition poll exhausted retries sub=${sub.id}: ${e.message} → switching to manual mode`);
       sub.mode = "manual";
       await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
@@ -552,7 +687,9 @@ export function registerEventManagerRoutes(
   app.post("/api/event-manager/subscribe", requireAuth, async (c) => {
     const body = await c.req.json<{
       event_id: string;
+      event_label?: string;
       process_id: string;
+      process_name?: string;
       instance_id: string;
       trigger: TriggerDef;
     }>().catch(() => null);
@@ -598,15 +735,20 @@ export function registerEventManagerRoutes(
       mode = "auto";
     }
 
+    const now = new Date().toISOString();
     const sub: Subscription = {
       id: `sub_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
       event_id: body.event_id,
+      event_label: body.event_label,
       process_id: body.process_id,
+      process_name: body.process_name,
       instance_id: body.instance_id,
       trigger,
       status: "active",
       mode,
-      subscribed_at: new Date().toISOString(),
+      subscribed_at: now,
+      fire_count: 0,
+      next_fire_at: computeNextFireAt(trigger, now),
     };
 
     await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
@@ -656,14 +798,91 @@ export function registerEventManagerRoutes(
   app.get("/api/event-manager/subscriptions", requireAuth, async (c) => {
     const processId = c.req.query("process_id");
     const instanceId = c.req.query("instance_id");
+    const triggerKind = c.req.query("trigger_kind");
+    const source = c.req.query("source");
+    const statusFilter = c.req.query("status") as UiStatus | undefined;
 
     const all = await redis.hgetall(SUBSCRIPTIONS_KEY).catch(() => ({}));
     let subs = Object.values(all).map(v => JSON.parse(v) as Subscription);
 
     if (processId) subs = subs.filter(s => s.process_id === processId);
     if (instanceId) subs = subs.filter(s => s.instance_id === instanceId);
+    if (triggerKind) subs = subs.filter(s => s.trigger.kind === triggerKind);
+    if (source) subs = subs.filter(s => {
+      const t = s.trigger as any;
+      return t.source === source || t.data_source === source;
+    });
 
-    return c.json(subs);
+    // Compute UI status and next_fire_at for each subscription
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const enriched = subs.map(s => {
+      const ui_status = computeUiStatus(s);
+      const next_fire_at = s.next_fire_at ?? computeNextFireAt(s.trigger, s.subscribed_at);
+      return { ...s, ui_status, next_fire_at };
+    });
+
+    if (statusFilter) {
+      const filtered = enriched.filter(s => s.ui_status === statusFilter);
+      const summary = buildSummary(enriched, todayStart, todayEnd);
+      return c.json({ subscriptions: filtered, summary });
+    }
+
+    const summary = buildSummary(enriched, todayStart, todayEnd);
+    return c.json({ subscriptions: enriched, summary });
+  });
+
+  // GET /api/event-manager/history
+  app.get("/api/event-manager/history", requireAuth, async (c) => {
+    const processId = c.req.query("process_id");
+    const instanceId = c.req.query("instance_id");
+    const since = c.req.query("since");
+    const until = c.req.query("until");
+    const limitStr = c.req.query("limit");
+    const limit = limitStr ? Math.min(parseInt(limitStr), 200) : 50;
+
+    const minScore = since ? new Date(since).getTime() : "-inf";
+    const maxScore = until ? new Date(until).getTime() : "+inf";
+
+    const raw = await redis.zrangebyscore(HISTORY_KEY, minScore, maxScore, "LIMIT", 0, limit)
+      .catch(() => [] as string[]);
+
+    let entries = raw.map(r => JSON.parse(r));
+
+    if (processId) entries = entries.filter((e: any) => e.process_id === processId);
+    if (instanceId) entries = entries.filter((e: any) => e.instance_id === instanceId);
+
+    return c.json({ history: entries, total: entries.length });
+  });
+
+  // GET /api/event-manager/adapters/status
+  app.get("/api/event-manager/adapters/status", requireAuth, async (c) => {
+    const result = Array.from(dataAdapters.keys()).map(name => {
+      const stats = adapterStats.get(name) ?? { name, error_count: 0, active_listeners: 0 };
+      // Count active listeners for this adapter
+      const listenerCount = Array.from(activeListeners.values()).filter(h => h.adapter === name).length;
+
+      let status: "available" | "degraded" | "unavailable" = "available";
+      if (!stats.last_success_at && stats.error_count > 0) status = "unavailable";
+      else if (stats.last_error_at && stats.last_success_at && stats.last_error_at > stats.last_success_at) {
+        status = stats.error_count > 3 ? "unavailable" : "degraded";
+      }
+
+      return {
+        name,
+        status,
+        last_success_at: stats.last_success_at ?? null,
+        last_error_at: stats.last_error_at ?? null,
+        last_error: stats.last_error ?? null,
+        error_count: stats.error_count,
+        active_listeners: listenerCount,
+      };
+    });
+
+    return c.json({ adapters: result });
   });
 
   // POST /api/webhooks/bitrix — Bitrix24 event push dispatch (no auth, validated by handle param)
@@ -696,7 +915,9 @@ export function registerEventManagerRoutes(
  */
 export async function createSubscriptionProgrammatic(params: {
   event_id: string;
+  event_label?: string;
   process_id: string;
+  process_name?: string;
   instance_id: string;
   trigger: TriggerDef;
 }): Promise<{ subscription_id: string; status: string; mode: "auto" | "manual" }> {
@@ -717,15 +938,20 @@ export async function createSubscriptionProgrammatic(params: {
     try { parseDurationMs(dt.duration); mode = "auto"; } catch {}
   }
 
+  const now2 = new Date().toISOString();
   const sub: Subscription = {
     id: `sub_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
     event_id: params.event_id,
+    event_label: params.event_label,
     process_id: params.process_id,
+    process_name: params.process_name,
     instance_id: params.instance_id,
     trigger,
     status: "active",
     mode,
-    subscribed_at: new Date().toISOString(),
+    subscribed_at: now2,
+    fire_count: 0,
+    next_fire_at: computeNextFireAt(trigger, now2),
   };
 
   await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));

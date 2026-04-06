@@ -56,6 +56,7 @@ const MAIN_NAV = [
   { href: '/ui/roles.html',      key: 'nav.roles',      fallback: 'Roles' },
   { href: '/ui/skills.html',     key: 'nav.skills',     fallback: 'Skills' },
   { href: '/ui/documents.html',  key: 'nav.documents',  fallback: 'Documents' },
+  { href: '/ui/event-monitor.html', key: 'nav.events', fallback: 'События' },
   { href: '/ui/connectors.html', key: 'nav.connectors', fallback: 'IS' },
   { href: '/ui/people.html',     key: 'nav.people',     fallback: 'People' },
   { href: '/ui/agents.html',     key: 'nav.agents',     fallback: 'Agents' },

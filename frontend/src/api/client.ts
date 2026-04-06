@@ -242,6 +242,47 @@ export const api = {
     process: (id: string) => apiFetch<ProcessMiningData>(`${BASE}/mining/process/${encodeURIComponent(id)}`),
   },
 
+  eventMonitor: {
+    subscriptions: (filters?: {
+      process_id?: string;
+      instance_id?: string;
+      trigger_kind?: string;
+      source?: string;
+      status?: string;
+    }) => {
+      const p = new URLSearchParams();
+      if (filters?.process_id)   p.set('process_id', filters.process_id);
+      if (filters?.instance_id)  p.set('instance_id', filters.instance_id);
+      if (filters?.trigger_kind) p.set('trigger_kind', filters.trigger_kind);
+      if (filters?.source)       p.set('source', filters.source);
+      if (filters?.status)       p.set('status', filters.status);
+      const qs = p.toString();
+      return apiFetch<{ subscriptions: any[]; summary: Record<string, number> }>(
+        `${BASE}/event-manager/subscriptions${qs ? '?' + qs : ''}`,
+      );
+    },
+    history: (filters?: {
+      process_id?: string;
+      instance_id?: string;
+      since?: string;
+      until?: string;
+      limit?: number;
+    }) => {
+      const p = new URLSearchParams();
+      if (filters?.process_id) p.set('process_id', filters.process_id);
+      if (filters?.instance_id) p.set('instance_id', filters.instance_id);
+      if (filters?.since)      p.set('since', filters.since);
+      if (filters?.until)      p.set('until', filters.until);
+      if (filters?.limit)      p.set('limit', String(filters.limit));
+      const qs = p.toString();
+      return apiFetch<{ history: any[]; total: number }>(
+        `${BASE}/event-manager/history${qs ? '?' + qs : ''}`,
+      );
+    },
+    adaptersStatus: () =>
+      apiFetch<{ adapters: any[] }>(`${BASE}/event-manager/adapters/status`),
+  },
+
   skills: {
     list: () => apiFetch<Skill[]>(`${BASE}/skills`),
     create: (params: { id?: string; name: string; name_en?: string; description?: string; prompt_snippet?: string; tools?: string[] }) =>
