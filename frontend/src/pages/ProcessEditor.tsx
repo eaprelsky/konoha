@@ -1083,10 +1083,10 @@ export function ProcessEditor() {
             <button
               className={showMining ? 'active' : ''}
               onClick={toggleMining}
-              title="Process Mining — overlay actual execution stats on canvas"
+              title="Process Mining — наложить статистику реальных прогонов на схему"
               style={{ background: showMining ? '#065f46' : '#1e3a2f', borderColor: '#10b981' }}
             >
-              {miningLoading ? '⏳' : '⛏'} Mining
+              {miningLoading ? '⏳' : '⛏'} Майнинг
             </button>
           )}
           {/* Version history selector */}
@@ -1293,10 +1293,14 @@ export function ProcessEditor() {
                   {(p.type === 'role' && roles.length > 0) ||
                    (p.type === 'document' && docs.length > 0) ||
                    (p.type === 'information_system' && adapters.length > 0)
-                    ? <span style={{ fontSize: 10, color: '#94a3b8' }}>▾ pick</span>
+                    ? <span style={{ fontSize: 10, color: '#94a3b8' }}>▾</span>
                     : null}
                 </div>
               ))}
+              {/* Drill-down hint */}
+              <div style={{ marginTop: 8, padding: '6px 8px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: 5, fontSize: 10, color: '#64748b', lineHeight: 1.5 }}>
+                <span style={{ color: '#94a3b8', fontWeight: 600 }}>Подпроцесс:</span> наведите курсор на функцию → нажмите <span style={{ color: '#93c5fd', fontWeight: 700 }}>+</span> в правом нижнем углу
+              </div>
             </div>
 
             {/* Properties panel */}
@@ -1579,10 +1583,10 @@ export function ProcessEditor() {
             {/* Mining summary panel */}
             {showMining && miningData && (
               <div>
-                <h3>⛏ Mining — {miningData.case_count} case(s)</h3>
+                <h3>⛏ Майнинг — {miningData.case_count} прогон(ов)</h3>
                 {miningData.bottleneck_element_id && (
                   <div style={{ fontSize: 11, color: '#fca5a5', background: '#450a0a', padding: '4px 8px', borderRadius: 4, marginBottom: 6 }}>
-                    🔥 Bottleneck: {miningData.elements[miningData.bottleneck_element_id]?.label || miningData.bottleneck_element_id}
+                    🔥 Узкое место: {miningData.elements[miningData.bottleneck_element_id]?.label || miningData.bottleneck_element_id}
                     {miningData.elements[miningData.bottleneck_element_id]?.avg_duration_ms != null && (
                       <span> — {formatDuration(miningData.elements[miningData.bottleneck_element_id]!.avg_duration_ms!)}</span>
                     )}
@@ -1590,16 +1594,16 @@ export function ProcessEditor() {
                 )}
                 {miningData.skipped_elements.length > 0 && (
                   <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
-                    ⬜ Skipped: {miningData.skipped_elements.map(id => miningData.elements[id]?.label || id).join(', ')}
+                    ⬜ Пропущено: {miningData.skipped_elements.map(id => miningData.elements[id]?.label || id).join(', ')}
                   </div>
                 )}
                 {miningData.deviation_elements.length > 0 && (
                   <div style={{ fontSize: 11, color: '#fbbf24', marginBottom: 4 }}>
-                    ⚠ Deviation: {miningData.deviation_elements.map(id => miningData.elements[id]?.label || id).join(', ')}
+                    ⚠ Отклонения: {miningData.deviation_elements.map(id => miningData.elements[id]?.label || id).join(', ')}
                   </div>
                 )}
                 <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>
-                  Hover elements on canvas for stats
+                  Наведите на элемент на схеме для статистики
                 </div>
               </div>
             )}
@@ -1889,6 +1893,34 @@ export function ProcessEditor() {
                               el.type === 'gateway'
                                 ? updateElement(el.id, { operator: v, label: v })
                                 : updateElement(el.id, { label: v });
+                              // Sync real role/document entities
+                              if (el.type === 'role') {
+                                const refId = (el as any).ref_id as string | undefined;
+                                if (!refId) {
+                                  api.roles.create({ role_id: v.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now(), name: v, assignees: [], strategy: 'manual' })
+                                    .then(r => { updateElement(el.id, { ref_id: r.role_id } as any); setRoles(prev => [...prev, r]); })
+                                    .catch(() => {});
+                                } else {
+                                  const existing = roles.find(r => r.role_id === refId);
+                                  if (existing && existing.name !== v) {
+                                    api.roles.update(refId, { name: v }).catch(() => {});
+                                    setRoles(prev => prev.map(r => r.role_id === refId ? { ...r, name: v } : r));
+                                  }
+                                }
+                              } else if (el.type === 'document') {
+                                const refId = (el as any).ref_id as string | undefined;
+                                if (!refId) {
+                                  api.documents.create({ name: v, type: 'template', content: '' })
+                                    .then(d => { updateElement(el.id, { ref_id: d.doc_id } as any); setDocs(prev => [...prev, d]); })
+                                    .catch(() => {});
+                                } else {
+                                  const existing = docs.find(d => d.doc_id === refId);
+                                  if (existing && existing.name !== v) {
+                                    api.documents.update(refId, { name: v }).catch(() => {});
+                                    setDocs(prev => prev.map(d => d.doc_id === refId ? { ...d, name: v } : d));
+                                  }
+                                }
+                              }
                             }
                             setEditingId(null);
                           }}

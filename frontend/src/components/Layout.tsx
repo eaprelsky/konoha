@@ -23,7 +23,7 @@ const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] 
     id: 'user',
     keyRu: 'Пользователь',
     keyEn: 'User',
-    pages: ['my-tasks.html', 'calendar.html'],
+    pages: ['my-tasks.html', 'my-calendar.html'],
   },
   {
     id: 'executors',
@@ -48,6 +48,7 @@ const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] 
 const NAV_ITEMS: Record<string, { keyRu: string; keyEn: string; href: string }> = {
   'my-tasks.html':     { keyRu: 'Мои задачи',    keyEn: 'My Tasks',   href: '/ui/my-tasks.html' },
   'calendar.html':     { keyRu: 'Календарь',      keyEn: 'Calendar',   href: '/ui/calendar.html' },
+  'my-calendar.html':  { keyRu: 'Календарь',      keyEn: 'Calendar',   href: '/ui/my-calendar.html' },
   'roles.html':        { keyRu: 'Роли',            keyEn: 'Roles',      href: '/ui/roles.html' },
   'agents.html':       { keyRu: 'Агенты',          keyEn: 'Agents',     href: '/ui/agents.html' },
   'people.html':       { keyRu: 'Люди',            keyEn: 'People',     href: '/ui/people.html' },

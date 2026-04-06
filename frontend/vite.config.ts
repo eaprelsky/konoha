@@ -36,6 +36,7 @@ export default defineConfig({
         'event-monitor': resolve(__dirname, 'src/event-monitor.html'),
         'my-tasks':      resolve(__dirname, 'src/my-tasks.html'),
         calendar:        resolve(__dirname, 'src/calendar.html'),
+        'my-calendar':   resolve(__dirname, 'src/my-calendar.html'),
       },
     },
   },
