@@ -244,10 +244,13 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
     }).catch(() => {});
     api.agents.systemTemplate(agent.id).then(d => setSysTemplate(d.template)).catch(() => {});
     api.skills.list().then(setAllSkills).catch(() => {});
+  }, [agent.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, [agent.id, onClose]);
+  }, [onClose]);
 
   function loadMemory() {
     setMemLoading(true);
@@ -419,9 +422,6 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
                     <input type="text" value={avatarStyle} onChange={e => setAvatarStyle(e.target.value)}
                       placeholder="anime ninja, pixel art, portrait…"
                       style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }} />
-                    <input type="text" value={avatarPrompt} onChange={e => setAvatarPrompt(e.target.value)}
-                      placeholder="Свой промпт (необязательно)"
-                      style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }} />
                     <button type="button" onClick={doAvatarAction} disabled={generatingAvatar}
                       style={{ padding: '5px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: generatingAvatar ? 0.6 : 1 }}>
                       {generatingAvatar ? '⏳ Генерируется…' : '✨ Сгенерировать'}
@@ -437,10 +437,7 @@ function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
                       {avatarFile ? avatarFile.name : '📎 Выбрать фото'}
                     </button>
                     <input type="text" value={avatarPrompt} onChange={e => setAvatarPrompt(e.target.value)}
-                      placeholder="Описание стиля / изменений"
-                      style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }} />
-                    <input type="text" value={avatarStyle} onChange={e => setAvatarStyle(e.target.value)}
-                      placeholder="anime ninja, pixel art, portrait…"
+                      placeholder="Описание изменений (стиль, детали…)"
                       style={{ padding: '5px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }} />
                     <button type="button" onClick={doAvatarAction} disabled={generatingAvatar || !avatarFile}
                       style={{ padding: '5px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: (generatingAvatar || !avatarFile) ? 0.6 : 1 }}>

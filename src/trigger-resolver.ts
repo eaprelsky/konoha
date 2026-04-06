@@ -222,7 +222,7 @@ export function registerTriggerResolverRoutes(
   requireAuth: (c: any, next: any) => Promise<any>,
 ): void {
   // POST /api/trigger-resolver/resolve
-  app.post("/api/trigger-resolver/resolve", requireAuth, async (c) => {
+  app.post("/trigger-resolver/resolve", requireAuth, async (c) => {
     const body = await c.req.json<{
       label: string;
       process_context?: ProcessContext;
@@ -248,7 +248,7 @@ export function registerTriggerResolverRoutes(
   });
 
   // POST /api/trigger-resolver/resolve-batch
-  app.post("/api/trigger-resolver/resolve-batch", requireAuth, async (c) => {
+  app.post("/trigger-resolver/resolve-batch", requireAuth, async (c) => {
     const body = await c.req.json<{
       events: { id: string; label: string; manual_override?: boolean }[];
       process_context?: ProcessContext;

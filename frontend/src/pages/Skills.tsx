@@ -20,9 +20,11 @@ const styles = `
   .empty { text-align: center; padding: 40px; color: #999; }
   .error-banner { background: #fee; color: #c33; padding: 12px; border-radius: 4px; margin-bottom: 16px; border-left: 4px solid #c33; }
   .skill-id { font-family: monospace; font-size: 12px; color: #6366f1; }
-  .skill-desc { color: #64748b; font-size: 13px; max-width: 300px; }
-  .snippet-preview { font-family: monospace; font-size: 11px; color: #475569; background: #f8fafc; padding: 4px 8px; border-radius: 4px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tag { display: inline-block; padding: 1px 7px; background: #eff6ff; color: #3730a3; border-radius: 10px; font-size: 11px; margin: 1px; }
+  .skill-desc { color: #64748b; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .snippet-preview { font-family: monospace; font-size: 11px; color: #475569; background: #f8fafc; padding: 4px 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .search-input { padding: 7px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 220px; }
+  .search-input:focus { outline: none; border-color: #6366f1; }
+  .tag { display: inline-block; padding: 1px 7px; background: #eff6ff; color: #3730a3; border-radius: 10px; font-size: 11px; margin: 1px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
   .btn-delete { padding: 3px 8px; background: transparent; color: #dc2626; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 12px; }
   .btn-delete:hover { background: #fee2e2; }
   /* Modal */
@@ -148,7 +150,7 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
             />
           </div>
           <div className="form-group">
-            <label>Prompt Snippet</label>
+            <label>Инструкция</label>
             <textarea
               value={promptSnippet}
               onChange={e => setPromptSnippet(e.target.value)}
@@ -194,6 +196,7 @@ export function Skills() {
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editSkill, setEditSkill] = useState<Skill | null>(null);
+  const [search, setSearch] = useState('');
 
   const load = useCallback(() => {
     if (!token) return;
@@ -225,6 +228,12 @@ export function Skills() {
         <div className="container">
           <div className="page-header">
             <h1>Навыки</h1>
+            <input
+              className="search-input"
+              placeholder="Поиск навыков…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
             <button className="btn-new" onClick={openNew}>+ Добавить навык</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
@@ -233,20 +242,33 @@ export function Skills() {
             <div className="empty">Навыки не созданы. Нажмите «+ Добавить навык».</div>
           )}
           {!loading && skills.length > 0 && (
-            <table className="table">
+            <table className="table" style={{ tableLayout: 'fixed', width: '100%' }}>
+              <colgroup>
+                <col style={{ width: '120px' }} />
+                <col style={{ width: '150px' }} />
+                <col style={{ width: '180px' }} />
+                <col style={{ width: 'auto' }} />
+                <col style={{ width: '120px' }} />
+                <col style={{ width: '80px' }} />
+                <col style={{ width: '70px' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>ID</th>
                   <th>Название</th>
                   <th>Описание</th>
-                  <th>Prompt Snippet</th>
+                  <th>Инструкция</th>
                   <th>Инструменты</th>
-                  <th>MCP Servers</th>
+                  <th>MCP</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {skills.map(s => (
+                {skills.filter(s => {
+                  if (!search.trim()) return true;
+                  const q = search.toLowerCase();
+                  return s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q);
+                }).map(s => (
                   <tr key={s.id} className="row-clickable" onClick={() => openEdit(s)}>
                     <td><span className="skill-id">{s.id}</span></td>
                     <td style={{ fontWeight: 600 }}>
@@ -259,9 +281,12 @@ export function Skills() {
                         ? <span className="snippet-preview">{s.prompt_snippet}</span>
                         : <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>}
                     </td>
-                    <td>
-                      {(s.tools || []).map(t => <span key={t} className="tag">{t}</span>)}
-                      {(!s.tools || s.tools.length === 0) && <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>}
+                    <td style={{ overflow: 'hidden' }}>
+                      {(s.tools || []).length === 0 && <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>}
+                      {(s.tools || []).slice(0, 2).map(t => <span key={t} className="tag">{t}</span>)}
+                      {(s.tools || []).length > 2 && (
+                        <span className="tag" style={{ background: '#f1f5f9', color: '#64748b' }}>+{s.tools!.length - 2}</span>
+                      )}
                     </td>
                     <td>
                       {s.mcp_servers && s.mcp_servers.length > 0

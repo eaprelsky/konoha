@@ -7,7 +7,7 @@
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
-const AVATARS_DIR = "/opt/shared/attachments/avatars";
+const AVATARS_DIR = "/opt/shared/avatars";
 const REPLICATE_BASE = "https://api.replicate.com/v1";
 
 export interface AvatarGenerationParams {
@@ -96,7 +96,7 @@ export async function generateAvatar(params: AvatarGenerationParams): Promise<Av
   const filename = `${params.id.replace(/[^a-zA-Z0-9_-]/g, "_")}.webp`;
   const localPath = await downloadAndSave(imageUrl, filename);
   return {
-    avatar_url: `/files/avatars/${filename}`,
+    avatar_url: `/api/avatars/${filename}`,
     local_path: localPath,
   };
 }
@@ -109,7 +109,7 @@ export async function generateAvatarImg2Img(params: AvatarImg2ImgParams): Promis
   const filename = `${params.id.replace(/[^a-zA-Z0-9_-]/g, "_")}.webp`;
   const localPath = await downloadAndSave(imageUrl, filename);
   return {
-    avatar_url: `/files/avatars/${filename}`,
+    avatar_url: `/api/avatars/${filename}`,
     local_path: localPath,
   };
 }

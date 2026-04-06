@@ -217,7 +217,11 @@ def format_batch(events: list[dict]) -> str:
                 meta += f" sender_id={sender_id}"
             if msg_id:
                 meta += f" msg_id={msg_id}"
+            attachment_path = d.get("attachment_path", "")
+            attachment_kind = d.get("attachment_kind", "")
             lines.append(f"\n[{ts}] {sender} ({meta}): {text}")
+            if attachment_path:
+                lines.append(f"  [Вложение: {attachment_kind} — {attachment_path}]")
         lines.append("\nОбработай и при необходимости ответь через tg-send-user.py.")
 
     if konoha_events:

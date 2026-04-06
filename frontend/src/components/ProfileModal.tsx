@@ -249,9 +249,6 @@ export function ProfileModal({ onClose }: Props) {
                     <input type="text" className="profile-avatar-style" value={avatarStyle}
                       onChange={e => setAvatarStyle(e.target.value)}
                       placeholder="professional photo, anime, pixel art…" />
-                    <input type="text" className="profile-avatar-style" value={avatarPrompt}
-                      onChange={e => setAvatarPrompt(e.target.value)}
-                      placeholder="Свой промпт (необязательно)" />
                     <div className="profile-avatar-btns">
                       <button type="button" className="btn-avatar-gen" onClick={doAvatarAction} disabled={generatingAvatar}>
                         {generatingAvatar ? '⏳ Генерация…' : '✨ Сгенерировать'}
@@ -268,10 +265,7 @@ export function ProfileModal({ onClose }: Props) {
                     </button>
                     <input type="text" className="profile-avatar-style" value={avatarPrompt}
                       onChange={e => setAvatarPrompt(e.target.value)}
-                      placeholder="Описание стиля / изменений" />
-                    <input type="text" className="profile-avatar-style" value={avatarStyle}
-                      onChange={e => setAvatarStyle(e.target.value)}
-                      placeholder="professional photo, anime…" />
+                      placeholder="Описание изменений (стиль, детали…)" />
                     <div className="profile-avatar-btns">
                       <button type="button" className="btn-avatar-gen" onClick={doAvatarAction} disabled={generatingAvatar || !avatarFile}>
                         {generatingAvatar ? '⏳ Генерация…' : '✨ Из фото'}
