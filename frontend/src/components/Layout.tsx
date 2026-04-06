@@ -41,7 +41,7 @@ const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] 
     id: 'system',
     keyRu: 'Система',
     keyEn: 'System',
-    pages: ['connectors.html', 'messages.html', 'eventlog.html', 'kb.html', 'workspace.html', 'admin.html', 'health.html'],
+    pages: ['health.html', 'connectors.html', 'messages.html', 'eventlog.html', 'kb.html', 'workspace.html', 'admin.html'],
   },
 ];
 
@@ -137,7 +137,15 @@ export function Layout({ children, activePage, subtitle }: LayoutProps) {
             <button
               key={g.id}
               className={`kw-group-btn${activeGroup === g.id ? ' active' : ''}`}
-              onClick={() => setActiveGroup(g.id)}
+              onClick={() => {
+                const firstPage = g.pages[0];
+                const firstItem = NAV_ITEMS[firstPage];
+                if (firstItem) {
+                  window.location.href = firstItem.href;
+                } else {
+                  setActiveGroup(g.id);
+                }
+              }}
             >
               {lang === 'ru' ? g.keyRu : g.keyEn}
             </button>

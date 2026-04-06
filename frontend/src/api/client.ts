@@ -3,8 +3,28 @@ export type { KibaAction };
 
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
 
+// ── Simple in-memory GET cache (TTL 10s) ─────────────────────────────────────
+const _cache = new Map<string, { data: unknown; ts: number }>();
+const CACHE_TTL_MS = 10_000;
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = options?.body instanceof FormData;
+  const method = (options?.method || 'GET').toUpperCase();
+
+  // Cache GET requests
+  if (method === 'GET') {
+    const cached = _cache.get(path);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+      return cached.data as T;
+    }
+  } else {
+    // Invalidate cache for the same base path on mutating requests
+    const base = path.split('?')[0];
+    for (const key of _cache.keys()) {
+      if (key.startsWith(base)) _cache.delete(key);
+    }
+  }
+
   const res = await fetch(path, {
     ...options,
     headers: isFormData ? (options?.headers || {}) : {
@@ -25,7 +45,9 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     } catch { /* body not JSON — keep default message */ }
     throw new Error(msg);
   }
-  return res.json() as Promise<T>;
+  const data = await res.json() as T;
+  if (method === 'GET') _cache.set(path, { data, ts: Date.now() });
+  return data;
 }
 
 const BASE = '/api';

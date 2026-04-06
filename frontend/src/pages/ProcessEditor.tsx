@@ -233,6 +233,11 @@ const CSS = `
   .proc-row-acts .del-btn { color:#ef4444; border-color:#fca5a5; }
   .proc-new-input { width:100%; padding:5px 8px; border:1px solid #6366f1; border-radius:4px; font-size:12px; box-sizing:border-box; outline:none; }
   .proc-rename-input { flex:1; padding:2px 5px; border:1px solid #6366f1; border-radius:3px; font-size:12px; outline:none; min-width:0; }
+  /* Tree nesting */
+  .proc-tree-node { display:flex; flex-direction:column; }
+  .proc-tree-children { border-left:2px solid #e2e8f0; margin-left:8px; padding-left:4px; }
+  .proc-item-toggle { width:14px; flex-shrink:0; font-size:9px; color:#94a3b8; text-align:center; cursor:pointer; user-select:none; }
+  .proc-item-toggle:hover { color:#6366f1; }
   /* Picker */
   /* Tsunade chat panel */
   .tsunade-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#fff; border-left:1px solid #e2e8f0; height:100%; }
@@ -337,6 +342,7 @@ export function ProcessEditor() {
   const [newProcName,   setNewProcName]   = useState('');
   const [renamingWfId,  setRenamingWfId]  = useState<string | null>(null);
   const [renamingVal,   setRenamingVal]   = useState('');
+  const [collapsedTree, setCollapsedTree] = useState<Set<string>>(new Set());
   // Pan / zoom
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
@@ -1010,6 +1016,23 @@ export function ProcessEditor() {
     ? workflows.filter(w => (w.name || w.id).toLowerCase().includes(sideSearch.toLowerCase()))
     : workflows;
 
+  // ── Process tree (hierarchical, only shown when not searching) ───────────────
+  type WfNode = Workflow & { children: WfNode[] };
+  function buildTree(wfs: Workflow[]): WfNode[] {
+    const map = new Map<string, WfNode>(wfs.map(w => [w.id, { ...w, children: [] }]));
+    const roots: WfNode[] = [];
+    for (const node of map.values()) {
+      const pid = node.parent_id;
+      if (pid && map.has(pid)) {
+        map.get(pid)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+    return roots;
+  }
+  const workflowTree = sideSearch.trim() ? [] : buildTree(workflows);
+
   return (
     <Layout activePage="editor.html">
       <style>{CSS}</style>
@@ -1160,39 +1183,102 @@ export function ProcessEditor() {
                 {filteredWorkflows.length === 0 && !creatingNew && (
                   <div style={{ fontSize: 11, color: '#94a3b8', padding: '4px 0' }}>Процессов пока нет</div>
                 )}
-                {filteredWorkflows.map(w => (
-                  <div
-                    key={w.id}
-                    className={`proc-item${wfId === w.id ? ' active' : ''}`}
-                    onClick={() => { if (renamingWfId !== w.id) loadWorkflow(w.id); }}
-                    onDoubleClick={e => { e.stopPropagation(); startRename(w); }}
-                    title={w.id}
-                  >
-                    {renamingWfId === w.id ? (
-                      <input
-                        className="proc-rename-input"
-                        autoFocus
-                        value={renamingVal}
-                        onChange={e => setRenamingVal(e.target.value)}
-                        onKeyDown={e => {
-                          e.stopPropagation();
-                          if (e.key === 'Enter') commitRename(w.id);
-                          if (e.key === 'Escape') setRenamingWfId(null);
-                        }}
-                        onBlur={() => commitRename(w.id)}
-                        onClick={e => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span className="proc-item-name">{w.name || w.id}</span>
-                    )}
-                    {renamingWfId !== w.id && (
-                      <div className="proc-row-acts">
-                        <button title="Дублировать" onClick={e => { e.stopPropagation(); dupWorkflow(w); }}>📋</button>
-                        <button className="del-btn" title="Удалить" onClick={e => { e.stopPropagation(); delWorkflow(w); }}>🗑</button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {/* Flat list when searching, tree otherwise */}
+                {sideSearch.trim()
+                  ? filteredWorkflows.map(w => (
+                    <div
+                      key={w.id}
+                      className={`proc-item${wfId === w.id ? ' active' : ''}`}
+                      onClick={() => { if (renamingWfId !== w.id) loadWorkflow(w.id); }}
+                      onDoubleClick={e => { e.stopPropagation(); startRename(w); }}
+                      title={w.id}
+                    >
+                      {renamingWfId === w.id ? (
+                        <input
+                          className="proc-rename-input"
+                          autoFocus
+                          value={renamingVal}
+                          onChange={e => setRenamingVal(e.target.value)}
+                          onKeyDown={e => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter') commitRename(w.id);
+                            if (e.key === 'Escape') setRenamingWfId(null);
+                          }}
+                          onBlur={() => commitRename(w.id)}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      ) : (
+                        <span className="proc-item-name">{w.name || w.id}</span>
+                      )}
+                      {renamingWfId !== w.id && (
+                        <div className="proc-row-acts">
+                          <button title="Дублировать" onClick={e => { e.stopPropagation(); dupWorkflow(w); }}>📋</button>
+                          <button className="del-btn" title="Удалить" onClick={e => { e.stopPropagation(); delWorkflow(w); }}>🗑</button>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                  : (() => {
+                    function renderNode(node: WfNode): React.ReactNode {
+                      const hasChildren = node.children.length > 0;
+                      const isCollapsed = collapsedTree.has(node.id);
+                      return (
+                        <div key={node.id} className="proc-tree-node">
+                          <div
+                            className={`proc-item${wfId === node.id ? ' active' : ''}`}
+                            onClick={() => { if (renamingWfId !== node.id) loadWorkflow(node.id); }}
+                            onDoubleClick={e => { e.stopPropagation(); startRename(node); }}
+                            title={node.id}
+                          >
+                            <span
+                              className="proc-item-toggle"
+                              onClick={e => {
+                                e.stopPropagation();
+                                if (!hasChildren) return;
+                                setCollapsedTree(prev => {
+                                  const s = new Set(prev);
+                                  if (s.has(node.id)) s.delete(node.id); else s.add(node.id);
+                                  return s;
+                                });
+                              }}
+                            >
+                              {hasChildren ? (isCollapsed ? '▶' : '▼') : ''}
+                            </span>
+                            {renamingWfId === node.id ? (
+                              <input
+                                className="proc-rename-input"
+                                autoFocus
+                                value={renamingVal}
+                                onChange={e => setRenamingVal(e.target.value)}
+                                onKeyDown={e => {
+                                  e.stopPropagation();
+                                  if (e.key === 'Enter') commitRename(node.id);
+                                  if (e.key === 'Escape') setRenamingWfId(null);
+                                }}
+                                onBlur={() => commitRename(node.id)}
+                                onClick={e => e.stopPropagation()}
+                              />
+                            ) : (
+                              <span className="proc-item-name">{node.name || node.id}</span>
+                            )}
+                            {renamingWfId !== node.id && (
+                              <div className="proc-row-acts">
+                                <button title="Дублировать" onClick={e => { e.stopPropagation(); dupWorkflow(node); }}>📋</button>
+                                <button className="del-btn" title="Удалить" onClick={e => { e.stopPropagation(); delWorkflow(node); }}>🗑</button>
+                              </div>
+                            )}
+                          </div>
+                          {hasChildren && !isCollapsed && (
+                            <div className="proc-tree-children">
+                              {node.children.map(child => renderNode(child))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                    return workflowTree.map(node => renderNode(node));
+                  })()
+                }
               </div>
               <hr className="load-divider" />
             </div>
@@ -1663,7 +1749,8 @@ export function ProcessEditor() {
                     <ElShape el={el} selected={isSel} connectSrc={isCFrom} isEditing={isEditingThis} />
                     {/* Intent badge on function nodes (shows when intent is set) */}
                     {el.type === 'function' && el.intent && !isEditingThis && (
-                      <g title={`Intent: ${el.intent}`}>
+                      <g>
+                        <title>{`Интент: ${el.intent}`}</title>
                         <rect x={2} y={EH - 18} width={18} height={14} rx={3}
                           fill="#065f46" stroke="#10b981" strokeWidth={0.5} />
                         <text x={11} y={EH - 11} textAnchor="middle" dominantBaseline="middle"
@@ -1675,19 +1762,21 @@ export function ProcessEditor() {
                       <g className="drill-badge"
                         style={{ opacity: hoveredEl === el.id ? 0.9 : 0 }}
                         onClick={e2 => { e2.stopPropagation(); drillDown(el); }}
-                        title="Детализировать (создать под-процесс)"
                       >
+                        <title>Детализировать (создать под-процесс)</title>
                         <rect x={EW - 24} y={EH - 20} width={22} height={18} rx={4}
                           fill="#1e293b" stroke="#6366f1" strokeWidth={1} />
                         <text x={EW - 13} y={EH - 8} textAnchor="middle" dominantBaseline="middle"
-                          fontSize={11} fill="#93c5fd" fontFamily="system-ui" pointerEvents="none">⊞</text>
+                          fontSize={10} fill="#93c5fd" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">+</text>
                       </g>
                     )}
                     {/* Lock indicator on locked (boundary) events */}
                     {el.locked && (
-                      <text x={EW - 12} y={12} textAnchor="middle" dominantBaseline="middle"
-                        fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none"
-                        title="Заблокировано (граница под-процесса)">🔒</text>
+                      <g>
+                        <title>Заблокировано (граница под-процесса)</title>
+                        <text x={EW - 12} y={12} textAnchor="middle" dominantBaseline="middle"
+                          fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none">🔒</text>
+                      </g>
                     )}
                     {/* Trigger confidence badge on event nodes */}
                     {el.type === 'event' && !isEditingThis && (() => {
@@ -1697,7 +1786,8 @@ export function ProcessEditor() {
                       // No trigger defined
                       if (!tr || (!tr.kind && !tr.type)) {
                         return (
-                          <g title="Триггер не определён">
+                          <g style={{ cursor: 'pointer' }} onClick={e2 => { e2.stopPropagation(); setSelected(el.id); }}>
+                            <title>Триггер не определён — нажмите, чтобы настроить</title>
                             <circle cx={EW - 10} cy={10} r={8} fill="#94a3b8" stroke="white" strokeWidth={1.5} />
                             <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle"
                               fontSize={9} fill="white" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">?</text>
@@ -1707,9 +1797,11 @@ export function ProcessEditor() {
                       // manual_override lock icon
                       if (tr.manual_override) {
                         return (
-                          <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle"
-                            fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none"
-                            title="Триггер задан вручную">🔒</text>
+                          <g>
+                            <title>Триггер задан вручную</title>
+                            <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle"
+                              fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none">🔒</text>
+                          </g>
                         );
                       }
                       // Confidence dot
@@ -1719,8 +1811,10 @@ export function ProcessEditor() {
                       const dotColor = isAmbiguous || (conf !== undefined && conf < 0.7) ? '#ef4444'
                         : conf !== undefined && conf < 0.9 ? '#f59e0b' : '#22c55e';
                       const pct = conf !== undefined ? `${Math.round(conf * 100)}%` : '?';
+                      const tooltipText = isAmbiguous ? 'Триггер неоднозначен — требует уточнения' : `Уверенность определения триггера: ${pct}`;
                       return (
-                        <g title={isAmbiguous ? 'Триггер неоднозначен — требует уточнения' : `Уверенность: ${pct}`}>
+                        <g style={{ cursor: 'pointer' }} onClick={e2 => { e2.stopPropagation(); setSelected(el.id); }}>
+                          <title>{tooltipText}</title>
                           <circle cx={EW - 10} cy={10} r={8} fill={dotColor} stroke="white" strokeWidth={1.5} />
                           <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle"
                             fontSize={7} fill="white" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">

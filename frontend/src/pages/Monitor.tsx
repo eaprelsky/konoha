@@ -46,7 +46,7 @@ function statusLabel(s: string, lang: string): string {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const CSS = `
-  .mon-root { display: grid; grid-template-columns: 340px 1fr; height: calc(100vh - 100px); overflow: hidden; background: #f8fafc; }
+  .mon-root { display: grid; grid-template-columns: 340px 1fr; height: calc(100vh - 96px); overflow: hidden; background: #f8fafc; }
 
   /* Left panel — runs list */
   .mon-left { background: #fff; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
@@ -225,7 +225,7 @@ export function Monitor() {
 
 
   return (
-    <>
+    <Layout activePage="monitor.html">
       <style>{CSS}</style>
       <div className="mon-root">
         {/* ── Left: runs list ── */}
@@ -369,6 +369,6 @@ export function Monitor() {
           )}
         </div>
       </div>
-    </>
+    </Layout>
   );
 }
