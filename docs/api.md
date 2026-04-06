@@ -272,3 +272,233 @@ Read message history for a topic channel.
 curl -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:3200/channels/ops/history?count=20
 ```
+
+## Agent Lifecycle
+
+### POST /agents
+
+Create a new agent definition.
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "my-agent",
+    "name": "My Agent",
+    "model": "claude-sonnet-4-6",
+    "system_prompt": "You are a helpful assistant.",
+    "capabilities": ["yandex-tracker"]
+  }' \
+  http://127.0.0.1:3200/agents
+```
+
+### GET /agents
+
+List all agent definitions. Add `?online=true` to filter by bus status.
+
+### GET /agents/:id
+
+Get a single agent definition with its current runtime state.
+
+### PUT /agents/:id
+
+Update agent definition fields (name, model, system_prompt, capabilities, etc.).
+
+### DELETE /agents/:id
+
+Delete an agent definition. Returns 403 for protected (system) agents.
+
+### GET /agents/:id/status
+
+Get the current runtime state (status, pid, uptime, tmux session).
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3200/agents/kakashi/status
+```
+
+### POST /agents/:id/start
+
+Start a stopped agent (creates tmux session + injects startup message).
+
+### POST /agents/:id/stop
+
+Stop a running agent (sends /exit, then force-kills if needed).
+
+### POST /agents/:id/restart
+
+Stop + start in sequence. Regenerates CLAUDE.md and .mcp.json.
+
+### GET /agents/:id/system-template
+
+Return the rendered system template for this agent.
+
+### GET /agents/tmux/:id
+
+Check if a tmux session for this agent is currently alive.
+
+### Agent memory endpoints
+
+All require admin token.
+
+- `GET /agents/:id/memory` — list memory files for this agent
+- `GET /agents/:id/memory/:filename` — read a memory file
+- `PUT /agents/:id/memory/:filename` — overwrite a memory file
+- `POST /agents/:id/memory/:filename` — append to a memory file
+- `DELETE /agents/:id/memory/:filename` — delete a memory file
+
+### POST /agents/:id/avatar
+
+Upload an avatar image for the agent (multipart/form-data, field: `file`).
+
+### POST /admin/seed-system-agents
+
+Re-run system agent seed (idempotent — skips existing).
+
+---
+
+## Skills
+
+All skill endpoints require authentication.
+
+### GET /skills
+
+List all skills.
+
+### POST /skills
+
+Create a skill.
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Яндекс Трекер",
+    "description": "Работа с задачами",
+    "prompt_snippet": "Use tracker_* MCP tools.",
+    "mcp_servers": [{"name": "tracker", "command": "bun", "args": ["run", "/path/index.ts"]}]
+  }' \
+  http://127.0.0.1:3200/skills
+```
+
+### PATCH /skills/:id
+
+Update skill fields (partial update).
+
+### DELETE /skills/:id
+
+Delete a skill.
+
+---
+
+## Roles
+
+### GET /roles
+
+List all roles.
+
+### POST /roles
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"role_id": "manager", "name": "Менеджер", "description": "Process manager", "strategy": "manual"}' \
+  http://127.0.0.1:3200/roles
+```
+
+### PATCH /roles/:id
+
+Update role fields.
+
+### DELETE /roles/:id
+
+Delete a role.
+
+---
+
+## People
+
+### GET /people
+
+List all people (merged: file-based from `.trusted-users.json` + custom from Redis).
+
+### POST /people
+
+Create a custom person record.
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Иван Петров",
+    "tg_id": 123456789,
+    "position": "Project Manager",
+    "tg_username": "ivanpetrov",
+    "email": "ivan@example.com",
+    "bitrix24_id": "42",
+    "tracker_login": "ivanp"
+  }' \
+  http://127.0.0.1:3200/people
+```
+
+### DELETE /people/:id
+
+Delete a custom person. Returns 403 for file-based (trusted) users.
+
+### POST /people/:id/avatar
+
+Upload an avatar for a person (multipart/form-data, field: `file`).
+
+---
+
+## Data Adapters (Information Systems)
+
+### GET /adapters
+
+List all registered data adapters with their in-memory stats (last success/error, active listeners).
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3200/adapters
+```
+
+### GET /adapters/:name/health
+
+Check adapter connectivity. Returns 200 if healthy, 503 if not.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3200/adapters/bitrix/health
+# {"adapter": "bitrix", "healthy": true}
+```
+
+Available adapters: `bitrix`, `telegram`, `tracker`.
+
+---
+
+## Trigger Resolver
+
+See [event-system.md](event-system.md) for full documentation.
+
+### POST /api/trigger-resolver/resolve
+
+Classify a single event label into a trigger descriptor.
+
+### POST /api/trigger-resolver/resolve-batch
+
+Classify multiple event labels in one call.
+
+---
+
+## Event Manager
+
+See [event-system.md](event-system.md) for full documentation.
+
+### POST /api/event-manager/subscribe
+
+Create a trigger subscription.
+
+### DELETE /api/event-manager/subscribe/:id
+
+Cancel a subscription.
+
+### GET /api/event-manager/subscriptions
+
+List all active subscriptions.
