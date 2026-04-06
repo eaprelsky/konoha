@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction, Skill, ProcessMiningData } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction, Skill, ProcessMiningData } from './types';
 export type { KibaAction };
 
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
@@ -36,6 +36,7 @@ export const api = {
   workflows: {
     list: () => apiFetch<Workflow[]>(`${BASE}/workflows`),
     get: (id: string) => apiFetch<Workflow>(`${BASE}/workflows/${id}`),
+    versions: (id: string) => apiFetch<{ version: string; saved_at?: string }[]>(`${BASE}/workflows/${id}/versions`),
     create: (body: Partial<Workflow> & { id: string; name: string }, draft = false) =>
       apiFetch<Workflow>(`${BASE}/workflows${draft ? '?draft=true' : ''}`, { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: Partial<Workflow>, draft = false) =>
@@ -80,6 +81,20 @@ export const api = {
       return apiFetch<{ cases: Case[]; total: number }>(`${BASE}/cases${qs ? '?' + qs : ''}`);
     },
     get: (id: string) => apiFetch<Case>(`${BASE}/cases/${id}`),
+  },
+
+  /** Alias for cases — use "прогон" terminology in new UI */
+  runs: {
+    list: (filters?: { status?: string; process_id?: string; limit?: number; offset?: number }) => {
+      const p = new URLSearchParams();
+      if (filters?.status)     p.set('status', filters.status);
+      if (filters?.process_id) p.set('process_id', filters.process_id);
+      if (filters?.limit)      p.set('limit', String(filters.limit));
+      if (filters?.offset)     p.set('offset', String(filters.offset));
+      const qs = p.toString();
+      return apiFetch<{ cases: Run[]; total: number }>(`${BASE}/cases${qs ? '?' + qs : ''}`);
+    },
+    get: (id: string) => apiFetch<Run>(`${BASE}/cases/${id}`),
   },
 
   events: {

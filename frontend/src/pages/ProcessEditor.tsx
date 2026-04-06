@@ -315,6 +315,8 @@ export function ProcessEditor() {
   const [autosavePending, setAutosavePending] = useState(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [sideW,   setSideW]   = useState(240);
+  const [versions, setVersions] = useState<{ version: string; saved_at?: string }[]>([]);
+  const [viewingVersion, setViewingVersion] = useState<string | null>(null);
   const [roles,    setRoles]    = useState<RoleDef[]>([]);
   const [docs,     setDocs]     = useState<DocTemplate[]>([]);
   // Sub-process breadcrumb: stack of { id, name } from root to current
@@ -898,6 +900,8 @@ export function ProcessEditor() {
     const wf = workflows.find(w => w.id === id);
     if (!wf) return;
     setWfId(wf.id); setWfName(wf.name || wf.id);
+    setViewingVersion(null);
+    api.workflows.versions(id).then(setVersions).catch(() => setVersions([]));
     setElements([...wf.elements]); setFlow([...(wf.flow || [])]);
     setSelected(null); setMultiSelected([]); setConnectFrom(null); setMode('select');
     const pos: Record<string, Pos> = {};
@@ -1061,6 +1065,46 @@ export function ProcessEditor() {
             >
               {miningLoading ? '⏳' : '⛏'} Mining
             </button>
+          )}
+          {/* Version history selector */}
+          {versions.length > 1 && (
+            <>
+              <div className="sep" />
+              <select
+                style={{ padding: '4px 8px', background: '#1e293b', color: viewingVersion ? '#fbbf24' : '#94a3b8', border: '1px solid #475569', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}
+                value={viewingVersion || ''}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (!v) { setViewingVersion(null); loadWorkflow(wfId); return; }
+                  setViewingVersion(v);
+                  api.workflows.get(`${wfId}?version=${v}`).then(vwf => {
+                    setElements([...vwf.elements]);
+                    setFlow([...(vwf.flow || [])]);
+                    const pos: Record<string, Pos> = {};
+                    vwf.elements.forEach((el, i) => {
+                      if (typeof el.x === 'number' && typeof el.y === 'number' && (el.x !== 0 || el.y !== 0)) {
+                        pos[el.id] = { x: el.x, y: el.y };
+                      } else {
+                        const col = i % 6, row = Math.floor(i / 6);
+                        pos[el.id] = { x: snap(40 + col * (EW + 60)), y: snap(40 + row * (EH + 80)) };
+                      }
+                    });
+                    setPositions(pos);
+                  }).catch(() => {});
+                }}
+                title="История версий"
+              >
+                <option value="">📋 Текущая версия</option>
+                {versions.map(v => (
+                  <option key={v.version} value={v.version}>
+                    v{v.version}{v.saved_at ? ` (${new Date(v.saved_at).toLocaleDateString('ru-RU')})` : ''}
+                  </option>
+                ))}
+              </select>
+              {viewingVersion && (
+                <span style={{ fontSize: 11, color: '#fbbf24' }}>👁 просмотр v{viewingVersion}</span>
+              )}
+            </>
           )}
           {autosavePending && !saving && <span style={{ color: '#94a3b8', fontSize: 11 }}>автосохранение…</span>}
           {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>{error}</span>}

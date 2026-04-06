@@ -61,18 +61,26 @@ export interface WorkflowTrigger {
 }
 
 export type CaseStatus = 'running' | 'done' | 'error';
+export type RunStatus = CaseStatus;
 
-export interface Case {
-  case_id: string;
+/** Alias for Case — use Run in new code */
+export interface Run {
+  case_id: string;      // kept as case_id for API compat — "прогон" in UI
   process_id: string;
   process_version: string;
   subject: string;
-  status: CaseStatus;
-  position?: string;
+  status: RunStatus;
+  position?: string;    // current step element_id
+  current_step_label?: string;  // human-readable current step
+  sla_ok?: boolean;     // true = on time, false = overdue/at risk
+  elapsed_ms?: number;  // time in current step (ms)
   payload: Record<string, unknown>;
   history: HistoryEntry[];
   created_at: string;
 }
+
+/** @deprecated use Run */
+export type Case = Run;
 
 export interface HistoryEntry {
   element_id: string;
