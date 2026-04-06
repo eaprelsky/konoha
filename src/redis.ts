@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 
 const REGISTRY_KEY = "konoha:registry";
 const TOKENS_KEY = "konoha:tokens"; // token → agentId
+const AGENT_TOKEN_KEY = "konoha:atoken"; // agentId → token (reverse index for O(1) cleanup)
 const INVITES_KEY = "konoha:invites"; // invite token → expiry (stored as Redis key with TTL)
 const INVITE_TTL = 3600; // seconds (1 hour)
 const BUS_STREAM = "konoha:bus";
@@ -83,12 +84,12 @@ export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat
   await redis.hset(REGISTRY_KEY, agent.id, JSON.stringify(stored));
 
   // generate and store per-agent token (delete old token for this agent first)
-  const oldTokenData = await redis.hgetall(TOKENS_KEY);
-  for (const [tok, aid] of Object.entries(oldTokenData)) {
-    if (aid === agent.id) await redis.hdel(TOKENS_KEY, tok);
-  }
+  // Use reverse index (agentId → token) for O(1) lookup instead of scanning all tokens
+  const oldToken = await redis.hget(AGENT_TOKEN_KEY, agent.id);
+  if (oldToken) await redis.hdel(TOKENS_KEY, oldToken);
   const agentToken = randomUUID();
   await redis.hset(TOKENS_KEY, agentToken, agent.id);
+  await redis.hset(AGENT_TOKEN_KEY, agent.id, agentToken);
 
   // ensure consumer group exists for this agent
   const agentStream = AGENT_STREAM_PREFIX + agent.id;
@@ -105,6 +106,7 @@ export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat
     if (!e.message?.includes("BUSYGROUP")) throw e;
   }
 
+  invalidateRegistryCache();
   return { ...stored, token: agentToken };
 }
 
@@ -127,7 +129,12 @@ export async function consumeInvite(token: string): Promise<boolean> {
 
 export async function unregisterAgent(id: string, hard = false): Promise<void> {
   if (hard) {
-    await redis.hdel(REGISTRY_KEY, id);
+    const oldToken = await redis.hget(AGENT_TOKEN_KEY, id);
+    const pl = redis.pipeline();
+    pl.hdel(REGISTRY_KEY, id);
+    pl.hdel(AGENT_TOKEN_KEY, id);
+    if (oldToken) pl.hdel(TOKENS_KEY, oldToken);
+    await pl.exec();
   } else {
     const data = await redis.hget(REGISTRY_KEY, id);
     if (data) {
@@ -136,6 +143,7 @@ export async function unregisterAgent(id: string, hard = false): Promise<void> {
       await redis.hset(REGISTRY_KEY, id, JSON.stringify(agent));
     }
   }
+  invalidateRegistryCache();
 }
 
 export async function heartbeat(id: string): Promise<void> {
@@ -145,23 +153,32 @@ export async function heartbeat(id: string): Promise<void> {
   agent.status = "online";
   agent.lastHeartbeat = Date.now();
   await redis.hset(REGISTRY_KEY, id, JSON.stringify(agent));
+  invalidateRegistryCache();
+}
+
+let _registryCache: Agent[] | null = null;
+let _registryCacheAt = 0;
+const REGISTRY_CACHE_TTL_MS = 5000;
+
+function invalidateRegistryCache(): void {
+  _registryCache = null;
 }
 
 export async function listAgents(onlineOnly = false): Promise<Agent[]> {
-  const all = await redis.hgetall(REGISTRY_KEY);
   const now = Date.now();
-  const agents: Agent[] = [];
-
-  for (const [, val] of Object.entries(all)) {
-    const agent: Agent = JSON.parse(val);
-    // mark stale agents as offline
-    if (now - agent.lastHeartbeat > HEARTBEAT_TTL * 1000) {
-      agent.status = "offline";
-    }
-    if (onlineOnly && agent.status === "offline") continue;
-    agents.push(agent);
+  if (!_registryCache || now - _registryCacheAt > REGISTRY_CACHE_TTL_MS) {
+    const all = await redis.hgetall(REGISTRY_KEY);
+    _registryCache = Object.values(all).map(val => {
+      const agent: Agent = JSON.parse(val);
+      if (now - agent.lastHeartbeat > HEARTBEAT_TTL * 1000) {
+        agent.status = "offline";
+      }
+      return agent;
+    });
+    _registryCacheAt = now;
   }
-  return agents;
+  if (onlineOnly) return _registryCache.filter(a => a.status === "online");
+  return _registryCache;
 }
 
 const NOTIFY_PREFIX = "konoha:notify:";
@@ -190,21 +207,29 @@ export async function sendMessage(msg: Message): Promise<string> {
     // Test agents (rtest- prefix) are isolated from production agents in fanout
     const agents = await listAgents(true);
     const senderIsTest = msg.from.startsWith("rtest-");
-    for (const agent of agents) {
-      if (agent.id === msg.from) continue;
-      if (senderIsTest !== agent.id.startsWith("rtest-")) continue;
-      await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
-      await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(entry));
+    const targets = agents.filter(a => a.id !== msg.from && senderIsTest === a.id.startsWith("rtest-"));
+    if (targets.length > 0) {
+      const pl = redis.pipeline();
+      const notify = JSON.stringify(entry);
+      for (const agent of targets) {
+        pl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        pl.publish(NOTIFY_PREFIX + agent.id, notify);
+      }
+      await pl.exec();
     }
   } else if (msg.to.startsWith("role:")) {
     // role-based routing
     const role = msg.to.slice(5);
     const agents = await listAgents(true);
-    for (const agent of agents) {
-      if (agent.roles.includes(role) && agent.id !== msg.from) {
-        await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
-        await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(entry));
+    const targets = agents.filter(a => a.roles.includes(role) && a.id !== msg.from);
+    if (targets.length > 0) {
+      const pl = redis.pipeline();
+      const notify = JSON.stringify(entry);
+      for (const agent of targets) {
+        pl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        pl.publish(NOTIFY_PREFIX + agent.id, notify);
       }
+      await pl.exec();
     }
   } else {
     // direct message
@@ -320,8 +345,19 @@ export async function readHistory(target: string, count = 20): Promise<Message[]
   return entries.map(([id, fields]) => fieldsToMessage(id, fields)).reverse();
 }
 
+async function scanKeys(pattern: string): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 100) as [string, string[]];
+    keys.push(...batch);
+    cursor = nextCursor;
+  } while (cursor !== "0");
+  return keys;
+}
+
 export async function listChannels(): Promise<string[]> {
-  const keys = await redis.keys(CHANNEL_STREAM_PREFIX + "*");
+  const keys = await scanKeys(CHANNEL_STREAM_PREFIX + "*");
   return keys.map(k => k.replace(CHANNEL_STREAM_PREFIX, ""));
 }
 
@@ -370,22 +406,23 @@ export async function publishEvent(event: KonohaEvent): Promise<string> {
   // Write to global events stream
   const id = await redis.xadd(EVENTS_STREAM, "*", ...Object.entries(entry).flat());
 
-  // Route to subscribed agents
-  const all = await redis.hgetall(REGISTRY_KEY);
-  for (const [, val] of Object.entries(all)) {
-    const agent: Agent = JSON.parse(val);
-    if (!agent.eventSubscriptions?.includes(event.type)) continue;
-
-    // Deliver as a message to the agent's stream
-    const msgEntry: Record<string, string> = {
-      from: event.source,
-      to: agent.id,
-      type: "event",
-      text: JSON.stringify(event),
-      timestamp: event.timestamp,
-    };
-    await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(msgEntry).flat());
-    await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(msgEntry));
+  // Route to subscribed agents (use cached registry, batch via pipeline)
+  const all = await listAgents();
+  const subscribers = all.filter(a => a.eventSubscriptions?.includes(event.type));
+  if (subscribers.length > 0) {
+    const pl = redis.pipeline();
+    for (const agent of subscribers) {
+      const msgEntry: Record<string, string> = {
+        from: event.source,
+        to: agent.id,
+        type: "event",
+        text: JSON.stringify(event),
+        timestamp: event.timestamp,
+      };
+      pl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(msgEntry).flat());
+      pl.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(msgEntry));
+    }
+    await pl.exec();
   }
 
   return id;
