@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -683,7 +682,7 @@ export function Agents() {
     });
 
   return (
-    <Layout activePage="agents.html">
+    <>
       <style>{styles + KIBA_CSS}</style>
       <div style={{ display: 'flex', height: 'calc(100vh - 105px)' }}>
       <div className="ag-body" style={{ flex: 1, overflowY: 'auto' }}>
@@ -819,6 +818,6 @@ export function Agents() {
       {showNew && <NewAgentModal onClose={() => setShowNew(false)} onCreated={load} />}
       {tmuxAgent && <TmuxModal agentId={tmuxAgent} onClose={() => setTmuxAgent(null)} />}
       {editAgent && <EditAgentModal agent={editAgent} onClose={() => setEditAgent(null)} onSaved={load} />}
-    </Layout>
+    </>
   );
 }

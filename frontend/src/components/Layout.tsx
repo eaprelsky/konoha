@@ -1,17 +1,11 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useI18n } from '../context/I18nContext';
+import { useSubtitle } from '../context/SubtitleContext';
 import { ProfileModal } from './ProfileModal';
 
 export function isLoggedIn(): boolean {
   return localStorage.getItem('konoha_dash_auth') === '1';
-}
-
-function useAuthGuard() {
-  useEffect(() => {
-    if (!isLoggedIn()) {
-      window.location.replace('/ui/login.html');
-    }
-  }, []);
 }
 
 // ── Group-based navigation ────────────────────────────────────────────────────
@@ -23,51 +17,51 @@ const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] 
     id: 'user',
     keyRu: 'Пользователь',
     keyEn: 'User',
-    pages: ['my-tasks.html', 'my-calendar.html'],
+    pages: ['/my-tasks', '/my-calendar'],
   },
   {
     id: 'executors',
     keyRu: 'Исполнители',
     keyEn: 'Executors',
-    pages: ['roles.html', 'agents.html', 'people.html', 'skills.html'],
+    pages: ['/roles', '/agents', '/people', '/skills'],
   },
   {
     id: 'processes',
     keyRu: 'Процессы',
     keyEn: 'Processes',
-    pages: ['editor.html', 'monitor.html', 'calendar.html', 'documents.html'],
+    pages: ['/editor', '/monitor', '/calendar', '/documents'],
   },
   {
     id: 'system',
     keyRu: 'Система',
     keyEn: 'System',
-    pages: ['health.html', 'connectors.html', 'messages.html', 'eventlog.html', 'kb.html', 'workspace.html', 'admin.html'],
+    pages: ['/health', '/connectors', '/messages', '/eventlog', '/kb', '/workspace', '/admin'],
   },
 ];
 
-const NAV_ITEMS: Record<string, { keyRu: string; keyEn: string; href: string }> = {
-  'my-tasks.html':     { keyRu: 'Мои задачи',    keyEn: 'My Tasks',   href: '/ui/my-tasks.html' },
-  'calendar.html':     { keyRu: 'Календарь',      keyEn: 'Calendar',   href: '/ui/calendar.html' },
-  'my-calendar.html':  { keyRu: 'Календарь',      keyEn: 'Calendar',   href: '/ui/my-calendar.html' },
-  'roles.html':        { keyRu: 'Роли',            keyEn: 'Roles',      href: '/ui/roles.html' },
-  'agents.html':       { keyRu: 'Агенты',          keyEn: 'Agents',     href: '/ui/agents.html' },
-  'people.html':       { keyRu: 'Люди',            keyEn: 'People',     href: '/ui/people.html' },
-  'skills.html':       { keyRu: 'Навыки',          keyEn: 'Skills',     href: '/ui/skills.html' },
-  'editor.html':       { keyRu: 'Редактор',        keyEn: 'Editor',     href: '/ui/editor.html' },
-  'monitor.html':      { keyRu: 'Монитор',         keyEn: 'Monitor',    href: '/ui/monitor.html' },
-  'documents.html':    { keyRu: 'Документы',       keyEn: 'Documents',  href: '/ui/documents.html' },
-  'connectors.html':   { keyRu: 'ИС',              keyEn: 'IS',         href: '/ui/connectors.html' },
-  'messages.html':     { keyRu: 'Сообщения',       keyEn: 'Messages',   href: '/ui/messages.html' },
-  'eventlog.html':     { keyRu: 'Лог событий',     keyEn: 'Event Log',  href: '/ui/eventlog.html' },
-  'kb.html':           { keyRu: 'База знаний',      keyEn: 'KB',         href: '/ui/kb.html' },
-  'workspace.html':    { keyRu: 'Workspace',        keyEn: 'Workspace',  href: '/ui/workspace.html' },
-  'admin.html':        { keyRu: 'Админ',            keyEn: 'Admin',      href: '/ui/admin.html' },
-  'health.html':       { keyRu: 'Состояние',        keyEn: 'Health',     href: '/ui/health.html' },
+const NAV_ITEMS: Record<string, { keyRu: string; keyEn: string; to: string }> = {
+  '/my-tasks':     { keyRu: 'Мои задачи',   keyEn: 'My Tasks',   to: '/my-tasks' },
+  '/calendar':     { keyRu: 'Календарь',     keyEn: 'Calendar',   to: '/calendar' },
+  '/my-calendar':  { keyRu: 'Календарь',     keyEn: 'Calendar',   to: '/my-calendar' },
+  '/roles':        { keyRu: 'Роли',           keyEn: 'Roles',      to: '/roles' },
+  '/agents':       { keyRu: 'Агенты',         keyEn: 'Agents',     to: '/agents' },
+  '/people':       { keyRu: 'Люди',           keyEn: 'People',     to: '/people' },
+  '/skills':       { keyRu: 'Навыки',         keyEn: 'Skills',     to: '/skills' },
+  '/editor':       { keyRu: 'Редактор',       keyEn: 'Editor',     to: '/editor' },
+  '/monitor':      { keyRu: 'Монитор',        keyEn: 'Monitor',    to: '/monitor' },
+  '/documents':    { keyRu: 'Документы',      keyEn: 'Documents',  to: '/documents' },
+  '/connectors':   { keyRu: 'ИС',             keyEn: 'IS',         to: '/connectors' },
+  '/messages':     { keyRu: 'Сообщения',      keyEn: 'Messages',   to: '/messages' },
+  '/eventlog':     { keyRu: 'Лог событий',    keyEn: 'Event Log',  to: '/eventlog' },
+  '/kb':           { keyRu: 'База знаний',     keyEn: 'KB',         to: '/kb' },
+  '/workspace':    { keyRu: 'Workspace',       keyEn: 'Workspace',  to: '/workspace' },
+  '/admin':        { keyRu: 'Админ',           keyEn: 'Admin',      to: '/admin' },
+  '/health':       { keyRu: 'Состояние',       keyEn: 'Health',     to: '/health' },
 };
 
-function detectGroup(page: string): NavGroup {
+function detectGroup(pathname: string): NavGroup {
   for (const g of NAV_GROUPS) {
-    if (g.pages.includes(page)) return g.id;
+    if (g.pages.includes(pathname)) return g.id;
   }
   return 'system';
 }
@@ -108,22 +102,28 @@ const styles = `
 `;
 
 interface LayoutProps {
-  children: ReactNode;
-  activePage: string;
-  subtitle?: string;
+  children?: React.ReactNode;
+  activePage?: string;   // kept for backward compat, unused
+  subtitle?: string;     // kept for backward compat, unused (use SubtitleContext instead)
 }
 
-export function Layout({ children, activePage, subtitle }: LayoutProps) {
-  useAuthGuard();
+export function Layout({ children }: LayoutProps) {
   const { lang, setLang } = useI18n();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const subtitle = useSubtitle();
   const [showProfile, setShowProfile] = useState(false);
-  const [activeGroup, setActiveGroup] = useState<NavGroup>(() => detectGroup(activePage));
+  const [activeGroup, setActiveGroup] = useState<NavGroup>(() => detectGroup(location.pathname));
+
+  // Keep activeGroup in sync with navigation
+  const currentGroup = detectGroup(location.pathname);
+  const activeGroupResolved = currentGroup !== 'system' || NAV_GROUPS.find(g => g.id === activeGroup) ? currentGroup : activeGroup;
 
   function label(item: { keyRu: string; keyEn: string }) {
     return lang === 'ru' ? item.keyRu : item.keyEn;
   }
 
-  const group = NAV_GROUPS.find(g => g.id === activeGroup)!;
+  const group = NAV_GROUPS.find(g => g.id === activeGroupResolved)!;
   const subItems = group.pages.map(p => NAV_ITEMS[p]).filter(Boolean);
 
   return (
@@ -137,12 +137,12 @@ export function Layout({ children, activePage, subtitle }: LayoutProps) {
           {NAV_GROUPS.map(g => (
             <button
               key={g.id}
-              className={`kw-group-btn${activeGroup === g.id ? ' active' : ''}`}
+              className={`kw-group-btn${activeGroupResolved === g.id ? ' active' : ''}`}
               onClick={() => {
                 const firstPage = g.pages[0];
                 const firstItem = NAV_ITEMS[firstPage];
                 if (firstItem) {
-                  window.location.href = firstItem.href;
+                  navigate(firstItem.to);
                 } else {
                   setActiveGroup(g.id);
                 }
@@ -158,7 +158,7 @@ export function Layout({ children, activePage, subtitle }: LayoutProps) {
             <button className={`lang-btn${lang === 'ru' ? ' active' : ''}`} onClick={() => setLang('ru')}>RU</button>
           </div>
           <button className="profile-btn" onClick={() => setShowProfile(true)}>👤</button>
-          <button className="logout-btn" onClick={() => { localStorage.removeItem('konoha_dash_auth'); window.location.replace('/ui/login.html'); }}>
+          <button className="logout-btn" onClick={() => { localStorage.removeItem('konoha_dash_auth'); navigate('/login'); }}>
             {lang === 'ru' ? 'Выйти' : 'Logout'}
           </button>
         </div>
@@ -166,16 +166,16 @@ export function Layout({ children, activePage, subtitle }: LayoutProps) {
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
       <nav>
         {subItems.map(item => (
-          <a
-            key={item.href}
-            href={item.href}
-            className={item.href.endsWith(activePage) ? 'active' : undefined}
+          <Link
+            key={item.to}
+            to={item.to}
+            className={location.pathname === item.to ? 'active' : undefined}
           >
             {label(item)}
-          </a>
+          </Link>
         ))}
       </nav>
-      {children}
+      {children ?? <Outlet />}
     </>
   );
 }

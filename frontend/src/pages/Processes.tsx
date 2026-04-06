@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { EpcRenderer } from '../components/EpcRenderer';
 import { useApi } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -217,7 +216,7 @@ export function Processes() {
   }
 
   return (
-    <Layout activePage="processes.html">
+    <>
       <style>{styles}</style>
       <div className="layout">
         <div className="sidebar">
@@ -267,6 +266,6 @@ export function Processes() {
         </div>
       </div>
       {showNew && <NewProcessModal onClose={() => setShowNew(false)} onCreated={handleCreated} />}
-    </Layout>
+    </>
   );
 }

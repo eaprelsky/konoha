@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -288,7 +287,7 @@ export function People() {
   }
 
   return (
-    <Layout activePage="people.html">
+    <>
       <style>{styles + KIBA_CSS}</style>
       <div style={{ display: 'flex', height: 'calc(100vh - 105px)' }}>
       <div className="ppl-body" style={{ flex: 1, overflowY: 'auto' }}>
@@ -390,6 +389,6 @@ export function People() {
           onSaved={load}
         />
       )}
-    </Layout>
+    </>
   );
 }

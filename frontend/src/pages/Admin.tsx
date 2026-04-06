@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -97,7 +96,7 @@ export function Admin() {
   const running = agents.filter(a => a.lifecycle?.status === 'running').length;
 
   return (
-    <Layout activePage="admin.html">
+    <>
       <style>{styles}</style>
       <div className="adm-body">
         <div className="container">
@@ -249,6 +248,6 @@ export function Admin() {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

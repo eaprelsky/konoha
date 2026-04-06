@@ -7,7 +7,6 @@
  * with a process-level filter.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
 
@@ -325,7 +324,7 @@ export function MyCalendar() {
   }
 
   return (
-    <Layout activePage="my-calendar.html">
+    <>
       <style>{CSS}</style>
       <div className="mycal-root" onClick={() => setTooltip(null)}>
         {/* Left panel */}
@@ -377,6 +376,6 @@ export function MyCalendar() {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

@@ -25,7 +25,9 @@ import kbRouter, { kbChatRouter } from "./routes/kb";
 import workflowsRouter from "./routes/workflows";
 import adminRouter from "./routes/admin";
 import { seedSystemAgents } from "./routes/admin";
-import staticRouter from "./middleware/static";
+import staticRouter, { DIST_UI_DIR } from "./middleware/static";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
 mkdirSync(ATTACHMENTS_DIR, { recursive: true });
@@ -42,6 +44,14 @@ const PORT = parseInt(process.env.KONOHA_PORT || "3100");
 const app = new Hono();
 
 // Static UI files (no auth required)
+// Handle /ui/ (trailing slash) — Hono sub-router doesn't match this
+app.get("/ui/", (c) => {
+  const indexPath = join(DIST_UI_DIR, "index.html");
+  if (existsSync(indexPath)) {
+    return c.body(readFileSync(indexPath), 200, { "content-type": "text/html; charset=utf-8" });
+  }
+  return c.redirect("/ui");
+});
 app.route("/ui", staticRouter);
 
 // Admin + health + webhook trigger + adapters (mixed auth, see admin.ts)

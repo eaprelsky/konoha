@@ -3,7 +3,6 @@
  * Work items grouped by urgency: overdue / due soon / in progress.
  */
 import { useState, useCallback, useEffect } from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -122,7 +121,7 @@ export function MyTasks() {
   const isEmpty = items.length === 0 && !loading;
 
   return (
-    <Layout activePage="my-tasks.html">
+    <>
       <style>{CSS}</style>
       <div className="mt-root">
         <div className="mt-header">
@@ -191,6 +190,6 @@ export function MyTasks() {
           );
         })}
       </div>
-    </Layout>
+    </>
   );
 }

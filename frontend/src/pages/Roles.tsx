@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -360,7 +359,7 @@ export function Roles() {
   function openNew()             { setEditRole(null); setShowModal(true); }
 
   return (
-    <Layout activePage="roles.html">
+    <>
       <style>{styles + KIBA_CSS}</style>
       <div style={{ display: 'flex', height: 'calc(100vh - 105px)' }}>
       <div className="rl-body" style={{ flex: 1, overflowY: 'auto' }}>
@@ -432,6 +431,6 @@ export function Roles() {
           onSaved={load}
         />
       )}
-    </Layout>
+    </>
   );
 }

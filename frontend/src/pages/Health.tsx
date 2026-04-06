@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -65,7 +64,7 @@ export function Health() {
   const offline = agents.length - online;
 
   return (
-    <Layout activePage="health.html">
+    <>
       <style>{styles}</style>
       <div className="h-body">
         <div className="container">
@@ -128,6 +127,6 @@ export function Health() {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

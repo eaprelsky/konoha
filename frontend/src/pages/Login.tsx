@@ -110,7 +110,7 @@ export function Login() {
       if (username === VALID_USER && password === VALID_PASS) {
         localStorage.setItem('konoha_dash_auth', '1');
         localStorage.setItem('konoha_dash_user', username);
-        window.location.replace('/ui/index.html');
+        window.location.replace('/ui/');
       } else {
         setError('Invalid username or password');
         setLoading(false);

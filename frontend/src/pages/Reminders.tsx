@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -208,7 +207,7 @@ export function Reminders() {
   }
 
   return (
-    <Layout activePage="reminders.html">
+    <>
       <style>{styles}</style>
       <div className="rm-body">
         <div className="container">
@@ -284,6 +283,6 @@ export function Reminders() {
       </div>
 
       {showNew && <NewReminderModal onClose={() => setShowNew(false)} onCreated={load} />}
-    </Layout>
+    </>
   );
 }

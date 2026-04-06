@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -140,7 +139,7 @@ export function Documents() {
   }
 
   return (
-    <Layout activePage="documents.html">
+    <>
       <style>{styles}</style>
       <div className="dc-body">
         <div className="container">
@@ -185,6 +184,6 @@ export function Documents() {
         </div>
       </div>
       {showModal && <DocModal doc={editDoc} onClose={() => setShowModal(false)} onSaved={load} />}
-    </Layout>
+    </>
   );
 }

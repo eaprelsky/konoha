@@ -17,7 +17,16 @@ const MIME: Record<string, string> = {
 
 const router = new Hono();
 
-router.get("/", (c) => c.redirect("/ui/index.html"));
+// Serve index.html for root (handles both /ui and /ui/)
+function serveIndex(c: any) {
+  const indexPath = join(DIST_UI_DIR, "index.html");
+  if (existsSync(indexPath)) {
+    return c.body(readFileSync(indexPath), 200, { "content-type": "text/html; charset=utf-8" });
+  }
+  return c.text("Not found", 404);
+}
+
+router.get("/", serveIndex);
 router.get("/:file{.+}", (c) => {
   const name = c.req.param("file");
   if (name.includes("..")) return c.text("Forbidden", 403);
@@ -28,6 +37,13 @@ router.get("/:file{.+}", (c) => {
     const filePath = join(base, name);
     if (existsSync(filePath) && statSync(filePath).isFile()) {
       return c.body(readFileSync(filePath), 200, { "content-type": mime });
+    }
+  }
+  // SPA fallback: serve index.html for non-asset paths
+  if (!ext || ext === ".html") {
+    const indexPath = join(DIST_UI_DIR, "index.html");
+    if (existsSync(indexPath)) {
+      return c.body(readFileSync(indexPath), 200, { "content-type": "text/html; charset=utf-8" });
     }
   }
   return c.text("Not found", 404);

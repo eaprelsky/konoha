@@ -5,7 +5,6 @@
  * Left panel: filters by event type + process.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
 import type { Workflow } from '../api/types';
@@ -387,7 +386,7 @@ export function Calendar() {
   }
 
   return (
-    <Layout activePage="calendar.html">
+    <>
       <style>{CSS}</style>
       <div className="cal-root" onClick={() => setTooltip(null)}>
         {/* Left panel */}
@@ -452,6 +451,6 @@ export function Calendar() {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

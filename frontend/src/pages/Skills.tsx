@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
 import type { Skill, McpServerDef } from '../api/types';
@@ -222,7 +221,7 @@ export function Skills() {
   }
 
   return (
-    <Layout activePage="skills.html">
+    <>
       <style>{styles}</style>
       <div className="skills-body">
         <div className="container">
@@ -310,6 +309,6 @@ export function Skills() {
           onSaved={load}
         />
       )}
-    </Layout>
+    </>
   );
 }

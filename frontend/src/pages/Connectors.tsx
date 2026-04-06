@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -83,7 +82,7 @@ export function Connectors() {
   }
 
   return (
-    <Layout activePage="connectors.html">
+    <>
       <style>{styles}</style>
       <div className="cn-body">
         <div className="container">
@@ -126,6 +125,6 @@ export function Connectors() {
           <div className="refresh-info">Последнее обновление: {lastUpdate}</div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

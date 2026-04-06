@@ -5,7 +5,6 @@
  * Right panel: EPC diagram with highlighted current step + history timeline.
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Layout } from '../components/Layout';
 import { EpcRenderer } from '../components/EpcRenderer';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
@@ -225,7 +224,7 @@ export function Monitor() {
 
 
   return (
-    <Layout activePage="monitor.html">
+    <>
       <style>{CSS}</style>
       <div className="mon-root">
         {/* ── Left: runs list ── */}
@@ -369,6 +368,6 @@ export function Monitor() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

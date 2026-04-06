@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
+import { useSetSubtitle } from '../context/SubtitleContext';
 import { api } from '../api/client';
 
 const styles = `
@@ -23,6 +23,7 @@ export function Dashboard() {
   const token = useToken();
   const [wfCount, setWfCount] = useState<number | null>(null);
   const [wiCount, setWiCount] = useState<number | null>(null);
+  useSetSubtitle('AI Factory — coMind');
 
   useEffect(() => {
     if (!token) return;
@@ -37,7 +38,7 @@ export function Dashboard() {
   }, [token]);
 
   return (
-    <Layout activePage="index.html" subtitle="AI Factory — coMind">
+    <>
       <style>{styles}</style>
       <div className="container">
         <div className="grid" id="stats">
@@ -60,11 +61,11 @@ export function Dashboard() {
         <div className="panel">
           <h2>Навигация</h2>
           <div className="links">
-            <a href="/ui/processes.html"><span className="icon">🗂</span> Реестр процессов — eEPC-процессы и активные кейсы</a>
-            <a href="/ui/workitems.html"><span className="icon">✅</span> Задачи — очередь задач с фильтрами и действиями</a>
+            <a href="/ui/processes"><span className="icon">🗂</span> Реестр процессов — eEPC-процессы и активные кейсы</a>
+            <a href="/ui/workitems"><span className="icon">✅</span> Задачи — очередь задач с фильтрами и действиями</a>
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

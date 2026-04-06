@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Layout } from '../components/Layout';
 import { useInterval } from '../hooks/useApi';
+import { useSetSubtitle } from '../context/SubtitleContext';
 import { api } from '../api/client';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -620,9 +620,10 @@ export function EventMonitor() {
   const processes = Array.from(new Set(subs.map(s => s.process_id))).filter(Boolean);
 
   const badge = summary.errors + summary.manual_fallback;
+  useSetSubtitle(badge > 0 ? `${badge} требуют внимания` : undefined);
 
   return (
-    <Layout activePage="event-monitor.html" subtitle={badge > 0 ? `${badge} требуют внимания` : undefined}>
+    <>
       <style>{styles}</style>
       <div className="em-body">
         <div className="em-container">
@@ -719,6 +720,6 @@ export function EventMonitor() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

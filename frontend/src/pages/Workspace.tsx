@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -108,7 +107,7 @@ export function Workspace() {
   }
 
   return (
-    <Layout activePage="workspace.html">
+    <>
       <style>{styles}</style>
       <div className="ws-body">
         <div className="container">
@@ -170,6 +169,6 @@ export function Workspace() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

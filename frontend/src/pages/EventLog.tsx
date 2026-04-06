@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -72,7 +71,7 @@ export function EventLog() {
   useState(() => { setTimeout(load, 0); });
 
   return (
-    <Layout activePage="eventlog.html">
+    <>
       <style>{styles}</style>
       <div className="el-body">
         <div className="container">
@@ -117,6 +116,6 @@ export function EventLog() {
           <div className="refresh-info">Авто-обновление 10с • Обновлено: {lastUpdate}</div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

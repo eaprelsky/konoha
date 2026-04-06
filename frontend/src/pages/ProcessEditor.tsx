@@ -4,7 +4,6 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
 import type { Workflow, WorkflowElement, RoleDef, DocTemplate, ProcessMiningData } from '../api/types';
@@ -1034,7 +1033,7 @@ export function ProcessEditor() {
   const workflowTree = sideSearch.trim() ? [] : buildTree(workflows);
 
   return (
-    <Layout activePage="editor.html">
+    <>
       <style>{CSS}</style>
       <div className="ipe-root">
 
@@ -2054,6 +2053,6 @@ export function ProcessEditor() {
           </div>
         </div>
       )}
-    </Layout>
+    </>
   );
 }

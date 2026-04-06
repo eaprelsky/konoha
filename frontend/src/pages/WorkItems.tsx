@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { StatusBadge } from '../components/StatusBadge';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
@@ -228,7 +227,7 @@ export function WorkItems() {
   const [localFilters, setLocalFilters] = useState<WorkItemFilters>({});
 
   return (
-    <Layout activePage="workitems.html">
+    <>
       <style>{styles}</style>
       <div className="wf-body">
         <div className="container">
@@ -336,6 +335,6 @@ export function WorkItems() {
 
       {showNewTask && <NewTaskModal onClose={() => setShowNewTask(false)} onCreated={loadItems} />}
       <DetailsModal item={detailItem} onClose={() => setDetailItem(null)} />
-    </Layout>
+    </>
   );
 }

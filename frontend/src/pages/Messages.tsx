@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import type React from 'react';
-import { Layout } from '../components/Layout';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -100,7 +99,7 @@ export function Messages() {
   }
 
   return (
-    <Layout activePage="messages.html">
+    <>
       <style>{styles}</style>
       <div className="msg-body">
         <div className="container">
@@ -191,6 +190,6 @@ export function Messages() {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

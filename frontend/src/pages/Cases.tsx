@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Layout } from '../components/Layout';
 import { StatusBadge } from '../components/StatusBadge';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
@@ -110,7 +109,7 @@ export function Cases() {
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
   return (
-    <Layout activePage="cases.html">
+    <>
       <style>{styles}</style>
       <div className="cs-body">
         <div className="container">
@@ -204,6 +203,6 @@ export function Cases() {
           </div>
         </div>
       )}
-    </Layout>
+    </>
   );
 }
