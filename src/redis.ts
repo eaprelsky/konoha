@@ -209,13 +209,19 @@ export async function sendMessage(msg: Message): Promise<string> {
     const senderIsTest = msg.from.startsWith("rtest-");
     const targets = agents.filter(a => a.id !== msg.from && senderIsTest === a.id.startsWith("rtest-"));
     if (targets.length > 0) {
-      const pl = redis.pipeline();
-      const notify = JSON.stringify(entry);
+      // Phase 1: xadd to capture per-agent stream IDs
+      const xaddPl = redis.pipeline();
       for (const agent of targets) {
-        pl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
-        pl.publish(NOTIFY_PREFIX + agent.id, notify);
+        xaddPl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
       }
-      await pl.exec();
+      const xaddResults = await xaddPl.exec();
+      // Phase 2: publish with _sid so SSE clients can track position
+      const pubPl = redis.pipeline();
+      for (let i = 0; i < targets.length; i++) {
+        const sid = (xaddResults![i][1] as string) || "";
+        pubPl.publish(NOTIFY_PREFIX + targets[i].id, JSON.stringify({...entry, _sid: sid}));
+      }
+      await pubPl.exec();
     }
   } else if (msg.to.startsWith("role:")) {
     // role-based routing
@@ -223,18 +229,22 @@ export async function sendMessage(msg: Message): Promise<string> {
     const agents = await listAgents(true);
     const targets = agents.filter(a => a.roles.includes(role) && a.id !== msg.from);
     if (targets.length > 0) {
-      const pl = redis.pipeline();
-      const notify = JSON.stringify(entry);
+      const xaddPl = redis.pipeline();
       for (const agent of targets) {
-        pl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
-        pl.publish(NOTIFY_PREFIX + agent.id, notify);
+        xaddPl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
       }
-      await pl.exec();
+      const xaddResults = await xaddPl.exec();
+      const pubPl = redis.pipeline();
+      for (let i = 0; i < targets.length; i++) {
+        const sid = (xaddResults![i][1] as string) || "";
+        pubPl.publish(NOTIFY_PREFIX + targets[i].id, JSON.stringify({...entry, _sid: sid}));
+      }
+      await pubPl.exec();
     }
   } else {
-    // direct message
-    await redis.xadd(AGENT_STREAM_PREFIX + msg.to, "*", ...Object.entries(entry).flat());
-    await redis.publish(NOTIFY_PREFIX + msg.to, JSON.stringify(entry));
+    // direct message: capture stream ID and include in pub/sub so SSE clients can track position
+    const streamId = await redis.xadd(AGENT_STREAM_PREFIX + msg.to, "*", ...Object.entries(entry).flat());
+    await redis.publish(NOTIFY_PREFIX + msg.to, JSON.stringify({...entry, _sid: streamId}));
   }
 
   // channel routing
@@ -345,6 +355,14 @@ export async function readHistory(target: string, count = 20): Promise<Message[]
   return entries.map(([id, fields]) => fieldsToMessage(id, fields)).reverse();
 }
 
+// Replay messages from agent stream after sinceId (exclusive) — used by SSE on reconnect.
+export async function replayStream(agentId: string, sinceId: string, count = 200): Promise<Message[]> {
+  const stream = AGENT_STREAM_PREFIX + agentId;
+  // `(sinceId` is the exclusive start notation in Redis XRANGE (Redis 6.2+)
+  const entries = await redis.xrange(stream, `(${sinceId}`, "+", "COUNT", count) as [string, string[]][];
+  return entries.map(([id, fields]) => fieldsToMessage(id, fields));
+}
+
 async function scanKeys(pattern: string): Promise<string[]> {
   const keys: string[] = [];
   let cursor = "0";
@@ -374,6 +392,7 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
         try { attachments = typeof obj.attachments === 'string' ? JSON.parse(obj.attachments) : obj.attachments; } catch {}
       }
       const msg: Message = {
+        id: obj._sid,  // stream ID for SSE Last-Event-ID tracking
         from: obj.from,
         to: obj.to,
         type: obj.type || "message",

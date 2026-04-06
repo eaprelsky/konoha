@@ -461,19 +461,28 @@ async def debouncer(raw_queue: asyncio.Queue, batched_queue: asyncio.Queue, cfg:
 # ── Konoha SSE watcher ────────────────────────────────────────────────────────
 
 async def konoha_sse_watcher(raw_queue: asyncio.Queue, cfg: dict) -> None:
-    """Read Konoha SSE stream via curl subprocess."""
+    """Read Konoha SSE stream via curl. Supports Last-Event-ID replay on reconnect."""
     agent_id = cfg["agent_id"]
     url = f"{KONOHA_URL}/messages/{agent_id}/stream"
     backoff = 1
+    last_event_id = ""
+    last_event_time = [0.0]  # mutable container for stale_checker closure
+    SSE_STALE_TIMEOUT = cfg.get("sse_stale_timeout", 300)  # seconds
 
     while True:
         proc = None
         try:
-            log.info(f"SSE connecting via curl to {url}")
+            extra_headers: list[str] = []
+            if last_event_id:
+                extra_headers = ["-H", f"Last-Event-ID: {last_event_id}"]
+                log.info(f"SSE reconnecting with Last-Event-ID={last_event_id} to {url}")
+            else:
+                log.info(f"SSE connecting via curl to {url}")
             env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
             proc = await asyncio.create_subprocess_exec(
                 "curl", "-s", "-N",
                 "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                *extra_headers,
                 url,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
@@ -482,26 +491,47 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue, cfg: dict) -> None:
 
             backoff = 1
             buf = b""
-            async for chunk in proc.stdout:  # type: ignore
-                buf += chunk
-                while b"\n" in buf:
-                    raw_line, buf = buf.split(b"\n", 1)
-                    line = raw_line.decode("utf-8", errors="replace").strip()
-                    if not line.startswith("data:"):
-                        continue
-                    payload = line[5:].strip()
-                    if not payload:
-                        continue
-                    try:
-                        data = json.loads(payload)
-                        log.info(f"SSE event from {data.get('from','?')}: {data.get('text','')[:60]}")
-                        if is_session_noise(data):
-                            log.debug(f"Skipping SESSION noise: {data.get('text','')[:50]}")
+            last_event_time[0] = asyncio.get_running_loop().time()
+
+            async def stale_checker(p: asyncio.subprocess.Process) -> None:
+                while p.returncode is None:
+                    await asyncio.sleep(60)
+                    elapsed = asyncio.get_running_loop().time() - last_event_time[0]
+                    if elapsed > SSE_STALE_TIMEOUT and p.returncode is None:
+                        log.warning(f"SSE stale: no event in {int(elapsed)}s — forcing reconnect")
+                        p.kill()
+                        return
+
+            stale_task = asyncio.create_task(stale_checker(proc))
+
+            try:
+                async for chunk in proc.stdout:  # type: ignore
+                    buf += chunk
+                    while b"\n" in buf:
+                        raw_line, buf = buf.split(b"\n", 1)
+                        line = raw_line.decode("utf-8", errors="replace").strip()
+                        if line.startswith("id:"):
+                            last_event_id = line[3:].strip()
+                            last_event_time[0] = asyncio.get_running_loop().time()
                             continue
-                        _health["last_received_at"] = asyncio.get_running_loop().time()
-                        await raw_queue.put({"source": "konoha", "data": data})
-                    except json.JSONDecodeError:
-                        pass
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if not payload:
+                            continue
+                        try:
+                            data = json.loads(payload)
+                            log.info(f"SSE event from {data.get('from','?')}: {data.get('text','')[:60]}")
+                            if is_session_noise(data):
+                                log.debug(f"Skipping SESSION noise: {data.get('text','')[:50]}")
+                                continue
+                            last_event_time[0] = asyncio.get_running_loop().time()
+                            _health["last_received_at"] = last_event_time[0]
+                            await raw_queue.put({"source": "konoha", "data": data})
+                        except json.JSONDecodeError:
+                            pass
+            finally:
+                stale_task.cancel()
 
             rc = await proc.wait()
             log.warning(f"curl exited with code {rc}, retrying in {backoff}s")

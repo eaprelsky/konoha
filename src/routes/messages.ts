@@ -10,6 +10,7 @@ import {
   readMessagesPending,
   ackMessages,
   readHistory,
+  replayStream,
   listChannels,
   createSubscriber,
   type Attachment,
@@ -99,16 +100,30 @@ router.get("/:agentId/history", async (c) => {
   return c.json(messages);
 });
 
-// SSE Stream
+// SSE Stream — supports Last-Event-ID header or ?since= param for missed-message replay
 router.get("/:agentId/stream", async (c) => {
   const agentId = c.req.param("agentId");
+  const since = c.req.header("Last-Event-ID") || c.req.query("since") || "";
+
   return streamSSE(c, async (stream) => {
-    // Send immediate ping so client knows stream is live
+    // Replay messages missed while disconnected
+    if (since) {
+      try {
+        const missed = await replayStream(agentId, since);
+        for (const msg of missed) {
+          if (stream.aborted) break;
+          await stream.writeSSE({ id: msg.id, event: "message", data: JSON.stringify(msg) });
+        }
+      } catch { /* ignore — stream may abort mid-replay */ }
+    }
+
+    // Ping to confirm stream is live
     try { await stream.writeSSE({ event: "ping", data: "" }); } catch {}
 
+    // Live subscriber — each event carries its Redis stream ID as SSE id:
     const sub = createSubscriber(agentId, (msg) => {
       try {
-        stream.writeSSE({ event: "message", data: JSON.stringify(msg) });
+        stream.writeSSE({ id: msg.id, event: "message", data: JSON.stringify(msg) });
       } catch { sub.close(); }
     });
 
