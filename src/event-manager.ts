@@ -23,6 +23,7 @@ import { listenerRegistry } from "./adapters/data-adapter";
 import { bitrixAdapter } from "./adapters/bitrix";
 import { telegramBotAdapter } from "./adapters/telegram-bot";
 import { trackerAdapter } from "./adapters/tracker";
+import { parseBdDuration } from "./work-calendar";
 
 const SUBSCRIPTIONS_KEY = "event-manager:subscriptions";
 const HISTORY_KEY = "event-manager:history";
@@ -77,6 +78,8 @@ function computeNextFireAt(trigger: TriggerDef, subscribedAt?: string): string |
     const t = trigger as DelayAfterTrigger;
     if (t.duration && subscribedAt) {
       try {
+        // BD durations (P3BD) are resolved async via resolveDelayMs — skip estimate here
+        if (parseBdDuration(t.duration)) return undefined;
         const ms = parseDurationMs(t.duration);
         return new Date(new Date(subscribedAt).getTime() + ms).toISOString();
       } catch { return undefined; }
@@ -258,6 +261,7 @@ async function withRetry<T>(
 }
 
 // ── ISO 8601 duration parser (subset: PT<n>S / PT<n>M / PT<n>H / P<n>D) ─────
+// P{N}BD (business day durations) are NOT handled here — use resolveDelayMs() instead.
 
 function parseDurationMs(iso: string): number {
   const match = iso.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/);
@@ -269,6 +273,26 @@ function parseDurationMs(iso: string): number {
      parseInt(m ?? "0") * 60 +
      parseFloat(s ?? "0")) * 1000
   );
+}
+
+/**
+ * Resolve a delay duration to milliseconds.
+ * Handles both standard ISO 8601 and P{N}BD (business day) durations.
+ * For BD durations, subscribedAt is the reference date.
+ */
+async function resolveDelayMs(duration: string, subscribedAt: string): Promise<number> {
+  // Business day duration (e.g. P3BD)
+  const { parseBdDuration, addBusinessDays } = await import("./work-calendar");
+  const bd = parseBdDuration(duration);
+  if (bd) {
+    const fromDate = subscribedAt.slice(0, 10); // YYYY-MM-DD
+    const targetDate = await addBusinessDays(fromDate, bd.businessDays);
+    const targetMs = new Date(targetDate + "T09:00:00.000Z").getTime();
+    const delayMs = targetMs - Date.now();
+    if (delayMs <= 0) return 1000; // fire immediately if already past
+    return delayMs;
+  }
+  return parseDurationMs(duration);
 }
 
 // ── Condition evaluation ──────────────────────────────────────────────────────
@@ -434,7 +458,7 @@ async function activateDelayAfterTrigger(sub: Subscription): Promise<void> {
   const trigger = sub.trigger as DelayAfterTrigger;
   let delayMs: number;
   try {
-    delayMs = parseDurationMs(trigger.duration);
+    delayMs = await resolveDelayMs(trigger.duration, sub.subscribed_at || new Date().toISOString());
   } catch (e: any) {
     console.warn(`[event-manager] invalid delay_after duration sub=${sub.id}: ${e.message}`);
     return;
@@ -609,17 +633,19 @@ async function restoreDelayAfterSub(sub: Subscription): Promise<void> {
     return;
   }
 
-  // Job was lost — compute remaining delay and re-add
+  // Job was lost — compute remaining delay and re-add (handles both ISO 8601 and P{N}BD)
   let durationMs: number;
   try {
-    durationMs = parseDurationMs(trigger.duration);
+    durationMs = await resolveDelayMs(trigger.duration, sub.subscribed_at || new Date().toISOString());
   } catch (e: any) {
     console.warn(`[event-manager] delay_after restore: invalid duration sub=${sub.id}: ${e.message}`);
     return;
   }
 
-  const subscribedAt = new Date(sub.subscribed_at).getTime();
-  const remainingMs = subscribedAt + durationMs - Date.now();
+  // resolveDelayMs returns ms from now for BD, but for ISO 8601 it returns total ms from subscribedAt
+  // Re-calculate remaining for ISO 8601 case (BD already returns from-now delay)
+  const isBd = parseBdDuration(trigger.duration);
+  const remainingMs = isBd ? durationMs : new Date(sub.subscribed_at).getTime() + durationMs - Date.now();
 
   if (remainingMs <= 0) {
     // Already past due — fire immediately
@@ -684,7 +710,7 @@ export function registerEventManagerRoutes(
   requireAuth: (c: any, next: any) => Promise<any>,
 ): void {
   // POST /api/event-manager/subscribe
-  app.post("/api/event-manager/subscribe", requireAuth, async (c) => {
+  app.post("/event-manager/subscribe", requireAuth, async (c) => {
     const body = await c.req.json<{
       event_id: string;
       event_label?: string;
@@ -728,9 +754,11 @@ export function registerEventManagerRoutes(
       mode = "auto";
     } else if (trigger.kind === "delay_after") {
       const dt = trigger as DelayAfterTrigger;
-      if (!dt.duration) return c.json({ error: "trigger.duration required for delay_after kind (ISO 8601)" }, 400);
-      try { parseDurationMs(dt.duration); } catch {
-        return c.json({ error: `invalid ISO 8601 duration: "${dt.duration}"` }, 400);
+      if (!dt.duration) return c.json({ error: "trigger.duration required for delay_after kind (ISO 8601 or P{N}BD)" }, 400);
+      if (!parseBdDuration(dt.duration)) {
+        try { parseDurationMs(dt.duration); } catch {
+          return c.json({ error: `invalid duration: "${dt.duration}" (use ISO 8601 or P{N}BD format)` }, 400);
+        }
       }
       mode = "auto";
     }
@@ -779,7 +807,7 @@ export function registerEventManagerRoutes(
   });
 
   // DELETE /api/event-manager/subscribe/:id
-  app.delete("/api/event-manager/subscribe/:id", requireAuth, async (c) => {
+  app.delete("/event-manager/subscribe/:id", requireAuth, async (c) => {
     const id = c.req.param("id");
     const raw = await redis.hget(SUBSCRIPTIONS_KEY, id);
     if (!raw) return c.json({ error: "Subscription not found" }, 404);
@@ -795,7 +823,7 @@ export function registerEventManagerRoutes(
   });
 
   // GET /api/event-manager/subscriptions
-  app.get("/api/event-manager/subscriptions", requireAuth, async (c) => {
+  app.get("/event-manager/subscriptions", requireAuth, async (c) => {
     const processId = c.req.query("process_id");
     const instanceId = c.req.query("instance_id");
     const triggerKind = c.req.query("trigger_kind");
@@ -836,7 +864,7 @@ export function registerEventManagerRoutes(
   });
 
   // GET /api/event-manager/history
-  app.get("/api/event-manager/history", requireAuth, async (c) => {
+  app.get("/event-manager/history", requireAuth, async (c) => {
     const processId = c.req.query("process_id");
     const instanceId = c.req.query("instance_id");
     const since = c.req.query("since");
@@ -859,7 +887,7 @@ export function registerEventManagerRoutes(
   });
 
   // GET /api/event-manager/adapters/status
-  app.get("/api/event-manager/adapters/status", requireAuth, async (c) => {
+  app.get("/event-manager/adapters/status", requireAuth, async (c) => {
     const result = Array.from(dataAdapters.keys()).map(name => {
       const stats = adapterStats.get(name) ?? { name, error_count: 0, active_listeners: 0 };
       // Count active listeners for this adapter
@@ -886,7 +914,7 @@ export function registerEventManagerRoutes(
   });
 
   // POST /api/webhooks/bitrix — Bitrix24 event push dispatch (no auth, validated by handle param)
-  app.post("/api/webhooks/bitrix", async (c) => {
+  app.post("/webhooks/bitrix", async (c) => {
     const handleId = c.req.query("handle");
     if (!handleId) return c.json({ error: "handle required" }, 400);
 
@@ -935,7 +963,8 @@ export async function createSubscriptionProgrammatic(params: {
     if (ct.data_source && dataAdapters.has(ct.data_source)) mode = "auto";
   } else if (trigger.kind === "delay_after") {
     const dt = trigger as DelayAfterTrigger;
-    try { parseDurationMs(dt.duration); mode = "auto"; } catch {}
+    if (parseBdDuration(dt.duration)) { mode = "auto"; }
+    else { try { parseDurationMs(dt.duration); mode = "auto"; } catch {} }
   }
 
   const now2 = new Date().toISOString();

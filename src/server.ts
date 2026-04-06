@@ -2042,6 +2042,10 @@ registerEventManagerRoutes(app, requireAuth);
 startDelayWorker();
 restoreSubscriptions().catch(e => console.error("[event-manager] restore error:", e.message));
 
+// Register WorkCalendar routes (Extension A, issue #238)
+import { registerWorkCalendarRoutes } from "./work-calendar";
+registerWorkCalendarRoutes(app, requireAuth);
+
 // Import workflow engine event_fired handler
 import { handleEventFired } from "./runtime";
 
