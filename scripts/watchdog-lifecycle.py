@@ -211,7 +211,7 @@ async def main():
                     data = await resp.json()
                     all_agents = data if isinstance(data, list) else data.get("agents", [])
                     # Watch agents that have lifecycle and are not system (naruto/sasuke have own watchdogs)
-                    system_ids = {"naruto", "sasuke", "mirai", "kakashi"}
+                    system_ids = {"naruto", "sasuke", "mirai"}
                     agents = [
                         a["id"] for a in all_agents
                         if a.get("id") and a["id"] not in system_ids
