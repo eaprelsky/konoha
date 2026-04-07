@@ -4,6 +4,8 @@ Generic watchdog for lifecycle-managed agents (launched via Konoha API).
 Watches Konoha SSE stream for a given agent_id and delivers messages
 to tmux session konoha-{agent_id} on the default socket.
 
+Also supports extra Redis streams per agent (configured via AgentDef.redis_streams).
+
 Usage: watchdog-lifecycle.py <agent_id> [agent_id2 ...]
 Or: WATCHDOG_AGENTS=shino,kiba,hinata watchdog-lifecycle.py
 """
@@ -110,15 +112,119 @@ async def tmux_send(agent_id: str, text: str) -> bool:
         return False
 
 
-async def watch_agent(agent_id: str):
-    """Watch Konoha SSE for a single agent and deliver messages."""
+# ── Agent def fetching ────────────────────────────────────────────────────────
+
+async def fetch_agent_def(agent_id: str) -> dict | None:
+    """Fetch agent definition from Konoha API to get redis_streams config."""
+    try:
+        import aiohttp
+        url = f"{KONOHA_URL}/agents/{agent_id}"
+        headers = {"Authorization": f"Bearer {KONOHA_TOKEN}"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+    except Exception as e:
+        log.warning(f"[{agent_id}] Failed to fetch agent def: {e}")
+    return None
+
+
+# ── Message formatting ────────────────────────────────────────────────────────
+
+def format_telegram_event(fields: dict) -> str:
+    """Format a telegram:incoming Redis message for agent consumption."""
+    sender = (fields.get("sender_name") or fields.get("sender_username")
+              or fields.get("user_name") or fields.get("user", "?"))
+    text = fields.get("text", "")
+    ts = (fields.get("ts") or fields.get("timestamp", ""))[:16]
+    chat_id = fields.get("chat_id", "")
+    chat_title = fields.get("chat_title", "")
+    is_group = fields.get("is_group", "0")
+    sender_id = fields.get("sender_id", "")
+    msg_id = fields.get("msg_id", "")
+    meta = f"chat_id={chat_id}"
+    if chat_title:
+        meta += f" [{chat_title}]"
+    if is_group in ("1", 1, True):
+        meta += " [group]"
+    if sender_id:
+        meta += f" sender_id={sender_id}"
+    if msg_id:
+        meta += f" msg_id={msg_id}"
+    line = f"[{ts}] {sender} ({meta}): {text}"
+    attachment_path = fields.get("attachment_path", "")
+    attachment_kind = fields.get("attachment_kind", "")
+    if attachment_path:
+        line += f"\n  [Вложение: {attachment_kind} — {attachment_path}]"
+    return line
+
+
+def format_reaction_event(fields: dict) -> str:
+    """Format a telegram:reaction_updates Redis message."""
+    user = fields.get("user", "?")
+    new_r = fields.get("new_reaction", "")
+    old_r = fields.get("old_reaction", "")
+    msg_id = fields.get("message_id", "")
+    chat_id = fields.get("chat_id", "")
+    return f"  {user} поставил {new_r} (было: {old_r}) на сообщение {msg_id} в чате {chat_id}"
+
+
+def build_prompt(events: list[dict]) -> str:
+    """Build delivery prompt from a batch of mixed events."""
+    sse_events = [e for e in events if e.get("source") == "sse"]
+    tg_events = [e for e in events if e.get("source") == "redis"
+                 and "telegram:incoming" in e.get("stream", "")]
+    reaction_events = [e for e in events if e.get("source") == "redis"
+                       and "reaction" in e.get("stream", "")]
+    other_redis = [e for e in events if e.get("source") == "redis"
+                   and e not in tg_events and e not in reaction_events]
+
+    parts: list[str] = []
+
+    if tg_events:
+        parts.append("Новые сообщения в Telegram:")
+        for ev in tg_events:
+            parts.append(format_telegram_event(ev.get("data", {})))
+        parts.append("\nОбработай и при необходимости ответь через tg-send-user.py.")
+
+    if sse_events or other_redis:
+        if parts:
+            parts.append("")
+        parts.append("Новые сообщения в шине Коноха:")
+        for ev in sse_events:
+            d = ev.get("data", {})
+            sender = d.get("from", "?")
+            text = d.get("text", "")
+            ts = (d.get("timestamp", "") or "")[:19]
+            parts.append(f"[{ts}] {sender}: {text}")
+        for ev in other_redis:
+            d = ev.get("data", {})
+            stream = ev.get("stream", "?")
+            parts.append(f"[{stream}] {json.dumps(d, ensure_ascii=False)}")
+        parts.append("\nОбработай и при необходимости ответь через konoha_send.")
+
+    if reaction_events:
+        if parts:
+            parts.append("")
+        parts.append("Новые реакции в Telegram:")
+        for ev in reaction_events:
+            parts.append(format_reaction_event(ev.get("data", {})))
+        parts.append("Учти реакции как обратную связь.")
+
+    return "\n".join(parts)
+
+
+# ── SSE watcher ───────────────────────────────────────────────────────────────
+
+async def sse_watcher(agent_id: str, raw_queue: asyncio.Queue) -> None:
+    """Watch Konoha SSE for a single agent and put events into raw_queue."""
     import aiohttp
 
     url = f"{KONOHA_URL}/messages/{agent_id}/stream"
     headers = {"Authorization": f"Bearer {KONOHA_TOKEN}"}
     backoff = 1
 
-    log.info(f"[{agent_id}] Starting SSE watcher → {tmux_session(agent_id)}")
+    log.info(f"[{agent_id}] Starting SSE watcher")
 
     while True:
         try:
@@ -133,68 +239,171 @@ async def watch_agent(agent_id: str):
                     backoff = 1
                     log.info(f"[{agent_id}] SSE connected")
 
-                    pending: list[str] = []
-                    last_event_time = 0.0
-
                     async for line in resp.content:
                         text = line.decode("utf-8", errors="replace").strip()
-                        if not text:
+                        if not text or not text.startswith("data: "):
                             continue
-
-                        if text.startswith("data: "):
-                            data_str = text[6:]
-                            try:
-                                msg = json.loads(data_str)
-                            except json.JSONDecodeError:
-                                continue
-
-                            # Format message
-                            ts = msg.get("timestamp", "")[:19] or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-                            sender = msg.get("from", "?")
-                            body = msg.get("text", "")
-                            if not body:
-                                continue
-
-                            formatted = f"[{ts}] {sender}: {body}"
-                            pending.append(formatted)
-                            last_event_time = time.monotonic()
-
-                        # Debounce: deliver batch when no new events for DEBOUNCE_WINDOW
-                        if pending and (time.monotonic() - last_event_time) >= DEBOUNCE_WINDOW:
-                            batch = "\n".join(pending)
-                            prompt = f"Новые сообщения в шине Коноха:\n{batch}\n\nОбработай и при необходимости ответь через konoha_send."
-
-                            # Wait for agent to be idle
-                            waited = 0.0
-                            while not is_agent_idle(agent_id):
-                                if not is_session_alive(agent_id):
-                                    log.warning(f"[{agent_id}] session dead, dropping {len(pending)} msgs")
-                                    pending.clear()
-                                    break
-                                await asyncio.sleep(IDLE_POLL_SEC)
-                                waited += IDLE_POLL_SEC
-                                if waited > IDLE_TIMEOUT_SEC:
-                                    log.warning(f"[{agent_id}] busy >{IDLE_TIMEOUT_SEC}s, dropping {len(pending)} msgs")
-                                    pending.clear()
-                                    break
-
-                            if pending:
-                                ok = await tmux_send(agent_id, prompt)
-                                if ok:
-                                    log.info(f"[{agent_id}] delivered {len(pending)} msg(s)")
-                                else:
-                                    log.error(f"[{agent_id}] tmux_send failed")
-                                pending.clear()
-
-                        # Small sleep to allow debounce check
-                        await asyncio.sleep(0.1)
+                        try:
+                            msg = json.loads(text[6:])
+                        except json.JSONDecodeError:
+                            continue
+                        if not msg.get("text"):
+                            continue
+                        await raw_queue.put({"source": "sse", "data": msg})
 
         except asyncio.CancelledError:
-            break
+            raise
         except Exception as e:
             log.error(f"[{agent_id}] SSE error: {e}, retrying in {backoff}s")
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, SSE_MAX_BACKOFF)
+
+
+# ── Redis stream watcher ──────────────────────────────────────────────────────
+
+async def redis_stream_watcher(
+    agent_id: str, stream: str, group: str, consumer: str, raw_queue: asyncio.Queue
+) -> None:
+    """Watch a Redis stream via consumer group and put events into raw_queue."""
+    try:
+        import redis.asyncio as aioredis
+    except ImportError:
+        log.error(f"[{agent_id}] redis.asyncio not available — skipping Redis stream {stream}")
+        return
+
+    r = None
+    backoff = 1
+
+    while True:
+        try:
+            if r is None:
+                r = aioredis.Redis(host="127.0.0.1", port=6379, decode_responses=True)
+
+            try:
+                await r.xgroup_create(stream, group, id="$", mkstream=True)
+                log.info(f"[{agent_id}] Created consumer group {group} on {stream}")
+            except Exception as e:
+                if "BUSYGROUP" not in str(e):
+                    raise
+
+            log.info(f"[{agent_id}] Redis stream watcher: {stream} (group={group}, consumer={consumer})")
+            backoff = 1
+
+            while True:
+                results = await r.xreadgroup(
+                    group, consumer,
+                    {stream: ">"},
+                    count=10,
+                    block=5000,
+                )
+                if not results:
+                    continue
+                for _stream_name, messages in results:
+                    for msg_id, fields in messages:
+                        try:
+                            action = fields.get("action_hint", "respond")
+                            if action == "ignore":
+                                await r.xack(stream, group, msg_id)
+                                continue
+                            await raw_queue.put({"source": "redis", "stream": stream, "data": fields})
+                            await r.xack(stream, group, msg_id)
+                        except Exception as e:
+                            log.error(f"[{agent_id}] Error processing {stream} msg {msg_id}: {e}")
+
+        except asyncio.CancelledError:
+            if r:
+                await r.aclose()
+            raise
+        except Exception as e:
+            log.warning(f"[{agent_id}] Redis watcher error ({stream}): {e!r}, retrying in {backoff}s")
+            if r:
+                try:
+                    await r.aclose()
+                except Exception:
+                    pass
+            r = None
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+
+
+# ── Delivery loop ─────────────────────────────────────────────────────────────
+
+async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
+    """Debounce events from raw_queue and deliver batches to agent's tmux session."""
+    pending: list[dict] = []
+    last_event_time = 0.0
+
+    while True:
+        try:
+            timeout = DEBOUNCE_WINDOW if not pending else max(0.0, DEBOUNCE_WINDOW - (time.monotonic() - last_event_time))
+            event = await asyncio.wait_for(raw_queue.get(), timeout=max(0.05, timeout))
+            pending.append(event)
+            last_event_time = time.monotonic()
+            continue
+        except asyncio.TimeoutError:
+            pass
+
+        if not pending:
+            continue
+
+        # Check debounce window
+        if (time.monotonic() - last_event_time) < DEBOUNCE_WINDOW:
+            continue
+
+        # Wait for agent to be idle
+        waited = 0.0
+        while not is_agent_idle(agent_id):
+            if not is_session_alive(agent_id):
+                log.warning(f"[{agent_id}] session dead, dropping {len(pending)} msgs")
+                pending.clear()
+                break
+            await asyncio.sleep(IDLE_POLL_SEC)
+            waited += IDLE_POLL_SEC
+            if waited > IDLE_TIMEOUT_SEC:
+                log.warning(f"[{agent_id}] busy >{IDLE_TIMEOUT_SEC}s, dropping {len(pending)} msgs")
+                pending.clear()
+                break
+
+        if pending:
+            prompt = build_prompt(pending)
+            ok = await tmux_send(agent_id, prompt)
+            if ok:
+                log.info(f"[{agent_id}] delivered {len(pending)} event(s)")
+            else:
+                log.error(f"[{agent_id}] tmux_send failed")
+            pending.clear()
+
+
+# ── Per-agent watcher ─────────────────────────────────────────────────────────
+
+async def watch_agent(agent_id: str) -> None:
+    """Watch SSE + optional Redis streams for a single agent."""
+    raw_queue: asyncio.Queue = asyncio.Queue()
+
+    # Fetch agent def to find any configured redis_streams
+    def_data = await fetch_agent_def(agent_id)
+    redis_streams: list[dict] = []
+    if def_data:
+        redis_streams = def_data.get("redis_streams") or []
+
+    tasks = [
+        asyncio.create_task(sse_watcher(agent_id, raw_queue), name=f"{agent_id}-sse"),
+        asyncio.create_task(delivery_loop(agent_id, raw_queue), name=f"{agent_id}-delivery"),
+    ]
+
+    for s in redis_streams:
+        stream = s.get("stream", "")
+        group = s.get("group", agent_id)
+        consumer = s.get("consumer") or f"{agent_id}-lifecycle-watchdog"
+        if not stream:
+            continue
+        log.info(f"[{agent_id}] Adding Redis stream watcher: {stream} (group={group})")
+        tasks.append(asyncio.create_task(
+            redis_stream_watcher(agent_id, stream, group, consumer, raw_queue),
+            name=f"{agent_id}-redis-{stream}",
+        ))
+
+    await asyncio.gather(*tasks)
 
 
 async def main():
@@ -210,11 +419,12 @@ async def main():
                 ) as resp:
                     data = await resp.json()
                     all_agents = data if isinstance(data, list) else data.get("agents", [])
-                    # Watch agents that have lifecycle and are not system (naruto/sasuke have own watchdogs)
-                    system_ids = {"naruto", "sasuke", "mirai"}
+                    # Watch agents that have lifecycle and are not legacy system agents
+                    # (naruto/mirai use their own watchdogs; sasuke moves to lifecycle via redis_streams)
+                    legacy_ids = {"naruto", "mirai"}
                     agents = [
                         a["id"] for a in all_agents
-                        if a.get("id") and a["id"] not in system_ids
+                        if a.get("id") and a["id"] not in legacy_ids
                         and a.get("lifecycle", {}).get("status") == "running"
                     ]
         except Exception as e:

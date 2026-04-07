@@ -63,6 +63,12 @@ const AUDIT_STREAM    = "konoha:agent-audit";    // stream: lifecycle events
 
 export type LifecycleStatus = "stopped" | "starting" | "running" | "stopping" | "error";
 
+export interface AgentRedisStream {
+  stream: string;    // Redis stream key, e.g. "telegram:incoming"
+  group: string;     // Consumer group name, e.g. "sasuke"
+  consumer?: string; // Consumer name (defaults to "{id}-lifecycle-watchdog")
+}
+
 export interface AgentDef {
   id: string;
   name: string;
@@ -76,6 +82,7 @@ export interface AgentDef {
   gender?: 'male' | 'female' | 'neutral';
   protected?: boolean;          // system agents — cannot be deleted, start/stop requires confirmation
   tmux_session_override?: string; // check this tmux session for live status instead of konoha-{id}
+  redis_streams?: AgentRedisStream[]; // extra Redis streams to consume (e.g. telegram:incoming)
   created_at: string;
   updated_at: string;
 }
