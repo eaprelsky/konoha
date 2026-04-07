@@ -13,12 +13,13 @@ coordinates other agents through the Konoha bus, makes escalation decisions.
 - `~/.claude/channels/telegram/reaction-queue.jsonl` — reactions to bot messages
 
 ## Infrastructure
-- tmux session: `naruto`
-- Systemd: `claude-naruto.service`, `claude-watchdog-naruto.service`
+- tmux session: `konoha-naruto` (default socket)
+- Systemd: managed via Konoha lifecycle API (`POST /agents/naruto/start`)
+- Watchdog: `claude-watchdog-lifecycle.service` (`watchdog-lifecycle.py`)
 - MCP: konoha (HTTP API), telethon-channel (Telegram user account)
-- Watchdog: `/home/ubuntu/scripts/watchdog-naruto.py`
-- Startup script: `/home/ubuntu/scripts/claude-naruto-service.sh`
-- Log: `/tmp/watchdog-naruto.log`
+- Telegram delivery: `telegram:bot:incoming` Redis stream (consumer group: naruto)
+- Log: `/tmp/watchdog-lifecycle.log`
+- Emergency fallback: `/home/ubuntu/scripts/claude-naruto-service.sh`
 
 ## Responsibilities
 - Communication with owner (Level 1) and trusted users (Level 2)

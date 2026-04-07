@@ -449,8 +449,8 @@ async def main():
                     data = await resp.json()
                     all_agents = data if isinstance(data, list) else data.get("agents", [])
                     # Watch agents that have lifecycle and are not legacy system agents
-                    # (naruto/mirai use their own watchdogs; sasuke moves to lifecycle via redis_streams)
-                    legacy_ids = {"naruto", "mirai"}
+                    # (mirai uses its own watchdog; naruto/sasuke use lifecycle via redis_streams)
+                    legacy_ids = {"mirai"}
                     agents = [
                         a["id"] for a in all_agents
                         if a.get("id") and a["id"] not in legacy_ids
