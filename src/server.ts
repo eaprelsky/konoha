@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { mkdirSync } from "fs";
-import { startReminderScheduler } from "./runtime";
+import { startReminderScheduler, restoreReminderJobs } from "./runtime";
 import { redis } from "./redis";
 import { handleEventFired } from "./runtime";
 import { initTsunade } from "./tsunade";
@@ -121,6 +121,7 @@ export const tsunadeReady: Promise<void> = initTsunade().catch((e) => {
 startDelayWorker();
 restoreSubscriptions().catch(e => console.error("[event-manager] restore error:", e.message));
 startReminderScheduler();
+restoreReminderJobs().catch(e => console.error("[reminder-scheduler] restore error:", e.message));
 seedSystemAgents().catch(e => console.error("[seed] system agents error:", e.message));
 
 // ── event_fired bus listener (issue #229) ───────────────────────────────────

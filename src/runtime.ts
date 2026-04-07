@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { readFileSync } from "fs";
-import { redis } from "./redis";
+import { Queue, Worker } from "bullmq";
+import { redis, REDIS_CONNECTION_OPTS } from "./redis";
 import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "./workflow-loader";
 import { getAdapter } from "./adapters/index";
 import { dispatchWorkItem } from "./dispatcher";
@@ -177,7 +178,7 @@ async function loadCase(case_id: string): Promise<Case | null> {
 
 async function saveWorkItem(wi: WorkItem, prevStatus?: WorkItemStatus, prevAssignee?: string): Promise<void> {
   await redis.set(WORKITEM_KEY_PREFIX + wi.work_item_id, JSON.stringify(wi));
-  pgUpsertWorkItem({ id: wi.work_item_id, case_id: wi.case_id, process_id: wi.process_id, element_id: wi.element_id, label: wi.label, assignee: wi.assignee, status: wi.status, input: wi.input || {}, output: wi.output || {}, deadline: wi.deadline, created_at: wi.created_at, updated_at: new Date().toISOString() });
+  pgUpsertWorkItem({ id: wi.work_item_id, case_id: wi.case_id ?? undefined, process_id: wi.process_id ?? undefined, element_id: wi.element_id ?? undefined, label: wi.label, assignee: wi.assignee, status: wi.status, input: wi.input || {}, output: wi.output || {}, deadline: wi.deadline ?? undefined, created_at: wi.created_at, updated_at: new Date().toISOString() });
 
   // Update assignee index (handle reassignment)
   if (prevAssignee && prevAssignee !== wi.assignee) {
@@ -1046,6 +1047,7 @@ export async function createReminder(params: {
     updated_at: now,
   };
   await saveReminder(r);
+  await scheduleReminderJob(r);
   return r;
 }
 
@@ -1088,56 +1090,92 @@ export async function deleteReminder(reminder_id: string): Promise<void> {
   await redis.srem(REMINDERS_IDX_STATUS + r.status, reminder_id);
   await redis.zrem(REMINDERS_IDX_ALL, reminder_id);
   pgDeleteReminder(reminder_id);
+  const job = await reminderQueue.getJob(reminder_id).catch(() => null);
+  if (job) await job.remove().catch(() => {});
 }
 
-// Scheduler: check every 60s, mark overdue/sent pending reminders
+// ── BullMQ Reminder Scheduler ─────────────────────────────────────────────────
+
+const REMINDER_QUEUE_NAME = "reminder-scheduler";
+const reminderQueue = new Queue(REMINDER_QUEUE_NAME, { connection: REDIS_CONNECTION_OPTS });
+let reminderWorker: Worker | null = null;
+
+async function fireReminder(reminder_id: string): Promise<void> {
+  const r = await loadReminder(reminder_id);
+  if (!r || r.status !== "pending") return;
+
+  // Auto-complete work item for process-bound timer reminders
+  if (r.type === "process-bound" && r.work_item_id) {
+    try {
+      await completeWorkItem(r.work_item_id, { system: "timer-expired", label: r.message });
+      console.log(`[reminder-scheduler] timer expired — completed work_item ${r.work_item_id}`);
+    } catch (e: any) {
+      console.error(`[reminder-scheduler] auto-complete failed for ${r.work_item_id}:`, e.message);
+    }
+  }
+
+  await updateReminderStatus(reminder_id, "sent");
+
+  if (r.channel === "telegram") {
+    try {
+      const trustedUsers = JSON.parse(readFileSync("/opt/shared/.trusted-users.json", "utf-8"));
+      const allUsers = [trustedUsers.owner, ...(trustedUsers.trusted ?? [])];
+      const recipientClean = r.recipient.replace(/^@/, "");
+      const user = allUsers.find((u: { name: string; username?: string; telegram_id: number }) =>
+        u.name === r.recipient ||
+        u.username === recipientClean ||
+        String(u.telegram_id) === r.recipient
+      );
+      if (user) {
+        await redis.xadd(
+          "telegram:outgoing",
+          "*",
+          "chat_id",
+          String(user.telegram_id),
+          "text",
+          `[Напоминание] ${r.message}`,
+        ).catch(() => {});
+      }
+    } catch (_) {}
+  }
+}
+
+async function scheduleReminderJob(r: Reminder): Promise<void> {
+  const delayMs = Math.max(0, new Date(r.scheduled_at).getTime() - Date.now());
+  const existing = await reminderQueue.getJob(r.reminder_id).catch(() => null);
+  if (existing) return;
+  await reminderQueue.add("fire", { reminder_id: r.reminder_id }, {
+    jobId: r.reminder_id,
+    delay: delayMs,
+    removeOnComplete: true,
+    removeOnFail: { count: 3 },
+  });
+  console.log(`[reminder-scheduler] queued reminder=${r.reminder_id} delay=${delayMs}ms`);
+}
+
 export function startReminderScheduler(): void {
+  if (reminderWorker) return;
+
+  reminderWorker = new Worker(
+    REMINDER_QUEUE_NAME,
+    async (job) => {
+      const { reminder_id } = job.data as { reminder_id: string };
+      await fireReminder(reminder_id);
+    },
+    { connection: REDIS_CONNECTION_OPTS },
+  );
+
+  reminderWorker.on("failed", (job, err) => {
+    console.error(`[reminder-scheduler] job failed job=${job?.id}: ${err.message}`);
+  });
+
+  console.log("[reminder-scheduler] bullmq worker started");
+
+  // Light overdue sweep: marks sent→overdue after 24h without ack
   setInterval(async () => {
     try {
-      const pending = await listReminders({ status: "pending" });
-      const now = new Date();
-      for (const r of pending) {
-        const scheduled = new Date(r.scheduled_at);
-        if (scheduled <= now) {
-          // Auto-complete work item for process-bound timer reminders
-          if (r.type === "process-bound" && r.work_item_id) {
-            try {
-              await completeWorkItem(r.work_item_id, { system: "timer-expired", label: r.message });
-              console.log(`[scheduler] timer expired — completed work_item ${r.work_item_id}`);
-            } catch (e: any) {
-              console.error(`[scheduler] auto-complete failed for ${r.work_item_id}:`, e.message);
-            }
-          }
-          // Mark as sent (actual delivery is channel-specific; GUI channel = mark sent)
-          await updateReminderStatus(r.reminder_id, "sent");
-          if (r.channel === "telegram") {
-            // Resolve recipient name → telegram_id from trusted-users
-            try {
-              const trustedUsers = JSON.parse(readFileSync("/opt/shared/.trusted-users.json", "utf-8"));
-              const allUsers = [trustedUsers.owner, ...(trustedUsers.trusted ?? [])];
-              const recipientClean = r.recipient.replace(/^@/, "");
-              const user = allUsers.find((u: { name: string; username?: string; telegram_id: number }) =>
-                u.name === r.recipient ||
-                u.username === recipientClean ||
-                String(u.telegram_id) === r.recipient
-              );
-              if (user) {
-                await redis.xadd(
-                  "telegram:outgoing",
-                  "*",
-                  "chat_id",
-                  String(user.telegram_id),
-                  "text",
-                  `[Напоминание] ${r.message}`,
-                ).catch(() => {});
-              }
-            } catch (_) {}
-          }
-        }
-      }
-      // Mark sent reminders older than 24h without ack as overdue
       const sent = await listReminders({ status: "sent" });
-      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       for (const r of sent) {
         if (new Date(r.scheduled_at) < oneDayAgo) {
           await updateReminderStatus(r.reminder_id, "overdue").catch(() => {});
@@ -1145,6 +1183,22 @@ export function startReminderScheduler(): void {
       }
     } catch (_) {}
   }, 60_000);
+}
+
+// Restore bullmq jobs on startup for pending reminders without active jobs
+export async function restoreReminderJobs(): Promise<void> {
+  const pending = await listReminders({ status: "pending" });
+  let restored = 0;
+  for (const r of pending) {
+    const existing = await reminderQueue.getJob(r.reminder_id).catch(() => null);
+    if (!existing) {
+      await scheduleReminderJob(r);
+      restored++;
+    }
+  }
+  if (restored > 0) {
+    console.log(`[reminder-scheduler] restored ${restored} bullmq jobs on startup`);
+  }
 }
 
 // --- Roles Directory ---
@@ -1280,15 +1334,28 @@ export async function deleteDoc(doc_id: string): Promise<void> {
   pgDeleteDoc(doc_id);
 }
 
+async function scanKeys(pattern: string): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 100) as [string, string[]];
+    keys.push(...batch);
+    cursor = nextCursor;
+  } while (cursor !== "0");
+  return keys;
+}
+
 export async function purgeAllWorkItems(): Promise<number> {
   const ids = await redis.zrange(WORKITEMS_IDX_ALL, 0, -1);
   if (ids.length === 0) return 0;
   // Delete all workitem keys
   await redis.del(...ids.map((id: string) => WORKITEM_KEY_PREFIX + id));
   // Delete all index keys (status, assignee, process sets may have stale members — just flush them all)
-  const statusKeys = await redis.keys(WORKITEMS_IDX_STATUS + "*");
-  const assigneeKeys = await redis.keys(WORKITEMS_IDX_ASSIGNEE + "*");
-  const processKeys = await redis.keys(WORKITEMS_IDX_PROCESS + "*");
+  const [statusKeys, assigneeKeys, processKeys] = await Promise.all([
+    scanKeys(WORKITEMS_IDX_STATUS + "*"),
+    scanKeys(WORKITEMS_IDX_ASSIGNEE + "*"),
+    scanKeys(WORKITEMS_IDX_PROCESS + "*"),
+  ]);
   const extraKeys = [...statusKeys, ...assigneeKeys, ...processKeys, WORKITEMS_IDX_ALL];
   if (extraKeys.length > 0) await redis.del(...extraKeys);
   pgPurgeAllWorkItems();
