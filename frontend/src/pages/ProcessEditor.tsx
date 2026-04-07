@@ -25,8 +25,9 @@ const PALETTE: { type: EType; label: string; fill: string; stroke: string }[] = 
   { type: 'event',              label: 'Событие',  fill: '#F5C4B3', stroke: '#993C1D' },
   { type: 'function',           label: 'Функция',  fill: '#C0DD97', stroke: '#3B6D11' },
   { type: 'gateway',            label: 'Ветвление', fill: '#E8F4FD', stroke: '#4B7BA8' },
-  { type: 'role',               label: 'Роль',     fill: '#FFF9C4', stroke: '#B7A000' },
-  { type: 'document',           label: 'Документ', fill: '#DBEAFE', stroke: '#3B82F6' },
+  { type: 'role',               label: 'Роль',       fill: '#FFF9C4', stroke: '#B7A000' },
+  { type: 'executor',           label: 'Исполнитель', fill: '#FFE4CC', stroke: '#CC6600' },
+  { type: 'document',           label: 'Документ',   fill: '#DBEAFE', stroke: '#3B82F6' },
   { type: 'information_system', label: 'IS',       fill: '#E0F2FE', stroke: '#0EA5E9' },
 ];
 
@@ -35,8 +36,10 @@ const DEFAULT_LABELS: Record<EType, string> = {
   function:           'Новая функция',
   gateway:            'Новое ветвление',
   role:               'Новая роль',
+  executor:           'Новый исполнитель',
   document:           'Новый документ',
   information_system: 'Новая ИС',
+  system:             'Новая система',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -144,7 +147,17 @@ function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps & { isEditi
     case 'gateway':
       shape = <circle cx={EW/2} cy={EH/2} r={GR} fill={fill} stroke={outln} strokeWidth={sw} />;
       break;
-    case 'role':
+    case 'role': {
+      const rcx = EW/2, rcy = EH/2, rrx = EW/2-2, rry = EH/2-2;
+      const rt = (14 - rcx) / rrx;
+      const rh = rry * Math.sqrt(Math.max(0, 1 - rt * rt));
+      shape = <>
+        <ellipse cx={rcx} cy={rcy} rx={rrx} ry={rry} fill={fill} stroke={outln} strokeWidth={sw} />
+        <line x1={14} y1={rcy - rh} x2={14} y2={rcy + rh} stroke={outln} strokeWidth={1.5} />
+      </>;
+      break;
+    }
+    case 'executor':
       shape = <ellipse cx={EW/2} cy={EH/2} rx={EW/2-2} ry={EH/2-2} fill={fill} stroke={outln} strokeWidth={sw} />;
       break;
     case 'document': {
@@ -869,25 +882,21 @@ export function ProcessEditor() {
   }
 
   function undo() {
-    setUndoStack(prev => {
-      if (prev.length === 0) return prev;
-      const snap = prev[prev.length - 1];
-      setRedoStack(r => [...r.slice(-49), { els: elements, fl: flow, pos: positions }]);
-      setElements(snap.els); setFlow(snap.fl); setPositions(snap.pos);
-      setSelected(null); setMultiSelected([]);
-      return prev.slice(0, -1);
-    });
+    if (undoStack.length === 0) return;
+    const snap = undoStack[undoStack.length - 1];
+    setUndoStack(undoStack.slice(0, -1));
+    setRedoStack(prev => [...prev.slice(-49), { els: elements, fl: flow, pos: positions }]);
+    setElements(snap.els); setFlow(snap.fl); setPositions(snap.pos);
+    setSelected(null); setMultiSelected([]);
   }
 
   function redo() {
-    setRedoStack(prev => {
-      if (prev.length === 0) return prev;
-      const snap = prev[prev.length - 1];
-      setUndoStack(u => [...u.slice(-49), { els: elements, fl: flow, pos: positions }]);
-      setElements(snap.els); setFlow(snap.fl); setPositions(snap.pos);
-      setSelected(null); setMultiSelected([]);
-      return prev.slice(0, -1);
-    });
+    if (redoStack.length === 0) return;
+    const snap = redoStack[redoStack.length - 1];
+    setRedoStack(redoStack.slice(0, -1));
+    setUndoStack(prev => [...prev.slice(-49), { els: elements, fl: flow, pos: positions }]);
+    setElements(snap.els); setFlow(snap.fl); setPositions(snap.pos);
+    setSelected(null); setMultiSelected([]);
   }
 
   // ── Autosave (2s debounce) ───────────────────────────────────────────────────

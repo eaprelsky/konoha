@@ -17,7 +17,7 @@ export interface Workflow {
 
 export interface WorkflowElement {
   id: string;
-  type: 'event' | 'function' | 'gateway' | 'role' | 'document' | 'information_system' | 'system';
+  type: 'event' | 'function' | 'gateway' | 'role' | 'executor' | 'document' | 'information_system' | 'system';
   label: string;
   role?: string;
   system?: string;

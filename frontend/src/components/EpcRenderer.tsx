@@ -130,6 +130,14 @@ function renderInfoSystem(g: Element, node: WorkflowElement, s: StatusStyle) {
   addLabel(g, node.label, W / 2, H / 2, W - 28);
 }
 
+function renderExecutor(g: Element, node: WorkflowElement, s: StatusStyle) {
+  const W = NODE_W, H = NODE_H;
+  const cx = W / 2, cy = H / 2, rx = W / 2 - 2, ry = H / 2 - 2;
+  const shape = el('ellipse', { cx, cy, rx, ry, fill: '#FFE4CC', stroke: '#CC6600', 'stroke-width': 1 }, g);
+  applyStatus(shape, s);
+  addLabel(g, node.label, W / 2, H / 2, W - 16);
+}
+
 function renderFallback(g: Element, node: WorkflowElement, s: StatusStyle) {
   const shape = el('rect', { width: NODE_W, height: NODE_H, fill: '#f3f4f6', stroke: '#9ca3af', 'stroke-width': 1 }, g);
   applyStatus(shape, s);
@@ -147,6 +155,13 @@ function drawNodeScaled(g: Element, node: WorkflowElement, s: StatusStyle, w: nu
       const [ly1, ly2] = ellipseLineY(cx, cy, rx, ry, 14);
       el('line', { x1: 14, y1: ly1, x2: 14, y2: ly2, stroke: '#B7A000', 'stroke-width': 1.5 }, g);
       addLabel(g, node.label, w/2+4, H/2, w-30);
+      break;
+    }
+    case 'executor': {
+      const cx = w/2, cy = H/2, rx = w/2-2, ry = H/2-2;
+      const shape = el('ellipse', { cx, cy, rx, ry, fill: '#FFE4CC', stroke: '#CC6600', 'stroke-width': 1 }, g);
+      applyStatus(shape, s);
+      addLabel(g, node.label, w/2, H/2, w-16);
       break;
     }
     case 'document': {
@@ -176,6 +191,7 @@ function drawNode(g: Element, node: WorkflowElement, s: StatusStyle) {
     case 'function':         return renderFunction(g, node, s);
     case 'gateway':          return renderGateway(g, node, s);
     case 'role':             return renderRole(g, node, s);
+    case 'executor':         return renderExecutor(g, node, s);
     case 'document':         return renderDocument(g, node, s);
     case 'information_system':
     case 'system':           return renderInfoSystem(g, node, s);
@@ -184,7 +200,7 @@ function drawNode(g: Element, node: WorkflowElement, s: StatusStyle) {
 }
 
 // ── Side element detection ────────────────────────────────────────────────────
-const SIDE_TYPES = new Set(['role', 'document', 'information_system', 'system']);
+const SIDE_TYPES = new Set(['role', 'executor', 'document', 'information_system', 'system']);
 function isSide(e: WorkflowElement) { return SIDE_TYPES.has(e.type); }
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -216,7 +232,7 @@ function assignLayers(elements: WorkflowElement[], flow: [string, string, string
 }
 
 const SIDE_GAP = 20;   // gap between function and side element
-const SIDE_W   = 190;  // side element width (slightly narrower)
+const SIDE_W   = 220;  // side element width
 
 function computeLayout(elements: WorkflowElement[], flow: [string, string, string?][], layer: Record<string, number>) {
   const mainEls = elements.filter(e => !isSide(e));
