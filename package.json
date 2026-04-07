@@ -1,11 +1,12 @@
 {
   "name": "konoha",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Multi-agent communication bus",
   "scripts": {
     "dev": "bun run --watch src/server.ts",
     "start": "bun run src/server.ts",
-    "mcp": "bun run src/mcp.ts"
+    "mcp": "bun run src/mcp.ts",
+    "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
