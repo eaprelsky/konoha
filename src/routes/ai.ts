@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { requireAuth } from "../middleware/auth";
 import { redis } from "../redis";
 import Anthropic from "@anthropic-ai/sdk";
+import { createWorkflow } from "../workflow-loader";
 
 const _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -25,13 +26,31 @@ const TSUNADE_SYSTEM = `Ты — Цунаде, AI-ассистент редак�
 Позиции: {"element_id": {"x": N, "y": N}}.
 
 Операции, которые ты можешь выполнять:
+- Создать новый процесс с нуля
 - Изменить названия элементов
 - Выровнять расположение (вертикально сверху-вниз, горизонтально, по центру)
 - Равномерно распределить элементы
 - Добавить новый элемент (укажи тип, label, позицию)
 - Удалить элемент
 
-Когда нужно изменить схему, отвечай строго JSON:
+Когда нужно СОЗДАТЬ НОВЫЙ процесс, отвечай строго JSON:
+{
+  "reply": "Что ты создал",
+  "create_workflow": {
+    "id": "kebab-case-id",
+    "name": "Название процесса",
+    "version": "1.0",
+    "description": "Описание процесса",
+    "elements": [
+      {"id": "e1", "type": "event", "label": "Начало", "x": 100, "y": 100},
+      {"id": "f1", "type": "function", "label": "Шаг 1", "x": 100, "y": 250},
+      {"id": "e2", "type": "event", "label": "Конец", "x": 100, "y": 400}
+    ],
+    "flow": [["e1", "f1"], ["f1", "e2"]]
+  }
+}
+
+Когда нужно изменить существующую схему, отвечай строго JSON:
 {
   "reply": "Что ты сделал или ответ на вопрос",
   "schema_patch": {
@@ -47,7 +66,7 @@ const TSUNADE_SYSTEM = `Ты — Цунаде, AI-ассистент редак�
 
 ВАЖНО: отвечай ТОЛЬКО валидным JSON. Без markdown-оберток.`;
 
-async function handleTsunadeChatRequest(c: any, histKey: string, chatId: string, message: string, schema?: unknown) {
+async function handleTsunadeChatRequest(histKey: string, chatId: string, message: string, schema?: unknown) {
   const rawHistory = await redis.lrange(histKey, 0, -1).catch(() => [] as string[]);
   const history: { role: "user" | "assistant"; content: string }[] = rawHistory.map(r => {
     try { return JSON.parse(r); } catch { return null; }
@@ -73,10 +92,19 @@ async function handleTsunadeChatRequest(c: any, histKey: string, chatId: string,
   const rawReply = (response.content[0] as any).text.trim();
   let reply = rawReply;
   let schema_patch: unknown = undefined;
+  let created_workflow: unknown = undefined;
   try {
     const parsed = JSON.parse(stripMarkdownFences(rawReply));
     reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message || rawReply;
     if (parsed.schema_patch) schema_patch = parsed.schema_patch;
+    if (parsed.create_workflow) {
+      const result = await createWorkflow(parsed.create_workflow, { draft: true });
+      if (result.errors.length === 0) {
+        created_workflow = result.workflow;
+      } else {
+        reply = reply + ` (Ошибка создания процесса: ${result.errors.join(", ")})`;
+      }
+    }
   } catch { /* not JSON, use raw text */ }
 
   await redis.rpush(histKey, JSON.stringify({ role: "user", content: message }));
@@ -84,7 +112,7 @@ async function handleTsunadeChatRequest(c: any, histKey: string, chatId: string,
   await redis.ltrim(histKey, -CHAT_MAX_HISTORY * 2, -1);
   await redis.expire(histKey, 7 * 24 * 3600); // 7 days TTL
 
-  return { reply, chat_id: chatId, schema_patch: schema_patch ?? null };
+  return { reply, chat_id: chatId, schema_patch: schema_patch ?? null, created_workflow: created_workflow ?? null };
 }
 
 const router = new Hono();
@@ -96,7 +124,7 @@ router.post("/tsunade/chat", async (c) => {
   const chatId = body.chat_id || randomUUID();
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
-    const result = await handleTsunadeChatRequest(c, histKey, chatId, body.message, body.schema);
+    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema);
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -117,7 +145,7 @@ router.post("/ai/process-chat", async (c) => {
   const chatId = body.chat_id || randomUUID();
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
-    const result = await handleTsunadeChatRequest(c, histKey, chatId, body.message, body.schema);
+    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema);
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -195,7 +223,8 @@ router.post("/ai/admin-chat", async (c) => {
       messages,
     });
 
-    const rawReply = (response.content[0] as any).text.trim();
+    const firstBlock = response.content[0];
+    const rawReply = (firstBlock.type === "text" ? firstBlock.text : "").trim();
     let reply = rawReply;
     let actions: unknown[] = [];
     try {
