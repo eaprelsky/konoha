@@ -690,6 +690,17 @@ export async function getCase(case_id: string): Promise<Case | null> {
   return loadCase(case_id);
 }
 
+/** Force-close a stuck running case (marks as done, cancels subscriptions). */
+export async function forceCloseCase(case_id: string): Promise<Case | null> {
+  const kase = await loadCase(case_id);
+  if (!kase) return null;
+  if (kase.status !== "running") return kase;
+  kase.status = "done";
+  await saveCase(kase);
+  cancelSubscriptionsByInstance(case_id).catch(() => {});
+  return kase;
+}
+
 export async function createStandaloneWorkItem(params: {
   label: string;
   assignee: string;

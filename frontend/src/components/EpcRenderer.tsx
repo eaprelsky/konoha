@@ -359,10 +359,9 @@ function drawSideEdge(svg: Element, funcId: string, sideId: string, isOutput: bo
     const mx = isOutput ? Math.min(x1, x2) + Math.abs(x2 - x1) / 2 : Math.max(x1, x2) - Math.abs(x2 - x1) / 2;
     el('polyline', { points: `${x1},${y1} ${mx},${y1} ${mx},${y2} ${x2},${y2}`, stroke: '#9ca3af', 'stroke-width': 1, 'stroke-dasharray': '4 3', fill: 'none' }, svg);
   }
-  // arrow head at side element side
-  const ax = isOutput ? x2 : x2;
-  const dir = isOutput ? 1 : -1;
-  el('polygon', { points: `${ax},${y2} ${ax - dir * 6},${y2 - 4} ${ax - dir * 6},${y2 + 4}`, fill: '#9ca3af' }, svg);
+  // arrow head at destination side — tip points into the target element
+  const ax = isOutput ? x2 : x1;
+  el('polygon', { points: `${ax},${y2} ${ax - 6},${y2 - 4} ${ax - 6},${y2 + 4}`, fill: '#9ca3af' }, svg);
 }
 
 // ── Main render function ──────────────────────────────────────────────────────
@@ -409,6 +408,21 @@ function renderProcessSvg(wf: Workflow, caseData?: Case): SVGSVGElement {
     sids.forEach(sid => drawSideEdge(edgeLayer, funcId, sid, false, nodeMap, positions));
   });
 
+  // Build set of role labels connected to each function (via explicit role elements).
+  // Used to suppress the inline role badge when a dedicated role element already shows it.
+  const funcConnectedRoleLabels = new Map<string, Set<string>>();
+  for (const [from, to] of flow) {
+    const fromEl = nodeMap[from], toEl = nodeMap[to];
+    if (toEl?.type === 'function' && fromEl?.type === 'role') {
+      if (!funcConnectedRoleLabels.has(to)) funcConnectedRoleLabels.set(to, new Set());
+      funcConnectedRoleLabels.get(to)!.add(fromEl.label);
+    }
+    if (fromEl?.type === 'function' && toEl?.type === 'role') {
+      if (!funcConnectedRoleLabels.has(from)) funcConnectedRoleLabels.set(from, new Set());
+      funcConnectedRoleLabels.get(from)!.add(toEl.label);
+    }
+  }
+
   const nodeLayer = el('g', { id: 'nodes' }, svg);
   elements.forEach(node => {
     const pos = positions[node.id];
@@ -417,11 +431,16 @@ function renderProcessSvg(wf: Workflow, caseData?: Case): SVGSVGElement {
     // Use SIDE_W for side elements
     const w = isSide(node) ? SIDE_W : NODE_W;
     const g = el('g', { transform: `translate(${pos.x},${pos.y})`, 'data-node-id': node.id, 'data-node-type': node.type }, nodeLayer);
-    // Temporarily override NODE_W for side elements by passing width in a wrapper approach
-    if (isSide(node)) {
-      drawNodeScaled(g, node, s, SIDE_W);
+    // Suppress inline role badge on function when a dedicated role element with the same label is connected
+    let renderNode = node;
+    if (node.type === 'function' && node.role) {
+      const connRoles = funcConnectedRoleLabels.get(node.id);
+      if (connRoles?.has(node.role)) renderNode = { ...node, role: undefined };
+    }
+    if (isSide(renderNode)) {
+      drawNodeScaled(g, renderNode, s, SIDE_W);
     } else {
-      drawNode(g, node, s);
+      drawNode(g, renderNode, s);
     }
     if (statusMap[node.id] === 'error') {
       const t = el('text', { x: w - 4, y: 14, 'text-anchor': 'end', 'font-size': 14, 'pointer-events': 'none' }, g);

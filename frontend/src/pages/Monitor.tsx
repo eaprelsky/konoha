@@ -105,19 +105,23 @@ const CSS = `
   .run-diagram { flex: 1; overflow: auto; background: #f8fafc; min-height: 0; }
 
   /* Timeline */
-  .run-timeline { border-top: 1px solid #e2e8f0; background: #fff; overflow-y: auto; max-height: 220px; flex-shrink: 0; }
-  .timeline-head { padding: 10px 20px 6px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+  .run-timeline { border-top: 1px solid #e2e8f0; background: #fff; overflow-y: auto; max-height: 260px; flex-shrink: 0; }
+  .timeline-head { padding: 10px 20px 6px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .05em; display: flex; align-items: center; gap: 8px; }
   .tl-items { padding: 0 20px 12px; }
-  .tl-row { display: flex; gap: 12px; padding: 6px 0; }
+  .tl-row { display: flex; gap: 12px; padding: 6px 0; cursor: pointer; }
   .tl-row:not(:last-child) { border-bottom: 1px solid #f1f5f9; }
+  .tl-row:hover { background: #f8fafc; margin: 0 -4px; padding-left: 4px; padding-right: 4px; }
   .tl-icon { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
   .tl-icon.created { background: #dbeafe; }
   .tl-icon.completed { background: #dcfce7; }
   .tl-icon.error { background: #fee2e2; }
   .tl-icon.default { background: #f1f5f9; }
-  .tl-body { flex: 1; }
+  .tl-body { flex: 1; min-width: 0; }
   .tl-label { font-size: 13px; color: #1e293b; }
   .tl-time { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+  .tl-payload { font-size: 11px; font-family: monospace; background: #f1f5f9; border-radius: 4px; padding: 6px 8px; margin-top: 4px; white-space: pre-wrap; word-break: break-all; color: #334155; max-height: 120px; overflow-y: auto; }
+  .btn-close-run { padding: 3px 10px; border: 1px solid #ef4444; background: transparent; color: #ef4444; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; }
+  .btn-close-run:hover { background: #fee2e2; }
 
   /* Loading / error */
   .mon-loading { flex: 1; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 14px; }
@@ -142,6 +146,8 @@ export function Monitor() {
   const [statusFilter, setStatusFilter] = useState('');
   const [processFilter, setProcessFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [expandedPayload, setExpandedPayload] = useState<string | null>(null); // tl-row key
+  const [closingRun, setClosingRun] = useState(false);
 
   // Load workflow names for group headings
   useEffect(() => {
@@ -331,6 +337,18 @@ export function Monitor() {
                 </div>
               </div>
 
+              {/* Payload (trigger data) */}
+              {selectedRun.payload && Object.keys(selectedRun.payload).length > 0 && (
+                <details style={{ padding: '4px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff', flexShrink: 0 }}>
+                  <summary style={{ fontSize: 12, color: '#64748b', cursor: 'pointer', userSelect: 'none', fontWeight: 600 }}>
+                    {lang === 'ru' ? 'Данные запуска (payload)' : 'Run payload'}
+                  </summary>
+                  <pre style={{ fontSize: 11, fontFamily: 'monospace', background: '#f1f5f9', borderRadius: 4, padding: '6px 8px', margin: '4px 0 6px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#334155', maxHeight: 100, overflowY: 'auto' }}>
+                    {JSON.stringify(selectedRun.payload, null, 2)}
+                  </pre>
+                </details>
+              )}
+
               {/* EPC Diagram with highlighted current step */}
               <div className="run-diagram">
                 {selectedWf ? (
@@ -344,19 +362,43 @@ export function Monitor() {
 
               {/* Timeline */}
               <div className="run-timeline">
-                <div className="timeline-head">{lang === 'ru' ? 'История' : 'History'}</div>
+                <div className="timeline-head">
+                  <span style={{ flex: 1 }}>{lang === 'ru' ? 'История' : 'History'}</span>
+                  {selectedRun.status === 'running' && (
+                    <button
+                      className="btn-close-run"
+                      disabled={closingRun}
+                      onClick={async () => {
+                        if (!confirm(lang === 'ru' ? 'Принудительно закрыть прогон?' : 'Force-close this run?')) return;
+                        setClosingRun(true);
+                        try {
+                          await fetch(`/cases/${selectedRun.case_id}/close`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+                          load();
+                          setSelectedRun(r => r ? { ...r, status: 'done' } : r);
+                        } finally { setClosingRun(false); }
+                      }}
+                    >{lang === 'ru' ? 'Закрыть' : 'Force close'}</button>
+                  )}
+                </div>
                 <div className="tl-items">
-                  {[...selectedRun.history].reverse().map((h, i) => (
-                    <div key={i} className="tl-row">
-                      <div className={`tl-icon ${tlIconClass(h.element_type)}`}>
-                        {h.element_type === 'function' ? '⚙' : h.element_type === 'gateway' ? '◇' : '●'}
+                  {[...selectedRun.history].reverse().map((h, i) => {
+                    const key = `${i}`;
+                    const hasPayload = h.output && Object.keys(h.output).length > 0;
+                    return (
+                      <div key={key} className="tl-row" onClick={() => setExpandedPayload(p => p === key ? null : key)}>
+                        <div className={`tl-icon ${tlIconClass(h.element_type)}`}>
+                          {h.element_type === 'function' ? '⚙' : h.element_type === 'gateway' ? '◇' : '●'}
+                        </div>
+                        <div className="tl-body">
+                          <div className="tl-label">{h.label}{hasPayload ? ' ▸' : ''}</div>
+                          <div className="tl-time">{fmtTime(h.timestamp)}</div>
+                          {expandedPayload === key && hasPayload && (
+                            <div className="tl-payload">{JSON.stringify(h.output, null, 2)}</div>
+                          )}
+                        </div>
                       </div>
-                      <div className="tl-body">
-                        <div className="tl-label">{h.label}</div>
-                        <div className="tl-time">{fmtTime(h.timestamp)}</div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {selectedRun.history.length === 0 && (
                     <div style={{ color: '#94a3b8', fontSize: 13, padding: '8px 0' }}>
                       {lang === 'ru' ? 'История пуста' : 'No history yet'}
