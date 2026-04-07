@@ -169,7 +169,10 @@ function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps & { isEditi
       shape = <rect width={EW} height={EH} fill={fill} stroke={outln} strokeWidth={sw} />;
   }
 
-  const label = el.type === 'gateway' ? (el.operator || el.label) : el.label;
+  const gwOp = (el.operator || '').toUpperCase();
+  const label = el.type === 'gateway'
+    ? (gwOp === 'X' ? 'XOR' : gwOp === 'XOR' ? 'XOR' : gwOp === 'AND' ? 'AND' : gwOp === 'OR' ? 'OR' : el.operator || el.label)
+    : el.label;
   const maxW = el.type === 'gateway' ? GR * 2 - 8 : EW - 16;
   const words = String(label).split(' ');
   const charW = 6.2;

@@ -100,7 +100,8 @@ function renderGateway(g: Element, node: WorkflowElement, s: StatusStyle) {
   const shape = el('circle', { cx: CX, cy: CY, r: GW_R, fill: '#E8F4FD', stroke: '#4B7BA8', 'stroke-width': 1.5 }, g);
   applyStatus(shape, s);
   const t = el('text', { x: CX, y: CY, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 13, 'font-weight': 'bold', 'font-family': 'system-ui, sans-serif', fill: '#2c5f8a', 'pointer-events': 'none' }, g);
-  t.textContent = node.operator || node.label || '?';
+  const opRaw = (node.operator || '').toUpperCase();
+  t.textContent = opRaw === 'X' ? 'XOR' : opRaw === 'XOR' ? 'XOR' : opRaw === 'AND' ? 'AND' : opRaw === 'OR' ? 'OR' : node.operator || node.label || '?';
 }
 
 function renderRole(g: Element, node: WorkflowElement, s: StatusStyle) {
