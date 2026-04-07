@@ -35,7 +35,7 @@ const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] 
     id: 'system',
     keyRu: 'Система',
     keyEn: 'System',
-    pages: ['/health', '/connectors', '/messages', '/eventlog', '/kb', '/workspace', '/admin'],
+    pages: ['/health', '/connectors', '/messages', '/eventlog', '/kb', '/workspace', '/whitelist', '/admin'],
   },
 ];
 
@@ -57,6 +57,7 @@ const NAV_ITEMS: Record<string, { keyRu: string; keyEn: string; to: string }> = 
   '/workspace':    { keyRu: 'Workspace',       keyEn: 'Workspace',  to: '/workspace' },
   '/admin':        { keyRu: 'Админ',           keyEn: 'Admin',      to: '/admin' },
   '/health':       { keyRu: 'Состояние',       keyEn: 'Health',     to: '/health' },
+  '/whitelist':    { keyRu: 'Белый список',    keyEn: 'Whitelist',  to: '/whitelist' },
 };
 
 function detectGroup(pathname: string): NavGroup {

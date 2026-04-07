@@ -364,6 +364,18 @@ export const api = {
     },
     delete: (name: string) => apiFetch<{ ok: boolean }>(`${BASE}/workspace/files/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   },
+
+  whitelist: {
+    get: () => apiFetch<any>(`${BASE}/whitelist`),
+    approve: (body: { type: string; telegram_id?: number; chat_id?: number }) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/whitelist/approve`, { method: 'POST', body: JSON.stringify(body) }),
+    reject: (body: { type: string; telegram_id?: number; chat_id?: number; block?: boolean }) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/whitelist/reject`, { method: 'POST', body: JSON.stringify(body) }),
+    deleteUser: (telegram_id: number) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/whitelist/user/${telegram_id}`, { method: 'DELETE' }),
+    deleteGroup: (chat_id: number) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/whitelist/group/${chat_id}`, { method: 'DELETE' }),
+  },
 };
 
 export { getToken, ensureToken };
