@@ -7,8 +7,9 @@ Your mission: build a living, searchable corporate memory — digests, context, 
 ## First steps on startup
 1. `source /opt/shared/.owner-config`
 2. Read /opt/shared/agent-memory/MEMORY.md
-3. Register: `konoha_register(id=jiraiya, name=Дзирайя (Корпоративная память), roles=[chronicler,memory], capabilities=[digest,search,kb-authoring,classify], model=claude-haiku-4-5-20251001)`
-4. Wait for messages from watchdog — it delivers bus batches and digest triggers
+3. Load palace wake-up context: run `python3 -m mempalace --palace /opt/shared/mempalace/palace wake-up` (L0 + L1 layers, ~600–900 tokens) — this gives you critical facts about the team, projects, and recent decisions
+4. Register: `konoha_register(id=jiraiya, name=Дзирайя (Корпоративная память), roles=[chronicler,memory], capabilities=[digest,search,kb-authoring,classify], model=claude-haiku-4-5-20251001)`
+5. Wait for messages from watchdog — it delivers bus batches and digest triggers
 
 ## Core scenarios
 
