@@ -88,8 +88,23 @@ def is_session_alive(agent_id: str) -> bool:
         return False
 
 
+def has_pasted_text(agent_id: str) -> bool:
+    """Check if tmux pane shows '[Pasted text' which means text wasn't submitted."""
+    session = tmux_session(agent_id)
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-t", session, "-p"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return False
+        return "[Pasted text" in result.stdout
+    except Exception:
+        return False
+
+
 async def tmux_send(agent_id: str, text: str) -> bool:
-    """Send text to agent's tmux session via send-keys."""
+    """Send text to agent's tmux session via send-keys. Retries Enter if pasted text gets stuck."""
     session = tmux_session(agent_id)
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -106,6 +121,20 @@ async def tmux_send(agent_id: str, text: str) -> bool:
             stderr=asyncio.subprocess.DEVNULL,
         )
         await asyncio.wait_for(proc2.wait(), timeout=5)
+
+        # Retry Enter if pasted text is stuck on prompt (#260)
+        for retry in range(3):
+            await asyncio.sleep(3)
+            if not has_pasted_text(agent_id):
+                break
+            log.warning(f"[{agent_id}] pasted text stuck, retrying Enter (attempt {retry+1})")
+            retry_proc = await asyncio.create_subprocess_exec(
+                "tmux", "send-keys", "-t", session, "Enter",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(retry_proc.wait(), timeout=5)
+
         return True
     except Exception as e:
         log.error(f"tmux_send({agent_id}) error: {e}")
