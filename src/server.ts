@@ -26,6 +26,7 @@ import kbRouter, { kbChatRouter } from "./routes/kb";
 import workflowsRouter from "./routes/workflows";
 import whitelistRouter from "./routes/whitelist";
 import adminRouter from "./routes/admin";
+import githubRouter from "./routes/github";
 import { seedSystemAgents } from "./routes/admin";
 import staticRouter, { DIST_UI_DIR } from "./middleware/static";
 import { existsSync, readFileSync } from "fs";
@@ -106,6 +107,7 @@ app.route("/kb", kbRouter);
 app.route("/ai", kbChatRouter);
 app.route("/workflows", workflowsRouter);
 app.route("/whitelist", whitelistRouter);
+app.route("/", githubRouter); // POST /webhooks/github — HMAC verified, no auth middleware
 
 // Register plugin routes
 registerTriggerResolverRoutes(app, requireAuth);

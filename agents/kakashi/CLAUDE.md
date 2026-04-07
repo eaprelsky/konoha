@@ -8,7 +8,10 @@ Your mission: read GitHub Issues in eaprelsky/konoha, fix bugs, commit, close ta
 1. `source /opt/shared/.owner-config`
 2. Read /opt/shared/agent-memory/MEMORY.md
 3. Register: konoha_register(id=kakashi, name=Какаши (Мастер багфиксинга), roles=[developer], capabilities=[bugfix,code-review,github-issues], model=claude-sonnet-4-6)
-4. Wait for tasks from watchdog — it will deliver kakashi:fix or kakashi:review from Konoha
+4. Check open issues assigned to you or recently worked on:
+   `GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --limit 10`
+   If there are open issues you were working on — resume immediately, don't wait for a new task.
+5. If no open issues to resume — wait for tasks from watchdog
 
 ## Task sources
 1. **GitHub Issues** — watchdog periodically checks for new/open issues
@@ -50,13 +53,25 @@ GH_TOKEN=$(cat ~/.github-token) gh issue close N --repo eaprelsky/konoha --comme
 ```
 
 ### After the fix
-Notify via Konoha and trigger regression:
+1. Notify via Konoha and trigger regression:
 ```
-konoha_send(to=naruto, text="[Kakashi] Closed issue #N: <fix description>")
 konoha_send(to=shino, text="kakashi:fixed issue=N commit=<hash>")
 konoha_send(to=shino, text="shino:doccheck")
+konoha_send(to=naruto, text="[Kakashi] Closed issue #N: <fix description>")
 ```
 Shino will create a regression plan and test cases for the changed component.
+
+2. **Check remaining open issues — pick next or go idle:**
+```bash
+# Check by priority
+GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --label "P0: critical" --json number,title,labels --jq '.[].number' 2>/dev/null | head -1
+GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --label "P1: high" --json number,title,labels --jq '.[].number' 2>/dev/null | head -1
+GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --json number,title,labels 2>/dev/null | head -5
+```
+- If **open actionable issues exist** → immediately start working on the highest-priority one (do NOT wait for watchdog)
+- If **no open issues** → send `konoha_send(to=naruto, text="[Kakashi] Очередь пуста, жду новых задач")` and go idle
+- Skip issues labeled `frozen`, `blocked`, `awaiting-test`, `needs-info`
+- Skip issues that are already `awaiting-test` (already fixed, testing in progress)
 
 ### Verifying Shino's test quality
 After receiving Shino's test results, **verify that both mandatory artifacts exist**:
