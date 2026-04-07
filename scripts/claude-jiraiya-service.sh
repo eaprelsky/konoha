@@ -6,19 +6,19 @@ MCP_CONFIG="/home/ubuntu/konoha/agents/jiraiya/.mcp-jiraiya.json"
 RESTART_INTERVAL=7200  # 2 hours max session
 
 while true; do
-    echo "[$(date)] Starting Jiraiya (Claude Agent #4 - Chronicler)..."
+    echo "[$(date)] Starting Jiraiya (Claude Agent #4 - Corporate Memory)..."
     tmux -L "$SESSION" kill-session -t "$SESSION" 2>/dev/null
     sleep 2
 
     tmux -L "$SESSION" new-session -d -s "$SESSION" -x 200 -y 50
-    tmux -L "$SESSION" send-keys -t "$SESSION" "claude --dangerously-skip-permissions --mcp-config $MCP_CONFIG" Enter
+    tmux -L "$SESSION" send-keys -t "$SESSION" "claude --dangerously-skip-permissions --model claude-haiku-4-5-20251001 --mcp-config $MCP_CONFIG" Enter
     /home/ubuntu/scripts/wait-for-prompt.sh "$SESSION" 90 "$SESSION"
 
     # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1
 
-    JIRAIYA_PROMPT='Прочитай /home/ubuntu/konoha/agents/jiraiya/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Дзирайя (Claude Agent #4) — летописец Конохи. Зарегистрируйся: konoha_register(id=jiraiya, name=Дзирайя (Летописец), roles=[chronicler], capabilities=[classify,chronicle,digest]). Потом жди — watchdog будет доставлять батчи из konoha:bus для классификации и записи в /opt/shared/jiraiya/. Пиши по-русски. Готов к работе.'
+    JIRAIYA_PROMPT='Прочитай /home/ubuntu/konoha/agents/jiraiya/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Дзирайя (Claude Agent #4) — корпоративная память Конохи. Зарегистрируйся: konoha_register(id=jiraiya, name=Дзирайя (Корпоративная память), roles=[chronicler,memory], capabilities=[digest,search,kb-authoring,classify], model=claude-haiku-4-5-20251001). Потом жди — watchdog будет доставлять батчи из konoha:bus и DIGEST-триггеры. Пиши по-русски. Готов к работе.'
     tmux -L "$SESSION" send-keys -t "$SESSION" "$JIRAIYA_PROMPT" Enter
 
     echo "[$(date)] Jiraiya started. Monitoring tmux session (max ${RESTART_INTERVAL}s)..."

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Watchdog for Jiraiya (Claude Agent #4 — Chronicler).
+Watchdog for Jiraiya (Claude Agent #4 — Corporate Memory).
 Reads ALL messages from konoha:bus Redis stream via consumer group
-and delivers batches to the jiraiya tmux session for classification and logging.
+and delivers batches to the jiraiya tmux session for digest generation and KB authoring.
 """
 
 import asyncio
@@ -289,7 +289,7 @@ async def digest_loop(batched_queue: asyncio.Queue) -> None:
             "from": "watchdog",
             "to": "jiraiya",
             "type": "digest",
-            "text": "DIGEST: Сгенерируй дайджест за последние 3 часа. Прочитай internal/timeline/ за сегодня, обнови patterns, при наличии фактуры создай media/stories/ нарратив.",
+            "text": "DIGEST: Сгенерируй дайджест за последние 3 часа. Прочитай сообщения из батча, telegram-log если есть, последние git-коммиты wiki. Запиши в /opt/shared/wiki/digests/YYYY-MM-DD.md. Отправь краткое резюме Наруто через konoha_send.",
             "timestamp": "",
         }]
         await batched_queue.put(digest_msg)
