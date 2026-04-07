@@ -8,6 +8,7 @@ import { registerTriggerResolverRoutes } from "./trigger-resolver";
 import { registerEventManagerRoutes, restoreSubscriptions, startDelayWorker } from "./event-manager";
 import { registerWorkCalendarRoutes } from "./work-calendar";
 import { requireAuth } from "./middleware/auth";
+import type { HonoEnv } from "./types";
 
 // Route modules
 import agentsRouter from "./routes/agents";
@@ -41,7 +42,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const PORT = parseInt(process.env.KONOHA_PORT || "3100");
-const app = new Hono();
+const app = new Hono<HonoEnv>();
 
 // Static UI files (no auth required)
 // Handle /ui/ (trailing slash) — Hono sub-router doesn't match this

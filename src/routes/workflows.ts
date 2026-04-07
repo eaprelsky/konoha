@@ -9,11 +9,13 @@ import {
   archiveWorkflow,
   listWorkflowVersions,
   getWorkflowVersion,
+  type WorkflowElement,
+  type WorkflowDefinition,
 } from "../workflow-loader";
 import { normalizeElementNames } from "../normalizer";
 import { join } from "path";
 import { resolveBatchProgrammatic, type ProcessContext } from "../trigger-resolver";
-import { createSubscriptionProgrammatic } from "../event-manager";
+import { createSubscriptionProgrammatic, type TriggerDef } from "../event-manager";
 
 /**
  * Run Trigger Resolver batch for all event nodes that lack a `trigger` field.
@@ -22,9 +24,9 @@ import { createSubscriptionProgrammatic } from "../event-manager";
  * Throws if Haiku is unavailable (deploy must fail).
  */
 async function resolveTriggers(
-  elements: any[],
+  elements: WorkflowElement[],
   processContext?: ProcessContext,
-): Promise<{ elements: any[]; needs_review: boolean }> {
+): Promise<{ elements: WorkflowElement[]; needs_review: boolean }> {
   const { buildAdjacency } = await import("../workflow-loader").then(m => {
     // Re-use buildAdjacency via a small local helper to identify start nodes
     return { buildAdjacency: null };
@@ -57,7 +59,7 @@ async function resolveTriggers(
     const resolved = resultMap.get(el.id);
     if (!resolved) continue;
 
-    updatedElements[i] = { ...el, trigger: resolved };
+    updatedElements[i] = { ...el, trigger: resolved as WorkflowElement["trigger"] };
 
     if (resolved.kind === "ambiguous" || (resolved.confidence ?? 1) < 0.7) {
       needs_review = true;
@@ -71,13 +73,13 @@ async function resolveTriggers(
  * Subscribe all start event nodes (no incoming edges) of a process to Event Manager.
  * Called after a successful non-draft deploy.
  */
-async function subscribeStartEvents(def: any): Promise<void> {
+async function subscribeStartEvents(def: WorkflowDefinition): Promise<void> {
   // Build inEdge count
   const inCount = new Map<string, number>();
   for (const el of def.elements) inCount.set(el.id, 0);
   for (const [, to] of def.flow ?? []) inCount.set(to, (inCount.get(to) ?? 0) + 1);
 
-  const startEvents = def.elements.filter((el: any) =>
+  const startEvents = def.elements.filter((el) =>
     el.type === "event" && (inCount.get(el.id) ?? 0) === 0 && el.trigger?.kind && !el.trigger?.manual_override,
   );
 
@@ -87,7 +89,7 @@ async function subscribeStartEvents(def: any): Promise<void> {
         event_id: el.id,
         process_id: def.id,
         instance_id: "new", // no instance yet — engine will create one on event_fired
-        trigger: el.trigger,
+        trigger: el.trigger as TriggerDef,
       });
       console.log(`[workflow-deploy] subscribed start event ${el.id} for process ${def.id}`);
     } catch (e: any) {
@@ -105,14 +107,14 @@ router.get("/", requireAuth, async (c) => {
 
 // NOTE: /versions sub-route must be declared BEFORE the wildcard get below
 router.get("/:id{.+}/versions", requireAuth, async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const versions = await listWorkflowVersions(id);
   return c.json(versions);
 });
 
 // :id{.+} captures slashes so IDs like "general/reflection" work correctly
 router.get("/:id{.+}", requireAuth, async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const snapshot = c.req.query("snapshot");
   if (snapshot) {
     const vwf = await getWorkflowVersion(id, snapshot);
@@ -131,9 +133,9 @@ router.post("/", requireAuth, async (c) => {
   const draft = c.req.query("draft") === "true";
   let normalized = false;
   if (body.elements?.length) {
-    const nameMap = await normalizeElementNames(body.elements).catch(() => ({}));
+    const nameMap = await normalizeElementNames(body.elements).catch((): Record<string, string> => ({}));
     if (Object.keys(nameMap).length) {
-      body.elements = body.elements.map((el: any) => nameMap[el.id] ? { ...el, label: nameMap[el.id] } : el);
+      body.elements = body.elements.map((el: WorkflowElement) => nameMap[el.id] ? { ...el, label: nameMap[el.id] } : el);
       normalized = true;
     }
   }
@@ -144,8 +146,8 @@ router.post("/", requireAuth, async (c) => {
       const ctx: ProcessContext = {
         process_id: body.id,
         process_name: body.name,
-        events: body.elements.filter((el: any) => el.type === "event").map((el: any) => ({ id: el.id, label: el.label })),
-        functions: body.elements.filter((el: any) => el.type === "function").map((el: any) => ({ id: el.id, label: el.label })),
+        events: body.elements.filter((el: WorkflowElement) => el.type === "event").map((el: WorkflowElement) => ({ id: el.id, label: el.label })),
+        functions: body.elements.filter((el: WorkflowElement) => el.type === "function").map((el: WorkflowElement) => ({ id: el.id, label: el.label })),
       };
       const { elements, needs_review } = await resolveTriggers(body.elements, ctx);
       body.elements = elements;
@@ -172,15 +174,15 @@ router.post("/", requireAuth, async (c) => {
 });
 
 router.put("/:id{.+}", requireAuth, async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
   const draft = c.req.query("draft") === "true";
   let normalized = false;
   if (body.elements?.length) {
-    const nameMap = await normalizeElementNames(body.elements).catch(() => ({}));
+    const nameMap = await normalizeElementNames(body.elements).catch((): Record<string, string> => ({}));
     if (Object.keys(nameMap).length) {
-      body.elements = body.elements.map((el: any) => nameMap[el.id] ? { ...el, label: nameMap[el.id] } : el);
+      body.elements = body.elements.map((el: WorkflowElement) => nameMap[el.id] ? { ...el, label: nameMap[el.id] } : el);
       normalized = true;
     }
   }
@@ -191,8 +193,8 @@ router.put("/:id{.+}", requireAuth, async (c) => {
       const ctx: ProcessContext = {
         process_id: id,
         process_name: body.name,
-        events: body.elements.filter((el: any) => el.type === "event").map((el: any) => ({ id: el.id, label: el.label })),
-        functions: body.elements.filter((el: any) => el.type === "function").map((el: any) => ({ id: el.id, label: el.label })),
+        events: body.elements.filter((el: WorkflowElement) => el.type === "event").map((el: WorkflowElement) => ({ id: el.id, label: el.label })),
+        functions: body.elements.filter((el: WorkflowElement) => el.type === "function").map((el: WorkflowElement) => ({ id: el.id, label: el.label })),
       };
       const { elements, needs_review } = await resolveTriggers(body.elements, ctx);
       body.elements = elements;
@@ -220,7 +222,7 @@ router.put("/:id{.+}", requireAuth, async (c) => {
 });
 
 router.delete("/:id{.+}", requireAuth, async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const ok = await archiveWorkflow(id);
   if (!ok) return c.json({ error: "Workflow not found" }, 404);
   return c.json({ ok: true, archived: id });
