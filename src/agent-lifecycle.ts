@@ -99,8 +99,14 @@ export interface AgentState {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/** tmux session name — just the agent id (each agent gets its own socket via -L) */
 function tmuxSession(id: string): string {
-  return "konoha-" + id;
+  return id;
+}
+
+/** tmux socket name — isolates each agent on its own tmux server */
+function tmuxSocket(id: string): string {
+  return id;
 }
 
 async function sh(cmd: string, args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
@@ -112,13 +118,13 @@ async function sh(cmd: string, args: string[]): Promise<{ ok: boolean; stdout: s
   }
 }
 
-export async function isTmuxRunning(session: string): Promise<boolean> {
-  const r = await sh("tmux", ["has-session", "-t", session]);
+export async function isTmuxRunning(id: string): Promise<boolean> {
+  const r = await sh("tmux", ["-L", tmuxSocket(id), "has-session", "-t", tmuxSession(id)]);
   return r.ok;
 }
 
-async function getTmuxPid(session: string): Promise<number | null> {
-  const r = await sh("tmux", ["list-panes", "-t", session, "-F", "#{pane_pid}"]);
+async function getTmuxPid(id: string): Promise<number | null> {
+  const r = await sh("tmux", ["-L", tmuxSocket(id), "list-panes", "-t", tmuxSession(id), "-F", "#{pane_pid}"]);
   if (!r.ok || !r.stdout) return null;
   const pid = parseInt(r.stdout.split("\n")[0], 10);
   return isNaN(pid) ? null : pid;
@@ -271,10 +277,11 @@ export async function listAgentDefs(): Promise<AgentDef[]> {
 
 export async function startAgent(id: string, def: AgentDef): Promise<AgentState> {
   const session = tmuxSession(id);
+  const socket = tmuxSocket(id);
 
   // Already running — sync state and return
-  if (await isTmuxRunning(session)) {
-    const pid = await getTmuxPid(session);
+  if (await isTmuxRunning(id)) {
+    const pid = await getTmuxPid(id);
     const existing = await getAgentState(id);
     const state: AgentState = {
       agent_id: id,
@@ -328,16 +335,18 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     // and the tmux session dies within ~15s (fixes #236).
     const loopScript = `while true; do ${claudeCmd}; echo "[$(date)] Claude exited (code $?), restarting in 5s..."; sleep 5; done`;
 
-    const r = await sh("tmux", ["new-session", "-d", "-s", session, "-c", workdir, "bash", "-c", loopScript]);
+    // Use named socket (-L) to isolate each agent on its own tmux server.
+    // If one tmux server crashes, only that agent is affected — not all lifecycle agents.
+    const r = await sh("tmux", ["-L", socket, "new-session", "-d", "-s", session, "-x", "200", "-y", "50", "-c", workdir, "bash", "-c", loopScript]);
     if (!r.ok) throw new Error(r.stderr || "tmux new-session failed");
 
     // Wait for Claude Code to start and show the prompt (7s to be safe on slow init)
     await new Promise(res => setTimeout(res, 7000));
 
     // Inject startup message so agent executes its startup sequence
-    await sh("tmux", ["send-keys", "-t", session, "Прочитай CLAUDE.md и выполни startup sequence.", "Enter"]);
+    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Прочитай CLAUDE.md и выполни startup sequence.", "Enter"]);
 
-    const pid = await getTmuxPid(session);
+    const pid = await getTmuxPid(id);
     const state: AgentState = {
       agent_id: id,
       status: "running",
@@ -346,7 +355,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
       tmux_session: session,
     };
     await saveState(state);
-    await audit(id, "started", `session=${session} pid=${pid}`);
+    await audit(id, "started", `socket=${socket} session=${session} pid=${pid}`);
     return await getAgentState(id);
   } catch (e: any) {
     const state: AgentState = { agent_id: id, status: "error", error: e.message };
@@ -358,17 +367,18 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
 
 export async function stopAgent(id: string): Promise<AgentState> {
   const session = tmuxSession(id);
+  const socket = tmuxSocket(id);
   await saveState({ agent_id: id, status: "stopping", tmux_session: session });
 
   try {
-    if (await isTmuxRunning(session)) {
+    if (await isTmuxRunning(id)) {
       // Try graceful stop via Claude Code /exit command
-      await sh("tmux", ["send-keys", "-t", session, "/exit", "Enter"]);
+      await sh("tmux", ["-L", socket, "send-keys", "-t", session, "/exit", "Enter"]);
       await new Promise(res => setTimeout(res, 1200));
 
       // Force kill if still alive
-      if (await isTmuxRunning(session)) {
-        await sh("tmux", ["kill-session", "-t", session]);
+      if (await isTmuxRunning(id)) {
+        await sh("tmux", ["-L", socket, "kill-session", "-t", session]);
       }
     }
 

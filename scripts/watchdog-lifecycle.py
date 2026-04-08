@@ -52,15 +52,20 @@ def get_agents() -> list[str]:
 
 
 def tmux_session(agent_id: str) -> str:
-    return f"konoha-{agent_id}"
+    return agent_id
+
+
+def tmux_socket(agent_id: str) -> str:
+    return agent_id
 
 
 def is_agent_idle(agent_id: str) -> bool:
     """Check if agent's tmux session shows the ❯ prompt (idle)."""
     session = tmux_session(agent_id)
+    socket = tmux_socket(agent_id)
     try:
         result = subprocess.run(
-            ["tmux", "capture-pane", "-t", session, "-p"],
+            ["tmux", "-L", socket, "capture-pane", "-t", session, "-p"],
             capture_output=True, text=True, timeout=5,
         )
         if result.returncode != 0:
@@ -76,11 +81,12 @@ def is_agent_idle(agent_id: str) -> bool:
 
 
 def is_session_alive(agent_id: str) -> bool:
-    """Check if tmux session exists on default socket."""
+    """Check if tmux session exists on its named socket."""
     session = tmux_session(agent_id)
+    socket = tmux_socket(agent_id)
     try:
         result = subprocess.run(
-            ["tmux", "has-session", "-t", session],
+            ["tmux", "-L", socket, "has-session", "-t", session],
             capture_output=True, timeout=5,
         )
         return result.returncode == 0
@@ -91,9 +97,10 @@ def is_session_alive(agent_id: str) -> bool:
 def has_pasted_text(agent_id: str) -> bool:
     """Check if tmux pane shows '[Pasted text' which means text wasn't submitted."""
     session = tmux_session(agent_id)
+    socket = tmux_socket(agent_id)
     try:
         result = subprocess.run(
-            ["tmux", "capture-pane", "-t", session, "-p"],
+            ["tmux", "-L", socket, "capture-pane", "-t", session, "-p"],
             capture_output=True, text=True, timeout=5,
         )
         if result.returncode != 0:
@@ -106,9 +113,10 @@ def has_pasted_text(agent_id: str) -> bool:
 async def tmux_send(agent_id: str, text: str) -> bool:
     """Send text to agent's tmux session via send-keys. Retries Enter if pasted text gets stuck."""
     session = tmux_session(agent_id)
+    socket = tmux_socket(agent_id)
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux", "send-keys", "-t", session, text,
+            "tmux", "-L", socket, "send-keys", "-t", session, text,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
@@ -116,7 +124,7 @@ async def tmux_send(agent_id: str, text: str) -> bool:
         if proc.returncode != 0:
             return False
         proc2 = await asyncio.create_subprocess_exec(
-            "tmux", "send-keys", "-t", session, "Enter",
+            "tmux", "-L", socket, "send-keys", "-t", session, "Enter",
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
@@ -129,7 +137,7 @@ async def tmux_send(agent_id: str, text: str) -> bool:
                 break
             log.warning(f"[{agent_id}] pasted text stuck, retrying Enter (attempt {retry+1})")
             retry_proc = await asyncio.create_subprocess_exec(
-                "tmux", "send-keys", "-t", session, "Enter",
+                "tmux", "-L", socket, "send-keys", "-t", session, "Enter",
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
@@ -449,15 +457,10 @@ async def main():
                     data = await resp.json()
                     all_agents = data if isinstance(data, list) else data.get("agents", [])
                     # Watch agents that have lifecycle and are not legacy system agents
-                    # (mirai uses its own watchdog; naruto/sasuke use lifecycle via redis_streams)
-                    # Agents with dedicated legacy watchdogs (own systemd service + tmux session
-                    # that does NOT follow the konoha-{id} naming convention used here).
-                    # sasuke: uses watchdog-sasuke.py + tmux "sasuke" (not "konoha-sasuke"),
-                    #         also owns consumer group "sasuke" on telegram:incoming — competing
-                    #         with this watchdog would drop messages (issue #277).
-                    # kiba: uses legacy watchdog-kiba.py + tmux "kiba" (not "konoha-kiba").
                     # mirai: has its own dedicated watchdog service.
-                    legacy_ids = {"mirai", "sasuke", "kiba"}
+                    # All other agents use lifecycle with named tmux sockets (-L {id}),
+                    # so there's no conflict between watchdogs.
+                    legacy_ids = {"mirai"}
                     agents = [
                         a["id"] for a in all_agents
                         if a.get("id") and a["id"] not in legacy_ids
