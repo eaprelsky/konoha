@@ -216,8 +216,17 @@ async function saveState(state: AgentState): Promise<void> {
 export async function getAgentState(id: string): Promise<AgentState> {
   const raw = await redis.hget(AGENT_STATE_KEY, id);
   const state: AgentState = raw ? JSON.parse(raw) : { agent_id: id, status: "stopped" };
-  if (state.status === "running" && state.started_at) {
-    state.uptime_seconds = Math.floor((Date.now() - new Date(state.started_at).getTime()) / 1000);
+  if (state.status === "running") {
+    // Verify PID is still alive via /proc — auto-reset if dead (issue #276).
+    // /proc/<pid> exists on Linux if and only if the process is alive.
+    if (state.pid && !existsSync(`/proc/${state.pid}`)) {
+      state.status = "stopped";
+      state.pid = undefined;
+      state.uptime_seconds = undefined;
+      await saveState(state);
+    } else if (state.started_at) {
+      state.uptime_seconds = Math.floor((Date.now() - new Date(state.started_at).getTime()) / 1000);
+    }
   }
   return state;
 }
