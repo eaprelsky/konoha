@@ -24,6 +24,7 @@ TMUX_SESSION = "kiba"
 DEBOUNCE_WINDOW       = 5.0   # longer debounce — batch multiple alerts
 IDLE_POLL_SEC         = 2.0
 IDLE_TIMEOUT_SEC      = 300
+WAKE_TIMEOUT_SEC      = 120   # max wait for on-demand agent to start
 SSE_MAX_BACKOFF       = 60
 CIRCUIT_BREAKER_DURATION = 600  # 10 min: no delivery attempts while circuit is open (#111)
 
@@ -77,6 +78,34 @@ def is_session_noise(data: dict) -> bool:
 
 
 # ── Idle detection ───────────────────────────────────────────────────────────
+
+def is_session_alive(session: str) -> bool:
+    """Check if tmux session exists on its named socket."""
+    try:
+        result = subprocess.run(
+            ["tmux", "-L", session, "has-session", "-t", session],
+            capture_output=True, timeout=5,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def try_wake_agent() -> bool:
+    """Start claude-{AGENT_ID}.service to wake the on-demand agent.
+    Returns True if start was attempted."""
+    service = f"claude-{AGENT_ID}.service"
+    try:
+        subprocess.run(
+            ["sudo", "systemctl", "start", service],
+            capture_output=True, timeout=30,
+        )
+        log.info(f"on-demand wake: started {service}")
+        return True
+    except Exception as e:
+        log.warning(f"failed to wake {service}: {e}")
+        return False
+
 
 def tmux_pane_content(session: str) -> str:
     try:
@@ -218,11 +247,19 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             continue
 
         waited = 0.0
+        wake_attempted = False
         while True:
             if is_agent_idle(TMUX_SESSION):
                 break
-            if waited >= IDLE_TIMEOUT_SEC:
-                open_circuit(f"agent={TMUX_SESSION} unresponsive >{IDLE_TIMEOUT_SEC}s")
+            if not is_session_alive(TMUX_SESSION) and not wake_attempted:
+                wake_attempted = True
+                if try_wake_agent():
+                    log.info(f"Waiting for {TMUX_SESSION} session after wake (max {WAKE_TIMEOUT_SEC}s)")
+                    await asyncio.sleep(IDLE_POLL_SEC)
+                    waited += IDLE_POLL_SEC
+                    continue
+            if waited >= max(IDLE_TIMEOUT_SEC, WAKE_TIMEOUT_SEC if wake_attempted else IDLE_TIMEOUT_SEC):
+                open_circuit(f"agent={TMUX_SESSION} unresponsive >{waited:.0f}s")
                 log.warning(f"Dropping {len(pending)} alert(s); notifying naruto")
                 asyncio.ensure_future(notify_naruto_frozen(TMUX_SESSION, waited, len(pending)))
                 pending.clear()
