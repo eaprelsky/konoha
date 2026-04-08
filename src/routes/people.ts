@@ -88,7 +88,7 @@ router.post("/", async (c) => {
 });
 
 router.delete("/:id", requireAuth, async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const trusted = loadTrustedPeople();
   if (trusted.some(p => p.id === id)) {
     return c.json({ error: "Cannot delete file-based users" }, 403);
@@ -99,7 +99,7 @@ router.delete("/:id", requireAuth, async (c) => {
 });
 
 router.post("/:id/avatar", requireAuth, async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const contentType = c.req.header("content-type") || "";
 
   // Resolve person (custom or file-based)
@@ -153,7 +153,7 @@ router.post("/:id/avatar", requireAuth, async (c) => {
   }
 
   // text2img mode: JSON body
-  const body = await c.req.json<{ style?: string; description?: string; prompt?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ style?: string; description?: string; prompt?: string }>().catch((): { style?: string; description?: string; prompt?: string } => ({}));
   try {
     const result = await generateAvatar({
       id,

@@ -23,7 +23,8 @@ const router = new Hono();
 router.get("/", async (c) => {
   c.header("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
   const ids = await redis.zrange(SKILLS_IDX_ALL, 0, -1);
-  const raws = await Promise.all(ids.map(id => redis.get(SKILL_KEY_PREFIX + id)));
+  if (ids.length === 0) return c.json([]);
+  const raws = await redis.mget(...ids.map(id => SKILL_KEY_PREFIX + id));
   return c.json(raws.filter(Boolean).map(r => JSON.parse(r!)));
 });
 
@@ -52,7 +53,7 @@ router.patch("/:id", async (c) => {
   const raw = await redis.get(SKILL_KEY_PREFIX + id);
   if (!raw) return c.json({ error: "Skill not found" }, 404);
   const skill: SkillRecord = JSON.parse(raw);
-  const body = await c.req.json<Partial<SkillRecord>>().catch(() => ({}));
+  const body = await c.req.json<Partial<SkillRecord>>().catch((): Partial<SkillRecord> => ({}));
   if (body.name !== undefined)           skill.name = body.name.trim();
   if (body.name_en !== undefined)        skill.name_en = body.name_en?.trim() || undefined;
   if (body.description !== undefined)    skill.description = body.description?.trim() || undefined;

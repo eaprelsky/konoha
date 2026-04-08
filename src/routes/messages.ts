@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { HonoEnv } from "../types";
 import { streamSSE } from "hono/streaming";
 import { writeFileSync, existsSync, statSync } from "fs";
 import { join, extname } from "path";
@@ -18,7 +19,7 @@ import {
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
 
-const router = new Hono();
+const router = new Hono<HonoEnv>();
 
 // All messages and attachments routes require auth (set at mount level in server.ts)
 

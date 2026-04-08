@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { HonoEnv } from "../types";
 import { mkdirSync, existsSync, statSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from "fs";
 import { join, basename } from "path";
 import { execFile } from "child_process";
@@ -27,7 +28,7 @@ import {
   isTmuxRunning,
 } from "../agent-lifecycle";
 
-const router = new Hono();
+const router = new Hono<HonoEnv>();
 
 // Apply auth to all protected routes
 // /agents/register is handled inline (invite token logic, no middleware)
@@ -83,7 +84,7 @@ router.post("/", async (c) => {
 
 // GET /agents/:id/status — lifecycle status (tmux state, pid, uptime)
 router.get("/:id/status", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
   const state = await getAgentState(id);
@@ -92,7 +93,7 @@ router.get("/:id/status", async (c) => {
 
 // POST /agents/:id/start
 router.post("/:id/start", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
   try {
@@ -105,7 +106,7 @@ router.post("/:id/start", async (c) => {
 
 // POST /agents/:id/stop
 router.post("/:id/stop", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
   try {
@@ -118,7 +119,7 @@ router.post("/:id/stop", async (c) => {
 
 // POST /agents/:id/restart
 router.post("/:id/restart", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
   try {
@@ -132,7 +133,7 @@ router.post("/:id/restart", async (c) => {
 // GET /agents/tmux/:id — capture tmux pane output (last 200 lines)
 router.use("/tmux/:id", requireAuth);
 router.get("/tmux/:id", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const konohaSession = `konoha-${id}`;
 
   async function capturePane(args: string[]): Promise<string | null> {
@@ -155,7 +156,7 @@ router.get("/tmux/:id", async (c) => {
 
 // GET /agents/:id/system-template — rendered system template for this agent
 router.get("/:id/system-template", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   const base = def ?? { id, name: id, model: "claude-sonnet-4-6" };
   return c.json({ template: renderSystemTemplate(base) });
@@ -163,7 +164,7 @@ router.get("/:id/system-template", async (c) => {
 
 // GET /agents/:id/memory — list memory files for agent
 router.get("/:id/memory", requireAuth, async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const dir = `/opt/shared/agent-memory/${basename(id)}`;
   if (!existsSync(dir)) return c.json([]);
   const files = readdirSync(dir)
@@ -178,8 +179,8 @@ router.get("/:id/memory", requireAuth, async (c) => {
 
 // GET /agents/:id/memory/:filename — read one memory file
 router.get("/:id/memory/:filename", requireAuth, async (c) => {
-  const id = c.req.param("id");
-  const filename = basename(c.req.param("filename")); // prevent path traversal
+  const id = c.req.param("id")!;
+  const filename = basename(c.req.param("filename")!); // prevent path traversal
   const dir = `/opt/shared/agent-memory/${basename(id)}`;
   const filepath = join(dir, filename);
   if (!existsSync(filepath)) return c.json({ error: "Not found" }, 404);
@@ -189,8 +190,8 @@ router.get("/:id/memory/:filename", requireAuth, async (c) => {
 
 // DELETE /agents/:id/memory/:filename — delete one memory file
 router.delete("/:id/memory/:filename", requireAuth, async (c) => {
-  const id = c.req.param("id");
-  const filename = basename(c.req.param("filename")); // prevent path traversal
+  const id = c.req.param("id")!;
+  const filename = basename(c.req.param("filename")!); // prevent path traversal
   const dir = `/opt/shared/agent-memory/${basename(id)}`;
   const filepath = join(dir, filename);
   if (!existsSync(filepath)) return c.json({ error: "Not found" }, 404);
@@ -200,8 +201,8 @@ router.delete("/:id/memory/:filename", requireAuth, async (c) => {
 
 // PUT /agents/:id/memory/:filename — overwrite memory file content
 router.put("/:id/memory/:filename", requireAuth, async (c) => {
-  const id = c.req.param("id");
-  const filename = basename(c.req.param("filename"));
+  const id = c.req.param("id")!;
+  const filename = basename(c.req.param("filename")!);
   if (!filename.endsWith(".md") && !filename.endsWith(".txt") && !filename.endsWith(".json")) {
     return c.json({ error: "Only .md, .txt, .json files allowed" }, 415);
   }
@@ -215,8 +216,8 @@ router.put("/:id/memory/:filename", requireAuth, async (c) => {
 
 // POST /agents/:id/memory/:filename — create new memory file
 router.post("/:id/memory/:filename", requireAuth, async (c) => {
-  const id = c.req.param("id");
-  const filename = basename(c.req.param("filename"));
+  const id = c.req.param("id")!;
+  const filename = basename(c.req.param("filename")!);
   if (!filename.endsWith(".md") && !filename.endsWith(".txt") && !filename.endsWith(".json")) {
     return c.json({ error: "Only .md, .txt, .json files allowed" }, 415);
   }
@@ -231,7 +232,7 @@ router.post("/:id/memory/:filename", requireAuth, async (c) => {
 
 // GET /agents/:id — get single agent (bus data merged with def)
 router.get("/:id", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const [busAgents, def] = await Promise.all([
     listAgents(false),
     getAgentDef(id),
@@ -246,7 +247,7 @@ router.get("/:id", async (c) => {
 
 // PUT /agents/:id — update agent definition fields (name, system_prompt, model)
 router.put("/:id", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
   const body = await c.req.json().catch(() => null);
@@ -258,7 +259,7 @@ router.put("/:id", async (c) => {
 
 // DELETE /agents/:id — stop agent, delete definition, and unregister from bus
 router.delete("/:id", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (def?.protected) return c.json({ error: "Cannot delete a protected system agent" }, 403);
   if (def) {
@@ -332,7 +333,7 @@ router.get("/", async (c) => {
 });
 
 router.post("/:id/heartbeat", async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
   if (!caller.isAdmin && caller.agentId !== id) {
     return c.json({ error: "Forbidden: can only send heartbeat for yourself" }, 403);

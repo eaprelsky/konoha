@@ -14,7 +14,8 @@
  */
 
 import { redis } from "./redis";
-import type { Hono } from "hono";
+import type { Hono, MiddlewareHandler } from "hono";
+import type { HonoEnv } from "./types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -198,8 +199,8 @@ export async function resolveBdDelay(fromDateStr: string, duration: string): Pro
 // ── Route registration ────────────────────────────────────────────────────────
 
 export function registerWorkCalendarRoutes(
-  app: Hono<any>,
-  requireAuth: (c: any, next: any) => Promise<any>,
+  app: Hono<HonoEnv>,
+  requireAuth: MiddlewareHandler<HonoEnv>,
 ): void {
 
   // GET /api/work-calendar/info — today's working day status + next dates

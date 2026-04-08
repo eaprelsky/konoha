@@ -396,9 +396,20 @@ export async function archiveWorkflow(id: string): Promise<boolean> {
   return true;
 }
 
+async function scanKeys(pattern: string): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 100) as [string, string[]];
+    keys.push(...batch);
+    cursor = nextCursor;
+  } while (cursor !== "0");
+  return keys;
+}
+
 export async function listWorkflowVersions(id: string): Promise<{ version: string; saved_at?: string }[]> {
   const pattern = `${WORKFLOW_VERSION_KEY_PREFIX}${id}:v*`;
-  const keys = await redis.keys(pattern);
+  const keys = await scanKeys(pattern);
   if (keys.length === 0) return [];
   const values = await redis.mget(...keys);
   const prefix = `${WORKFLOW_VERSION_KEY_PREFIX}${id}:v`;

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { join, extname } from "path";
 import { existsSync, statSync, readFileSync } from "fs";
 
@@ -18,7 +19,7 @@ const MIME: Record<string, string> = {
 const router = new Hono();
 
 // Serve index.html for root (handles both /ui and /ui/)
-function serveIndex(c: any) {
+function serveIndex(c: Context) {
   const indexPath = join(DIST_UI_DIR, "index.html");
   if (existsSync(indexPath)) {
     return c.body(readFileSync(indexPath), 200, { "content-type": "text/html; charset=utf-8" });

@@ -10,6 +10,11 @@ import type {
   RoleRecord, DocRecord, ReminderRecord, SkillRecord,
 } from "./types";
 
+// postgres's sql.json() requires JSONValue, but our domain types are structurally compatible
+// at runtime. This helper centralises the cast instead of spreading `as any` everywhere.
+type JSONValue = Parameters<ReturnType<typeof postgres>["json"]>[0];
+const asJson = (v: unknown): JSONValue => v as JSONValue;
+
 const DATABASE_URL = process.env.DATABASE_URL ||
   "postgres://konoha:konoha2026@127.0.0.1:5432/konoha";
 
@@ -45,9 +50,9 @@ export async function pgUpsertWorkflow(wf: WorkflowRecord): Promise<void> {
       INSERT INTO workflows (id, name, version, elements, flow, triggers, status, parent_id, updated_at)
       VALUES (
         ${wf.id}, ${wf.name || ''}, ${wf.version || '1.0.0'},
-        ${sql.json(wf.elements ?? [])},
-        ${sql.json(wf.flow ?? [])},
-        ${sql.json((wf as any).triggers ?? [])},
+        ${sql.json(asJson(wf.elements ?? []))},
+        ${sql.json(asJson(wf.flow ?? []))},
+        ${sql.json(asJson((wf as any).triggers ?? []))},
         ${(wf as any).status || 'active'},
         ${(wf as any).parent_id || null},
         ${wf.updated_at ? new Date(wf.updated_at) : new Date()}
@@ -80,7 +85,7 @@ export async function pgSaveWorkflowSnapshot(
     const savedAt = (data as any).saved_at ? new Date((data as any).saved_at) : new Date();
     await sql`
       INSERT INTO workflow_snapshots (workflow_id, snapshot_num, data, saved_at)
-      VALUES (${workflowId}, ${snapshotNum}, ${sql.json(data)}, ${savedAt})
+      VALUES (${workflowId}, ${snapshotNum}, ${sql.json(asJson(data))}, ${savedAt})
       ON CONFLICT (workflow_id, snapshot_num) DO NOTHING
     `;
   });
@@ -96,8 +101,8 @@ export async function pgUpsertCase(c: CaseRecord): Promise<void> {
       VALUES (
         ${c.case_id}, ${c.process_id}, ${c.version || null},
         ${c.subject}, ${c.status}, ${c.position || null},
-        ${sql.json(c.payload ?? {})},
-        ${sql.json(c.history ?? [])},
+        ${sql.json(asJson(c.payload ?? {}))},
+        ${sql.json(asJson(c.history ?? []))},
         ${c.updated_at ? new Date(c.updated_at) : new Date()}
       )
       ON CONFLICT (case_id) DO UPDATE SET
@@ -123,8 +128,8 @@ export async function pgUpsertWorkItem(wi: WorkItemRecord): Promise<void> {
         ${wi.id}, ${wi.case_id || null}, ${wi.process_id || null},
         ${wi.element_id || null}, ${wi.label},
         ${wi.assignee || null}, ${wi.status},
-        ${sql.json(wi.input ?? {})},
-        ${sql.json(wi.output ?? {})},
+        ${sql.json(asJson(wi.input ?? {}))},
+        ${sql.json(asJson(wi.output ?? {}))},
         ${wi.deadline ? new Date(wi.deadline) : null},
         ${wi.updated_at ? new Date(wi.updated_at) : new Date()}
       )
@@ -161,7 +166,7 @@ export async function pgUpsertRole(r: RoleRecord): Promise<void> {
       INSERT INTO roles (id, name, description, assignees, strategy, updated_at)
       VALUES (
         ${r.id}, ${r.name}, ${r.description || null},
-        ${sql.json(r.assignees ?? [])}, ${r.strategy || 'manual'},
+        ${sql.json(asJson(r.assignees ?? []))}, ${r.strategy || 'manual'},
         ${r.updated_at ? new Date(r.updated_at) : new Date()}
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -190,7 +195,7 @@ export async function pgUpsertDoc(d: DocRecord): Promise<void> {
       INSERT INTO documents (id, name, type, content, parameters, updated_at)
       VALUES (
         ${d.id}, ${d.name}, ${d.type || 'template'}, ${d.content || ''},
-        ${sql.json(d.parameters ?? {})},
+        ${sql.json(asJson(d.parameters ?? {}))},
         ${d.updated_at ? new Date(d.updated_at) : new Date()}
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -251,8 +256,8 @@ export async function pgUpsertSkill(s: SkillRecord): Promise<void> {
       VALUES (
         ${s.id}, ${s.name}, ${s.name_en || null},
         ${s.description || null}, ${s.prompt_snippet || null},
-        ${sql.json(s.tools ?? [])},
-        ${sql.json(s.mcp_servers ?? [])},
+        ${sql.json(asJson(s.tools ?? []))},
+        ${sql.json(asJson(s.mcp_servers ?? []))},
         ${s.updated_at ? new Date(s.updated_at) : new Date()}
       )
       ON CONFLICT (id) DO UPDATE SET

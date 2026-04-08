@@ -27,7 +27,7 @@ async function callBitrix(method: string, params: Record<string, unknown>): Prom
     throw new Error(`Bitrix24 API error ${res.status}: ${text}`);
   }
 
-  const data = await res.json();
+  const data = await res.json() as { error?: string; error_description?: string; result: unknown };
   if (data.error) throw new Error(`Bitrix24 error: ${data.error_description || data.error}`);
   return data.result;
 }

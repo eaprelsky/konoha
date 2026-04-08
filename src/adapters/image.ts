@@ -66,7 +66,7 @@ async function replicatePredict(model: string, input: Record<string, unknown>): 
       headers: { "Authorization": `Token ${token}` },
     });
     if (!pollRes.ok) throw new Error(`Replicate poll error ${pollRes.status}`);
-    prediction = await pollRes.json();
+    prediction = await pollRes.json() as typeof prediction;
   }
 
   if (prediction.status !== "succeeded" || !prediction.output?.length) {

@@ -199,7 +199,7 @@ export async function sendMessage(msg: Message): Promise<string> {
   }
 
   // publish to bus stream (for broadcast/logging)
-  const id = await redis.xadd(BUS_STREAM, "*", ...Object.entries(entry).flat());
+  const id = (await redis.xadd(BUS_STREAM, "*", ...Object.entries(entry).flat())) ?? "";
 
   // route to recipients
   if (msg.to === "all") {
@@ -423,7 +423,7 @@ export async function publishEvent(event: KonohaEvent): Promise<string> {
   };
 
   // Write to global events stream
-  const id = await redis.xadd(EVENTS_STREAM, "*", ...Object.entries(entry).flat());
+  const id = (await redis.xadd(EVENTS_STREAM, "*", ...Object.entries(entry).flat())) ?? "";
 
   // Route to subscribed agents (use cached registry, batch via pipeline)
   const all = await listAgents();

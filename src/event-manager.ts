@@ -17,7 +17,8 @@ import * as nodeCron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { Queue, Worker } from "bullmq";
 import { redis, sendMessage, REDIS_CONNECTION_OPTS } from "./redis";
-import type { Hono } from "hono";
+import type { Hono, MiddlewareHandler } from "hono";
+import type { HonoEnv } from "./types";
 import type { DataAdapter, ListenerHandle } from "./adapters/data-adapter";
 import { listenerRegistry } from "./adapters/data-adapter";
 import { bitrixAdapter } from "./adapters/bitrix";
@@ -706,8 +707,8 @@ export async function restoreSubscriptions(): Promise<void> {
 // ── Route registration ────────────────────────────────────────────────────────
 
 export function registerEventManagerRoutes(
-  app: Hono<any>,
-  requireAuth: (c: any, next: any) => Promise<any>,
+  app: Hono<HonoEnv>,
+  requireAuth: MiddlewareHandler<HonoEnv>,
 ): void {
   // POST /api/event-manager/subscribe
   app.post("/event-manager/subscribe", requireAuth, async (c) => {
@@ -761,6 +762,25 @@ export function registerEventManagerRoutes(
         }
       }
       mode = "auto";
+    }
+
+    // Deduplication: if an active subscription already exists for the same
+    // process_id + event_id + trigger.kind, return it instead of creating a duplicate.
+    // This prevents event storms when agents restart and re-register their workflows.
+    const existingRaw = await redis.hgetall(SUBSCRIPTIONS_KEY).catch(() => ({}));
+    for (const raw of Object.values(existingRaw)) {
+      const existing = JSON.parse(raw) as Subscription;
+      if (
+        existing.status === "active" &&
+        existing.process_id === body.process_id &&
+        existing.event_id === body.event_id &&
+        existing.trigger.kind === trigger.kind
+      ) {
+        console.log(
+          `[event-manager] dedup: returning existing sub=${existing.id} for process=${body.process_id} event=${body.event_id} kind=${trigger.kind}`,
+        );
+        return c.json({ subscription_id: existing.id, status: existing.status, mode: existing.mode });
+      }
     }
 
     const now = new Date().toISOString();
@@ -878,10 +898,21 @@ export function registerEventManagerRoutes(
     const raw = await redis.zrangebyscore(HISTORY_KEY, minScore, maxScore, "LIMIT", 0, limit)
       .catch(() => [] as string[]);
 
-    let entries = raw.map(r => JSON.parse(r));
+    interface EventHistoryEntry {
+      subscription_id: string;
+      event_id: string;
+      event_label?: string;
+      process_id: string;
+      process_name?: string;
+      instance_id: string;
+      trigger_kind: string;
+      fired_at: string;
+      source_data?: unknown;
+    }
+    let entries: EventHistoryEntry[] = raw.map(r => JSON.parse(r) as EventHistoryEntry);
 
-    if (processId) entries = entries.filter((e: any) => e.process_id === processId);
-    if (instanceId) entries = entries.filter((e: any) => e.instance_id === instanceId);
+    if (processId) entries = entries.filter((e) => e.process_id === processId);
+    if (instanceId) entries = entries.filter((e) => e.instance_id === instanceId);
 
     return c.json({ history: entries, total: entries.length });
   });

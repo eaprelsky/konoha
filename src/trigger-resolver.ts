@@ -10,7 +10,8 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import type { Hono } from "hono";
+import type { Hono, MiddlewareHandler } from "hono";
+import type { HonoEnv } from "./types";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -218,8 +219,8 @@ export async function resolveBatchProgrammatic(
 // ── Route registration ────────────────────────────────────────────────────────
 
 export function registerTriggerResolverRoutes(
-  app: Hono<any>,
-  requireAuth: (c: any, next: any) => Promise<any>,
+  app: Hono<HonoEnv>,
+  requireAuth: MiddlewareHandler<HonoEnv>,
 ): void {
   // POST /api/trigger-resolver/resolve
   app.post("/trigger-resolver/resolve", requireAuth, async (c) => {

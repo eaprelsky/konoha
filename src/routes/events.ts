@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth";
 import { publishEvent, type KonohaEvent } from "../redis";
-import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem } from "../runtime";
-import { getWorkflow } from "../workflow-loader";
+import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, type Case, type HistoryEntry } from "../runtime";
+import { getWorkflow, type WorkflowElement } from "../workflow-loader";
 
 const router = new Hono();
 
@@ -33,7 +33,7 @@ router.post("/", async (c) => {
     return [];
   });
 
-  return c.json({ id, cases_created: cases.map((c: any) => c.case_id) });
+  return c.json({ id, cases_created: cases.map((c: Case) => c.case_id) });
 });
 
 router.get("/log", async (c) => {
@@ -53,8 +53,8 @@ miningRouter.get("/process/:id", async (c) => {
 
   // Load workflow definition for designed elements and edges
   const wf = await getWorkflow(process_id).catch(() => null);
-  const designedElements = new Set<string>(wf?.elements.map((e: any) => e.id) || []);
-  const designedEdges = new Set<string>((wf?.flow || []).map(([f, t]: [string, string]) => `${f}:${t}`));
+  const designedElements = new Set<string>(wf?.elements.map((e: WorkflowElement) => e.id) || []);
+  const designedEdges = new Set<string>((wf?.flow || []).map((edge) => `${edge[0]}:${edge[1]}`));
 
   // Load all cases for this process
   const { cases } = await listCases({ process_id, limit: 1000 });
@@ -108,7 +108,7 @@ miningRouter.get("/process/:id", async (c) => {
   }> = {};
 
   for (const id of allElementIds) {
-    const el = wf?.elements.find((e: any) => e.id === id);
+    const el = wf?.elements.find((e: WorkflowElement) => e.id === id);
     const durations = durationsByElement[id] || [];
     elementStats[id] = {
       label: el?.label || id,
@@ -162,7 +162,7 @@ miningRouter.get("/case/:id", async (c) => {
   if (!kase) return c.json({ error: "Case not found" }, 404);
 
   // Enrich history with work item durations
-  const enriched = await Promise.all(kase.history.map(async (entry: any) => {
+  const enriched = await Promise.all(kase.history.map(async (entry: HistoryEntry) => {
     if (!entry.work_item_id) return { ...entry, duration_ms: null };
     const wi = await getWorkItem(entry.work_item_id);
     const duration_ms = wi && wi.status === "done"

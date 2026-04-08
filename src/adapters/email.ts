@@ -2,6 +2,7 @@
 // Sends emails via SMTP (mail.eaprelsky.ru:587, STARTTLS)
 // Action: send_email — input: {to, subject, template, data}, output: {message_id}
 
+// @ts-expect-error — nodemailer has no bundled types; runtime import is correct
 import nodemailer from "nodemailer";
 import type { Adapter } from "./bitrix24";
 

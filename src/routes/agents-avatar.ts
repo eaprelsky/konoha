@@ -11,7 +11,7 @@ const AVATARS_DIR = "/opt/shared/avatars";
 const router = new Hono();
 
 router.post("/:id/avatar", requireAuth, async (c) => {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
   const contentType = c.req.header("content-type") || "";
@@ -52,7 +52,7 @@ router.post("/:id/avatar", requireAuth, async (c) => {
   }
 
   // text2img mode: JSON body
-  const body = await c.req.json<{ style?: string; description?: string; prompt?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ style?: string; description?: string; prompt?: string }>().catch((): { style?: string; description?: string; prompt?: string } => ({}));
   try {
     const result = await generateAvatar({
       id,

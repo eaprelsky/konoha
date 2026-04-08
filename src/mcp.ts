@@ -8,7 +8,36 @@ const ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 // Per-agent token received after registration; falls back to admin token
 let agentToken: string | null = process.env.KONOHA_AGENT_TOKEN || null;
 
-async function api(method: string, path: string, body?: any, token?: string): Promise<any> {
+interface KonohaMessage {
+  id: string;
+  timestamp: string;
+  from: string;
+  to: string;
+  text: string;
+  channel?: string;
+}
+
+interface KonohaAgent {
+  id: string;
+  name: string;
+  status: string;
+  roles?: string[];
+  capabilities?: string[];
+}
+
+interface RegisterResult {
+  token?: string;
+  id?: string;
+  status?: string;
+  error?: string;
+}
+
+interface SendResult {
+  id?: string;
+  error?: string;
+}
+
+async function api<T>(method: string, path: string, body?: unknown, token?: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
@@ -17,12 +46,12 @@ async function api(method: string, path: string, body?: any, token?: string): Pr
     },
     body: body ? JSON.stringify(body) : undefined,
   });
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 // Use per-agent token if available, otherwise fall back to admin token.
 // If the agent token is stale (401 Unauthorized), invalidate it and retry with admin token.
-async function agentApi(method: string, path: string, body?: any): Promise<any> {
+async function agentApi<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = agentToken || ADMIN_TOKEN;
   const res = await fetch(`${API_URL}${path}`, {
     method,
@@ -35,9 +64,9 @@ async function agentApi(method: string, path: string, body?: any): Promise<any> 
   if (res.status === 401 && agentToken) {
     // Agent token is stale (e.g. re-registration replaced it); clear it and retry with admin token
     agentToken = null;
-    return api(method, path, body, ADMIN_TOKEN);
+    return api<T>(method, path, body, ADMIN_TOKEN);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 const server = new McpServer({
@@ -58,7 +87,7 @@ server.tool(
     village_id: z.string().optional().describe("Village this agent belongs to (e.g. 'comind.konoha'); defaults to 'comind.konoha'"),
   },
   async ({ id, name, capabilities, roles, model, eventSubscriptions, village_id }) => {
-    const result = await api("POST", "/agents/register", { id, name, capabilities, roles, model, eventSubscriptions, village_id });
+    const result = await api<RegisterResult>("POST", "/agents/register", { id, name, capabilities, roles, model, eventSubscriptions, village_id });
     // store per-agent token for subsequent calls
     if (result.token) {
       agentToken = result.token;
@@ -84,7 +113,7 @@ server.tool(
     village_id: z.string().optional().describe("Originating village (e.g. 'comind.konoha'); defaults to 'comind.konoha'"),
   },
   async ({ from, to, text, type, channel, replyTo, village_id }) => {
-    const result = await agentApi("POST", "/messages", { from, to, text, type, channel, replyTo, village_id });
+    const result = await agentApi<SendResult>("POST", "/messages", { from, to, text, type, channel, replyTo, village_id });
     if (result.error || !result.id) {
       return { content: [{ type: "text", text: `Error sending message: ${result.error || JSON.stringify(result)}` }] };
     }
@@ -100,11 +129,11 @@ server.tool(
     count: z.number().optional().default(10).describe("Max messages to read"),
   },
   async ({ agentId, count }) => {
-    const messages = await agentApi("GET", `/messages/${agentId}?count=${count}`);
+    const messages = await agentApi<KonohaMessage[]>("GET", `/messages/${agentId}?count=${count}`);
     if (!messages.length) {
       return { content: [{ type: "text", text: "No new messages." }] };
     }
-    const formatted = messages.map((m: any) =>
+    const formatted = messages.map((m) =>
       `[${m.timestamp}] ${m.from} → ${m.to}: ${m.text}${m.channel ? ` (ch: ${m.channel})` : ""}`
     ).join("\n");
     return { content: [{ type: "text", text: formatted }] };
@@ -118,11 +147,11 @@ server.tool(
     onlineOnly: z.boolean().optional().default(false).describe("Show only online agents"),
   },
   async ({ onlineOnly }) => {
-    const agents = await api("GET", `/agents?online=${onlineOnly}`);
+    const agents = await api<KonohaAgent[]>("GET", `/agents?online=${onlineOnly}`);
     if (!agents.length) {
       return { content: [{ type: "text", text: "No agents registered." }] };
     }
-    const formatted = agents.map((a: any) =>
+    const formatted = agents.map((a) =>
       `${a.status === "online" ? "🟢" : "⚫"} ${a.id} (${a.name}) — roles: ${a.roles?.join(", ") || "none"}, caps: ${a.capabilities?.join(", ") || "none"}`
     ).join("\n");
     return { content: [{ type: "text", text: formatted }] };
@@ -134,7 +163,7 @@ server.tool(
   "List active channels on the bus",
   {},
   async () => {
-    const channels = await api("GET", "/channels");
+    const channels = await api<string[]>("GET", "/channels");
     if (!channels.length) {
       return { content: [{ type: "text", text: "No active channels." }] };
     }
@@ -162,11 +191,11 @@ server.tool(
     count: z.number().optional().default(20).describe("Number of messages"),
   },
   async ({ target, count }) => {
-    const messages = await api("GET", `/messages/${target}/history?count=${count}`);
+    const messages = await api<KonohaMessage[]>("GET", `/messages/${target}/history?count=${count}`);
     if (!messages.length) {
       return { content: [{ type: "text", text: "No history." }] };
     }
-    const formatted = messages.map((m: any) =>
+    const formatted = messages.map((m) =>
       `[${m.timestamp}] ${m.from} → ${m.to}: ${m.text}`
     ).join("\n");
     return { content: [{ type: "text", text: formatted }] };
@@ -182,7 +211,7 @@ server.tool(
   },
   async ({ agentId, seconds }) => {
     const duration = Math.min(seconds, 60) * 1000;
-    const messages: any[] = [];
+    const messages: KonohaMessage[] = [];
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), duration);
@@ -226,7 +255,7 @@ server.tool(
       return { content: [{ type: "text", text: `Listened for ${seconds}s. No new messages.` }] };
     }
 
-    const formatted = messages.map((m: any) =>
+    const formatted = messages.map((m) =>
       `[${m.timestamp}] ${m.from} → ${m.to}: ${m.text}`
     ).join("\n");
     return { content: [{ type: "text", text: `Received ${messages.length} message(s):\n${formatted}` }] };
