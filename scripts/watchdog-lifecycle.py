@@ -450,7 +450,14 @@ async def main():
                     all_agents = data if isinstance(data, list) else data.get("agents", [])
                     # Watch agents that have lifecycle and are not legacy system agents
                     # (mirai uses its own watchdog; naruto/sasuke use lifecycle via redis_streams)
-                    legacy_ids = {"mirai"}
+                    # Agents with dedicated legacy watchdogs (own systemd service + tmux session
+                    # that does NOT follow the konoha-{id} naming convention used here).
+                    # sasuke: uses watchdog-sasuke.py + tmux "sasuke" (not "konoha-sasuke"),
+                    #         also owns consumer group "sasuke" on telegram:incoming — competing
+                    #         with this watchdog would drop messages (issue #277).
+                    # kiba: uses legacy watchdog-kiba.py + tmux "kiba" (not "konoha-kiba").
+                    # mirai: has its own dedicated watchdog service.
+                    legacy_ids = {"mirai", "sasuke", "kiba"}
                     agents = [
                         a["id"] for a in all_agents
                         if a.get("id") and a["id"] not in legacy_ids
