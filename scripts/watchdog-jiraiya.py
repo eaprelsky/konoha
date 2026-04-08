@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
 from datetime import datetime, timezone
 import time
 
@@ -55,7 +56,6 @@ log = logging.getLogger(__name__)
 # ── Idle detection ───────────────────────────────────────────────────────────
 
 def tmux_pane_content(session: str) -> str:
-    import subprocess
     try:
         return subprocess.check_output(
             ["tmux", "-L", session, "capture-pane", "-pt", session],
