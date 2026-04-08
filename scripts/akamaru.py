@@ -496,19 +496,33 @@ async def check_konoha(paused: set[str] = frozenset()) -> list[str]:
     alerts = []
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
     try:
-        proc = await asyncio.create_subprocess_exec(
+        # Use /health (lightweight) for liveness check — /agents returns ~30KB and can timeout (#282)
+        health_proc = await asyncio.create_subprocess_exec(
             "curl", "-s", "--max-time", "5",
+            "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+            f"{KONOHA_URL}/health",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=env,
+        )
+        health_out, _ = await asyncio.wait_for(health_proc.communicate(), timeout=10)
+        if health_proc.returncode != 0 or not health_out:
+            if should_alert("konoha:down"):
+                alerts.append("kiba:alert konoha=down")
+            return alerts
+
+        # Fetch agent list separately for heartbeat checks
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-s", "--max-time", "10",
             "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
             f"{KONOHA_URL}/agents",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             env=env,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
-        if proc.returncode != 0 or not stdout:
-            if should_alert("konoha:down"):
-                alerts.append("kiba:alert konoha=down")
-            return alerts
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        if not stdout:
+            return alerts  # Konoha is up (health passed), skip heartbeat checks this round
 
         try:
             agents_data = json.loads(stdout)
