@@ -27,6 +27,7 @@ DEBOUNCE_WINDOW  = 2.0
 IDLE_POLL_SEC    = 2.0
 IDLE_TIMEOUT_SEC = 300
 SSE_MAX_BACKOFF  = 30
+WAKE_TIMEOUT_SEC = 120  # max seconds to wait for on-demand agent to start
 
 LOG_FILE = "/tmp/watchdog-lifecycle.log"
 
@@ -387,17 +388,27 @@ async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
         if (time.monotonic() - last_event_time) < DEBOUNCE_WINDOW:
             continue
 
-        # Wait for agent to be idle
+        # Wait for agent to be idle; wake on-demand agents if session is dead
         waited = 0.0
+        wake_attempted = False
         while not is_agent_idle(agent_id):
             if not is_session_alive(agent_id):
+                if not wake_attempted:
+                    woke = try_wake_agent(agent_id)
+                    wake_attempted = True
+                    if woke:
+                        log.info(f"[{agent_id}] waiting for session after wake (max {WAKE_TIMEOUT_SEC}s)")
+                        await asyncio.sleep(IDLE_POLL_SEC)
+                        waited += IDLE_POLL_SEC
+                        continue
+                # Session still dead after wake attempt (or no service to start)
                 log.warning(f"[{agent_id}] session dead, dropping {len(pending)} msgs")
                 pending.clear()
                 break
             await asyncio.sleep(IDLE_POLL_SEC)
             waited += IDLE_POLL_SEC
-            if waited > IDLE_TIMEOUT_SEC:
-                log.warning(f"[{agent_id}] busy >{IDLE_TIMEOUT_SEC}s, dropping {len(pending)} msgs")
+            if waited > max(IDLE_TIMEOUT_SEC, WAKE_TIMEOUT_SEC):
+                log.warning(f"[{agent_id}] busy/not-started >{waited:.0f}s, dropping {len(pending)} msgs")
                 pending.clear()
                 break
 
@@ -409,6 +420,30 @@ async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
             else:
                 log.error(f"[{agent_id}] tmux_send failed")
             pending.clear()
+
+
+# ── On-demand agent wake ──────────────────────────────────────────────────────
+
+def try_wake_agent(agent_id: str) -> bool:
+    """Start claude-{agent_id}.service if it exists and is not already active.
+    Returns True if start was attempted, False if service doesn't exist."""
+    service = f"claude-{agent_id}.service"
+    try:
+        result = subprocess.run(
+            ["systemctl", "cat", service],
+            capture_output=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return False  # service doesn't exist — not an on-demand agent
+        subprocess.run(
+            ["sudo", "systemctl", "start", service],
+            capture_output=True, timeout=30,
+        )
+        log.info(f"[{agent_id}] on-demand wake: started {service}")
+        return True
+    except Exception as e:
+        log.warning(f"[{agent_id}] failed to wake: {e}")
+        return False
 
 
 # ── Per-agent watcher ─────────────────────────────────────────────────────────
