@@ -274,10 +274,10 @@ def is_alert_suppressed(alert: str, paused: set[str]) -> bool:
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 def pane_exists(session: str) -> bool:
-    """Return True if the given tmux session exists."""
+    """Return True if the given tmux session exists (checks named socket -L)."""
     try:
         r = subprocess.run(
-            ["tmux", "has-session", "-t", session],
+            ["tmux", "-L", session, "has-session", "-t", session],
             capture_output=True, timeout=5
         )
         return r.returncode == 0
@@ -324,15 +324,20 @@ def check_services(paused: set[str] = frozenset()) -> list[str]:
 def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
     alerts = []
     try:
-        r = subprocess.run(
-            ["tmux", "list-sessions", "-F", "#{session_name}"],
-            capture_output=True, text=True, timeout=5
-        )
-        active = set(r.stdout.strip().split("\n")) if r.returncode == 0 else set()
         for session in WATCHED_SESSIONS:
             if session in paused:
                 continue
-            if session not in active:
+            # Each agent uses a named tmux socket (-L <session>); check individually
+            try:
+                r = subprocess.run(
+                    ["tmux", "-L", session, "has-session", "-t", session],
+                    capture_output=True, timeout=5
+                )
+                alive = r.returncode == 0
+            except Exception:
+                alive = False
+
+            if not alive:
                 key = f"tmux:{session}"
                 if should_alert(key):
                     alerts.append(f"kiba:alert tmux=missing session={session}")
@@ -341,12 +346,12 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                 # Double-check after 1s to filter transient mode states (e.g. brief copy-mode flicker)
                 try:
                     mode = subprocess.check_output(
-                        ["tmux", "display-message", "-pt", session, "#{pane_in_mode}"], timeout=3
+                        ["tmux", "-L", session, "display-message", "-pt", session, "#{pane_in_mode}"], timeout=3
                     ).decode("utf-8", errors="replace").strip()
                     if mode == "1":
                         time.sleep(1)
                         mode2 = subprocess.check_output(
-                            ["tmux", "display-message", "-pt", session, "#{pane_in_mode}"], timeout=3
+                            ["tmux", "-L", session, "display-message", "-pt", session, "#{pane_in_mode}"], timeout=3
                         ).decode("utf-8", errors="replace").strip()
                         if mode2 == "1":
                             key = f"tmux:{session}:pasted"
@@ -358,7 +363,7 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                 # Detect compacting loop / stuck agent (#39)
                 try:
                     pane = subprocess.check_output(
-                        ["tmux", "capture-pane", "-pt", session], timeout=3
+                        ["tmux", "-L", session, "capture-pane", "-pt", session], timeout=3
                     ).decode("utf-8", errors="replace")
                     lines = [l.strip() for l in pane.strip().split("\n")]
                     is_idle = any(
