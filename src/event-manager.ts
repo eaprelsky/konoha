@@ -998,6 +998,27 @@ export async function createSubscriptionProgrammatic(params: {
     else { try { parseDurationMs(dt.duration); mode = "auto"; } catch {} }
   }
 
+  // Dedup: cancel any existing active subscriptions for the same (process_id, event_id, instance_id).
+  // This prevents double-registration when subscribeStartEvents() is called again on workflow update/hot-reload.
+  {
+    const all = await redis.hgetall(SUBSCRIPTIONS_KEY).catch(() => ({} as Record<string, string>));
+    for (const raw of Object.values(all)) {
+      let existing: Subscription;
+      try { existing = JSON.parse(raw); } catch { continue; }
+      if (
+        existing.status === "active" &&
+        existing.process_id === params.process_id &&
+        existing.event_id === params.event_id &&
+        existing.instance_id === params.instance_id
+      ) {
+        existing.status = "cancelled";
+        await redis.hset(SUBSCRIPTIONS_KEY, existing.id, JSON.stringify(existing));
+        await cancelSubscriptionResources(existing).catch(() => {});
+        console.log(`[event-manager] dedup: cancelled stale sub=${existing.id} for process_id=${params.process_id} event_id=${params.event_id}`);
+      }
+    }
+  }
+
   const now2 = new Date().toISOString();
   const sub: Subscription = {
     id: `sub_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
