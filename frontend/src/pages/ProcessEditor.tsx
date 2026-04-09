@@ -1,206 +1,28 @@
 /**
  * ProcessEditor — interactive visual eEPC process editor
  * Drag elements from palette, connect with arrows, save to API.
+ *
+ * Modules extracted (issue #289):
+ *  - ArrowRouter.ts     — pure routing functions + canvas constants
+ *  - ElementShape.tsx   — ElShape component, PALETTE, DEFAULT_LABELS
+ *  - MiningOverlay.tsx  — per-element SVG mining badges
+ *  - TsunadeChatPanel.tsx — AI assistant chat panel
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type React from 'react';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
 import type { Workflow, WorkflowElement, RoleDef, DocTemplate, ProcessMiningData } from '../api/types';
+import {
+  EW, EH, GR, CW, CH,
+  orthogonalPath, snap, pinchDist, genId, slugify,
+  type Pos, type EType,
+} from './ArrowRouter';
+import { ElShape, PALETTE, DEFAULT_LABELS } from './ElementShape';
+import { MiningOverlay, formatDuration } from './MiningOverlay';
+import { TsunadeChatPanel, type SchemaPatch } from './TsunadeChatPanel';
 
-type EType = WorkflowElement['type'];
-type Pos = { x: number; y: number };
 type Mode = 'select' | 'connect';
-
-// ── Canvas constants ──────────────────────────────────────────────────────────
-const EW = 160;   // element width
-const EH = 58;    // element height
-const GR = 24;    // gateway radius
-const HD = 20;    // hexagon indent (event)
-const CW = 1600;  // canvas width
-const CH = 960;   // canvas height
-
-// ── Element type palette ──────────────────────────────────────────────────────
-const PALETTE: { type: EType; label: string; fill: string; stroke: string }[] = [
-  { type: 'event',              label: 'Событие',  fill: '#F5C4B3', stroke: '#993C1D' },
-  { type: 'function',           label: 'Функция',  fill: '#C0DD97', stroke: '#3B6D11' },
-  { type: 'gateway',            label: 'Ветвление', fill: '#E8F4FD', stroke: '#4B7BA8' },
-  { type: 'role',               label: 'Роль',       fill: '#FFF9C4', stroke: '#B7A000' },
-  { type: 'executor',           label: 'Исполнитель', fill: '#FFE4CC', stroke: '#CC6600' },
-  { type: 'document',           label: 'Документ',   fill: '#DBEAFE', stroke: '#3B82F6' },
-  { type: 'information_system', label: 'IS',       fill: '#E0F2FE', stroke: '#0EA5E9' },
-];
-
-const DEFAULT_LABELS: Record<EType, string> = {
-  event:              'Новое событие',
-  function:           'Новая функция',
-  gateway:            'Новое ветвление',
-  role:               'Новая роль',
-  executor:           'Новый исполнитель',
-  document:           'Новый документ',
-  information_system: 'Новая ИС',
-  system:             'Новая система',
-};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function genId(type: EType, els: WorkflowElement[]): string {
-  const p = type.replace('_', '-');
-  const nums = els.filter(e => e.id.startsWith(p + '-'))
-    .map(e => parseInt(e.id.split('-').pop() || '0', 10));
-  return `${p}-${nums.length ? Math.max(...nums) + 1 : 1}`;
-}
-
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
-const CORNER_R = 10;
-
-function routeVHV(x1: number, y1: number, x2: number, y2: number, midY: number): string {
-  if (Math.abs(x1 - x2) < 0.5) return `M${x1},${y1} L${x2},${y2}`;
-  const dy1 = midY - y1, dx = x2 - x1, dy2 = y2 - midY;
-  const r1 = Math.min(CORNER_R, Math.abs(dy1) / 2, Math.abs(dx) / 2);
-  const r2 = Math.min(CORNER_R, Math.abs(dx) / 2, Math.abs(dy2) / 2);
-  const s1 = dy1 >= 0 ? 1 : -1, sx = dx >= 0 ? 1 : -1, s2 = dy2 >= 0 ? 1 : -1;
-  return [
-    `M${x1},${y1}`,
-    `L${x1},${midY - s1 * r1}`,
-    `Q${x1},${midY} ${x1 + sx * r1},${midY}`,
-    `L${x2 - sx * r2},${midY}`,
-    `Q${x2},${midY} ${x2},${midY + s2 * r2}`,
-    `L${x2},${y2}`,
-  ].join(' ');
-}
-
-function routeHVH(x1: number, y1: number, x2: number, y2: number, midX: number): string {
-  if (Math.abs(y1 - y2) < 0.5) return `M${x1},${y1} L${x2},${y2}`;
-  const dx1 = midX - x1, dy = y2 - y1, dx2 = x2 - midX;
-  const r1 = Math.min(CORNER_R, Math.abs(dx1) / 2, Math.abs(dy) / 2);
-  const r2 = Math.min(CORNER_R, Math.abs(dy) / 2, Math.abs(dx2) / 2);
-  const sx1 = dx1 >= 0 ? 1 : -1, sy = dy >= 0 ? 1 : -1, sx2 = dx2 >= 0 ? 1 : -1;
-  return [
-    `M${x1},${y1}`,
-    `L${midX - sx1 * r1},${y1}`,
-    `Q${midX},${y1} ${midX},${y1 + sy * r1}`,
-    `L${midX},${y2 - sy * r2}`,
-    `Q${midX},${y2} ${midX + sx2 * r2},${y2}`,
-    `L${x2},${y2}`,
-  ].join(' ');
-}
-
-function orthogonalPath(fp: Pos, tp: Pos, fromType?: EType, toType?: EType): string {
-  const fcx = fp.x + EW / 2, fcy = fp.y + EH / 2;
-  const tcx = tp.x + EW / 2, tcy = tp.y + EH / 2;
-  const dx = tcx - fcx, dy = tcy - fcy;
-  const vert = Math.abs(dy) >= Math.abs(dx);
-
-  let x1: number, y1: number, x2: number, y2: number;
-
-  // Source exit point — snap to circle edge for gateways
-  if (fromType === 'gateway') {
-    if (vert) { x1 = fcx; y1 = fcy + (dy >= 0 ? GR : -GR); }
-    else      { x1 = fcx + (dx >= 0 ? GR : -GR); y1 = fcy; }
-  } else {
-    if (vert) { x1 = fcx; y1 = dy >= 0 ? fp.y + EH : fp.y; }
-    else      { x1 = dx >= 0 ? fp.x + EW : fp.x; y1 = fcy; }
-  }
-
-  // Target entry point — snap to circle edge for gateways
-  if (toType === 'gateway') {
-    if (vert) { x2 = tcx; y2 = tcy + (dy >= 0 ? -GR : GR); }
-    else      { x2 = tcx + (dx >= 0 ? -GR : GR); y2 = tcy; }
-  } else {
-    if (vert) { x2 = tcx; y2 = dy >= 0 ? tp.y : tp.y + EH; }
-    else      { x2 = dx >= 0 ? tp.x : tp.x + EW; y2 = tcy; }
-  }
-
-  return vert
-    ? routeVHV(x1, y1, x2, y2, (y1 + y2) / 2)
-    : routeHVH(x1, y1, x2, y2, (x1 + x2) / 2);
-}
-
-function snap(v: number, g = 20): number { return Math.round(v / g) * g; }
-
-function pinchDist(touches: TouchList): number {
-  const dx = touches[0].clientX - touches[1].clientX;
-  const dy = touches[0].clientY - touches[1].clientY;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-// ── Element shape SVG ─────────────────────────────────────────────────────────
-interface ShapeProps { el: WorkflowElement; selected: boolean; connectSrc: boolean }
-function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps & { isEditing?: boolean }) {
-  const pt = PALETTE.find(p => p.type === el.type);
-  const fill  = pt?.fill   || '#f3f4f6';
-  const str   = pt?.stroke || '#9ca3af';
-  const sw    = selected || connectSrc ? 2.5 : 1.5;
-  const outln = selected ? '#6366f1' : connectSrc ? '#f59e0b' : str;
-
-  let shape: React.ReactNode;
-  switch (el.type) {
-    case 'event':
-      shape = <polygon points={`${HD},0 ${EW-HD},0 ${EW},${EH/2} ${EW-HD},${EH} ${HD},${EH} 0,${EH/2}`} fill={fill} stroke={outln} strokeWidth={sw} />;
-      break;
-    case 'function':
-      shape = <rect width={EW} height={EH} rx={10} fill={fill} stroke={outln} strokeWidth={sw} />;
-      break;
-    case 'gateway':
-      shape = <circle cx={EW/2} cy={EH/2} r={GR} fill={fill} stroke={outln} strokeWidth={sw} />;
-      break;
-    case 'role': {
-      const rcx = EW/2, rcy = EH/2, rrx = EW/2-2, rry = EH/2-2;
-      const rt = (14 - rcx) / rrx;
-      const rh = rry * Math.sqrt(Math.max(0, 1 - rt * rt));
-      shape = <>
-        <ellipse cx={rcx} cy={rcy} rx={rrx} ry={rry} fill={fill} stroke={outln} strokeWidth={sw} />
-        <line x1={14} y1={rcy - rh} x2={14} y2={rcy + rh} stroke={outln} strokeWidth={1.5} />
-      </>;
-      break;
-    }
-    case 'executor':
-      shape = <ellipse cx={EW/2} cy={EH/2} rx={EW/2-2} ry={EH/2-2} fill={fill} stroke={outln} strokeWidth={sw} />;
-      break;
-    case 'document': {
-      const wave = `M0,${EH-10} Q${EW/4},${EH+4} ${EW/2},${EH-10} Q${3*EW/4},${EH-24} ${EW},${EH-10} L${EW},0 L0,0 Z`;
-      shape = <path d={wave} fill={fill} stroke={outln} strokeWidth={sw} />;
-      break;
-    }
-    default:
-      shape = <rect width={EW} height={EH} fill={fill} stroke={outln} strokeWidth={sw} />;
-  }
-
-  const gwOp = (el.operator || '').toUpperCase();
-  const label = el.type === 'gateway'
-    ? (gwOp === 'X' ? 'XOR' : gwOp === 'XOR' ? 'XOR' : gwOp === 'AND' ? 'AND' : gwOp === 'OR' ? 'OR' : el.operator || el.label)
-    : el.label;
-  const maxW = el.type === 'gateway' ? GR * 2 - 8 : EW - 16;
-  const words = String(label).split(' ');
-  const charW = 6.2;
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const cand = cur ? cur + ' ' + w : w;
-    if (cand.length * charW > maxW && cur) { lines.push(cur); cur = w; }
-    else cur = cand;
-  }
-  if (cur) lines.push(cur);
-  const lineH = 14;
-  const startY = EH / 2 - ((lines.length - 1) * lineH) / 2;
-
-  return (
-    <>
-      {shape}
-      {!isEditing && lines.map((line, i) => (
-        <text key={i} x={EW/2} y={startY + i * lineH}
-          textAnchor="middle" dominantBaseline="middle"
-          fontSize={12} fontFamily="system-ui,-apple-system,sans-serif"
-          fill="#1a1a1a" pointerEvents="none">
-          {line}
-        </text>
-      ))}
-    </>
-  );
-}
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const CSS = `
@@ -343,13 +165,8 @@ export function ProcessEditor() {
   const [breadcrumb, setBreadcrumb] = useState<{ id: string; name: string }[]>([]);
   const [adapters, setAdapters] = useState<string[]>([]);
   const [wsFiles,  setWsFiles]  = useState<string[]>([]);
-  // Tsunade chat
-  const [showChat,   setShowChat]   = useState(false);
-  const [chatId,     setChatId]     = useState<string | null>(null);
-  const [chatMsgs,   setChatMsgs]   = useState<{ role: 'user' | 'assistant' | 'system' | 'error'; text: string }[]>([]);
-  const [chatInput,  setChatInput]  = useState('');
-  const [chatBusy,   setChatBusy]   = useState(false);
-  const chatBottomRef = useRef<HTMLDivElement>(null);
+  // Tsunade chat (state managed inside TsunadeChatPanel)
+  const [showChat, setShowChat] = useState(false);
   const [picker,   setPicker]   = useState<'role' | 'document' | 'is' | null>(null);
   // Sidebar state
   const [sideSearch,    setSideSearch]    = useState('');
@@ -784,13 +601,6 @@ export function ProcessEditor() {
   const isKnown = workflows.some(w => w.id === wfId.trim());
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
-  function formatDuration(ms: number): string {
-    if (ms < 1000) return `${Math.round(ms)}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-    if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
-    return `${(ms / 3600000).toFixed(1)}h`;
-  }
-
   // ── Process mining ───────────────────────────────────────────────────────────
   async function toggleMining() {
     if (showMining) { setShowMining(false); return; }
@@ -807,74 +617,31 @@ export function ProcessEditor() {
     }
   }
 
-  // ── Tsunade chat ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMsgs]);
-
-  async function sendToTsunade() {
-    const msg = chatInput.trim();
-    if (!msg || chatBusy) return;
-    setChatInput('');
-    setChatMsgs(prev => [...prev, { role: 'user', text: msg }]);
-    setChatBusy(true);
-    const schema: Record<string, unknown> = { id: wfId, name: wfName, elements, flow, positions };
-    if (showMining && miningData) {
-      schema.mining = {
-        case_count: miningData.case_count,
-        bottleneck_element_id: miningData.bottleneck_element_id,
-        skipped_elements: miningData.skipped_elements,
-        deviation_elements: miningData.deviation_elements,
-        elements: Object.fromEntries(
-          Object.entries(miningData.elements).map(([id, s]) => [id, {
-            label: s.label, visit_count: s.visit_count, avg_duration_ms: s.avg_duration_ms,
-          }])
-        ),
-      };
+  // ── Tsunade chat patch handler ───────────────────────────────────────────────
+  function applyTsunadePatch(patch: SchemaPatch) {
+    pushSnapshot();
+    if (patch.update_elements?.length) {
+      patch.update_elements.forEach(upd => {
+        if (upd.id) { const { id, ...rest } = upd; updateElement(id as string, rest); }
+      });
     }
-    try {
-      const res = await api.tsunade.processChat({ message: msg, schema, chat_id: chatId ?? undefined });
-      if (!chatId) setChatId(res.chat_id);
-      setChatMsgs(prev => [...prev, { role: 'assistant', text: res.reply }]);
-
-      // Apply schema patch if present
-      const patch = res.schema_patch as any;
-      if (patch) {
-        pushSnapshot();
-        if (patch.update_elements?.length) {
-          patch.update_elements.forEach((upd: any) => {
-            if (upd.id) {
-              const { id, ...rest } = upd;
-              updateElement(id, rest);
-            }
-          });
-        }
-        if (patch.update_positions) {
-          setPositions(prev => ({ ...prev, ...patch.update_positions }));
-        }
-        if (patch.add_elements?.length) {
-          patch.add_elements.forEach((el: any) => {
-            const id = el.id || `el-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            const { x = 100, y = 100, ...rest } = el;
-            setElements(prev => [...prev, { id, type: rest.type || 'function', label: rest.label || 'Новый элемент', ...rest }]);
-            setPositions(prev => ({ ...prev, [id]: { x, y } }));
-          });
-        }
-        if (patch.remove_elements?.length) {
-          patch.remove_elements.forEach((id: string) => {
-            setElements(prev => prev.filter(e => e.id !== id));
-            setPositions(prev => { const n = { ...prev }; delete n[id]; return n; });
-            setFlow(prev => prev.filter(([f, t]) => f !== id && t !== id));
-          });
-        }
-        if (patch.update_elements?.length || patch.update_positions || patch.add_elements?.length || patch.remove_elements?.length) {
-          setChatMsgs(prev => [...prev, { role: 'system', text: 'Схема обновлена. Нажмите 💾 для сохранения.' }]);
-        }
-      }
-    } catch (e: any) {
-      setChatMsgs(prev => [...prev, { role: 'error', text: `Ошибка: ${e.message}` }]);
-    } finally {
-      setChatBusy(false);
+    if (patch.update_positions) {
+      setPositions(prev => ({ ...prev, ...patch.update_positions }));
+    }
+    if (patch.add_elements?.length) {
+      patch.add_elements.forEach(el => {
+        const id = el.id || `el-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const { x = 100, y = 100, ...rest } = el;
+        setElements(prev => [...prev, { id, type: (rest.type || 'function') as EType, label: (rest.label as string) || 'Новый элемент', ...rest } as WorkflowElement]);
+        setPositions(prev => ({ ...prev, [id]: { x: x as number, y: y as number } }));
+      });
+    }
+    if (patch.remove_elements?.length) {
+      patch.remove_elements.forEach(id => {
+        setElements(prev => prev.filter(e => e.id !== id));
+        setPositions(prev => { const n = { ...prev }; delete n[id]; return n; });
+        setFlow(prev => prev.filter(([f, t]) => f !== id && t !== id));
+      });
     }
   }
 
@@ -1839,45 +1606,9 @@ export function ProcessEditor() {
                       );
                     })()}
                     {/* Mining overlay badges */}
-                    {showMining && miningData && (() => {
-                      const stat = miningData.elements[el.id];
-                      const isBottleneck = miningData.bottleneck_element_id === el.id;
-                      const isDeviation = miningData.deviation_elements.includes(el.id);
-                      const isSkipped = miningData.skipped_elements.includes(el.id);
-                      if (!stat && !isSkipped) return null;
-                      const visits = stat?.visit_count ?? 0;
-                      const avgMs = stat?.avg_duration_ms ?? null;
-                      // Bottleneck glow
-                      const glowColor = isBottleneck ? '#ef4444' : isDeviation ? '#f59e0b' : null;
-                      return (
-                        <g className="mining-badge">
-                          {/* Background glow for bottleneck/deviation */}
-                          {glowColor && (
-                            <rect x={-3} y={-3} width={EW + 6} height={EH + 6}
-                              rx={el.type === 'gateway' ? EH / 2 + 3 : 12}
-                              fill="none" stroke={glowColor} strokeWidth={3} opacity={0.6} />
-                          )}
-                          {/* Visit count badge (top-left) */}
-                          <rect x={0} y={0} width={28} height={16} rx={4}
-                            fill={visits > 0 ? '#1e40af' : '#374151'} opacity={0.9} />
-                          <text x={14} y={8} textAnchor="middle" dominantBaseline="middle"
-                            fontSize={9} fill="white">
-                            {visits > 0 ? `×${visits}` : 'skip'}
-                          </text>
-                          {/* Duration badge (bottom-center) */}
-                          {avgMs !== null && (
-                            <>
-                              <rect x={EW / 2 - 24} y={EH - 16} width={48} height={14} rx={3}
-                                fill={isBottleneck ? '#991b1b' : '#065f46'} opacity={0.9} />
-                              <text x={EW / 2} y={EH - 9} textAnchor="middle" dominantBaseline="middle"
-                                fontSize={8} fill="white">
-                                ⌛{formatDuration(avgMs)}
-                              </text>
-                            </>
-                          )}
-                        </g>
-                      );
-                    })()}
+                    {showMining && miningData && (
+                      <MiningOverlay el={el} miningData={miningData} />
+                    )}
                     {showAnchors && anchors.map(({ ax, ay }, i) => (
                       <circle key={i} cx={ax} cy={ay} r={5}
                         fill="#6366f1" fillOpacity={0.85} stroke="white" strokeWidth={1.5}
@@ -1982,46 +1713,18 @@ export function ProcessEditor() {
           </div>
 
           {/* ── Tsunade chat panel ── */}
-          {showChat && (
-            <div className="tsunade-panel">
-              <div className="tsunade-header">
-                <span className="tsunade-title">💬 Цунаде — AI-ассистент</span>
-                <button className="tsunade-btn-close" onClick={() => setShowChat(false)}>✕</button>
-              </div>
-              <div className="tsunade-messages">
-                {chatMsgs.length === 0 && (
-                  <div style={{ color: '#94a3b8', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>
-                    Спросите Цунаде о схеме.<br />
-                    Например: «Выровняй элементы вертикально» или «Добавь шлюз XOR после функции X».
-                  </div>
-                )}
-                {chatMsgs.map((m, i) => (
-                  <div key={i} className={`tsunade-msg ${m.role}`}>{m.text}</div>
-                ))}
-                {chatBusy && (
-                  <div className="tsunade-msg assistant" style={{ opacity: 0.6 }}>Думаю…</div>
-                )}
-                <div ref={chatBottomRef} />
-              </div>
-              <div className="tsunade-input-row">
-                <textarea
-                  className="tsunade-input"
-                  rows={2}
-                  placeholder="Сообщение Цунаде…"
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendToTsunade(); } }}
-                />
-                <button
-                  className="tsunade-send"
-                  disabled={chatBusy || !chatInput.trim()}
-                  onClick={sendToTsunade}
-                >
-                  ➤
-                </button>
-              </div>
-            </div>
-          )}
+          <TsunadeChatPanel
+            show={showChat}
+            onClose={() => setShowChat(false)}
+            wfId={wfId}
+            wfName={wfName}
+            elements={elements}
+            flow={flow}
+            positions={positions}
+            showMining={showMining}
+            miningData={miningData}
+            onApplyPatch={applyTsunadePatch}
+          />
         </div>
       </div>
 
