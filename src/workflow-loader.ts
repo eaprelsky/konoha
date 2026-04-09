@@ -94,16 +94,18 @@ export const WORKFLOW_INDEX_KEY = "konoha:workflow:index";
 export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   const errors: ValidationError[] = [];
   const warnings: string[] = [];
+  const elements = def.elements ?? [];
+  const flow = def.flow ?? [];
 
-  const byId = new Map<string, WorkflowElement>(def.elements.map(e => [e.id, e]));
+  const byId = new Map<string, WorkflowElement>(elements.map(e => [e.id, e]));
   const outEdges = new Map<string, string[]>();
   const inEdges = new Map<string, string[]>();
 
-  for (const el of def.elements) {
+  for (const el of elements) {
     outEdges.set(el.id, []);
     inEdges.set(el.id, []);
   }
-  for (const [from, to] of def.flow) {
+  for (const [from, to] of flow) {
     outEdges.get(from)?.push(to);
     inEdges.get(to)?.push(from);
   }
@@ -113,7 +115,7 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   // Roles, documents, and systems are organizational metadata — they have no flow edges
   // and must not be counted as start/end nodes regardless of their position in elements[].
   const FLOW_TYPES = new Set(["event", "function", "gateway"]);
-  const flowEls = def.elements.filter(el => FLOW_TYPES.has(el.type));
+  const flowEls = elements.filter(el => FLOW_TYPES.has(el.type));
   const startNodes = flowEls.filter(el => (inEdges.get(el.id) || []).length === 0);
   const endNodes   = flowEls.filter(el => (outEdges.get(el.id) || []).length === 0);
 
@@ -126,7 +128,7 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
 
   // Rule 2: Events and functions must alternate — no two events in a row (even through gateways)
   // Direct edge check: event → event is forbidden; function → function is forbidden
-  for (const [from, to] of def.flow) {
+  for (const [from, to] of flow) {
     const fromEl = byId.get(from);
     const toEl = byId.get(to);
     if (!fromEl || !toEl) continue;
@@ -140,7 +142,7 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
 
   // Rule 2 (continued): gateway must not have both function inputs and function outputs
   // This catches function→gateway→function which violates the alternation principle
-  for (const el of def.elements) {
+  for (const el of elements) {
     if (el.type !== "gateway") continue;
     const ins = (inEdges.get(el.id) || []).map(id => byId.get(id));
     const outs = (outEdges.get(el.id) || []).map(id => byId.get(id));
@@ -152,7 +154,7 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   }
 
   // Rule 3: Roles, documents, systems must be attached only to functions (not events or gateways)
-  for (const el of def.elements) {
+  for (const el of elements) {
     if (el.type !== "function") {
       if (el.role) errors.push({ rule: 3, message: `Element "${el.id}" (${el.type}) has a role — roles must only be attached to functions` });
       if (el.system) errors.push({ rule: 3, message: `Element "${el.id}" (${el.type}) has a system — systems must only be attached to functions` });
@@ -175,7 +177,7 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
     }
     return false;
   }
-  for (const el of def.elements) {
+  for (const el of elements) {
     if (el.type !== "gateway") continue;
     const ins = (inEdges.get(el.id) || []).map(id => byId.get(id));
     const outs = (outEdges.get(el.id) || []).map(id => byId.get(id));
@@ -185,7 +187,7 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   }
 
   // Rule 5: Each function must have exactly one role (assignee)
-  for (const el of def.elements) {
+  for (const el of elements) {
     if (el.type !== "function") continue;
     if (!el.role) {
       errors.push({ rule: 5, message: `Function "${el.id}" ("${el.label}") has no role assigned` });
@@ -195,7 +197,7 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
 
   // Rule 6: Event/function label style — warn if event label looks like an infinitive or function looks like past fact
   // (not enforced hard, logged as warning per spec)
-  for (const el of def.elements) {
+  for (const el of elements) {
     if (el.type === "event" && /^(выполнить|создать|получить|отправить|проверить)/i.test(el.label)) {
       warnings.push(`Rule 6 warning: event "${el.id}" label "${el.label}" looks like an infinitive — events should describe a completed fact`);
     }
@@ -273,7 +275,7 @@ function migrateTriggerKind(trigger: LegacyTrigger): NonNullable<WorkflowElement
 // Normalize legacy `system` string → `systems` array (backward compat for issue #156)
 // Also applies trigger.type → trigger.kind migration at read time.
 function normalizeWorkflow(def: WorkflowDefinition): WorkflowDefinition {
-  const elements = def.elements.map(el => {
+  const elements = (def.elements ?? []).map(el => {
     let out = { ...el };
     // systems normalization
     if (out.type === "function" && out.system && !out.systems) {

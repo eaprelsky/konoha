@@ -43,7 +43,8 @@ casesRouter.post("/", async (c) => {
     const kase = await createCase(process_id, subject, payload, start_node);
     return c.json(kase, 201);
   } catch (e: any) {
-    return c.json({ error: e.message }, 400);
+    const isNotFound = e.message?.includes("not found");
+    return c.json({ error: e.message }, isNotFound ? 404 : 400);
   }
 });
 
