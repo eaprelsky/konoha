@@ -484,6 +484,108 @@ if (enabledSkills.includes("process-tools")) {
 
 } // end process-tools skill block
 
+// ── TestBench Tools (Skill: testbench) ───────────────────────────────────────
+// Registered only when KONOHA_SKILLS includes "testbench".
+// Gives agents access to the konoha-testbench Chromium service (port 3201).
+
+const TESTBENCH_URL = process.env.TESTBENCH_URL || "http://127.0.0.1:3201";
+
+async function tbApi<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${TESTBENCH_URL}${path}`, {
+    method,
+    headers: {
+      "Authorization": `Bearer ${ADMIN_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json() as Promise<T>;
+}
+
+if (enabledSkills.includes("testbench")) {
+
+  server.tool(
+    "konoha_testbench_navigate",
+    "Open a URL in the TestBench browser. Returns session_id, final URL, and page title.",
+    {
+      url: z.string().describe("URL to navigate to (http/https)"),
+    },
+    async ({ url }) => {
+      const result = await tbApi<unknown>("POST", "/testbench/navigate", { url });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_testbench_action",
+    "Perform an interaction on the current page: click, type, scroll, hover, press, or clear.",
+    {
+      type: z.enum(["click", "type", "scroll", "hover", "press", "clear"]).describe("Action type"),
+      selector: z.string().optional().describe("CSS selector of the target element"),
+      text: z.string().optional().describe("Text to type (for type action)"),
+      amount: z.number().optional().describe("Scroll amount in pixels (for scroll action, default 300)"),
+      key: z.string().optional().describe("Key to press (for press action, e.g. 'Enter', 'Tab')"),
+    },
+    async ({ type, selector, text, amount, key }) => {
+      const result = await tbApi<unknown>("POST", "/testbench/action", { type, selector, text, amount, key });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_testbench_snapshot",
+    "Capture the current page state: screenshot (base64 PNG), accessibility tree, console log, network log, bounding boxes of interactive elements, and overlap analysis.",
+    {},
+    async () => {
+      const result = await tbApi<Record<string, unknown>>("GET", "/testbench/snapshot");
+      // Return screenshot separately (it's large) and the rest as JSON
+      const { screenshot_base64, ...rest } = result;
+      const summary = JSON.stringify(rest, null, 2);
+      const parts: { type: "text"; text: string }[] = [
+        { type: "text", text: summary },
+      ];
+      if (screenshot_base64) {
+        parts.push({ type: "text", text: `screenshot_base64 length: ${String(screenshot_base64).length} chars (omitted from text output — use /testbench/snapshot directly for image)` });
+      }
+      return { content: parts };
+    }
+  );
+
+  server.tool(
+    "konoha_testbench_resize",
+    "Resize the TestBench browser viewport.",
+    {
+      width: z.number().int().min(320).max(3840).describe("Viewport width in pixels"),
+      height: z.number().int().min(240).max(2160).describe("Viewport height in pixels"),
+    },
+    async ({ width, height }) => {
+      const result = await tbApi<unknown>("POST", "/testbench/resize", { width, height });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_testbench_reset",
+    "Reset the TestBench session: navigate to about:blank and clear console/network logs.",
+    {},
+    async () => {
+      const result = await tbApi<unknown>("POST", "/testbench/reset", {});
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_testbench_status",
+    "Check TestBench pool status: how many sessions are free, busy, or waiting.",
+    {},
+    async () => {
+      const result = await tbApi<unknown>("GET", "/testbench/status");
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+} // end testbench skill block
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

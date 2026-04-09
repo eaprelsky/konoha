@@ -1,0 +1,14 @@
+{
+  "name": "konoha-testbench",
+  "version": "1.0.0",
+  "description": "Konoha TestBench — persistent Chromium service with HTTP API for agent-driven GUI testing",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "dev": "bun run --watch src/server.ts"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "playwright": "^1.58.0"
+  }
+}
