@@ -8,64 +8,63 @@ export function isLoggedIn(): boolean {
   return localStorage.getItem('konoha_dash_auth') === '1';
 }
 
-// ── Group-based navigation ────────────────────────────────────────────────────
+// ── Group-based navigation (3-layer redesign, closes #295) ───────────────────
 
-type NavGroup = 'user' | 'executors' | 'processes' | 'system';
+type NavGroup = 'processes' | 'team' | 'settings';
 
 const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] }[] = [
-  {
-    id: 'user',
-    keyRu: 'Пользователь',
-    keyEn: 'User',
-    pages: ['/my-tasks', '/my-calendar'],
-  },
-  {
-    id: 'executors',
-    keyRu: 'Исполнители',
-    keyEn: 'Executors',
-    pages: ['/roles', '/agents', '/people', '/skills'],
-  },
   {
     id: 'processes',
     keyRu: 'Процессы',
     keyEn: 'Processes',
-    pages: ['/editor', '/monitor', '/calendar', '/documents'],
+    pages: ['/processes', '/editor', '/monitor', '/documents', '/cases', '/workitems', '/my-tasks', '/my-calendar', '/calendar', '/reminders'],
   },
   {
-    id: 'system',
-    keyRu: 'Система',
-    keyEn: 'System',
-    pages: ['/health', '/connectors', '/messages', '/eventlog', '/kb', '/workspace', '/whitelist', '/admin', '/settings'],
+    id: 'team',
+    keyRu: 'Команда',
+    keyEn: 'Team',
+    pages: ['/roles', '/agents', '/people', '/skills'],
+  },
+  {
+    id: 'settings',
+    keyRu: 'Настройки',
+    keyEn: 'Settings',
+    pages: ['/settings', '/health', '/connectors', '/messages', '/eventlog', '/kb', '/workspace', '/whitelist', '/admin', '/event-monitor'],
   },
 ];
 
 const NAV_ITEMS: Record<string, { keyRu: string; keyEn: string; to: string }> = {
-  '/my-tasks':     { keyRu: 'Мои задачи',   keyEn: 'My Tasks',   to: '/my-tasks' },
-  '/calendar':     { keyRu: 'Календарь',     keyEn: 'Calendar',   to: '/calendar' },
-  '/my-calendar':  { keyRu: 'Календарь',     keyEn: 'Calendar',   to: '/my-calendar' },
+  '/processes':    { keyRu: 'Каталог',        keyEn: 'Catalog',    to: '/processes' },
+  '/editor':       { keyRu: 'Редактор',       keyEn: 'Editor',     to: '/editor' },
+  '/monitor':      { keyRu: 'Монитор',        keyEn: 'Monitor',    to: '/monitor' },
+  '/documents':    { keyRu: 'Документы',      keyEn: 'Documents',  to: '/documents' },
+  '/cases':        { keyRu: 'Прогоны',        keyEn: 'Cases',      to: '/cases' },
+  '/workitems':    { keyRu: 'Задачи',         keyEn: 'Work Items', to: '/workitems' },
+  '/my-tasks':     { keyRu: 'Мои задачи',     keyEn: 'My Tasks',   to: '/my-tasks' },
+  '/my-calendar':  { keyRu: 'Мой календарь',  keyEn: 'My Cal',     to: '/my-calendar' },
+  '/calendar':     { keyRu: 'Календарь',      keyEn: 'Calendar',   to: '/calendar' },
+  '/reminders':    { keyRu: 'Напоминания',    keyEn: 'Reminders',  to: '/reminders' },
   '/roles':        { keyRu: 'Роли',           keyEn: 'Roles',      to: '/roles' },
   '/agents':       { keyRu: 'Агенты',         keyEn: 'Agents',     to: '/agents' },
   '/people':       { keyRu: 'Люди',           keyEn: 'People',     to: '/people' },
   '/skills':       { keyRu: 'Навыки',         keyEn: 'Skills',     to: '/skills' },
-  '/editor':       { keyRu: 'Редактор',       keyEn: 'Editor',     to: '/editor' },
-  '/monitor':      { keyRu: 'Монитор',        keyEn: 'Monitor',    to: '/monitor' },
-  '/documents':    { keyRu: 'Документы',      keyEn: 'Documents',  to: '/documents' },
+  '/settings':     { keyRu: 'Параметры',      keyEn: 'Parameters', to: '/settings' },
+  '/health':       { keyRu: 'Состояние',      keyEn: 'Health',     to: '/health' },
   '/connectors':   { keyRu: 'ИС',             keyEn: 'IS',         to: '/connectors' },
   '/messages':     { keyRu: 'Сообщения',      keyEn: 'Messages',   to: '/messages' },
   '/eventlog':     { keyRu: 'Лог событий',    keyEn: 'Event Log',  to: '/eventlog' },
-  '/kb':           { keyRu: 'База знаний',     keyEn: 'KB',         to: '/kb' },
-  '/workspace':    { keyRu: 'Workspace',       keyEn: 'Workspace',  to: '/workspace' },
-  '/admin':        { keyRu: 'Админ',           keyEn: 'Admin',      to: '/admin' },
-  '/health':       { keyRu: 'Состояние',       keyEn: 'Health',     to: '/health' },
-  '/whitelist':    { keyRu: 'Белый список',    keyEn: 'Whitelist',  to: '/whitelist' },
-  '/settings':     { keyRu: 'Настройки',       keyEn: 'Settings',   to: '/settings' },
+  '/event-monitor':{ keyRu: 'Мониторинг',     keyEn: 'Monitor',    to: '/event-monitor' },
+  '/kb':           { keyRu: 'База знаний',    keyEn: 'KB',         to: '/kb' },
+  '/workspace':    { keyRu: 'Workspace',      keyEn: 'Workspace',  to: '/workspace' },
+  '/whitelist':    { keyRu: 'Доступ',         keyEn: 'Access',     to: '/whitelist' },
+  '/admin':        { keyRu: 'Агенты (adm)',   keyEn: 'Agents (adm)', to: '/admin' },
 };
 
 function detectGroup(pathname: string): NavGroup {
   for (const g of NAV_GROUPS) {
     if (g.pages.includes(pathname)) return g.id;
   }
-  return 'system';
+  return 'settings';
 }
 
 const styles = `
@@ -119,7 +118,7 @@ export function Layout({ children }: LayoutProps) {
 
   // Keep activeGroup in sync with navigation
   const currentGroup = detectGroup(location.pathname);
-  const activeGroupResolved = currentGroup !== 'system' || NAV_GROUPS.find(g => g.id === activeGroup) ? currentGroup : activeGroup;
+  const activeGroupResolved = currentGroup !== 'settings' || NAV_GROUPS.find(g => g.id === activeGroup) ? currentGroup : activeGroup;
 
   function label(item: { keyRu: string; keyEn: string }) {
     return lang === 'ru' ? item.keyRu : item.keyEn;

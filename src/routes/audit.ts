@@ -100,4 +100,93 @@ router.put("/config/autonomy", async (c) => {
   return c.json({ ok: true });
 });
 
+// ── Setup Wizard (closes #295) ─────────────────────────────────────────────────
+
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
+
+const SETUP_FILE = process.env.KONOHA_SETUP_FILE ?? "/opt/shared/.konoha-setup.json";
+
+interface SetupConfig {
+  complete: boolean;
+  owner_tg_id?: string;
+  llm_provider?: string;
+  github_pat?: string;
+  github_repo?: string;
+  admin_token_hash?: string;
+  completed_at?: string;
+}
+
+function readSetup(): SetupConfig {
+  try {
+    if (existsSync(SETUP_FILE)) return JSON.parse(readFileSync(SETUP_FILE, "utf-8"));
+  } catch {}
+  return { complete: false };
+}
+
+function writeSetup(cfg: SetupConfig): void {
+  writeFileSync(SETUP_FILE, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+}
+
+// GET /setup/status — public (no auth needed before setup is complete)
+router.get("/setup/status", async (c) => {
+  const cfg = readSetup();
+  return c.json({ complete: cfg.complete });
+});
+
+// POST /setup — save wizard config (no auth required to allow first-time setup)
+router.post("/setup", async (c) => {
+  const body = await c.req.json<{
+    owner_tg_id?: string;
+    llm_api_key?: string;
+    llm_provider?: string;
+    github_pat?: string;
+    github_repo?: string;
+    admin_token?: string;
+  }>().catch(() => null);
+
+  if (!body) return c.json({ error: "invalid body" }, 400);
+
+  const existing = readSetup();
+
+  // Write env-level secrets to shared credentials (append/update)
+  // We store non-secret metadata in setup file; actual secrets go to .shared-credentials
+  const CREDS_FILE = "/opt/shared/.shared-credentials";
+  if (body.llm_api_key) {
+    try {
+      let creds = existsSync(CREDS_FILE) ? readFileSync(CREDS_FILE, "utf-8") : "";
+      // Update or append ANTHROPIC_API_KEY line
+      if (creds.includes("ANTHROPIC_API_KEY=")) {
+        creds = creds.replace(/ANTHROPIC_API_KEY=.*/, `ANTHROPIC_API_KEY=${body.llm_api_key}`);
+      } else {
+        creds += `\nANTHROPIC_API_KEY=${body.llm_api_key}`;
+      }
+      writeFileSync(CREDS_FILE, creds.trim() + "\n", { mode: 0o600 });
+    } catch (e: any) {
+      console.warn("[setup] could not write creds:", e.message);
+    }
+  }
+
+  if (body.github_pat) {
+    try {
+      writeFileSync("/root/.github-token", body.github_pat.trim(), { mode: 0o600 });
+    } catch {}
+    try {
+      writeFileSync("/home/ubuntu/.github-token", body.github_pat.trim(), { mode: 0o600 });
+    } catch {}
+  }
+
+  const updated: SetupConfig = {
+    ...existing,
+    complete: true,
+    completed_at: new Date().toISOString(),
+    owner_tg_id: body.owner_tg_id ?? existing.owner_tg_id,
+    llm_provider: body.llm_provider ?? existing.llm_provider ?? "anthropic",
+    github_repo: body.github_repo ?? existing.github_repo,
+  };
+
+  writeSetup(updated);
+  return c.json({ ok: true, complete: true });
+});
+
 export default router;

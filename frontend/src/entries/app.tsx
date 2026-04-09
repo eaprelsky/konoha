@@ -1,4 +1,4 @@
-import { StrictMode, lazy, Suspense } from 'react';
+import { StrictMode, lazy, Suspense, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { TokenProvider } from '../context/TokenContext';
@@ -8,6 +8,7 @@ import { Layout } from '../components/Layout';
 import { HighlightProvider } from '../components/HighlightOverlay';
 import { TourProvider } from '../components/Tour';
 import { AssistantWidget } from '../components/AssistantWidget';
+import { SetupWizard } from '../components/SetupWizard';
 
 // Lazy-load all pages
 const Dashboard    = lazy(() => import('../pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -37,6 +38,17 @@ const Whitelist    = lazy(() => import('../pages/Whitelist').then(m => ({ defaul
 const Settings     = lazy(() => import('../pages/Settings').then(m => ({ default: m.Settings })));
 const Login        = lazy(() => import('../pages/Login').then(m => ({ default: m.Login })));
 
+function useSetupStatus() {
+  const [setupDone, setSetupDone] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch('/api/setup/status')
+      .then(r => r.json())
+      .then(d => setSetupDone(d.complete !== false))
+      .catch(() => setSetupDone(true)); // fail open — don't block on error
+  }, []);
+  return { setupDone, markDone: () => setSetupDone(true) };
+}
+
 function ProtectedLayout() {
   const auth = localStorage.getItem('konoha_dash_auth') === '1';
   if (!auth) return <Navigate to="/login" replace />;
@@ -47,8 +59,11 @@ function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<div style={{ padding: 32, color: '#64748b' }}>Loading…</div>}>{children}</Suspense>;
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+function App() {
+  const { setupDone, markDone } = useSetupStatus();
+  if (setupDone === null) return null; // loading — brief flash before status known
+  if (!setupDone) return <SetupWizard onComplete={markDone} />;
+  return (
     <I18nProvider><TokenProvider><SubtitleProvider><HighlightProvider><TourProvider>
       <BrowserRouter basename="/ui">
         <Routes>
@@ -84,6 +99,12 @@ createRoot(document.getElementById('root')!).render(
         </Routes>
       </BrowserRouter>
     </TourProvider></HighlightProvider></SubtitleProvider></TokenProvider></I18nProvider>
+  );
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
     <AssistantWidget />
   </StrictMode>
 );
