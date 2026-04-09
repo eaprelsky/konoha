@@ -5,6 +5,7 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../api/client';
+import { useHighlight } from './HighlightOverlay';
 
 export const TSUNADE_PANEL_CSS = `
   .tsunade-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#fff; border-left:1px solid #e2e8f0; height:100%; }
@@ -48,6 +49,7 @@ export function TsunadePanel({ schema, onClose, onSchemaPatch }: TsunadePanelPro
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { showHighlight } = useHighlight();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -71,6 +73,13 @@ export function TsunadePanel({ schema, onClose, onSchemaPatch }: TsunadePanelPro
       if (res.schema_patch && onSchemaPatch) {
         onSchemaPatch(res.schema_patch);
         setMsgs(prev => [...prev, { role: 'system', text: 'Схема обновлена. Нажмите 💾 для сохранения.' }]);
+      }
+
+      if (res.actions && res.actions.length > 0) {
+        const act = res.actions[0];
+        if (act.type === 'highlight') {
+          showHighlight({ selector: act.selector, style: act.style ?? 'spotlight', message: act.message });
+        }
       }
     } catch (e: any) {
       setMsgs(prev => [...prev, { role: 'error', text: `Ошибка: ${e.message}` }]);

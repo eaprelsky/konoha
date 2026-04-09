@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { WorkflowElement, ProcessMiningData } from '../api/types';
 import { api } from '../api/client';
 import type { Pos } from './ArrowRouter';
+import { useHighlight } from '../components/HighlightOverlay';
 
 export interface SchemaPatch {
   update_elements?: { id: string; [key: string]: unknown }[];
@@ -38,6 +39,7 @@ export function TsunadeChatPanel({
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const { showHighlight } = useHighlight();
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -74,6 +76,12 @@ export function TsunadeChatPanel({
           || patch.add_elements?.length || patch.remove_elements?.length;
         if (hasChanges) {
           setChatMsgs(prev => [...prev, { role: 'system', text: 'Схема обновлена. Нажмите 💾 для сохранения.' }]);
+        }
+      }
+      if (res.actions && res.actions.length > 0) {
+        const act = res.actions[0];
+        if (act.type === 'highlight') {
+          showHighlight({ selector: act.selector, style: act.style ?? 'spotlight', message: act.message });
         }
       }
     } catch (e: any) {

@@ -305,10 +305,10 @@ export async function updateRoleWorkflowIndex(def: WorkflowDefinition): Promise<
   for (const roleId of roleIds) {
     await redis.sadd(`konoha:role:${roleId}:workflows`, def.id);
 
-    // Auto-create a skeleton role record if none exists in the directory.
-    // This handles workflows created before the corresponding role is registered
-    // via POST /roles. Convention: roleId is treated as the agent ID (assignee).
-    // A proper POST /roles call will overwrite this skeleton with full data.
+    // Ensure role is visible in konoha:roles:all (read by buildRoleBlocks).
+    // Two cases:
+    //   1. role:{roleId} missing → create skeleton (role referenced before POST /roles)
+    //   2. role:{roleId} exists but NOT in sorted set → add it (orphaned: desync)
     const exists = await redis.exists(`role:${roleId}`);
     if (!exists) {
       const now = new Date().toISOString();
@@ -325,6 +325,13 @@ export async function updateRoleWorkflowIndex(def: WorkflowDefinition): Promise<
       await redis.set(`role:${roleId}`, JSON.stringify(skeleton));
       await redis.zadd("konoha:roles:all", Date.now(), roleId);
       console.log(`[workflow-loader] Auto-created skeleton role "${roleId}" (workflow "${def.id}")`);
+    } else {
+      // Role key exists — ensure it's in the sorted set (fix orphaned roles, #316)
+      const inSortedSet = await redis.zscore("konoha:roles:all", roleId);
+      if (inSortedSet === null) {
+        await redis.zadd("konoha:roles:all", Date.now(), roleId);
+        console.log(`[workflow-loader] Re-added orphaned role "${roleId}" to konoha:roles:all`);
+      }
     }
   }
 }

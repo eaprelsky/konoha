@@ -290,3 +290,11 @@ export interface KibaAction {
   type: 'start_agent' | 'stop_agent' | 'restart_agent' | 'delete_agent' | 'create_role' | 'delete_role';
   args: Record<string, unknown>;
 }
+
+/** Action returned by Tsunade/process-chat to trigger visual UI guidance (#315) */
+export interface HighlightAction {
+  type: 'highlight';
+  selector: string;
+  message?: string;
+  style?: 'spotlight' | 'pointer' | 'outline';
+}

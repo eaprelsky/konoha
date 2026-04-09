@@ -70,6 +70,17 @@ const TSUNADE_SYSTEM = `Ты — Цунаде, AI-ассистент редак�
 Если схему менять не нужно, отвечай JSON:
 {"reply": "Твой ответ"}
 
+Если пользователь спрашивает, где находится кнопка, элемент или раздел — добавь actions с highlight:
+{
+  "reply": "Вот эта кнопка отвечает за запуск:",
+  "actions": [
+    { "type": "highlight", "selector": "#btn-start", "message": "Кнопка запуска процесса", "style": "spotlight" }
+  ]
+}
+
+Selectors: используй CSS-селекторы (#id, .class, [data-attr], button[title="..."] и т.п.).
+Style: "spotlight" — затемнение фона; "pointer" — пульсирующий кружок; "outline" — контур без затемнения.
+
 ВАЖНО: отвечай ТОЛЬКО валидным JSON. Без markdown-оберток.`;
 
 async function handleTsunadeChatRequest(histKey: string, chatId: string, message: string, schema?: unknown) {
@@ -99,10 +110,12 @@ async function handleTsunadeChatRequest(histKey: string, chatId: string, message
   let reply = rawReply;
   let schema_patch: unknown = undefined;
   let created_workflow: unknown = undefined;
+  let actions: unknown[] = [];
   try {
     const parsed = JSON.parse(stripMarkdownFences(rawReply));
     reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message || rawReply;
     if (parsed.schema_patch) schema_patch = parsed.schema_patch;
+    if (Array.isArray(parsed.actions)) actions = parsed.actions;
     if (parsed.create_workflow) {
       const result = await createWorkflow(parsed.create_workflow, { draft: true });
       if (result.errors.length === 0) {
@@ -118,7 +131,7 @@ async function handleTsunadeChatRequest(histKey: string, chatId: string, message
   await redis.ltrim(histKey, -CHAT_MAX_HISTORY * 2, -1);
   await redis.expire(histKey, 7 * 24 * 3600); // 7 days TTL
 
-  return { reply, chat_id: chatId, schema_patch: schema_patch ?? null, created_workflow: created_workflow ?? null };
+  return { reply, chat_id: chatId, schema_patch: schema_patch ?? null, created_workflow: created_workflow ?? null, actions };
 }
 
 const router = new Hono();

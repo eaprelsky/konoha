@@ -1,5 +1,5 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction, Skill, ProcessMiningData } from './types';
-export type { KibaAction };
+import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, ProcessMiningData } from './types';
+export type { KibaAction, HighlightAction };
 
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
 
@@ -265,14 +265,14 @@ export const api = {
 
   tsunade: {
     chat: (params: { message: string; schema?: unknown; chat_id?: string }) =>
-      apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null }>(`${BASE}/tsunade/chat`, {
+      apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null; actions?: HighlightAction[] }>(`${BASE}/tsunade/chat`, {
         method: 'POST',
         body: JSON.stringify(params),
       }),
     clearChat: (chat_id: string) =>
       apiFetch<{ ok: boolean }>(`${BASE}/tsunade/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
     processChat: (params: { message: string; schema?: unknown; chat_id?: string }) =>
-      apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null }>(`${BASE}/ai/process-chat`, {
+      apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null; actions?: HighlightAction[] }>(`${BASE}/ai/process-chat`, {
         method: 'POST',
         body: JSON.stringify(params),
       }),
