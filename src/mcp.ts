@@ -262,6 +262,228 @@ server.tool(
   }
 );
 
+// ── Process Tools (Skill: process-tools) ─────────────────────────────────────
+// These 14 tools are registered only when KONOHA_SKILLS includes "process-tools".
+// Assign the skill to an agent via capabilities: ["process-tools"] in its AgentDef.
+
+const enabledSkills = (process.env.KONOHA_SKILLS || "").split(",").map(s => s.trim()).filter(Boolean);
+
+if (enabledSkills.includes("process-tools")) {
+
+  server.tool(
+    "konoha_workflow_list",
+    "List workflow definitions (processes)",
+    {
+      limit: z.number().optional().default(20).describe("Max workflows to return (max 200)"),
+      offset: z.number().optional().default(0).describe("Pagination offset"),
+    },
+    async ({ limit, offset }) => {
+      const result = await agentApi<unknown>("GET", `/workflows?limit=${limit}&offset=${offset}`);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_workflow_get",
+    "Get a workflow definition by ID",
+    {
+      id: z.string().describe("Workflow ID"),
+    },
+    async ({ id }) => {
+      const result = await agentApi<unknown>("GET", `/workflows/${encodeURIComponent(id)}`);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_workflow_create",
+    "Create (deploy) a new workflow definition",
+    {
+      id: z.string().describe("Workflow ID (slug, e.g. 'sales/lead-qualification')"),
+      name: z.string().describe("Human-readable workflow name"),
+      elements: z.array(z.object({
+        id: z.string(),
+        type: z.string().describe("'event', 'function', 'gateway', 'connector'"),
+        label: z.string().optional(),
+      }).passthrough()).optional().describe("Workflow elements (nodes and connectors)"),
+      draft: z.boolean().optional().default(false).describe("Save as draft without deploying triggers"),
+    },
+    async ({ id, name, elements, draft }) => {
+      const result = await agentApi<unknown>(
+        "POST",
+        `/workflows${draft ? "?draft=true" : ""}`,
+        { id, name, elements }
+      );
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_workflow_update",
+    "Update an existing workflow definition",
+    {
+      id: z.string().describe("Workflow ID to update"),
+      name: z.string().optional().describe("New name"),
+      elements: z.array(z.object({
+        id: z.string(),
+        type: z.string(),
+        label: z.string().optional(),
+      }).passthrough()).optional().describe("Updated workflow elements"),
+      draft: z.boolean().optional().default(false).describe("Save as draft"),
+    },
+    async ({ id, name, elements, draft }) => {
+      const result = await agentApi<unknown>(
+        "PUT",
+        `/workflows/${encodeURIComponent(id)}${draft ? "?draft=true" : ""}`,
+        { name, elements }
+      );
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_case_list",
+    "List process execution cases (runs)",
+    {
+      process_id: z.string().optional().describe("Filter by workflow/process ID"),
+      status: z.string().optional().describe("Filter by status (e.g. 'active', 'completed', 'error')"),
+      limit: z.number().optional().default(20).describe("Max cases to return"),
+      offset: z.number().optional().default(0).describe("Pagination offset"),
+    },
+    async ({ process_id, status, limit, offset }) => {
+      const params = new URLSearchParams();
+      if (process_id) params.set("process_id", process_id);
+      if (status) params.set("status", status);
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
+      const result = await agentApi<unknown>("GET", `/cases?${params}`);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_case_start",
+    "Start a new process execution case",
+    {
+      process_id: z.string().describe("Workflow/process ID to start"),
+      subject: z.string().describe("Case subject (e.g. deal ID, lead name, ticket ID)"),
+      context: z.record(z.string(), z.unknown()).optional().describe("Additional context data for the case"),
+    },
+    async ({ process_id, subject, context }) => {
+      const result = await agentApi<unknown>("POST", "/cases", { process_id, subject, ...context });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_case_get",
+    "Get a case by ID (includes current state and work items)",
+    {
+      id: z.string().describe("Case ID"),
+    },
+    async ({ id }) => {
+      const result = await agentApi<unknown>("GET", `/cases/${encodeURIComponent(id)}`);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_workitem_list",
+    "List work items (agent tasks within a process case)",
+    {
+      assignee: z.string().optional().describe("Filter by assigned agent ID"),
+      process_id: z.string().optional().describe("Filter by process/workflow ID"),
+      status: z.string().optional().describe("Filter by status (e.g. 'pending', 'done')"),
+      deadline_before: z.string().optional().describe("ISO date — return items with deadline before this"),
+    },
+    async ({ assignee, process_id, status, deadline_before }) => {
+      const params = new URLSearchParams();
+      if (assignee) params.set("assignee", assignee);
+      if (process_id) params.set("process_id", process_id);
+      if (status) params.set("status", status);
+      if (deadline_before) params.set("deadline_before", deadline_before);
+      const result = await agentApi<unknown>("GET", `/workitems?${params}`);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_workitem_complete",
+    "Mark a work item as completed",
+    {
+      id: z.string().describe("Work item ID"),
+      result: z.string().optional().describe("Completion result or note"),
+    },
+    async ({ id, result: resultNote }) => {
+      const body = resultNote ? { result: resultNote } : {};
+      const res = await agentApi<unknown>("POST", `/workitems/${encodeURIComponent(id)}/complete`, body);
+      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_role_list",
+    "List all roles defined in the system",
+    {},
+    async () => {
+      const result = await agentApi<unknown>("GET", "/roles");
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_role_assign",
+    "Update (patch) a role — e.g. assign an agent or update role properties",
+    {
+      id: z.string().describe("Role ID"),
+      agent_id: z.string().optional().describe("Agent ID to assign to this role"),
+      name: z.string().optional().describe("New role name"),
+    },
+    async ({ id, agent_id, name }) => {
+      const result = await agentApi<unknown>("PATCH", `/roles/${encodeURIComponent(id)}`, { agent_id, name });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_skill_list",
+    "List all skills defined in the system",
+    {},
+    async () => {
+      const result = await agentApi<unknown>("GET", "/skills");
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_mining",
+    "Get process mining data for a workflow — execution stats, bottlenecks, flow analysis",
+    {
+      id: z.string().describe("Workflow/process ID to analyse"),
+    },
+    async ({ id }) => {
+      const result = await agentApi<unknown>("GET", `/mining/process/${encodeURIComponent(id)}`);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_event_emit",
+    "Emit a business event to the Konoha event bus (may trigger subscribed workflows)",
+    {
+      type: z.string().describe("Event type (e.g. 'lead.qualified', 'order.created')"),
+      source: z.string().describe("Source system or agent ID emitting this event"),
+      payload: z.record(z.string(), z.unknown()).describe("Event payload object"),
+      village_id: z.string().optional().default("comind.konoha").describe("Village ID"),
+    },
+    async ({ type, source, payload, village_id }) => {
+      const result = await agentApi<unknown>("POST", "/events", { type, source, payload, village_id });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+} // end process-tools skill block
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

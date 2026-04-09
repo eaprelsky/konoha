@@ -182,6 +182,10 @@ async function buildMcpConfig(
   const kEnv = Object.fromEntries(
     Object.entries(KONOHA_MCP_SERVER.env!).map(([k, v]) => [k, resolveVars(v, vars)])
   );
+  // Pass agent capabilities as KONOHA_SKILLS so mcp.ts can enable skill-gated tools (#291)
+  if (capabilities.length > 0) {
+    kEnv["KONOHA_SKILLS"] = capabilities.join(",");
+  }
   const servers: Record<string, unknown> = {
     [KONOHA_MCP_SERVER.name]: {
       command: KONOHA_MCP_SERVER.command,
