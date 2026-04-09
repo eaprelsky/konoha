@@ -30,6 +30,7 @@ import adminRouter from "./routes/admin";
 import githubRouter from "./routes/github";
 import auditRouter from "./routes/audit";
 import deployRouter from "./routes/deploy";
+import testbenchProxyRouter from "./routes/testbench-proxy";
 import { seedSystemAgents } from "./routes/admin";
 import staticRouter, { DIST_UI_DIR } from "./middleware/static";
 import { existsSync, readFileSync, writeFileSync } from "fs";
@@ -113,6 +114,7 @@ app.route("/whitelist", whitelistRouter);
 app.route("/", githubRouter); // POST /webhooks/github — HMAC verified, no auth middleware
 app.route("/", auditRouter); // GET /audit, POST /github/issues, GET|PUT /config/autonomy
 app.route("/", deployRouter); // POST /deploy, GET /deploy/status, GET|PUT /config/settings
+app.route("/", testbenchProxyRouter); // /testbench/* → proxy to port 3201 (closes #323)
 
 // Register plugin routes
 registerTriggerResolverRoutes(app, requireAuth);
