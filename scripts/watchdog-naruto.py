@@ -261,9 +261,14 @@ def format_batch(events: list[dict]) -> str:
 
 # ── Send loop ─────────────────────────────────────────────────────────────────
 
-async def send_loop(batched_queue: asyncio.Queue) -> None:
-    """Wait for idle, then flush the pending batch."""
+async def send_loop(batched_queue: asyncio.Queue, tg_delivery_state: dict) -> None:
+    """Wait for idle, then flush the pending batch.
+
+    After each successful tmux send, persists last_seen_id → last_delivered_id file
+    so that undelivered messages can be replayed on restart (#318).
+    """
     pending: list[dict] = []
+    delivered_id_file = Path(f"/tmp/watchdog-{AGENT_ID}-last-tg-delivered")
 
     while True:
         try:
@@ -295,6 +300,15 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 delivered = await tmux_send(TMUX_SESSION, prompt)
                 if delivered is not False:
                     pending.clear()
+                    # Mark all seen messages as confirmed-delivered (#318)
+                    # so a watchdog restart won't skip them if the session was restarting
+                    last_seen = tg_delivery_state.get("last_seen_id", 0)
+                    if last_seen > 0:
+                        try:
+                            delivered_id_file.write_text(str(last_seen))
+                            log.debug(f"Confirmed delivery: last_tg_delivered={last_seen}")
+                        except Exception as e:
+                            log.warning(f"Could not write delivered_id: {e}")
                 else:
                     log.warning(f"tmux_send timed out — retrying {len(pending)} msg(s) on next idle")
             except Exception as e:
@@ -445,34 +459,51 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
 
 # ── Telegram message-queue.jsonl watcher ──────────────────────────────────────
 
-async def telegram_queue_watcher(raw_queue: asyncio.Queue) -> None:
+async def telegram_queue_watcher(raw_queue: asyncio.Queue, tg_delivery_state: dict) -> None:
     """
     Tail message-queue.jsonl and emit new messages.
-    Tracks last seen message_id to avoid replaying old messages on restart.
+
+    Uses two ID files to guarantee at-least-once delivery on restart (#318):
+    - last-tg-id:        last message_id we FOUND and queued for delivery (written on find)
+    - last-tg-delivered: last message_id CONFIRMED sent to tmux (written by send_loop)
+
+    On startup we resume from last-tg-delivered, not last-tg-id.  This means if
+    the watchdog restarted between finding a message and delivering it, the message
+    gets re-queued and delivered to the new session.  Duplicate delivery is possible
+    but preferable to silent loss.
     """
-    last_id_file = Path(f"/tmp/watchdog-{AGENT_ID}-last-tg-id")
+    seen_id_file      = Path(f"/tmp/watchdog-{AGENT_ID}-last-tg-id")
+    delivered_id_file = Path(f"/tmp/watchdog-{AGENT_ID}-last-tg-delivered")
 
-    # Read last known message_id
-    last_id = 0
-    if last_id_file.exists():
-        try:
-            last_id = int(last_id_file.read_text().strip())
-        except Exception:
-            pass
+    def _read_id(path: Path) -> int:
+        if path.exists():
+            try:
+                return int(path.read_text().strip())
+            except Exception:
+                pass
+        return 0
 
-    # On first run, seed last_id from the current end of the file (don't replay history)
+    # Resume from confirmed-delivered ID so any unconfirmed messages are replayed
+    last_id = _read_id(delivered_id_file)
+    if last_id == 0:
+        # Fall back to seen_id (backward compat — first run after this fix deploys)
+        last_id = _read_id(seen_id_file)
+
+    # On absolute first run (both files empty), seed from current end to skip history
     if last_id == 0 and MESSAGE_QUEUE.exists():
         try:
             lines = MESSAGE_QUEUE.read_text().strip().splitlines()
             if lines:
                 last_line = json.loads(lines[-1])
                 last_id = int(last_line.get("message_id", 0))
-                last_id_file.write_text(str(last_id))
-                log.info(f"Seeded last Telegram message_id={last_id}")
+                seen_id_file.write_text(str(last_id))
+                delivered_id_file.write_text(str(last_id))
+                log.info(f"Seeded last Telegram message_id={last_id} (first run)")
         except Exception as e:
             log.warning(f"Could not seed last_id: {e}")
 
-    log.info(f"Watching {MESSAGE_QUEUE}, last_id={last_id}")
+    tg_delivery_state["last_seen_id"] = last_id
+    log.info(f"Watching {MESSAGE_QUEUE}, last_delivered_id={last_id}")
 
     backoff = 1
     while True:
@@ -496,7 +527,10 @@ async def telegram_queue_watcher(raw_queue: asyncio.Queue) -> None:
                     pass
 
             if new_events:
-                last_id_file.write_text(str(last_id))
+                # Write seen_id immediately so we don't re-queue on NEXT poll cycle.
+                # delivered_id is written by send_loop only after confirmed tmux send.
+                seen_id_file.write_text(str(last_id))
+                tg_delivery_state["last_seen_id"] = last_id
                 for msg in new_events:
                     log.info(f"TG message from {msg.get('user','?')}: {msg.get('text','')[:60]}")
                     await raw_queue.put({"source": "telegram", "data": msg})
@@ -686,12 +720,15 @@ async def main() -> None:
     raw_queue     = asyncio.Queue()
     batched_queue = asyncio.Queue()
 
+    # Shared state: tracks last_seen_id so send_loop can persist delivery confirmation (#318)
+    tg_delivery_state: dict = {"last_seen_id": 0}
+
     await asyncio.gather(
         konoha_sse_watcher(raw_queue),
-        telegram_queue_watcher(raw_queue),
+        telegram_queue_watcher(raw_queue, tg_delivery_state),
         reaction_queue_watcher(raw_queue),
         debouncer(raw_queue, batched_queue),
-        send_loop(batched_queue),
+        send_loop(batched_queue, tg_delivery_state),
         heartbeat_loop(),
     )
 
