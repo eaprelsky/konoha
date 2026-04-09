@@ -39,8 +39,10 @@ const styles = `
   .refresh-info { font-size: 11px; color: #999; text-align: right; margin-top: 8px; }
 `;
 
-function formatTs(ts: number): string {
-  return new Date(ts).toLocaleString();
+function formatTs(ts: string | undefined): string {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return isNaN(d.getTime()) ? ts : d.toLocaleString();
 }
 
 export function Messages() {
@@ -179,7 +181,7 @@ export function Messages() {
                   <div className="msg-meta">
                     <span className="msg-from">{m.from} → {m.to}</span>
                     <span className="msg-type">{m.type}</span>
-                    <span>{formatTs(m.ts)}</span>
+                    <span>{formatTs(m.timestamp)}</span>
                     {m.channel && <span>#{m.channel}</span>}
                   </div>
                   <div className="msg-text">{m.text}</div>

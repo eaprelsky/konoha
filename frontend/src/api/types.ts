@@ -224,7 +224,7 @@ export interface KonohaMessage {
   to: string;
   text: string;
   type: string;
-  ts: number;
+  timestamp: string;
   channel?: string;
 }
 

@@ -644,7 +644,13 @@ export async function createCase(
   payload: Record<string, unknown> = {},
   start_node?: string,
 ): Promise<Case> {
-  const def = await getWorkflow(process_id);
+  let def = await getWorkflow(process_id);
+  if (!def) {
+    // Retry once after short delay — newly-created workflows may not be immediately readable
+    // due to async registration steps in the deploy pipeline (issue #308)
+    await new Promise(r => setTimeout(r, 200));
+    def = await getWorkflow(process_id);
+  }
   if (!def) throw new Error(`Workflow "${process_id}" not found in registry`);
 
   // Find the start node: use explicit start_node, or the first element with no incoming edges
