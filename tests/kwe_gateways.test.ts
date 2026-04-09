@@ -10,7 +10,7 @@ import Redis from "ioredis";
 import { createCase, completeWorkItem, getCase, listWorkItems } from "../src/runtime";
 import type { WorkflowDefinition } from "../src/workflow-loader";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379 });
+const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
 
 // Unique suffix per test run to avoid key collisions
 const RUN = `gw${Date.now()}`;
