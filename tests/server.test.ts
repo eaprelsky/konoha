@@ -13,7 +13,7 @@ const TEST_ADMIN_TOKEN = "test-admin-token-kakashi";
 process.env.KONOHA_TOKEN = TEST_ADMIN_TOKEN;
 process.env.KONOHA_PORT = "0"; // don't actually bind a port
 
-const { app } = await import("../src/server");
+const { app } = await import("../core/src/server");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

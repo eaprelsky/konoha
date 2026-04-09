@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth } from "../../../../src/middleware/auth";
 import {
   loadWorkflows,
   getWorkflow,
@@ -11,11 +11,11 @@ import {
   getWorkflowVersion,
   type WorkflowElement,
   type WorkflowDefinition,
-} from "../workflow-loader";
-import { normalizeElementNames } from "../normalizer";
+} from "../../../../src/workflow-loader";
+import { normalizeElementNames } from "../../../../src/normalizer";
 import { join } from "path";
-import { resolveBatchProgrammatic, type ProcessContext } from "../trigger-resolver";
-import { createSubscriptionProgrammatic, type TriggerDef } from "../event-manager";
+import { resolveBatchProgrammatic, type ProcessContext } from "../../../../src/trigger-resolver";
+import { createSubscriptionProgrammatic, type TriggerDef } from "../../../../src/event-manager";
 
 /**
  * Run Trigger Resolver batch for all event nodes that lack a `trigger` field.
@@ -27,7 +27,7 @@ async function resolveTriggers(
   elements: WorkflowElement[],
   processContext?: ProcessContext,
 ): Promise<{ elements: WorkflowElement[]; needs_review: boolean }> {
-  const { buildAdjacency } = await import("../workflow-loader").then(m => {
+  const { buildAdjacency } = await import("../../../../src/workflow-loader").then(m => {
     // Re-use buildAdjacency via a small local helper to identify start nodes
     return { buildAdjacency: null };
   });
@@ -229,7 +229,7 @@ router.delete("/:id{.+}", requireAuth, async (c) => {
 });
 
 // Load workflow definitions from disk into Redis on startup
-const WORKFLOWS_DIR = process.env.KONOHA_WORKFLOWS_DIR || join(import.meta.dir, "..", "..", "workflows");
+const WORKFLOWS_DIR = process.env.KONOHA_WORKFLOWS_DIR || join(import.meta.dir, "..", "..", "..", "..", "workflows");
 loadWorkflows(WORKFLOWS_DIR).then(({ loaded, errors }) => {
   console.log(`[workflow-loader] startup: ${loaded} loaded, ${errors} failed validation`);
 }).catch((e) => {

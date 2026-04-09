@@ -14,7 +14,7 @@ import Redis from "ioredis";
 const TEST_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 process.env.KONOHA_PORT = "0";
 
-const { app, tsunadeReady } = await import("../src/server");
+const { app, tsunadeReady } = await import("../core/src/server");
 
 // Use the same Redis DB as the server (set via REDIS_DB env in tests/setup.ts)
 const REDIS_DB = parseInt(process.env.REDIS_DB ?? "0", 10);

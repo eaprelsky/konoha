@@ -14,7 +14,7 @@ import Redis from "ioredis";
 const TEST_ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
 process.env.KONOHA_PORT = "0";
 
-const { app } = await import("../src/server");
+const { app } = await import("../core/src/server");
 const redis = new Redis({ host: "127.0.0.1", port: 6379 });
 
 const RUN = `t${Date.now()}`;

@@ -1,40 +1,41 @@
 import { Hono } from "hono";
 import { mkdirSync } from "fs";
-import { startReminderScheduler, restoreReminderJobs } from "./runtime";
-import { redis, createRedis } from "./redis";
-import { getAgentDef, listAgentDefs, buildSystemPrompt } from "./agent-lifecycle";
-import { handleEventFired } from "./runtime";
-import { initTsunade } from "./tsunade";
-import { registerTriggerResolverRoutes } from "./trigger-resolver";
-import { registerEventManagerRoutes, restoreSubscriptions, startDelayWorker } from "./event-manager";
-import { registerWorkCalendarRoutes } from "./work-calendar";
-import { requireAuth } from "./middleware/auth";
-import type { HonoEnv } from "./types";
+import { startReminderScheduler, restoreReminderJobs } from "../../src/runtime";
+import { redis, createRedis } from "../../src/redis";
+import { getAgentDef, listAgentDefs, buildSystemPrompt } from "../../src/agent-lifecycle";
+import { handleEventFired } from "../../src/runtime";
+import { initTsunade } from "../../src/tsunade";
+import { registerTriggerResolverRoutes } from "../../src/trigger-resolver";
+import { registerEventManagerRoutes, restoreSubscriptions, startDelayWorker } from "../../src/event-manager";
+import { registerWorkCalendarRoutes } from "../../src/work-calendar";
+import { requireAuth } from "../../src/middleware/auth";
+import type { HonoEnv } from "../../src/types";
 
 // Route modules
-import agentsRouter from "./routes/agents";
-import agentsAvatarRouter from "./routes/agents-avatar";
-import messagesRouter, { attachmentsRouter, channelsRouter } from "./routes/messages";
-import eventsRouter, { miningRouter } from "./routes/events";
-import { casesRouter, workitemsRouter, remindersRouter } from "./routes/cases";
-import rolesRouter from "./routes/roles";
-import skillsRouter from "./routes/skills";
-import documentsRouter from "./routes/documents";
-import peopleRouter from "./routes/people";
-import avatarsRouter from "./routes/avatars";
-import aiRouter from "./routes/ai";
-import kbRouter, { kbChatRouter } from "./routes/kb";
-import workflowsRouter from "./routes/workflows";
-import whitelistRouter from "./routes/whitelist";
-import adminRouter from "./routes/admin";
-import githubRouter from "./routes/github";
-import auditRouter from "./routes/audit";
-import deployRouter from "./routes/deploy";
-import testbenchProxyRouter from "./routes/testbench-proxy";
-import { seedSystemAgents } from "./routes/admin";
-import staticRouter, { DIST_UI_DIR } from "./middleware/static";
+import agentsRouter from "../../src/routes/agents";
+import agentsAvatarRouter from "../../src/routes/agents-avatar";
+import messagesRouter, { attachmentsRouter, channelsRouter } from "../../src/routes/messages";
+import eventsRouter, { miningRouter } from "../../src/routes/events";
+import rolesRouter from "../../src/routes/roles";
+import skillsRouter from "../../src/routes/skills";
+import documentsRouter from "../../src/routes/documents";
+import peopleRouter from "../../src/routes/people";
+import avatarsRouter from "../../src/routes/avatars";
+import aiRouter from "../../src/routes/ai";
+import kbRouter, { kbChatRouter } from "../../src/routes/kb";
+import whitelistRouter from "../../src/routes/whitelist";
+import adminRouter from "../../src/routes/admin";
+import githubRouter from "../../src/routes/github";
+import auditRouter from "../../src/routes/audit";
+import deployRouter from "../../src/routes/deploy";
+import testbenchProxyRouter from "../../src/routes/testbench-proxy";
+import { seedSystemAgents } from "../../src/routes/admin";
+import staticRouter, { DIST_UI_DIR } from "../../src/middleware/static";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+
+// Workflow-engine module
+import workflowEngineModule from "../../modules/workflow-engine/src";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
 mkdirSync(ATTACHMENTS_DIR, { recursive: true });
@@ -71,12 +72,6 @@ app.use("/attachments/*", requireAuth);
 app.use("/events", requireAuth);
 app.use("/events/log", requireAuth);
 app.use("/adapters/*", requireAuth);
-app.use("/cases/*", requireAuth);
-app.use("/cases", requireAuth);
-app.use("/workitems/*", requireAuth);
-app.use("/workitems", requireAuth);
-app.use("/reminders/*", requireAuth);
-app.use("/reminders", requireAuth);
 app.use("/roles/*", requireAuth);
 app.use("/roles", requireAuth);
 app.use("/skills/*", requireAuth);
@@ -90,7 +85,7 @@ app.use("/mining/*", requireAuth);
 app.use("/workspace", requireAuth);
 app.use("/workspace/*", requireAuth);
 
-// Mount routers
+// Mount platform routers
 app.route("/agents", agentsRouter);
 app.route("/agents", agentsAvatarRouter);
 app.route("/messages", messagesRouter);
@@ -98,9 +93,6 @@ app.route("/attachments", attachmentsRouter);
 app.route("/channels", channelsRouter);
 app.route("/events", eventsRouter);
 app.route("/mining", miningRouter);
-app.route("/cases", casesRouter);
-app.route("/workitems", workitemsRouter);
-app.route("/reminders", remindersRouter);
 app.route("/roles", rolesRouter);
 app.route("/skills", skillsRouter);
 app.route("/documents", documentsRouter);
@@ -109,7 +101,6 @@ app.route("/", avatarsRouter);
 app.route("/", aiRouter);
 app.route("/kb", kbRouter);
 app.route("/ai", kbChatRouter);
-app.route("/workflows", workflowsRouter);
 app.route("/whitelist", whitelistRouter);
 app.route("/", githubRouter); // POST /webhooks/github — HMAC verified, no auth middleware
 app.route("/", auditRouter); // GET /audit, POST /github/issues, GET|PUT /config/autonomy
@@ -120,6 +111,9 @@ app.route("/", testbenchProxyRouter); // /testbench/* → proxy to port 3201 (cl
 registerTriggerResolverRoutes(app, requireAuth);
 registerEventManagerRoutes(app, requireAuth);
 registerWorkCalendarRoutes(app, requireAuth);
+
+// Mount workflow-engine module (cases, workitems, reminders, workflows)
+app.route("/", workflowEngineModule);
 
 // Initialize Tsunade event handler (KWE-006)
 export const tsunadeReady: Promise<void> = initTsunade().catch((e) => {

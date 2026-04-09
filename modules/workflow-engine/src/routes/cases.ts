@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { requireAuth } from "../middleware/auth";
-import { redis } from "../redis";
+import { requireAuth } from "../../../../src/middleware/auth";
+import { redis } from "../../../../src/redis";
 import {
   createCase,
   getCase,
@@ -20,7 +20,7 @@ import {
   type ReminderStatus,
   type ReminderChannel,
   type ReminderType,
-} from "../runtime";
+} from "../../../../src/runtime";
 
 // Cases router — mounted at /cases
 export const casesRouter = new Hono();
