@@ -148,6 +148,13 @@ export async function initTsunade(): Promise<void> {
     village_id: "comind.konoha",
   });
 
+  // Migrate orphaned consumer group "tsunade" (pre-#324 name) if it exists.
+  // Old group had last-delivered-id=0-0 and would replay full stream history
+  // on every restart. Advance it to "$" unconditionally (closes #326).
+  await pollRedis.xgroup("SETID", TSUNADE_STREAM, "tsunade", "$").catch(() => {
+    // Group "tsunade" doesn't exist — nothing to migrate
+  });
+
   // Create consumer group synchronously so events published immediately after
   // initTsunade() resolves are not missed (avoids race condition in tests).
   try {
