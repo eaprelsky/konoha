@@ -135,85 +135,22 @@ export default defineConfig({
 - As part of regression when plan includes UI
 - Results go in the report sent to Shino
 
-## TestBench MCP Tools
+## TestBench MCP Tools (skill: testbench)
 
-TestBench is a persistent Chromium service for GUI testing. Available when `skill=testbench` is set in KONOHA_SKILLS.
+When KONOHA_SKILLS includes "testbench", the following tools are available:
 
-Service: `http://127.0.0.1:3201`
+- **konoha_testbench_navigate(url)** — open URL in persistent Chromium
+- **konoha_testbench_action(type, selector?, text?, amount?, key?)** — click/type/fill/scroll/hover/press/clear
+- **konoha_testbench_snapshot()** — returns: screenshot_base64, accessibility_tree (ariaSnapshot), bounding_boxes (up to 100), computed_overlaps, console_log, network_log (last 50)
+- **konoha_testbench_resize(width, height)** — set viewport size (320-3840 x 240-2160)
+- **konoha_testbench_reset()** — navigate to about:blank, clear logs
+- **konoha_testbench_status()** — pool status: free/busy sessions
 
-### konoha_testbench_navigate(url)
-Open a page in Chromium and return page state.
-```
-konoha_testbench_navigate(url="http://127.0.0.1:3000/dashboard")
-```
-Returns: `{ ok: true }`
+Service URL: `http://127.0.0.1:3201`
 
-### konoha_testbench_action(type, selector?, text?, key?)
-Execute an action on the current page.
+Enable: add "testbench" to KONOHA_SKILLS env var
 
-Types:
-- `click` — click element at selector
-- `type` — type text into focused field
-- `scroll` — scroll page (selector optional for element scroll)
-- `hover` — hover over element
-- `press` — press keyboard key (e.g. "Enter", "Escape")
-- `clear` — clear text from input field
-
-Examples:
-```
-konoha_testbench_action(type="click", selector="button.submit")
-konoha_testbench_action(type="type", text="test@example.com")
-konoha_testbench_action(type="press", key="Enter")
-```
-
-### konoha_testbench_snapshot()
-Take a screenshot and accessibility snapshot of the current page.
-
-Returns:
-```json
-{
-  "screenshot_base64": "iVBORw0KGgoAAAANS...",
-  "ariaSnapshot": "document:\\n  dialog 'Settings'\\n    button 'Close'",
-  "bounding_boxes": {
-    "button.submit": { "x": 100, "y": 200, "width": 80, "height": 40 }
-  }
-}
-```
-
-### konoha_testbench_resize(width, height)
-Change the viewport size.
-```
-konoha_testbench_resize(width=1920, height=1080)
-```
-Returns: `{ ok: true }`
-
-### konoha_testbench_reset()
-Reset the browser to blank state (about:blank) and clear cookies/session.
-```
-konoha_testbench_reset()
-```
-Returns: `{ ok: true }`
-
-### konoha_testbench_status()
-Get the status of the browser pool and current session.
-
-Returns:
-```json
-{
-  "poolSize": 5,
-  "activeSessions": 2,
-  "queueLength": 0,
-  "currentURL": "http://127.0.0.1:3000/dashboard"
-}
-```
-
-### Example: Navigate and take snapshot
-```
-1. konoha_testbench_navigate(url="http://127.0.0.1:3000/dashboard")
-2. konoha_testbench_action(type="click", selector="button.settings")
-3. konoha_testbench_snapshot()
-4. Assert: ariaSnapshot contains expected elements
-```
+Typical flow: navigate → snapshot → action → snapshot
 
 ## Regression testing
 
