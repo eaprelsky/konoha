@@ -304,6 +304,28 @@ export async function updateRoleWorkflowIndex(def: WorkflowDefinition): Promise<
   }
   for (const roleId of roleIds) {
     await redis.sadd(`konoha:role:${roleId}:workflows`, def.id);
+
+    // Auto-create a skeleton role record if none exists in the directory.
+    // This handles workflows created before the corresponding role is registered
+    // via POST /roles. Convention: roleId is treated as the agent ID (assignee).
+    // A proper POST /roles call will overwrite this skeleton with full data.
+    const exists = await redis.exists(`role:${roleId}`);
+    if (!exists) {
+      const now = new Date().toISOString();
+      const skeleton = {
+        role_id: roleId,
+        name: roleId,
+        description: "",
+        assignees: [roleId],
+        strategy: "manual" as const,
+        required_capabilities: [],
+        created_at: now,
+        updated_at: now,
+      };
+      await redis.set(`role:${roleId}`, JSON.stringify(skeleton));
+      await redis.zadd("konoha:roles:all", Date.now(), roleId);
+      console.log(`[workflow-loader] Auto-created skeleton role "${roleId}" (workflow "${def.id}")`);
+    }
   }
 }
 
