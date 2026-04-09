@@ -1,6 +1,6 @@
 {
   "name": "konoha",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Multi-agent communication bus",
   "scripts": {
     "dev": "bun run --watch core/src/server.ts",
