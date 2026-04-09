@@ -58,6 +58,12 @@ Each permanent agent has two services:
 
 Additionally: `akamaru.service` — autonomous system health monitoring.
 
+## Running Services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| konoha-testbench | 3201 | Persistent Chromium service, Playwright pool, used by Hinata for GUI testing |
+
 ## Adding a New Agent
 
 1. Create `agents/{name}/CLAUDE.md` with the agent's role description

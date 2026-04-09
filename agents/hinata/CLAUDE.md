@@ -135,6 +135,86 @@ export default defineConfig({
 - As part of regression when plan includes UI
 - Results go in the report sent to Shino
 
+## TestBench MCP Tools
+
+TestBench is a persistent Chromium service for GUI testing. Available when `skill=testbench` is set in KONOHA_SKILLS.
+
+Service: `http://127.0.0.1:3201`
+
+### konoha_testbench_navigate(url)
+Open a page in Chromium and return page state.
+```
+konoha_testbench_navigate(url="http://127.0.0.1:3000/dashboard")
+```
+Returns: `{ ok: true }`
+
+### konoha_testbench_action(type, selector?, text?, key?)
+Execute an action on the current page.
+
+Types:
+- `click` — click element at selector
+- `type` — type text into focused field
+- `scroll` — scroll page (selector optional for element scroll)
+- `hover` — hover over element
+- `press` — press keyboard key (e.g. "Enter", "Escape")
+- `clear` — clear text from input field
+
+Examples:
+```
+konoha_testbench_action(type="click", selector="button.submit")
+konoha_testbench_action(type="type", text="test@example.com")
+konoha_testbench_action(type="press", key="Enter")
+```
+
+### konoha_testbench_snapshot()
+Take a screenshot and accessibility snapshot of the current page.
+
+Returns:
+```json
+{
+  "screenshot_base64": "iVBORw0KGgoAAAANS...",
+  "ariaSnapshot": "document:\\n  dialog 'Settings'\\n    button 'Close'",
+  "bounding_boxes": {
+    "button.submit": { "x": 100, "y": 200, "width": 80, "height": 40 }
+  }
+}
+```
+
+### konoha_testbench_resize(width, height)
+Change the viewport size.
+```
+konoha_testbench_resize(width=1920, height=1080)
+```
+Returns: `{ ok: true }`
+
+### konoha_testbench_reset()
+Reset the browser to blank state (about:blank) and clear cookies/session.
+```
+konoha_testbench_reset()
+```
+Returns: `{ ok: true }`
+
+### konoha_testbench_status()
+Get the status of the browser pool and current session.
+
+Returns:
+```json
+{
+  "poolSize": 5,
+  "activeSessions": 2,
+  "queueLength": 0,
+  "currentURL": "http://127.0.0.1:3000/dashboard"
+}
+```
+
+### Example: Navigate and take snapshot
+```
+1. konoha_testbench_navigate(url="http://127.0.0.1:3000/dashboard")
+2. konoha_testbench_action(type="click", selector="button.settings")
+3. konoha_testbench_snapshot()
+4. Assert: ariaSnapshot contains expected elements
+```
+
 ## Regression testing
 
 1. Read Shino's test plan (path comes in the message)
