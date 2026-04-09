@@ -1,6 +1,19 @@
 import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, ProcessMiningData } from './types';
 export type { KibaAction, HighlightAction };
 
+export interface AttachmentRef { path: string; name: string; mime?: string; }
+
+/** Upload a file to /attachments, returns AttachmentRef for use in chat requests */
+export async function uploadAttachment(file: File, from = 'user'): Promise<AttachmentRef> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('from', from);
+  const res = await fetch('/attachments', { method: 'POST', body: form });
+  if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
+  const data = await res.json();
+  return { path: data.attachment.path, name: data.attachment.name, mime: data.attachment.mime };
+}
+
 // Nginx injects Bearer token into /api/* automatically — no token needed from client.
 
 // ── Simple in-memory GET cache with per-path TTL ─────────────────────────────
@@ -264,14 +277,14 @@ export const api = {
   },
 
   tsunade: {
-    chat: (params: { message: string; schema?: unknown; chat_id?: string }) =>
+    chat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
       apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null; actions?: HighlightAction[] }>(`${BASE}/tsunade/chat`, {
         method: 'POST',
         body: JSON.stringify(params),
       }),
     clearChat: (chat_id: string) =>
       apiFetch<{ ok: boolean }>(`${BASE}/tsunade/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
-    processChat: (params: { message: string; schema?: unknown; chat_id?: string }) =>
+    processChat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
       apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null; actions?: HighlightAction[] }>(`${BASE}/ai/process-chat`, {
         method: 'POST',
         body: JSON.stringify(params),

@@ -1,9 +1,50 @@
 import { Hono } from "hono";
 import { randomUUID } from "crypto";
+import { readFileSync, existsSync } from "fs";
 import { requireAuth } from "../middleware/auth";
 import { redis } from "../redis";
 import Anthropic from "@anthropic-ai/sdk";
 import { createWorkflow } from "../workflow-loader";
+
+/** Build content blocks from text + optional attachment paths (closes #321) */
+function buildContent(text: string, attachments?: AttachmentRef[]): Anthropic.MessageParam["content"] {
+  if (!attachments || attachments.length === 0) return text;
+  const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+  for (const att of attachments) {
+    try {
+      if (!existsSync(att.path)) continue;
+      const mime = att.mime || guessMime(att.path);
+      if (mime.startsWith("image/")) {
+        const data = readFileSync(att.path).toString("base64");
+        const validMime = (["image/jpeg","image/png","image/gif","image/webp"].includes(mime) ? mime : "image/png") as "image/png";
+        blocks.push({ type: "image", source: { type: "base64", media_type: validMime, data } });
+      } else if (mime === "application/pdf") {
+        const data = readFileSync(att.path).toString("base64");
+        blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data } } as unknown as Anthropic.Messages.ContentBlockParam);
+      } else {
+        // Text, markdown, JSON, etc — include inline
+        const content = readFileSync(att.path, "utf-8").slice(0, 8000);
+        blocks.push({ type: "text", text: `[Attachment: ${att.name}]\n${content}` });
+      }
+    } catch { /* skip unreadable files */ }
+  }
+  blocks.push({ type: "text", text });
+  return blocks;
+}
+
+function guessMime(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  const map: Record<string, string> = {
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+    gif: "image/gif", webp: "image/webp",
+    pdf: "application/pdf",
+    txt: "text/plain", md: "text/plain", ts: "text/plain",
+    js: "text/plain", json: "application/json",
+  };
+  return map[ext] || "application/octet-stream";
+}
+
+interface AttachmentRef { path: string; name: string; mime?: string; }
 
 const _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -83,9 +124,15 @@ Style: "spotlight" — затемнение фона; "pointer" — пульси
 
 ВАЖНО: отвечай ТОЛЬКО валидным JSON. Без markdown-оберток.`;
 
-async function handleTsunadeChatRequest(histKey: string, chatId: string, message: string, schema?: unknown) {
+async function handleTsunadeChatRequest(
+  histKey: string,
+  chatId: string,
+  message: string,
+  schema?: unknown,
+  attachments?: AttachmentRef[],
+) {
   const rawHistory = await redis.lrange(histKey, 0, -1).catch(() => [] as string[]);
-  const history: { role: "user" | "assistant"; content: string }[] = rawHistory.map(r => {
+  const history: Anthropic.MessageParam[] = rawHistory.map(r => {
     try { return JSON.parse(r); } catch { return null; }
   }).filter(Boolean);
 
@@ -94,9 +141,10 @@ async function handleTsunadeChatRequest(histKey: string, chatId: string, message
     : "";
 
   const userMsg = message + schemaContext;
-  const messages: { role: "user" | "assistant"; content: string }[] = [
+  const userContent = buildContent(userMsg, attachments);
+  const messages: Anthropic.MessageParam[] = [
     ...history,
-    { role: "user", content: userMsg },
+    { role: "user", content: userContent },
   ];
 
   const response = await _anthropic.messages.create({
@@ -138,12 +186,12 @@ const router = new Hono();
 
 router.use("/tsunade/chat", requireAuth);
 router.post("/tsunade/chat", async (c) => {
-  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string }>().catch(() => null);
+  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }>().catch(() => null);
   if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
   const chatId = body.chat_id || randomUUID();
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
-    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema);
+    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -159,12 +207,12 @@ router.delete("/tsunade/chat/:chat_id", requireAuth, async (c) => {
 // Alias: /ai/process-chat → same Tsunade logic
 router.use("/ai/process-chat", requireAuth);
 router.post("/ai/process-chat", async (c) => {
-  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string }>().catch(() => null);
+  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }>().catch(() => null);
   if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
   const chatId = body.chat_id || randomUUID();
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
-    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema);
+    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
