@@ -34,6 +34,7 @@ const Connectors   = lazy(() => import('../pages/Connectors').then(m => ({ defau
 const Health       = lazy(() => import('../pages/Health').then(m => ({ default: m.Health })));
 const Admin        = lazy(() => import('../pages/Admin').then(m => ({ default: m.Admin })));
 const Whitelist    = lazy(() => import('../pages/Whitelist').then(m => ({ default: m.Whitelist })));
+const Settings     = lazy(() => import('../pages/Settings').then(m => ({ default: m.Settings })));
 const Login        = lazy(() => import('../pages/Login').then(m => ({ default: m.Login })));
 
 function ProtectedLayout() {
@@ -77,6 +78,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="/health" element={<SuspenseWrapper><Health /></SuspenseWrapper>} />
             <Route path="/admin" element={<SuspenseWrapper><Admin /></SuspenseWrapper>} />
             <Route path="/whitelist" element={<SuspenseWrapper><Whitelist /></SuspenseWrapper>} />
+            <Route path="/settings" element={<SuspenseWrapper><Settings /></SuspenseWrapper>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
