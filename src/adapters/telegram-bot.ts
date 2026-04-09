@@ -80,6 +80,16 @@ function matchesFilter(update: TgUpdate, filter: Record<string, unknown>): boole
     if (actualType !== filter.message_type) return false;
   }
 
+  if (filter.content_pattern !== undefined) {
+    const text = msg.text ?? msg.caption ?? "";
+    try {
+      if (!new RegExp(String(filter.content_pattern), "i").test(text)) return false;
+    } catch {
+      // Malformed regex — treat as no match
+      return false;
+    }
+  }
+
   return true;
 }
 
