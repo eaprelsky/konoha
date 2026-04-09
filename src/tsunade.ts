@@ -9,6 +9,7 @@
 
 import Redis from "ioredis";
 import { registerAgent, sendMessage, REDIS_CONNECTION_OPTS } from "./redis";
+import { getBranding } from "./routes/audit";
 
 const TSUNADE_ID = "tsunade";
 const TSUNADE_STREAM = `konoha:agent:${TSUNADE_ID}`;
@@ -130,11 +131,17 @@ export async function initTsunade(): Promise<void> {
   const pollRedis = new Redis(REDIS_CONNECTION_OPTS);
   pollRedis.on("error", () => {}); // swallow connection errors
 
+  // Resolve display name from branding config (closes #325 white-labeling)
+  const branding = await getBranding().catch(() => null);
+  const tsunadeName = branding?.agent_display_names?.["tsunade"]
+    ?? branding?.assistant_name
+    ?? "Цунаде";
+
   // Register on bus first — tests check the registry entry as a signal
   // that Tsunade is ready to receive events.
   await registerAgent({
     id: TSUNADE_ID,
-    name: "Цунаде (Process Monitor)",
+    name: `${tsunadeName} (Process Monitor)`,
     roles: ["architect"],
     capabilities: ["process-monitoring", "event-handler"],
     eventSubscriptions: ["process.exception", "workitem.stuck", "workitem.overdue"],
