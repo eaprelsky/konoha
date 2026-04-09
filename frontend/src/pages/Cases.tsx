@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
+import { RunOverlay } from '../components/RunOverlay';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
@@ -41,6 +42,10 @@ const styles = `
   .timeline-dot.error { background: #ef4444; }
   .timeline-meta { color: #888; font-size: 11px; margin-top: 2px; }
   .payload-code { background: #f5f5f5; padding: 8px; border-radius: 3px; font-size: 11px; font-family: monospace; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+  .btn-schema { display:inline-flex;align-items:center;gap:5px;padding:6px 14px;background:#0f172a;color:#f8fafc;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:16px; }
+  .btn-schema:hover { background:#1e293b; }
+  .btn-open-schema { background:none;border:1px solid #e2e8f0;color:#0066cc;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;white-space:nowrap; }
+  .btn-open-schema:hover { background:#f0f7ff; }
 `;
 
 const PAGE_SIZE = 20;
@@ -57,6 +62,7 @@ export function Cases() {
   const [processFilter, setProcessFilter] = useState('');
   const [appliedFilters, setAppliedFilters] = useState({ status: '', process_id: '' });
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [runCaseId, setRunCaseId] = useState<string | null>(null);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -142,6 +148,7 @@ export function Cases() {
                   <th>Статус</th>
                   <th>Позиция</th>
                   <th>Создано</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -152,6 +159,9 @@ export function Cases() {
                     <td><StatusBadge status={c.status} /></td>
                     <td className="mono">{c.position || '-'}</td>
                     <td>{new Date(c.created_at).toLocaleString()}</td>
+                    <td onClick={e => { e.stopPropagation(); setRunCaseId(c.case_id); }}>
+                      <button className="btn-open-schema">Схема</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -170,6 +180,10 @@ export function Cases() {
         </div>
       </div>
 
+      {runCaseId && (
+        <RunOverlay caseId={runCaseId} onClose={() => setRunCaseId(null)} />
+      )}
+
       {selectedCase && (
         <div className="detail-overlay" onClick={e => { if (e.target === e.currentTarget) setSelectedCase(null); }}>
           <div className="detail-panel">
@@ -180,6 +194,10 @@ export function Cases() {
               <span className="mono">{selectedCase.case_id.substring(0, 8)}</span> •{' '}
               <StatusBadge status={selectedCase.status} />
             </div>
+
+            <button className="btn-schema" onClick={() => { setRunCaseId(selectedCase.case_id); setSelectedCase(null); }}>
+              🗺 Открыть схему
+            </button>
 
             <div className="section-title">Данные</div>
             <pre className="payload-code">{JSON.stringify(selectedCase.payload, null, 2)}</pre>

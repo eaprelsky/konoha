@@ -376,8 +376,18 @@ function renderProcessSvg(wf: Workflow, caseData?: Case): SVGSVGElement {
   }
   const statusMap: Record<string, string> = {};
   if (caseData) {
-    (caseData.history || []).forEach(h => { if ((h as any).node_id) statusMap[(h as any).node_id] = 'completed'; });
-    if (caseData.position) statusMap[caseData.position] = 'running';
+    // Use element_id (API field); fall back to legacy node_id if present
+    (caseData.history || []).forEach(h => {
+      const eid = h.element_id || (h as any).node_id;
+      if (eid) statusMap[eid] = 'completed';
+    });
+    if (caseData.position) {
+      statusMap[caseData.position] = caseData.status === 'error' ? 'error' : 'running';
+    }
+    // Dim elements not yet reached
+    elements.forEach(e => {
+      if (!statusMap[e.id]) statusMap[e.id] = 'not_reached';
+    });
   }
   const nodeMap: Record<string, WorkflowElement> = {};
   elements.forEach(e => { nodeMap[e.id] = e; });

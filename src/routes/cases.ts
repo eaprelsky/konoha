@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth";
+import { redis } from "../redis";
 import {
   createCase,
   getCase,
@@ -60,6 +61,80 @@ casesRouter.post("/:id/close", requireAuth, async (c) => {
   const kase = await forceCloseCase(id);
   if (!kase) return c.json({ error: "Case not found" }, 404);
   return c.json(kase);
+});
+
+// SSE stream: GET /cases/:id/stream — real-time case updates (closes #296)
+casesRouter.get("/:id/stream", async (c) => {
+  const id = c.req.param("id");
+
+  const enc = new TextEncoder();
+  const sse = (event: string, data: unknown) =>
+    enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+
+  const stream = new ReadableStream({
+    async start(ctrl) {
+      // Send initial snapshot
+      const initial = await getCase(id).catch(() => null);
+      if (!initial) {
+        ctrl.enqueue(sse("error", { message: "Case not found" }));
+        ctrl.close();
+        return;
+      }
+      ctrl.enqueue(sse("snapshot", initial));
+      if (initial.status !== "running") {
+        ctrl.enqueue(enc.encode(`event: done\ndata: {}\n\n`));
+        ctrl.close();
+        return;
+      }
+
+      // Poll for updates every 2s (Redis pub/sub alternative)
+      let lastHistoryLen = initial.history?.length ?? 0;
+      let lastPosition = initial.position ?? "";
+      let lastStatus: CaseStatus = initial.status;
+      let aborted = false;
+
+      c.req.raw.signal?.addEventListener("abort", () => { aborted = true; });
+
+      while (!aborted) {
+        await new Promise(r => setTimeout(r, 2000));
+        if (aborted) break;
+        try {
+          const updated = await getCase(id).catch(() => null);
+          if (!updated) break;
+
+          const newLen = updated.history?.length ?? 0;
+          const newPos = updated.position ?? "";
+          const newStatus = updated.status;
+
+          if (newLen !== lastHistoryLen || newPos !== lastPosition || newStatus !== lastStatus) {
+            ctrl.enqueue(sse("update", updated));
+            lastHistoryLen = newLen;
+            lastPosition = newPos;
+            lastStatus = newStatus;
+          }
+
+          // Push a heartbeat every 10s to keep connection alive
+          ctrl.enqueue(enc.encode(`: heartbeat\n\n`));
+
+          if (newStatus !== "running") {
+            ctrl.enqueue(enc.encode(`event: done\ndata: {}\n\n`));
+            break;
+          }
+        } catch {
+          break;
+        }
+      }
+      ctrl.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    },
+  });
 });
 
 // Work Items router — mounted at /workitems
