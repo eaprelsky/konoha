@@ -127,7 +127,7 @@ const CSS = `
 `;
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function ProcessEditor() {
+export function ProcessEditor({ initialId }: { initialId?: string } = {}) {
   const token = useToken();
   const [wfId,   setWfId]   = useState('');
   const [wfName, setWfName] = useState('');
@@ -204,6 +204,15 @@ export function ProcessEditor() {
     api.workflows.list().then(setWorkflows).catch(() => {});
   }, [token]);
   useEffect(() => { refreshList(); }, [refreshList]);
+
+  // Auto-open workflow from URL param (e.g. /ui/editor/:id from SPA router)
+  const autoLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!initialId || !workflows.length || autoLoadedRef.current) return;
+    autoLoadedRef.current = true;
+    loadWorkflow(initialId);
+  }, [initialId, workflows]);
+
   useEffect(() => {
     if (!token) return;
     api.roles.list().then(setRoles).catch(() => {});

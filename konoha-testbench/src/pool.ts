@@ -105,6 +105,17 @@ export async function acquireSession(): Promise<Session> {
   return session;
 }
 
+/** Acquire a specific session by ID. Throws if the session is currently busy. */
+export async function acquireSessionById(id: number): Promise<Session> {
+  if (id < 0 || id >= POOL_SIZE) throw new Error(`Invalid session id: ${id} (pool size ${POOL_SIZE})`);
+  const idx = _available.indexOf(id);
+  if (idx === -1) throw new Error(`Session ${id} is busy`);
+  _available.splice(idx, 1);
+  const session = _pool[id]!;
+  session.acquiredAt = new Date().toISOString();
+  return session;
+}
+
 /** Release a session back to the pool (optionally reset it) */
 export async function releaseSession(session: Session, reset = false): Promise<void> {
   if (reset) {

@@ -1,6 +1,6 @@
 import { StrictMode, lazy, Suspense, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useParams } from 'react-router-dom';
 import { TokenProvider } from '../context/TokenContext';
 import { I18nProvider } from '../context/I18nContext';
 import { SubtitleProvider } from '../context/SubtitleContext';
@@ -56,6 +56,12 @@ function ProtectedLayout() {
   return <Layout><Outlet /></Layout>;
 }
 
+// Wrapper to pass :id URL param as initialId to ProcessEditor (fixes #328)
+function EditorWithId() {
+  const { id } = useParams<{ id?: string }>();
+  return <ProcessEditor initialId={id} />;
+}
+
 function SuspenseWrapper({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<div style={{ padding: 32, color: '#64748b' }}>Loading…</div>}>{children}</Suspense>;
 }
@@ -74,6 +80,7 @@ function App() {
             <Route path="/agents" element={<SuspenseWrapper><Agents /></SuspenseWrapper>} />
             <Route path="/processes" element={<SuspenseWrapper><Processes /></SuspenseWrapper>} />
             <Route path="/editor" element={<SuspenseWrapper><ProcessEditor /></SuspenseWrapper>} />
+            <Route path="/editor/:id" element={<SuspenseWrapper><EditorWithId /></SuspenseWrapper>} />
             <Route path="/monitor" element={<SuspenseWrapper><Monitor /></SuspenseWrapper>} />
             <Route path="/calendar" element={<SuspenseWrapper><Calendar /></SuspenseWrapper>} />
             <Route path="/my-calendar" element={<SuspenseWrapper><MyCalendar /></SuspenseWrapper>} />

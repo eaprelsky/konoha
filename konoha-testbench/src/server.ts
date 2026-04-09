@@ -7,7 +7,7 @@
  */
 
 import { Hono } from "hono";
-import { initPool, acquireSession, releaseSession, poolStatus, type Session } from "./pool";
+import { initPool, acquireSession, acquireSessionById, releaseSession, poolStatus, POOL_SIZE, type Session } from "./pool";
 import {
   slugify, saveBaseline, hasBaseline, compareWithBaseline, listBaselines,
   DIFF_THRESHOLD,
@@ -31,6 +31,62 @@ app.use("*", async (c, next) => {
 
 app.get("/testbench/status", (c) => {
   return c.json({ ok: true, ...poolStatus() });
+});
+
+// ── POST /testbench/login ─────────────────────────────────────────────────────
+// Perform form-based login in one or all sessions (fixes #327).
+// Each BrowserContext has its own localStorage, so login must be done per-session.
+// Body: { url, username, password, username_selector?, password_selector?, submit_selector?, session_id? }
+// session_id: number | "all" (default: "all")
+
+app.post("/testbench/login", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const {
+    url,
+    username,
+    password,
+    username_selector = "#u",
+    password_selector = "#p",
+    submit_selector = "button[type=submit]",
+    session_id = "all",
+  } = body as {
+    url: string;
+    username: string;
+    password: string;
+    username_selector?: string;
+    password_selector?: string;
+    submit_selector?: string;
+    session_id?: number | "all";
+  };
+
+  if (!url) return c.json({ error: "url required" }, 400);
+  if (!username || !password) return c.json({ error: "username and password required" }, 400);
+
+  const sessionIds: number[] = session_id === "all"
+    ? Array.from({ length: POOL_SIZE }, (_, i) => i)
+    : [Number(session_id)];
+
+  const results: { session_id: number; ok: boolean; url?: string; error?: string }[] = [];
+
+  for (const sid of sessionIds) {
+    let session: Session | null = null;
+    try {
+      session = await acquireSessionById(sid);
+      await session.page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await session.page.fill(username_selector, username, { timeout: 5_000 });
+      await session.page.fill(password_selector, password, { timeout: 5_000 });
+      await session.page.click(submit_selector, { timeout: 5_000 });
+      await session.page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => {});
+      results.push({ session_id: sid, ok: true, url: session.page.url() });
+    } catch (e: any) {
+      results.push({ session_id: sid, ok: false, error: e.message });
+    } finally {
+      if (session) releaseSession(session).catch(() => {});
+    }
+  }
+
+  const allOk = results.every(r => r.ok);
+  return c.json({ ok: allOk, results }, allOk ? 200 : 207);
 });
 
 // ── POST /testbench/navigate ──────────────────────────────────────────────────
