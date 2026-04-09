@@ -136,15 +136,16 @@ async def tmux_send(session: str, text: str) -> bool:
     if not ok:
         log.error(f"send-keys timed out for {session} — skipping delivery")
         return False
-    # Wait for potential [Pasted text] dialog before sending Enter (#145 race fix)
-    await asyncio.sleep(0.5)
+    # Adaptive wait for [Pasted text] dialog — large prompts trigger it slower (#288)
+    paste_wait = max(0.5, min(len(text) / 5000.0, 3.0))
+    await asyncio.sleep(paste_wait)
     # Dismiss [Pasted text] if it appeared — check BEFORE Enter to fix race condition (#145)
     for _ in range(5):
         content = tmux_pane_content(session)
         if "Pasted text" in content:
             log.warning(f"[Pasted text] dialog detected in {session} — sending Enter to dismiss")
             await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(paste_wait)
         else:
             break
     # Always send submit Enter after optional dialog dismissal (#145)
@@ -164,7 +165,16 @@ async def tmux_send(session: str, text: str) -> bool:
         if not ok:
             log.error(f"Resend attempt {attempt+1} timed out for {session}")
             break
-        await asyncio.sleep(0.3)
+        # Check for [Pasted text] dialog in retry — same adaptive wait (#288)
+        await asyncio.sleep(paste_wait)
+        for _ in range(5):
+            retry_content = tmux_pane_content(session)
+            if "Pasted text" in retry_content:
+                log.warning(f"[Pasted text] dialog in retry {attempt+1} — sending Enter to dismiss")
+                await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
+                await asyncio.sleep(paste_wait)
+            else:
+                break
         await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
         await asyncio.sleep(2.0)
     return True
@@ -218,6 +228,11 @@ def format_batch(events: list[dict]) -> str:
             sender = d.get("from", "?")
             text = d.get("text", "")
             ts = d.get("timestamp", "")
+            # Truncate large messages to prevent [Pasted text] dialog lockup (#288)
+            KONOHA_TEXT_LIMIT = 3000
+            if len(text) > KONOHA_TEXT_LIMIT:
+                log.warning(f"Konoha message from {sender} truncated: {len(text)} chars → {KONOHA_TEXT_LIMIT}")
+                text = text[:KONOHA_TEXT_LIMIT] + f"... [сообщение обрезано: {len(d.get('text',''))} символов — вызови konoha_read для полного текста]"
             lines.append(f"\n[{ts[:16] if ts else ''}] {sender}: {text}")
         lines.append("\nОбработай и при необходимости ответь через konoha_send.")
 
