@@ -269,4 +269,184 @@ router.delete("/ai/admin-chat/:chat_id", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// --- Unified /ai/chat endpoint (closes #293) ---
+// mode=process → Tsunade system prompt
+// mode=admin   → Kiba system prompt
+// stream=true  → SSE streaming response
+
+const AI_CHAT_TOOLS = [
+  {
+    name: "assistant_context_drill",
+    description: "Get detailed context about a specific element, process, or state visible on the current page",
+    input_schema: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "What to drill into (e.g. 'selected process', 'open form', 'error state')" },
+      },
+      required: ["target"],
+    },
+  },
+  {
+    name: "assistant_act",
+    description: "Request a UI action on the current page (highlight, navigate). The client will execute it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["highlight", "navigate"] },
+        target: { type: "string", description: "CSS selector for highlight, or path for navigate" },
+        message: { type: "string", description: "Tooltip text shown to user for highlight actions" },
+      },
+      required: ["action", "target"],
+    },
+  },
+  {
+    name: "assistant_search",
+    description: "Search across processes, agents, documents, roles, or the knowledge base",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        scope: { type: "string", enum: ["processes", "agents", "documents", "roles", "kb", "all"], default: "all" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "assistant_tool_search",
+    description: "Search available agent tools and MCP capabilities by name or description",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Tool name or capability keyword" },
+      },
+      required: ["query"],
+    },
+  },
+] as const;
+
+router.use("/ai/chat", requireAuth);
+router.post("/ai/chat", async (c) => {
+  const body = await c.req.json<{
+    message: string;
+    context?: string;
+    chat_id?: string;
+    mode?: "process" | "admin";
+    stream?: boolean;
+  }>().catch(() => null);
+
+  if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
+
+  const mode = body.mode === "admin" ? "admin" : "process";
+  const useStream = body.stream === true;
+  const chatId = body.chat_id || randomUUID();
+  const isNewChat = !body.chat_id;
+
+  const histPrefix = mode === "admin" ? KIBA_CHAT_PREFIX : TSUNADE_CHAT_PREFIX;
+  const histKey = histPrefix + chatId;
+  const systemPrompt = mode === "admin" ? KIBA_SYSTEM : TSUNADE_SYSTEM;
+  const model = mode === "admin" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-6";
+  const maxHistory = mode === "admin" ? KIBA_CHAT_MAX_HISTORY : CHAT_MAX_HISTORY;
+
+  const rawHistory = await redis.lrange(histKey, 0, -1).catch(() => [] as string[]);
+  const history: { role: "user" | "assistant"; content: string }[] = rawHistory
+    .map(r => { try { return JSON.parse(r); } catch { return null; } })
+    .filter(Boolean);
+
+  const contextBlock = body.context ? `\n\n[Inspector context]\n${body.context}` : "";
+  const userMsg = body.message + contextBlock;
+
+  const messages: { role: "user" | "assistant"; content: string }[] = [
+    ...history,
+    { role: "user", content: userMsg },
+  ];
+
+  if (useStream) {
+    const enc = new TextEncoder();
+    const sse = (data: string) => enc.encode(`data: ${data}\n\n`);
+
+    const stream = new ReadableStream({
+      async start(ctrl) {
+        if (isNewChat) {
+          ctrl.enqueue(sse(JSON.stringify({ type: "chat_id", chat_id: chatId })));
+        }
+        try {
+          const anthropicStream = await _anthropic.messages.create({
+            model,
+            max_tokens: 2048,
+            system: systemPrompt,
+            messages,
+            stream: true,
+          });
+
+          let fullText = "";
+          for await (const event of anthropicStream) {
+            if (
+              event.type === "content_block_delta" &&
+              event.delta.type === "text_delta"
+            ) {
+              fullText += event.delta.text;
+              ctrl.enqueue(sse(JSON.stringify({ type: "delta", text: event.delta.text })));
+            }
+          }
+
+          ctrl.enqueue(sse("[DONE]"));
+          ctrl.close();
+
+          // Persist history after stream completes
+          await redis.rpush(histKey, JSON.stringify({ role: "user", content: body.message }));
+          await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: fullText }));
+          await redis.ltrim(histKey, -maxHistory * 2, -1);
+          await redis.expire(histKey, 7 * 24 * 3600);
+
+          // Emit inspector event to Konoha bus (separate channel, non-blocking)
+          redis.xadd("inspector", "*",
+            "page", body.context?.split('\n')[0] ?? "",
+            "chat_id", chatId,
+            "mode", mode,
+          ).catch(() => {});
+        } catch (e: any) {
+          ctrl.enqueue(sse(JSON.stringify({ type: "error", message: e.message })));
+          ctrl.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "X-Chat-Id": chatId,
+      },
+    });
+  }
+
+  // Non-streaming fallback
+  try {
+    const response = await _anthropic.messages.create({
+      model,
+      max_tokens: 2048,
+      system: systemPrompt,
+      messages,
+    });
+    const rawReply = (response.content[0] as any).text?.trim() ?? "";
+    await redis.rpush(histKey, JSON.stringify({ role: "user", content: body.message }));
+    await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));
+    await redis.ltrim(histKey, -maxHistory * 2, -1);
+    await redis.expire(histKey, 7 * 24 * 3600);
+    return c.json({ reply: rawReply, chat_id: chatId });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+router.delete("/ai/chat/:chat_id", requireAuth, async (c) => {
+  const id = c.req.param("chat_id");
+  // Try both prefixes (mode unknown at delete time)
+  await Promise.all([
+    redis.del(TSUNADE_CHAT_PREFIX + id).catch(() => {}),
+    redis.del(KIBA_CHAT_PREFIX + id).catch(() => {}),
+  ]);
+  return c.json({ ok: true });
+});
+
 export default router;

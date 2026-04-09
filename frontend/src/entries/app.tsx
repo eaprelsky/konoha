@@ -7,6 +7,7 @@ import { SubtitleProvider } from '../context/SubtitleContext';
 import { Layout } from '../components/Layout';
 import { HighlightProvider } from '../components/HighlightOverlay';
 import { TourProvider } from '../components/Tour';
+import { AssistantWidget } from '../components/AssistantWidget';
 
 // Lazy-load all pages
 const Dashboard    = lazy(() => import('../pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -81,5 +82,6 @@ createRoot(document.getElementById('root')!).render(
         </Routes>
       </BrowserRouter>
     </TourProvider></HighlightProvider></SubtitleProvider></TokenProvider></I18nProvider>
+    <AssistantWidget />
   </StrictMode>
 );
