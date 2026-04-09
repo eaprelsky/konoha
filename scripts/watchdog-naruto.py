@@ -33,6 +33,8 @@ DEBOUNCE_WINDOW  = 2.0   # seconds to accumulate events before flushing
 IDLE_POLL_SEC    = 2.0   # how often to check if agent is idle
 IDLE_TIMEOUT_SEC = 600   # give up waiting after 10 min (compacting can take 10-20min, #148)
 SSE_MAX_BACKOFF  = 60    # seconds
+L1_INTERRUPT_AFTER_SEC = 30  # interrupt agent with Ctrl+C if L1 (owner) message waits this long (#320)
+OWNER_TG_ID = "93791246"     # Yegor Aprelsky — Level 1 trust
 
 # SESSION_ONLINE/OFFLINE are system noise — never deliver to agent
 NOISE_TEXT_PREFIXES = ("SESSION_ONLINE:", "SESSION_OFFLINE:")
@@ -56,6 +58,16 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+
+def has_l1_message(events: list[dict]) -> bool:
+    """Return True if any pending event is from Level 1 (owner) — requires priority delivery."""
+    for ev in events:
+        if ev.get("source") == "telegram":
+            d = ev.get("data", ev)
+            if str(d.get("trust_level", "")) == "1" or str(d.get("user_id", "")) == OWNER_TG_ID:
+                return True
+    return False
 
 
 def is_session_noise(data: dict) -> bool:
@@ -290,6 +302,12 @@ async def send_loop(batched_queue: asyncio.Queue, tg_delivery_state: dict) -> No
                 log.warning(f"Agent {TMUX_SESSION} busy >{IDLE_TIMEOUT_SEC}s — dropping {len(pending)} msgs")
                 await send_freeze_alert(TMUX_SESSION, waited, len(pending))
                 pending.clear()
+                break
+            # L1 priority interrupt (#320): owner message waiting too long — break agent's current response
+            if waited >= L1_INTERRUPT_AFTER_SEC and has_l1_message(pending):
+                log.warning(f"L1 (owner) message pending {int(waited)}s — sending Ctrl+C to interrupt agent")
+                await tmux_run("tmux", "-L", TMUX_SESSION, "send-keys", "-t", TMUX_SESSION, "C-c", timeout=5.0)
+                await asyncio.sleep(2.0)  # give agent time to stop generation
                 break
             await asyncio.sleep(IDLE_POLL_SEC)
             waited += IDLE_POLL_SEC
