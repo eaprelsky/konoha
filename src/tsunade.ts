@@ -3,12 +3,16 @@
 //
 // Subscribed events: process.exception, workitem.stuck, workitem.overdue
 // Actions: log + notify naruto (exceptions) or work item assignee (stuck/overdue)
+//
+// Uses stream-based polling (XREADGROUP on konoha:agent:tsunade) instead of pub/sub
+// so that test Redis DB (1) and production DB (0) are fully isolated.
 
 import Redis from "ioredis";
 import { registerAgent, sendMessage, REDIS_CONNECTION_OPTS } from "./redis";
 
-const NOTIFY_CHANNEL = "konoha:notify:tsunade";
 const TSUNADE_ID = "tsunade";
+const TSUNADE_STREAM = `konoha:agent:${TSUNADE_ID}`;
+const TSUNADE_GROUP = "tsunade-handler";
 
 interface KonohaEvent {
   type: string;
@@ -76,30 +80,58 @@ async function handleEvent(event: KonohaEvent): Promise<void> {
   }
 }
 
-export async function initTsunade(): Promise<void> {
-  // Subscribe to Tsunade's pub/sub notification channel BEFORE registering,
-  // so the subscription is ready when the first event may arrive.
-  const sub = new Redis(REDIS_CONNECTION_OPTS);
-  sub.on("error", () => {}); // swallow connection errors
+async function startStreamPoller(pollRedis: Redis): Promise<void> {
+  const poll = async () => {
+    while (true) {
+      try {
+        const result = await pollRedis.xreadgroup(
+          "GROUP", TSUNADE_GROUP, "worker",
+          "COUNT", 10,
+          "BLOCK", 5000,
+          "STREAMS", TSUNADE_STREAM, ">",
+        ) as [string, [string, string[]][]][] | null;
 
-  await sub.subscribe(NOTIFY_CHANNEL);
+        if (!result) continue;
 
-  sub.on("message", (_channel, raw) => {
-    try {
-      const msg = JSON.parse(raw);
-      // Messages delivered from publishEvent have type="event" and text=JSON(event)
-      if (msg.type !== "event") return;
-      const event: KonohaEvent = JSON.parse(msg.text);
-      handleEvent(event).catch((e) =>
-        console.error("[Tsunade] handleEvent error:", e.message)
-      );
-    } catch (e: any) {
-      console.error("[Tsunade] message parse error:", e.message);
+        for (const [, entries] of result) {
+          for (const [entryId, fields] of entries) {
+            const obj: Record<string, string> = {};
+            for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
+
+            // Messages have type="event" and text=JSON(KonohaEvent)
+            if (obj.type === "event") {
+              try {
+                const event: KonohaEvent = JSON.parse(obj.text ?? "{}");
+                await handleEvent(event);
+              } catch (e: any) {
+                console.error("[Tsunade] handleEvent error:", e.message);
+              }
+            }
+
+            await pollRedis.xack(TSUNADE_STREAM, TSUNADE_GROUP, entryId).catch(() => {});
+          }
+        }
+      } catch (e: any) {
+        if (!e.message?.includes("Connection")) {
+          console.error("[Tsunade] stream poll error:", e.message);
+        }
+        await new Promise(res => setTimeout(res, 2000));
+      }
     }
-  });
+  };
 
-  // Register on bus AFTER subscription is active — tests check the registry
-  // entry as a signal that Tsunade is ready to receive events.
+  poll().catch(e => console.error("[Tsunade] poll loop crashed:", e.message));
+  console.log("[Tsunade] stream event listener started");
+}
+
+export async function initTsunade(): Promise<void> {
+  // Dedicated Redis connection for blocking XREADGROUP — must not share with
+  // the main redis instance to avoid blocking non-blocking commands.
+  const pollRedis = new Redis(REDIS_CONNECTION_OPTS);
+  pollRedis.on("error", () => {}); // swallow connection errors
+
+  // Register on bus first — tests check the registry entry as a signal
+  // that Tsunade is ready to receive events.
   await registerAgent({
     id: TSUNADE_ID,
     name: "Цунаде (Process Monitor)",
@@ -108,6 +140,21 @@ export async function initTsunade(): Promise<void> {
     eventSubscriptions: ["process.exception", "workitem.stuck", "workitem.overdue"],
     village_id: "comind.konoha",
   });
+
+  // Create consumer group synchronously so events published immediately after
+  // initTsunade() resolves are not missed (avoids race condition in tests).
+  try {
+    await pollRedis.xgroup("CREATE", TSUNADE_STREAM, TSUNADE_GROUP, "$", "MKSTREAM");
+    console.log("[Tsunade] stream consumer group created");
+  } catch (e: any) {
+    if (!e.message?.includes("BUSYGROUP")) {
+      console.error("[Tsunade] consumer group error:", e.message);
+    }
+  }
+
+  // Start stream-based event poller (DB-scoped, unlike pub/sub).
+  // Events written to konoha:agent:tsunade by publishEvent() are picked up here.
+  startStreamPoller(pollRedis);
 
   console.log("[Tsunade] registered on bus, listening for process/workitem events");
 }
