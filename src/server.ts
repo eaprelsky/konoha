@@ -29,6 +29,7 @@ import whitelistRouter from "./routes/whitelist";
 import adminRouter from "./routes/admin";
 import githubRouter from "./routes/github";
 import auditRouter from "./routes/audit";
+import deployRouter from "./routes/deploy";
 import { seedSystemAgents } from "./routes/admin";
 import staticRouter, { DIST_UI_DIR } from "./middleware/static";
 import { existsSync, readFileSync, writeFileSync } from "fs";
@@ -111,6 +112,7 @@ app.route("/workflows", workflowsRouter);
 app.route("/whitelist", whitelistRouter);
 app.route("/", githubRouter); // POST /webhooks/github — HMAC verified, no auth middleware
 app.route("/", auditRouter); // GET /audit, POST /github/issues, GET|PUT /config/autonomy
+app.route("/", deployRouter); // POST /deploy, GET /deploy/status, GET|PUT /config/settings
 
 // Register plugin routes
 registerTriggerResolverRoutes(app, requireAuth);

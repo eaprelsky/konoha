@@ -8,6 +8,10 @@
 
 import { Hono } from "hono";
 import { initPool, acquireSession, releaseSession, poolStatus, type Session } from "./pool";
+import {
+  slugify, saveBaseline, hasBaseline, compareWithBaseline, listBaselines,
+  DIFF_THRESHOLD,
+} from "./visual";
 
 const PORT = parseInt(process.env.TESTBENCH_PORT || "3201");
 const TOKEN = process.env.KONOHA_TOKEN || "";
@@ -220,6 +224,241 @@ app.post("/testbench/reset", async (c) => {
     return c.json({ error: e.message }, 500);
   }
   // Note: no finally releaseSession — already released with reset=true
+});
+
+// ── GET /testbench/baselines ──────────────────────────────────────────────────
+// List all pages that have saved baselines.
+
+app.get("/testbench/baselines", (c) => {
+  return c.json({ ok: true, threshold: DIFF_THRESHOLD, baselines: listBaselines() });
+});
+
+// ── POST /testbench/baseline ──────────────────────────────────────────────────
+// Navigate to url, take a screenshot, save as new baseline.
+// Body: { url: string, page?: string }
+// `page` is a human-readable slug; defaults to url path.
+
+app.post("/testbench/baseline", async (c) => {
+  const { url, page } = await c.req.json().catch(() => ({}));
+  if (!url) return c.json({ error: "url required" }, 400);
+  const slug = slugify(page || url);
+
+  const session = await acquireSession().catch((e) => { throw e; });
+  try {
+    await session.page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+    const buf = await session.page.screenshot({ type: "png", fullPage: true });
+    const ts = saveBaseline(slug, buf as Buffer);
+    return c.json({ ok: true, page: slug, baseline_ts: ts, screenshot_bytes: buf.length });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  } finally {
+    releaseSession(session).catch(() => {});
+  }
+});
+
+// ── POST /testbench/update-baseline ──────────────────────────────────────────
+// Update baselines for a list of pages. Intended for Shino after baseline-update GH issue.
+// Body: { pages: Array<{ url: string, page?: string }> }
+
+app.post("/testbench/update-baseline", async (c) => {
+  const { pages } = await c.req.json().catch(() => ({}));
+  if (!Array.isArray(pages) || pages.length === 0) {
+    return c.json({ error: "pages array required" }, 400);
+  }
+
+  const results: { page: string; ok: boolean; baseline_ts?: string; error?: string }[] = [];
+
+  for (const item of pages) {
+    const { url, page } = item as { url: string; page?: string };
+    if (!url) { results.push({ page: page || "?", ok: false, error: "url missing" }); continue; }
+    const slug = slugify(page || url);
+
+    const session = await acquireSession().catch((e) => ({ error: e.message })) as any;
+    if (session.error) { results.push({ page: slug, ok: false, error: session.error }); continue; }
+
+    try {
+      await (session as Session).page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+      const buf = await (session as Session).page.screenshot({ type: "png", fullPage: true });
+      const ts = saveBaseline(slug, buf as Buffer);
+      results.push({ page: slug, ok: true, baseline_ts: ts });
+    } catch (e: any) {
+      results.push({ page: slug, ok: false, error: e.message });
+    } finally {
+      releaseSession(session as Session).catch(() => {});
+    }
+  }
+
+  const allOk = results.every(r => r.ok);
+  return c.json({ ok: allOk, results }, allOk ? 200 : 207);
+});
+
+// ── POST /testbench/visual-regression ────────────────────────────────────────
+// Navigate to each page, compare screenshot with baseline.
+// Body: { pages: Array<{ url: string, page?: string }>, save_baseline_if_missing?: boolean }
+// Returns per-page diff results + overall pass/fail.
+
+app.post("/testbench/visual-regression", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { pages, save_baseline_if_missing = true } = body as {
+    pages: Array<{ url: string; page?: string }>;
+    save_baseline_if_missing?: boolean;
+  };
+
+  if (!Array.isArray(pages) || pages.length === 0) {
+    return c.json({ error: "pages array required" }, 400);
+  }
+
+  const results = [];
+  let newBaselines = 0;
+
+  for (const item of pages) {
+    const { url, page } = item as { url: string; page?: string };
+    if (!url) { results.push({ page: page || "?", error: "url missing" }); continue; }
+    const slug = slugify(page || url);
+
+    const session = await acquireSession().catch((e) => ({ error: e.message })) as any;
+    if (session.error) { results.push({ page: slug, error: session.error }); continue; }
+
+    try {
+      await (session as Session).page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+      const buf = await (session as Session).page.screenshot({ type: "png", fullPage: true });
+
+      if (!hasBaseline(slug)) {
+        if (save_baseline_if_missing) {
+          const ts = saveBaseline(slug, buf as Buffer);
+          results.push({ page: slug, has_baseline: false, passed: true, note: "baseline created", baseline_ts: ts });
+          newBaselines++;
+        } else {
+          results.push({ page: slug, has_baseline: false, passed: false, note: "no baseline — run with save_baseline_if_missing:true first" });
+        }
+      } else {
+        const vr = compareWithBaseline(slug, buf as Buffer);
+        results.push(vr);
+      }
+    } catch (e: any) {
+      results.push({ page: slug, passed: false, error: e.message });
+    } finally {
+      releaseSession(session as Session).catch(() => {});
+    }
+  }
+
+  const passed = results.every((r: any) => r.passed !== false && !r.error);
+  const failed = results.filter((r: any) => r.passed === false || r.error);
+
+  return c.json({
+    ok: passed,
+    passed,
+    total: results.length,
+    new_baselines: newBaselines,
+    failed_count: failed.length,
+    threshold: DIFF_THRESHOLD,
+    results,
+  }, passed ? 200 : 200); // always 200 — caller checks `passed`
+});
+
+// ── POST /testbench/run-suite ─────────────────────────────────────────────────
+// Full Self-Writing Loop cycle:
+//   1. Run visual regression for all pages
+//   2. If all pass + issue_id given → call POST /deploy on Konoha (auto_deploy check)
+//   3. If any fail → POST result to Konoha bus (kakashi:fix) with diff details
+//
+// Body: {
+//   pages: Array<{ url: string, page?: string }>,
+//   issue_id?: number,          // GitHub issue to close on success
+//   notify_agent?: string,      // Konoha agent ID to notify on failure (default: kakashi)
+//   konoha_url?: string,        // Konoha base URL (default: http://127.0.0.1:3100)
+//   konoha_token?: string,      // Konoha auth token
+// }
+
+app.post("/testbench/run-suite", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const {
+    pages,
+    issue_id,
+    notify_agent = "kakashi",
+    konoha_url = process.env.KONOHA_URL || "http://127.0.0.1:3100",
+    konoha_token = TOKEN,
+  } = body as {
+    pages: Array<{ url: string; page?: string }>;
+    issue_id?: number;
+    notify_agent?: string;
+    konoha_url?: string;
+    konoha_token?: string;
+  };
+
+  if (!Array.isArray(pages) || pages.length === 0) {
+    return c.json({ error: "pages array required" }, 400);
+  }
+
+  // 1. Run visual regression
+  const vrResp = await (async () => {
+    const mockReq = new Request(`${konoha_url}/testbench/visual-regression`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "Authorization": `Bearer ${TOKEN}` },
+      body: JSON.stringify({ pages, save_baseline_if_missing: true }),
+    });
+    // call internal handler directly via a self-fetch
+    return fetch(`http://127.0.0.1:${PORT}/testbench/visual-regression`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "Authorization": `Bearer ${TOKEN}` },
+      body: JSON.stringify({ pages, save_baseline_if_missing: true }),
+    }).then(r => r.json()).catch(e => ({ ok: false, error: e.message }));
+  })();
+
+  const suiteResult: Record<string, unknown> = {
+    ran_at: new Date().toISOString(),
+    visual_regression: vrResp,
+    issue_id: issue_id ?? null,
+  };
+
+  const passed: boolean = (vrResp as any).passed === true;
+
+  if (passed) {
+    // 2. Trigger deploy
+    const deployResp = await fetch(`${konoha_url}/api/deploy`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Authorization": `Bearer ${konoha_token}`,
+      },
+      body: JSON.stringify({ commit_sha: null }),
+    }).then(r => r.json()).catch(e => ({ status: "error", error: e.message }));
+
+    suiteResult.deploy = deployResp;
+
+    // 3. Notify Konoha bus — success
+    await fetch(`${konoha_url}/api/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "Authorization": `Bearer ${konoha_token}` },
+      body: JSON.stringify({
+        from: "hinata",
+        to: "naruto",
+        type: "result",
+        text: `TestBench suite PASS. ${(vrResp as any).total ?? 0} pages checked. Deploy: ${(deployResp as any).status ?? "?"}${issue_id ? `. Closes #${issue_id}` : ""}.`,
+      }),
+    }).catch(() => {});
+  } else {
+    // 3. Notify on failure — send to notify_agent with diff details
+    const failed = ((vrResp as any).results ?? []).filter((r: any) => r.passed === false || r.error);
+    const summary = failed.slice(0, 5).map((r: any) =>
+      `• ${r.page}: ${r.error || `diff ${r.diff_ratio != null ? (r.diff_ratio * 100).toFixed(2) + "%" : "?"}`}`
+    ).join("\n");
+
+    await fetch(`${konoha_url}/api/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "Authorization": `Bearer ${konoha_token}` },
+      body: JSON.stringify({
+        from: "hinata",
+        to: notify_agent,
+        type: "task",
+        text: `TestBench suite FAIL (${failed.length}/${(vrResp as any).total ?? 0} pages)${issue_id ? ` for #${issue_id}` : ""}:\n${summary}\n\nFix and re-run suite.`,
+      }),
+    }).catch(() => {});
+
+    suiteResult.failed_pages = failed;
+  }
+
+  return c.json({ ok: passed, ...suiteResult });
 });
 
 // ── Error handler ─────────────────────────────────────────────────────────────
