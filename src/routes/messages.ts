@@ -23,6 +23,8 @@ const router = new Hono<HonoEnv>();
 
 // All messages and attachments routes require auth (set at mount level in server.ts)
 
+const MAX_MESSAGE_TEXT_LENGTH = 32000; // chars; protects against silent truncation in downstream delivery
+
 router.post("/", async (c) => {
   const body = await c.req.json();
   const { to, type = "message", text, channel, replyTo, attachments, village_id } = body;
@@ -31,6 +33,11 @@ router.post("/", async (c) => {
   // Determine sender: admin can specify from, agent token sets from automatically
   const from: string = caller.isAdmin ? (body.from || "admin") : caller.agentId!;
   if (!from || !to || !text) return c.json({ error: "from, to, text required" }, 400);
+  if (typeof text === "string" && text.length > MAX_MESSAGE_TEXT_LENGTH) {
+    return c.json({
+      error: `Message text too long: ${text.length} chars (max ${MAX_MESSAGE_TEXT_LENGTH}). Use konoha_send with a shorter message or split into multiple messages.`,
+    }, 413);
+  }
   // validate attachment paths exist
   const validAttachments: Attachment[] = [];
   if (Array.isArray(attachments)) {
