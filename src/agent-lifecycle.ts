@@ -6,6 +6,7 @@
  */
 
 import { redis } from "./redis";
+import { getBranding } from "./routes/audit";
 import { getWorkflow } from "./workflow-loader";
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -130,8 +131,13 @@ export async function buildRoleBlocks(agentId: string): Promise<string> {
  * Used by startAgent() and GET /agents/:id/system-template.
  */
 export async function buildSystemPrompt(agentId: string, def: Pick<AgentDef, "id" | "name" | "model" | "system_prompt" | "capabilities">): Promise<string> {
-  const base = renderSystemTemplate(def);
-  const userInstructions = def.system_prompt?.trim() ?? "";
+  // Substitute {display_name} from branding config (closes #298)
+  const branding = await getBranding().catch(() => null);
+  const displayName = branding?.agent_display_names?.[agentId] ?? def.name;
+
+  const base = renderSystemTemplate({ ...def, name: displayName });
+  const userInstructions = (def.system_prompt?.trim() ?? "")
+    .replace(/\{display_name\}/g, displayName);
   const roleBlocks = await buildRoleBlocks(agentId);
 
   let skillSnippets = "";

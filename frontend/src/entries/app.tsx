@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { TokenProvider } from '../context/TokenContext';
 import { I18nProvider } from '../context/I18nContext';
 import { SubtitleProvider } from '../context/SubtitleContext';
+import { BrandingProvider } from '../context/BrandingContext';
 import { Layout } from '../components/Layout';
 import { HighlightProvider } from '../components/HighlightOverlay';
 import { TourProvider } from '../components/Tour';
@@ -104,7 +105,9 @@ function App() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
-    <AssistantWidget />
+    <BrandingProvider>
+      <App />
+      <AssistantWidget />
+    </BrandingProvider>
   </StrictMode>
 );

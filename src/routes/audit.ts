@@ -9,6 +9,7 @@
 
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth";
+import { redis } from "../redis";
 import {
   readAuditLog,
   assistantCreateIssue,
@@ -100,6 +101,59 @@ router.put("/config/autonomy", async (c) => {
   return c.json({ ok: true });
 });
 
+// ── Branding (closes #298) ────────────────────────────────────────────────────
+
+const BRANDING_KEY = "konoha:config:branding";
+
+export interface BrandingConfig {
+  product_name?: string;
+  assistant_name?: string;
+  assistant_avatar?: string;
+  agent_display_names?: Record<string, string>;
+  theme?: {
+    primary_color?: string;
+    accent_color?: string;
+    logo_url?: string;
+  };
+}
+
+const BRANDING_DEFAULTS: BrandingConfig = {
+  product_name: "Konoha WE",
+  assistant_name: "Цунаде",
+  assistant_avatar: "/api/avatars/tsunade.webp",
+  agent_display_names: {},
+  theme: { primary_color: "#6366f1", accent_color: "#f59e0b" },
+};
+
+export async function getBranding(): Promise<BrandingConfig> {
+  try {
+    const raw = await redis.get(BRANDING_KEY);
+    return raw ? { ...BRANDING_DEFAULTS, ...JSON.parse(raw) } : { ...BRANDING_DEFAULTS };
+  } catch {
+    return { ...BRANDING_DEFAULTS };
+  }
+}
+
+// GET /branding — public (used by frontend at startup)
+router.get("/branding", async (c) => {
+  return c.json(await getBranding());
+});
+
+// PUT /branding (requireAuth)
+router.put("/branding", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body) return c.json({ error: "invalid body" }, 400);
+  const current = await getBranding();
+  const updated: BrandingConfig = {
+    ...current,
+    ...body,
+    theme: { ...current.theme, ...(body.theme ?? {}) },
+    agent_display_names: { ...current.agent_display_names, ...(body.agent_display_names ?? {}) },
+  };
+  await redis.set(BRANDING_KEY, JSON.stringify(updated));
+  return c.json(updated);
+});
+
 // ── Setup Wizard (closes #295) ─────────────────────────────────────────────────
 
 import { existsSync, readFileSync, writeFileSync } from "fs";
@@ -131,7 +185,11 @@ function writeSetup(cfg: SetupConfig): void {
 // GET /setup/status — public (no auth needed before setup is complete)
 router.get("/setup/status", async (c) => {
   const cfg = readSetup();
-  return c.json({ complete: cfg.complete });
+  const missing: string[] = [];
+  if (!cfg.owner_tg_id) missing.push("owner_tg_id");
+  if (!cfg.llm_provider) missing.push("llm_provider");
+  if (!cfg.github_repo) missing.push("github_repo");
+  return c.json({ complete: cfg.complete, missing_fields: missing });
 });
 
 // POST /setup — save wizard config (no auth required to allow first-time setup)

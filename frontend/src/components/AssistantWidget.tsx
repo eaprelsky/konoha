@@ -11,6 +11,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Inspector } from './Inspector';
+import { useBranding } from '../context/BrandingContext';
 
 type WidgetState = 'collapsed' | 'expanded' | 'fullscreen';
 
@@ -125,6 +126,7 @@ const CSS = `
 `;
 
 export function AssistantWidget() {
+  const branding = useBranding();
   const [widgetState, setWidgetState] = useState<WidgetState>('collapsed');
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -302,7 +304,7 @@ export function AssistantWidget() {
 
         {/* Header / drag handle */}
         <div className="aw-header" onMouseDown={onDragStart}>
-          <span className="aw-title">🤖 Ассистент Konoha</span>
+          <span className="aw-title">🤖 {branding.assistant_name}</span>
           {busy && (
             <button
               className="aw-hbtn"

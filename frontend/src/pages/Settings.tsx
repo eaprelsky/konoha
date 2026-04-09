@@ -67,6 +67,25 @@ const CSS = `
   .autonomy-hardcoded { font-size: 11px; color: #94a3b8; font-style: italic; }
   .autonomy-save { display: flex; justify-content: flex-end; margin-top: 16px; gap: 8px; align-items: center; }
   .autonomy-saved { font-size: 12px; color: #15803d; }
+
+  /* Branding + Setup tabs */
+  .brand-field { margin-bottom: 16px; }
+  .brand-label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 5px; }
+  .brand-input { width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; color: #1e293b; font-size: 13px; padding: 8px 12px; outline: none; box-sizing: border-box; }
+  .brand-input:focus { border-color: #6366f1; }
+  .brand-hint { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+  .brand-section { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; margin: 20px 0 12px; padding-top: 16px; border-top: 1px solid #e2e8f0; }
+  .brand-row { display: flex; gap: 12px; }
+  .brand-row .brand-field { flex: 1; }
+  .brand-color { display: flex; align-items: center; gap: 10px; }
+  .brand-save { display: flex; justify-content: flex-end; margin-top: 20px; gap: 8px; align-items: center; }
+  .brand-saved { font-size: 12px; color: #15803d; }
+  .setup-link { display: inline-block; margin-top: 12px; padding: 8px 18px; background: #6366f1; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .setup-link:hover { background: #4f46e5; }
+  .setup-status { font-size: 13px; color: #475569; margin-bottom: 16px; }
+  .setup-status .ok { color: #15803d; font-weight: 600; }
+  .setup-status .warn { color: #b45309; font-weight: 600; }
+  .setup-missing { background: #fffbeb; border: 1px solid #fef08a; border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #92400e; margin-top: 8px; }
 `;
 
 const HARDCODED_ACTIONS = new Set(['data_delete']);
@@ -297,9 +316,189 @@ function AutonomyMatrix() {
   );
 }
 
+// ── Branding Tab ───────────────────────────────────────────────────────────────
+
+interface BrandingData {
+  product_name: string;
+  assistant_name: string;
+  assistant_avatar: string;
+  agent_display_names: Record<string, string>;
+  theme: { primary_color: string; accent_color: string; logo_url: string };
+}
+
+const BRAND_DEFAULTS: BrandingData = {
+  product_name: 'Konoha WE',
+  assistant_name: 'Цунаде',
+  assistant_avatar: '/api/avatars/tsunade.webp',
+  agent_display_names: {},
+  theme: { primary_color: '#6366f1', accent_color: '#f59e0b', logo_url: '' },
+};
+
+const KNOWN_AGENTS = ['naruto', 'sasuke', 'kakashi', 'shino', 'hinata', 'guy'];
+
+function BrandingTab() {
+  const [data, setData] = useState<BrandingData>(BRAND_DEFAULTS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch(`${BASE}/branding`)
+      .then(r => r.json())
+      .then(d => setData({ ...BRAND_DEFAULTS, ...d, theme: { ...BRAND_DEFAULTS.theme, ...(d.theme ?? {}) }, agent_display_names: d.agent_display_names ?? {} }))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  function set(path: string, value: string) {
+    if (path.startsWith('theme.')) {
+      const key = path.slice(6);
+      setData(d => ({ ...d, theme: { ...d.theme, [key]: value } }));
+    } else if (path.startsWith('agent.')) {
+      const key = path.slice(6);
+      setData(d => ({ ...d, agent_display_names: { ...d.agent_display_names, [key]: value } }));
+    } else {
+      setData(d => ({ ...d, [path]: value }));
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await fetch(`${BASE}/branding`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      alert(`Ошибка: ${e.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="audit-empty">Загрузка…</div>;
+
+  return (
+    <div>
+      <div className="settings-h2">Брендинг</div>
+      <p className="settings-desc">Настройте имя продукта, ассистента и визуальное оформление для корпоративного использования.</p>
+
+      <div className="brand-row">
+        <div className="brand-field">
+          <label className="brand-label">Название продукта</label>
+          <input className="brand-input" value={data.product_name} onChange={e => set('product_name', e.target.value)} />
+        </div>
+        <div className="brand-field">
+          <label className="brand-label">Имя ассистента</label>
+          <input className="brand-input" value={data.assistant_name} onChange={e => set('assistant_name', e.target.value)} />
+        </div>
+      </div>
+
+      <div className="brand-field">
+        <label className="brand-label">URL аватара ассистента</label>
+        <input className="brand-input" value={data.assistant_avatar} onChange={e => set('assistant_avatar', e.target.value)} placeholder="/api/avatars/tsunade.webp" />
+        <div className="brand-hint">Путь к изображению или URL. Используется в виджете ассистента.</div>
+      </div>
+
+      <div className="brand-section">Тема оформления</div>
+      <div className="brand-row">
+        <div className="brand-field">
+          <label className="brand-label">Основной цвет</label>
+          <div className="brand-color">
+            <input type="color" value={data.theme.primary_color} onChange={e => set('theme.primary_color', e.target.value)} />
+            <input className="brand-input" value={data.theme.primary_color} onChange={e => set('theme.primary_color', e.target.value)} placeholder="#6366f1" style={{ flex: 1 }} />
+          </div>
+        </div>
+        <div className="brand-field">
+          <label className="brand-label">Акцентный цвет</label>
+          <div className="brand-color">
+            <input type="color" value={data.theme.accent_color} onChange={e => set('theme.accent_color', e.target.value)} />
+            <input className="brand-input" value={data.theme.accent_color} onChange={e => set('theme.accent_color', e.target.value)} placeholder="#f59e0b" style={{ flex: 1 }} />
+          </div>
+        </div>
+      </div>
+      <div className="brand-field">
+        <label className="brand-label">URL логотипа</label>
+        <input className="brand-input" value={data.theme.logo_url} onChange={e => set('theme.logo_url', e.target.value)} placeholder="https://..." />
+        <div className="brand-hint">Если задан — показывается в шапке вместо текстового названия.</div>
+      </div>
+
+      <div className="brand-section">Имена агентов (display names)</div>
+      <p className="brand-hint" style={{ marginBottom: 12 }}>Отображаемые имена агентов. Не меняют API-идентификаторы и MCP-инструменты.</p>
+      {KNOWN_AGENTS.map(id => (
+        <div className="brand-row" key={id}>
+          <div className="brand-field" style={{ maxWidth: 120 }}>
+            <label className="brand-label">{id}</label>
+            <input className="brand-input" style={{ fontFamily: 'monospace', fontSize: 11, color: '#94a3b8', background: '#f1f5f9' }} value={id} readOnly />
+          </div>
+          <div className="brand-field">
+            <label className="brand-label">Display name</label>
+            <input className="brand-input" value={data.agent_display_names[id] ?? ''} onChange={e => set(`agent.${id}`, e.target.value)} placeholder={id} />
+          </div>
+        </div>
+      ))}
+
+      <div className="brand-save">
+        {saved && <span className="brand-saved">✓ Сохранено</span>}
+        <button className="audit-btn" onClick={save} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Setup Tab ──────────────────────────────────────────────────────────────────
+
+function SetupTab() {
+  const [status, setStatus] = useState<{ complete: boolean; missing_fields: string[] } | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
+
+  useEffect(() => {
+    fetch(`${BASE}/setup/status`)
+      .then(r => r.json())
+      .then(setStatus)
+      .catch(console.error);
+  }, [showWizard]);
+
+  if (showWizard) {
+    // Dynamically import SetupWizard to avoid circular dependency
+    const { SetupWizard } = require('../components/SetupWizard');
+    return <SetupWizard onComplete={() => { setShowWizard(false); }} />;
+  }
+
+  return (
+    <div>
+      <div className="settings-h2">Первичная настройка</div>
+      <p className="settings-desc">Повторный доступ к мастеру первичной настройки системы.</p>
+
+      {status && (
+        <div className="setup-status">
+          Статус:{' '}
+          {status.complete
+            ? <span className="ok">✓ Настройка завершена</span>
+            : <span className="warn">⚠ Настройка не завершена</span>}
+        </div>
+      )}
+
+      {status && !status.complete && status.missing_fields.length > 0 && (
+        <div className="setup-missing">
+          Не заполнены поля: {status.missing_fields.join(', ')}
+        </div>
+      )}
+
+      <button className="setup-link" onClick={() => setShowWizard(true)}>
+        {status?.complete ? 'Повторно запустить мастер настройки' : 'Запустить мастер настройки'}
+      </button>
+    </div>
+  );
+}
+
 // ── Settings Page ──────────────────────────────────────────────────────────────
 
-type Tab = 'audit' | 'autonomy';
+type Tab = 'audit' | 'autonomy' | 'branding' | 'setup';
 
 export function Settings() {
   const [tab, setTab] = useState<Tab>('audit');
@@ -315,8 +514,17 @@ export function Settings() {
           <button className={`settings-tab${tab === 'autonomy' ? ' active' : ''}`} onClick={() => setTab('autonomy')}>
             Автономность
           </button>
+          <button className={`settings-tab${tab === 'branding' ? ' active' : ''}`} onClick={() => setTab('branding')}>
+            Брендинг
+          </button>
+          <button className={`settings-tab${tab === 'setup' ? ' active' : ''}`} onClick={() => setTab('setup')}>
+            Первичная настройка
+          </button>
         </div>
-        {tab === 'audit' ? <AuditLog /> : <AutonomyMatrix />}
+        {tab === 'audit' && <AuditLog />}
+        {tab === 'autonomy' && <AutonomyMatrix />}
+        {tab === 'branding' && <BrandingTab />}
+        {tab === 'setup' && <SetupTab />}
       </div>
     </>
   );

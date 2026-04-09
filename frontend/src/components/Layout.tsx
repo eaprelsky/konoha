@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useI18n } from '../context/I18nContext';
 import { useSubtitle } from '../context/SubtitleContext';
+import { useBranding } from '../context/BrandingContext';
 import { ProfileModal } from './ProfileModal';
 
 export function isLoggedIn(): boolean {
@@ -113,6 +114,7 @@ export function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const subtitle = useSubtitle();
+  const branding = useBranding();
   const [showProfile, setShowProfile] = useState(false);
   const [activeGroup, setActiveGroup] = useState<NavGroup>(() => detectGroup(location.pathname));
 
@@ -131,7 +133,10 @@ export function Layout({ children }: LayoutProps) {
     <>
       <style>{styles}</style>
       <header className="kw-header">
-        <h1>Konoha WE</h1>
+        {branding.theme.logo_url
+          ? <img src={branding.theme.logo_url} alt={branding.product_name} style={{ height: 28 }} />
+          : <h1>{branding.product_name}</h1>}
+
         {subtitle && <span style={{ fontSize: 12, color: '#64748b' }}>{subtitle}</span>}
         <div className="spacer" />
         <div className="kw-groups">
