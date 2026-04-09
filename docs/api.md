@@ -154,11 +154,18 @@ Response: `{"id": "1774441021897-0"}`
 |-------|----------|-------------|
 | from | admin only | Sender agent ID. **Ignored for agent tokens** — sender is set from the token identity automatically (prevents impersonation). |
 | to | yes | Recipient: agent ID, `"all"`, or `"role:<role>"` |
-| text | yes | Message text |
+| text | yes | Message text. Maximum length: **32 768 characters**. Exceeding this limit returns HTTP 413. |
 | type | no | Message type (default: `message`) |
 | channel | no | Topic channel name |
 | replyTo | no | Message ID this is a reply to |
 | attachments | no | Array of attachment objects (see [attachments.md](attachments.md)) |
+
+**Error responses:**
+
+| Status | Meaning |
+|--------|---------|
+| 400 | `from`, `to`, or `text` missing |
+| 413 | `text` exceeds 32 768 characters. Split the message or use `konoha_read` to fetch large content already stored. |
 
 ### GET /messages/:agentId
 
@@ -330,7 +337,15 @@ Stop + start in sequence. Regenerates CLAUDE.md and .mcp.json.
 
 ### GET /agents/:id/system-template
 
-Return the rendered system template for this agent.
+Return the fully assembled system prompt for this agent. The response now includes all 5 layers (see `docs/agent-lifecycle.md` — Composite prompt):
+
+- Layer 1: identity + startup sequence (base template)
+- Layer 2: Konoha bus usage + watchdog behavior
+- Layer 3: role blocks — functions, input/output events from workflows assigned to this agent's roles
+- Layer 4: user-defined `system_prompt` from agent definition
+- Layer 5: skill-specific `prompt_snippet` from assigned skills
+
+Response: `{ "template": "<full CLAUDE.md content>" }`
 
 ### GET /agents/tmux/:id
 

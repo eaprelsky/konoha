@@ -70,24 +70,51 @@ Every lifecycle event (created, started, stopped, restarted, error) is appended 
   .mcp.json      ← MCP server config
 ```
 
-### 2. Generate CLAUDE.md
+### 2. Generate CLAUDE.md — Composite prompt
 
-The file is assembled from three parts:
+`buildSystemPrompt(agentId, def)` assembles a 5-layer prompt:
 
 ```
-[System Template]
+[Layer 1+2: System Template]
   - Agent identity (id, name, model)
   - Startup sequence (source /home/ubuntu/.agent-env, read MEMORY.md, konoha_register, wait for tasks)
-  - Konoha bus connection info
+  - Konoha bus connection info + watchdog behavior
 ---
-[User Instructions]
+[Layer 4: User Instructions]
   - AgentDef.system_prompt (editable in the UI)
 ---
-[Skill Snippets]
+[Layer 3: Role Blocks]
+  - Built by buildRoleBlocks(agentId)
+  - For each role where this agent is an assignee:
+      ## Role: {role.name}
+      ### Process: {workflow.name}
+      #### {function.label}
+      - Triggered by: {input events}
+      - Produces: {output events}
+      - Documents: ...
+      - Systems: ...
+      - Goal: ... (if intent is set)
+---
+[Layer 5: Skill Snippets]
   - For each skill in capabilities[]:
       ## Skill: {skill.name}
       {skill.prompt_snippet}
 ```
+
+#### Role blocks — how they're built
+
+`buildRoleBlocks(agentId)` uses a Redis index maintained by `workflow-loader`:
+
+1. Reads `konoha:roles:all` (sorted set) — list of all role IDs
+2. For each role, loads `role:{roleId}` and checks if `agentId` is in `assignees[]`
+3. For matching roles, reads `konoha:role:{roleId}:workflows` (Set) — workflow IDs where this role appears
+4. Loads each workflow via `getWorkflow(wfId)`, finds all `function` elements with `el.role === roleId`
+5. For each function, builds adjacency maps from `wf.flow` edges to find:
+   - **Input events** — event nodes with an outgoing edge to this function
+   - **Output events** — event nodes with an incoming edge from this function
+6. Formats everything as human-readable instruction blocks
+
+The `konoha:role:{roleId}:workflows` index is updated automatically on `createWorkflow`, `updateWorkflow`, `loadWorkflows`, and cleaned on `archiveWorkflow`.
 
 ### 3. Generate .mcp.json
 
@@ -145,7 +172,31 @@ The agent reads its CLAUDE.md, registers on the Konoha bus, and waits for tasks 
 
 ## Restarting an agent
 
-`restartAgent(id, def)` = `stopAgent` → `startAgent`. CLAUDE.md and .mcp.json are regenerated on each start, so skill changes take effect on next restart.
+`restartAgent(id, def)` = `stopAgent` → `startAgent`. CLAUDE.md and .mcp.json are regenerated on each start, so skill and role changes take effect on next restart.
+
+---
+
+## Hot-reload — CLAUDE.md without agent restart
+
+When a workflow or role assignment changes, managed agents get their CLAUDE.md regenerated automatically — **without stopping the tmux session**.
+
+### Trigger events
+
+| Event | Published by | Stream |
+|-------|-------------|--------|
+| `workflow.updated` | `updateWorkflow()` in workflow-loader.ts | `konoha:agent-reload` |
+| `role.assigned` | `updateRole()` in runtime.ts (when `assignees` changes) | `konoha:agent-reload` |
+
+### Reload loop
+
+`startAgentHotReload()` in `server.ts` runs a consumer group reader on `konoha:agent-reload`:
+
+1. Receives a `workflow.updated` or `role.assigned` entry
+2. Lists all managed agents via `listAgentDefs()`
+3. For each agent whose working directory has a `CLAUDE.md`: calls `buildSystemPrompt()` and overwrites the file
+4. Logs: `[hot-reload] Regenerated CLAUDE.md for agent "{id}" ({event type})`
+
+**The agent's tmux session is not restarted.** The new CLAUDE.md takes effect on the agent's next session cycle (`/new` every 2 hours via `naruto:session-cleanup`).
 
 ---
 
