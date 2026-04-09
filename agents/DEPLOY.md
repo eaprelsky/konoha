@@ -135,7 +135,7 @@ cp -r agents/scripts/hooks ~/scripts/
 chmod +x ~/scripts/*.sh
 
 # Copy agent utilities
-cp agents/tg-send.py ~/
+cp agents/naruto-tg-send.py ~/
 cp agents/tg-send-user.py ~/
 cp agents/CLAUDE.md ~/
 
@@ -202,7 +202,7 @@ For Sasuke, also add `telethon-channel` MCP (see `telethon-mcp/` README).
 ```
 /home/ubuntu/
 ├── CLAUDE.md                    # Agent instructions (shared)
-├── tg-send.py                   # Send via bot (Naruto)
+├── naruto-tg-send.py            # Send via bot (Naruto only — do NOT use from Sasuke)
 ├── tg-send-user.py              # Send via user account (Sasuke)
 ├── setup-agent.sh               # One-time server setup
 ├── scripts/
@@ -237,7 +237,7 @@ For Sasuke, also add `telethon-channel` MCP (see `telethon-mcp/` README).
 | Stream | Direction | Used by |
 |--------|-----------|---------|
 | `telegram:bot:incoming` | Telegram bot → Naruto | telegram-bot-service writes, Naruto reads |
-| `telegram:bot:outgoing` | Naruto → Telegram bot | Naruto writes (tg-send.py), bot.ts sends |
+| `telegram:bot:outgoing` | Naruto → Telegram bot | Naruto writes (naruto-tg-send.py), bot.ts sends |
 | `telegram:incoming` | Telethon → Sasuke | bus.py writes, Sasuke reads |
 | `telegram:outgoing` | Sasuke → Telethon | Sasuke writes (tg-send-user.py), bus.py sends |
 | `konoha:agent:{id}` | Inter-agent | Konoha bus manages |

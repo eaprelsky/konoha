@@ -11,7 +11,7 @@ import urllib.request, urllib.error
 KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 TIMEOUT_SEC = 180
-TG_SEND = "/home/ubuntu/tg-send.py"
+TG_SEND = "/home/ubuntu/naruto-tg-send.py"
 YEGOR_ID = os.environ.get("OWNER_TG_ID", "")  # set in .owner-config
 
 

@@ -34,7 +34,7 @@ log = logging.getLogger("reminder")
 
 KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
-TG_SEND = "/home/ubuntu/tg-send.py"
+TG_SEND = "/home/ubuntu/naruto-tg-send.py"
 
 r = redis.Redis(decode_responses=True)
 

@@ -1,12 +1,12 @@
 // Telegram adapter for Konoha workflow runtime (KWE-008)
-// Routes via tg-send.py (bot) for direct sends, or via Sasuke on Konoha bus
+// Routes via naruto-tg-send.py (bot) for direct sends, or via Sasuke on Konoha bus
 
 import { execFile } from "child_process";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 
-const TG_SEND_SCRIPT = process.env.TG_SEND_SCRIPT || "/home/ubuntu/tg-send.py";
+const TG_SEND_SCRIPT = process.env.TG_SEND_SCRIPT || "/home/ubuntu/naruto-tg-send.py";
 
 export interface Adapter {
   execute(action: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;

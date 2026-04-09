@@ -89,7 +89,7 @@ for agent_id, status in current.items():
             msg = f"{agent_id} поднялся и онлайн (был offline {offline_duration:.0f}с)"
             print(f"[watchdog] Recovery detected: {agent_id} after {offline_duration:.0f}s", file=sys.stderr)
             subprocess.run(
-                ['python3', '/home/ubuntu/tg-send.py', '$OWNER_CHAT_ID', msg],
+                ['python3', '/home/ubuntu/naruto-tg-send.py', '$OWNER_CHAT_ID', msg],
                 capture_output=True
             )
         else:

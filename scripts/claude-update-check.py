@@ -17,7 +17,7 @@ def run(cmd, **kwargs):
     return subprocess.run(cmd, capture_output=True, text=True, shell=True, **kwargs)
 
 def send_tg(text):
-    run(f'python3 /home/ubuntu/tg-send.py {OWNER_ID} {json.dumps(text)}')
+    run(f'python3 /home/ubuntu/naruto-tg-send.py {OWNER_ID} {json.dumps(text)}')
 
 def get_installed_version():
     r = run("claude --version 2>/dev/null || ~/.npm-global/bin/claude --version 2>/dev/null")

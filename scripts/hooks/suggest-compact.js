@@ -41,7 +41,7 @@ try {
 if (count === THRESHOLD) {
   process.stderr.write(`[compact] ${THRESHOLD} tool calls — consider /compact if switching phases\n`);
   try {
-    execSync(`python3 /home/ubuntu/tg-send.py ${YEGOR_CHAT_ID} '[${AGENT_ID}] Подхожу к лимиту контекста (${count} tool calls). Скоро нужен /compact или рестарт.'`, { timeout: 5000 });
+    execSync(`python3 /home/ubuntu/naruto-tg-send.py ${YEGOR_CHAT_ID} '[${AGENT_ID}] Подхожу к лимиту контекста (${count} tool calls). Скоро нужен /compact или рестарт.'`, { timeout: 5000 });
   } catch {}
 }
 
@@ -51,7 +51,7 @@ if (count > THRESHOLD && (count - THRESHOLD) % REMINDER_INTERVAL === 0) {
 
 if (count > THRESHOLD && (count - THRESHOLD) % TG_NOTIFY_INTERVAL === 0) {
   try {
-    execSync(`python3 /home/ubuntu/tg-send.py ${YEGOR_CHAT_ID} '[${AGENT_ID}] Контекст почти полный (${count} tool calls). Нужен /compact или рестарт.'`, { timeout: 5000 });
+    execSync(`python3 /home/ubuntu/naruto-tg-send.py ${YEGOR_CHAT_ID} '[${AGENT_ID}] Контекст почти полный (${count} tool calls). Нужен /compact или рестарт.'`, { timeout: 5000 });
   } catch {}
 }
 

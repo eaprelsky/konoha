@@ -26,7 +26,7 @@
 - **Primary**: Telegram bot (@eaprelsky_agent_bot) — real-time, via telegram-bot-service
 - **User account**: coMind Tech User (Telethon, phone in /opt/shared/.owner-config: AGENT_PHONE_RU) — for groups/channels/calls
 - **Bridge**: /home/ubuntu/telegram-bridge/bridge.py — polls user account, forwards to bot
-- **Sending messages (Naruto)**: `python3 /home/ubuntu/tg-send.py <chat_id> '<text>' [reply_to]` — sends via bot (telegram:bot:outgoing)
+- **Sending messages (Naruto)**: `python3 /home/ubuntu/naruto-tg-send.py <chat_id> '<text>' [reply_to]` — sends via bot (telegram:bot:outgoing)
 - **Sending messages (Sasuke)**: `python3 /home/ubuntu/tg-send-user.py <chat_id> '<text>' [reply_to]` — sends via Telethon user account (telegram:outgoing)
 
 ## Trust & Permissions

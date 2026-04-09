@@ -14,7 +14,7 @@ const execFileAsync = promisify(execFile);
 const DOC_KEY_PREFIX = "doc:";
 const PEOPLE_CUSTOM_KEY = "people:custom";
 const TRUSTED_PATH = "/opt/shared/.trusted-users.json";
-const TG_SEND_SCRIPT = "/home/ubuntu/tg-send.py";
+const TG_SEND_SCRIPT = "/home/ubuntu/naruto-tg-send.py";
 
 /** Load instruction text from document IDs. Falls back to the function label. */
 async function loadInstructionText(docIds: string[], label: string): Promise<string> {

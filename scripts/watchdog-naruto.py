@@ -207,7 +207,7 @@ def format_batch(events: list[dict]) -> str:
             text = d.get("text", "")
             ts = d.get("ts", "")[:16] if d.get("ts") else ""
             lines.append(f"\n[{ts}] {sender}: {text}")
-        lines.append("\nОбработай и ответь через tg-send.py.")
+        lines.append("\nОбработай и ответь через naruto-tg-send.py.")
 
     if konoha_deduped:
         if lines:
