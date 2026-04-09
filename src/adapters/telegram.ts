@@ -27,13 +27,13 @@ async function sendMessage(input: Record<string, unknown>): Promise<Record<strin
     String(text),
   ]);
 
-  if (stderr) console.warn("[telegram-adapter] tg-send.py stderr:", stderr);
+  if (stderr) console.warn("[telegram-adapter] naruto-tg-send.py stderr:", stderr);
 
-  // tg-send.py outputs the message_id on success, or an error string
+  // naruto-tg-send.py outputs the message_id on success, or an error string
   const output = stdout.trim();
   const message_id = parseInt(output);
   if (isNaN(message_id)) {
-    throw new Error(`send_message: unexpected tg-send.py output: ${output}`);
+    throw new Error(`send_message: unexpected naruto-tg-send.py output: ${output}`);
   }
 
   return { message_id };
@@ -49,7 +49,7 @@ export const telegramAdapter: Adapter = {
 
   async healthcheck() {
     try {
-      // tg-send.py exists and is executable
+      // naruto-tg-send.py exists and is executable
       await execFileAsync("python3", ["-c", `import importlib.util; assert importlib.util.find_spec('telethon') is not None`]);
       return true;
     } catch {
