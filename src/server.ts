@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { mkdirSync } from "fs";
 import { startReminderScheduler, restoreReminderJobs } from "./runtime";
-import { redis } from "./redis";
+import { redis, createRedis } from "./redis";
 import { handleEventFired } from "./runtime";
 import { initTsunade } from "./tsunade";
 import { registerTriggerResolverRoutes } from "./trigger-resolver";
@@ -131,8 +131,12 @@ const ENGINE_STREAM = "konoha:agent:workflow-engine";
 const ENGINE_GROUP  = "workflow-engine";
 
 async function startEventFiredListener(): Promise<void> {
+  // Dedicated connection for blocking XREADGROUP — must not share with the main redis
+  // instance to avoid blocking non-blocking commands queued on the same connection.
+  const listenerRedis = createRedis();
+
   try {
-    await redis.xgroup("CREATE", ENGINE_STREAM, ENGINE_GROUP, "$", "MKSTREAM");
+    await listenerRedis.xgroup("CREATE", ENGINE_STREAM, ENGINE_GROUP, "$", "MKSTREAM");
     console.log("[workflow-engine] consumer group created");
   } catch (e: any) {
     if (!e.message?.includes("BUSYGROUP")) {
@@ -143,7 +147,7 @@ async function startEventFiredListener(): Promise<void> {
   const poll = async () => {
     while (true) {
       try {
-        const result = await redis.xreadgroup(
+        const result = await listenerRedis.xreadgroup(
           "GROUP", ENGINE_GROUP, "worker",
           "COUNT", 10,
           "BLOCK", 2000,
@@ -158,7 +162,7 @@ async function startEventFiredListener(): Promise<void> {
             for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
 
             if (obj.type !== "event_fired") {
-              await redis.xack(ENGINE_STREAM, ENGINE_GROUP, entryId).catch(() => {});
+              await listenerRedis.xack(ENGINE_STREAM, ENGINE_GROUP, entryId).catch(() => {});
               continue;
             }
 
@@ -169,7 +173,7 @@ async function startEventFiredListener(): Promise<void> {
               console.error("[workflow-engine] event_fired handler error:", e.message);
             }
 
-            await redis.xack(ENGINE_STREAM, ENGINE_GROUP, entryId).catch(() => {});
+            await listenerRedis.xack(ENGINE_STREAM, ENGINE_GROUP, entryId).catch(() => {});
           }
         }
       } catch (e: any) {

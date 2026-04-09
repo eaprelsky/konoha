@@ -25,7 +25,7 @@ import {
   consumeInvite,
 } from "../src/redis";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379 });
+const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
 const RUN = `r${Date.now()}`;
 function id(name: string) { return `rtest-${name}-${RUN}`; }
 

@@ -17,7 +17,7 @@ const { app } = await import("../src/server");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379 });
+const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
 
 function adminHeaders(extra: Record<string, string> = {}) {
   return { Authorization: `Bearer ${TEST_ADMIN_TOKEN}`, "Content-Type": "application/json", ...extra };
