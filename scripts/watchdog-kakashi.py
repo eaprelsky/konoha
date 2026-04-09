@@ -23,7 +23,7 @@ AGENT_ID     = "kakashi"
 TMUX_SESSION = "kakashi"
 GH_REPO      = "eaprelsky/konoha"
 
-SCAN_INTERVAL    = 900   # 15 minutes between GitHub Issue scans
+SCAN_INTERVAL    = 60    # 1 minute between GitHub Issue scans
 DEBOUNCE_WINDOW  = 3.0
 IDLE_POLL_SEC    = 2.0
 IDLE_TIMEOUT_SEC = 1800  # 30 min — fixes can take time
@@ -115,7 +115,7 @@ async def tmux_send(session: str, text: str) -> bool:
     compacting_waited = 0
     while compacting_waited < 120:
         last_lines = chr(10).join(tmux_pane_content(session).strip().split(chr(10))[-6:])
-        if not any(kw in last_lines for kw in ("Compacting", "Churned for", "\u273b")):
+        if not any(kw in last_lines for kw in ("Compacting", "Churned for")):
             break
         log.info(f"Agent {session} compacting — waiting (waited {compacting_waited}s)")
         await asyncio.sleep(2.0)
@@ -193,9 +193,8 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
                 "gh", "issue", "list",
                 "--repo", GH_REPO,
                 "--state", "open",
-                "--label", "bug",
                 "--json", "number,title,labels,createdAt",
-                "--limit", "20",
+                "--limit", "50",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
                 env=env,

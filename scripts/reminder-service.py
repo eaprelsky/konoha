@@ -146,7 +146,7 @@ def send_reminder(rem: dict, rem_id: str):
         )
         urllib.request.urlopen(req, timeout=5)
     except Exception as e:
-        log.error("Konoha send failed: %s — falling back to tg-send.py", e)
+        log.error("Konoha send failed: %s — falling back to naruto-tg-send.py", e)
         # Fallback: direct tg-send
         if chat_id and text:
             try:

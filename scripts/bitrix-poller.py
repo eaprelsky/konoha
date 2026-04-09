@@ -232,7 +232,7 @@ def send_konoha(to, text, msg_type="message"):
 
 
 def send_telegram(chat_id, text):
-    """Send Telegram message via tg-send.py (Naruto bot)."""
+    """Send Telegram message via naruto-tg-send.py (Naruto bot)."""
     import subprocess, shlex
     try:
         result = subprocess.run(
