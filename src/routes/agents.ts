@@ -24,7 +24,7 @@ import {
   startAgent,
   stopAgent,
   restartAgent,
-  renderSystemTemplate,
+  buildSystemPrompt,
   isTmuxRunning,
 } from "../agent-lifecycle";
 
@@ -154,12 +154,13 @@ router.get("/tmux/:id", async (c) => {
   return c.json({ session: konohaSession, lines: "" });
 });
 
-// GET /agents/:id/system-template — rendered system template for this agent
+// GET /agents/:id/system-template — rendered system template (includes role blocks + skills)
 router.get("/:id/system-template", async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
-  const base = def ?? { id, name: id, model: "claude-sonnet-4-6" };
-  return c.json({ template: renderSystemTemplate(base) });
+  const base = def ?? { id, name: id, model: "claude-sonnet-4-6", system_prompt: undefined, capabilities: [] };
+  const template = await buildSystemPrompt(id, base);
+  return c.json({ template });
 });
 
 // GET /agents/:id/memory — list memory files for agent

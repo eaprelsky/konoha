@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { mkdirSync } from "fs";
 import { startReminderScheduler, restoreReminderJobs } from "./runtime";
 import { redis, createRedis } from "./redis";
+import { getAgentDef, listAgentDefs, buildSystemPrompt } from "./agent-lifecycle";
 import { handleEventFired } from "./runtime";
 import { initTsunade } from "./tsunade";
 import { registerTriggerResolverRoutes } from "./trigger-resolver";
@@ -29,7 +30,7 @@ import adminRouter from "./routes/admin";
 import githubRouter from "./routes/github";
 import { seedSystemAgents } from "./routes/admin";
 import staticRouter, { DIST_UI_DIR } from "./middleware/static";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
@@ -190,6 +191,74 @@ async function startEventFiredListener(): Promise<void> {
 }
 
 startEventFiredListener().catch(e => console.error("[workflow-engine] listener start error:", e.message));
+
+// ── Hot-reload: regenerate CLAUDE.md for affected agents when workflows change ──
+// Listens to `konoha:agent-reload` stream (written by workflow-loader on updateWorkflow).
+// Does NOT restart agents — just rewrites their CLAUDE.md so the next /new picks it up.
+async function startAgentHotReload(): Promise<void> {
+  const RELOAD_STREAM = "konoha:agent-reload";
+  const RELOAD_GROUP = "konoha-server-hotreload";
+  const WORKDIR_ROOT = "/opt/shared/agent-workdirs";
+
+  const reloadRedis = createRedis();
+
+  try {
+    await reloadRedis.xgroup("CREATE", RELOAD_STREAM, RELOAD_GROUP, "$", "MKSTREAM");
+  } catch {
+    // group already exists
+  }
+
+  const poll = async () => {
+    while (true) {
+      try {
+        const result = await reloadRedis.xreadgroup(
+          "GROUP", RELOAD_GROUP, "server",
+          "COUNT", 10, "BLOCK", 5000,
+          "STREAMS", RELOAD_STREAM, ">",
+        ) as [string, [string, string[]][]][] | null;
+
+        if (!result) continue;
+
+        for (const [, entries] of result) {
+          for (const [entryId, fields] of entries) {
+            const obj: Record<string, string> = {};
+            for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
+
+            if (obj.type === "workflow.updated" || obj.type === "role.assigned") {
+              // Regenerate CLAUDE.md for all managed agents (role assignments may have changed)
+              try {
+                const defs = await listAgentDefs();
+                for (const def of defs) {
+                  const workdir = join(WORKDIR_ROOT, def.id);
+                  const claudeMdPath = join(workdir, "CLAUDE.md");
+                  if (existsSync(claudeMdPath)) {
+                    const claudeMd = await buildSystemPrompt(def.id, def);
+                    writeFileSync(claudeMdPath, claudeMd, "utf-8");
+                    console.log(`[hot-reload] Regenerated CLAUDE.md for agent "${def.id}" (${obj.type})`);
+                  }
+                }
+              } catch (e: any) {
+                console.error("[hot-reload] Failed to regenerate CLAUDE.md:", e.message);
+              }
+            }
+
+            await reloadRedis.xack(RELOAD_STREAM, RELOAD_GROUP, entryId).catch(() => {});
+          }
+        }
+      } catch (e: any) {
+        if (!e.message?.includes("Connection")) {
+          console.error("[hot-reload] poll error:", e.message);
+        }
+        await new Promise(res => setTimeout(res, 2000));
+      }
+    }
+  };
+
+  poll().catch(e => console.error("[hot-reload] loop crashed:", e.message));
+  console.log("[hot-reload] agent CLAUDE.md reload listener started");
+}
+
+startAgentHotReload().catch(e => console.error("[hot-reload] start error:", e.message));
 
 console.log(`Konoha bus listening on port ${PORT}`);
 export { app };

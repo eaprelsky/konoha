@@ -293,6 +293,30 @@ function normalizeWorkflow(def: WorkflowDefinition): WorkflowDefinition {
 /** @deprecated use normalizeWorkflow instead */
 const normalizeSystems = normalizeWorkflow;
 
+// ── Role-workflow index ─────────────────────────────────────────────────────
+// `konoha:role:{roleId}:workflows` (Set) — populated whenever a workflow is saved.
+// Used by buildRoleBlocks() in agent-lifecycle to build composite agent prompts.
+
+export async function updateRoleWorkflowIndex(def: WorkflowDefinition): Promise<void> {
+  const roleIds = new Set<string>();
+  for (const el of def.elements ?? []) {
+    if (el.type === "function" && el.role) roleIds.add(el.role);
+  }
+  for (const roleId of roleIds) {
+    await redis.sadd(`konoha:role:${roleId}:workflows`, def.id);
+  }
+}
+
+export async function removeFromRoleWorkflowIndex(def: WorkflowDefinition): Promise<void> {
+  const roleIds = new Set<string>();
+  for (const el of def.elements ?? []) {
+    if (el.type === "function" && el.role) roleIds.add(el.role);
+  }
+  for (const roleId of roleIds) {
+    await redis.srem(`konoha:role:${roleId}:workflows`, def.id);
+  }
+}
+
 export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: number; errors: number }> {
   const defs = loadWorkflowsFromDir(workflowsDir);
   let loaded = 0;
@@ -311,6 +335,7 @@ export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: num
     }
     await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
     await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
+    await updateRoleWorkflowIndex(def);
     console.log(`[workflow-loader] Loaded workflow "${def.id}" v${def.version} → Redis key ${WORKFLOW_KEY_PREFIX}${def.id}`);
     loaded++;
   }
@@ -349,6 +374,7 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
     const saved = { ...def, status: 'draft' };
     await redis.set(WORKFLOW_KEY_PREFIX + saved.id, JSON.stringify(saved));
     await redis.sadd(WORKFLOW_INDEX_KEY, saved.id);
+    await updateRoleWorkflowIndex(saved as WorkflowDefinition);
     pgUpsertWorkflow(saved as any);
     return { workflow: saved, errors: [] };
   }
@@ -356,6 +382,7 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
   if (errors.length > 0) return { workflow: def, errors };
   await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
   await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
+  await updateRoleWorkflowIndex(def);
   pgUpsertWorkflow(def as any);
   return { workflow: def, errors: [] };
 }
@@ -378,6 +405,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   if (opts.draft) {
     const saved = { ...normalized, status: 'draft' };
     await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
+    await updateRoleWorkflowIndex(saved as WorkflowDefinition);
     pgUpsertWorkflow(saved as any);
     return { workflow: saved, errors: [] };
   }
@@ -386,14 +414,19 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   if (errors.length > 0) return { workflow: normalized, errors };
 
   await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(normalized));
+  await updateRoleWorkflowIndex(normalized);
+  // Notify hot-reload listener: agents with roles in this workflow need CLAUDE.md refresh
+  redis.xadd("konoha:agent-reload", "*", "type", "workflow.updated", "workflow_id", id, "timestamp", new Date().toISOString()).catch(() => {});
   pgUpsertWorkflow(normalized as any);
   return { workflow: normalized, errors: [] };
 }
 
 export async function archiveWorkflow(id: string): Promise<boolean> {
-  const exists = await redis.exists(WORKFLOW_KEY_PREFIX + id);
-  if (!exists) return false;
+  const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
+  if (!raw) return false;
+  const def: WorkflowDefinition = JSON.parse(raw);
   await redis.srem(WORKFLOW_INDEX_KEY, id);
+  await removeFromRoleWorkflowIndex(def);
   // Keep the key in Redis (archived, not deleted) — remove from active index only
   return true;
 }

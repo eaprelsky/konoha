@@ -1270,6 +1270,10 @@ export async function updateRole(role_id: string, patch: Partial<Pick<RoleDef, "
   if (patch.required_capabilities !== undefined)  r.required_capabilities = patch.required_capabilities;
   r.updated_at = new Date().toISOString();
   await saveRole(r);
+  // Notify hot-reload: agents newly assigned to this role need CLAUDE.md refresh
+  if (patch.assignees !== undefined) {
+    redis.xadd("konoha:agent-reload", "*", "type", "role.assigned", "role_id", role_id, "timestamp", new Date().toISOString()).catch(() => {});
+  }
   return r;
 }
 
