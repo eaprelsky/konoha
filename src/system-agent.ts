@@ -2,13 +2,18 @@
  * System agent — handles automated function execution:
  * - Timer/wait functions (Подождать N минут)
  * - Document generation via Haiku
+ * - Shell script execution (bitrix-monitor, etc.)
  * - General auto-complete for system-role functions
  */
 import { writeFileSync } from "fs";
 import { join } from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import Anthropic from "@anthropic-ai/sdk";
 import { redis } from "./redis";
 import { createReminder, completeWorkItem } from "./runtime";
+
+const execFileAsync = promisify(execFile);
 
 const WORKSPACE_DIR = "/opt/shared/workspace";
 const DOC_KEY_PREFIX = "doc:";
@@ -120,7 +125,26 @@ export async function executeSystemFunction(params: SystemExecParams): Promise<v
     return;
   }
 
-  // 3. Fallback: auto-complete (system acknowledges the step)
+  // 3. Bitrix monitor: run bitrix-poller.py monitor
+  if (/bitrix.*monitor|run.*bitrix.*monitor/i.test(label)) {
+    console.log(`[system-agent] running bitrix monitor for work_item ${work_item_id}`);
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        "python3",
+        ["/home/ubuntu/scripts/bitrix-poller.py", "monitor"],
+        { timeout: 120_000 },
+      );
+      if (stdout) console.log(`[system-agent] bitrix-monitor stdout: ${stdout.slice(0, 500)}`);
+      if (stderr) console.warn(`[system-agent] bitrix-monitor stderr: ${stderr.slice(0, 200)}`);
+      await completeWorkItem(work_item_id, { system: "bitrix-monitor", exit_code: 0 });
+    } catch (e: any) {
+      console.error(`[system-agent] bitrix-monitor failed: ${e.message}`);
+      await completeWorkItem(work_item_id, { system: "bitrix-monitor-error", error: e.message }).catch(() => {});
+    }
+    return;
+  }
+
+  // 4. Fallback: auto-complete (system acknowledges the step)
   try {
     await completeWorkItem(work_item_id, { system: "auto-executed", label });
     console.log(`[system-agent] auto-completed work_item ${work_item_id} (label: "${label}")`);

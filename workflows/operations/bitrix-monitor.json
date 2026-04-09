@@ -1,0 +1,32 @@
+{
+  "id": "bitrix-monitor",
+  "version": "1.0.0",
+  "name": "Bitrix Monitor",
+  "description": "Периодический мониторинг изменений в воронке Bitrix24: новые сделки, смена стадии, изменение суммы. Алерт уходит в группу coMind Лиды.",
+  "elements": [
+    {
+      "id": "e1",
+      "type": "event",
+      "label": "Scheduled check",
+      "trigger": {
+        "kind": "timer",
+        "cron": "0 9,11,13,15,17,19 * * *"
+      }
+    },
+    {
+      "id": "f1",
+      "type": "function",
+      "label": "Run Bitrix Monitor",
+      "role": "Система"
+    },
+    {
+      "id": "e2",
+      "type": "event",
+      "label": "Monitor complete"
+    }
+  ],
+  "flow": [
+    ["e1", "f1"],
+    ["f1", "e2"]
+  ]
+}
