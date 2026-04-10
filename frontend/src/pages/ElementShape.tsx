@@ -78,7 +78,10 @@ export function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps) {
   const label = el.type === 'gateway'
     ? (gwOp === 'X' ? 'XOR' : gwOp === 'XOR' ? 'XOR' : gwOp === 'AND' ? 'AND' : gwOp === 'OR' ? 'OR' : el.operator || el.label)
     : el.label;
-  const maxW = el.type === 'gateway' ? GR * 2 - 8 : EW - 16;
+  // Role nodes: text lives in the right section (after the dividing line at x=14)
+  const ROLE_LEFT = 14;
+  const textCX = el.type === 'role' ? (ROLE_LEFT + EW) / 2 : EW / 2;
+  const maxW = el.type === 'gateway' ? GR * 2 - 8 : el.type === 'role' ? EW - ROLE_LEFT - 16 : EW - 16;
   const words = String(label).split(' ');
   const charW = 6.2;
   const lines: string[] = [];
@@ -96,7 +99,7 @@ export function ElShape({ el, selected, connectSrc, isEditing }: ShapeProps) {
     <>
       {shape}
       {!isEditing && lines.map((line, i) => (
-        <text key={i} x={EW/2} y={startY + i * lineH}
+        <text key={i} x={textCX} y={startY + i * lineH}
           textAnchor="middle" dominantBaseline="middle"
           fontSize={12} fontFamily="system-ui,-apple-system,sans-serif"
           fill="#1a1a1a" pointerEvents="none">

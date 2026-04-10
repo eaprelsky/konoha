@@ -30,6 +30,7 @@ export const WORKITEM_KEY_PREFIX = "workitem:";
 export const WORKITEMS_IDX_ASSIGNEE = "konoha:workitems:assignee:";
 export const WORKITEMS_IDX_STATUS = "konoha:workitems:status:";
 export const WORKITEMS_IDX_PROCESS = "konoha:workitems:process:";
+export const WORKITEMS_IDX_CASE = "konoha:workitems:case:";
 export const WORKITEMS_IDX_ALL = "konoha:workitems:all";
 const WORKFLOW_KEY_PREFIX = "workflow:";
 const CASES_IDX_ALL = "konoha:cases:all";
@@ -67,6 +68,8 @@ export interface Case {
   payload: Record<string, unknown>;
   history: HistoryEntry[];
   created_at: string;
+  parent_work_item_id?: string; // set when this is a child case spawned by a sub-process call
+  parent_case_id?: string;      // ID of the parent case (for navigation/cleanup)
 }
 
 export interface WorkItem {
@@ -82,6 +85,7 @@ export interface WorkItem {
   deadline?: string;
   created_at: string;
   updated_at: string;
+  child_case_id?: string; // set when this work item represents a sub-process call
 }
 
 // ── PG row converters ─────────────────────────────────────────────────────────
@@ -162,6 +166,9 @@ export async function saveWorkItem(wi: WorkItem, prevStatus?: WorkItemStatus, pr
   await redis.sadd(WORKITEMS_IDX_STATUS + wi.status, wi.work_item_id);
   if (wi.process_id) {
     await redis.sadd(WORKITEMS_IDX_PROCESS + wi.process_id, wi.work_item_id);
+  }
+  if (wi.case_id) {
+    await redis.sadd(WORKITEMS_IDX_CASE + wi.case_id, wi.work_item_id);
   }
   await redis.zadd(WORKITEMS_IDX_ALL, new Date(wi.created_at).getTime(), wi.work_item_id);
 }
@@ -297,6 +304,64 @@ async function subscribeEventNode(kase: Case, el: WorkflowElement): Promise<void
   });
 }
 
+/**
+ * Resolve the child workflow ID for a function element, if it represents a sub-process call.
+ * Checks el.sub_process_id first, then scans workflows for parent_function_id match.
+ * Returns null if the element is not a sub-process call.
+ */
+async function resolveChildProcess(
+  elementId: string,
+  el: WorkflowElement,
+  parentDef: WorkflowDefinition,
+): Promise<string | null> {
+  // 1. Explicit reference wins
+  if (el.sub_process_id) return el.sub_process_id;
+
+  // 2. Scan workflow registry for a child that declares this element as its parent function
+  const allIds = await redis.smembers(WORKFLOW_INDEX_KEY);
+  for (const id of allIds) {
+    if (id === parentDef.id) continue;
+    const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
+    if (!raw) continue;
+    const def: WorkflowDefinition = JSON.parse(raw);
+    if (def.parent_id === parentDef.id && def.parent_function_id === elementId) {
+      return def.id;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Called when a child case completes. Marks the parent work item done, merges payload,
+ * and advances the parent case. Idempotent — safe to call if WI already done.
+ */
+async function completeParentWorkItem(childCase: Case): Promise<void> {
+  if (!childCase.parent_work_item_id) return;
+  const wi = await loadWorkItem(childCase.parent_work_item_id);
+  if (!wi || wi.status === "done") return;
+
+  const prevStatus = wi.status;
+  wi.status = "done";
+  wi.output = childCase.payload;
+  wi.updated_at = new Date().toISOString();
+  await saveWorkItem(wi, prevStatus);
+
+  if (!wi.case_id) return;
+  const parentCase = await loadCase(wi.case_id);
+  if (!parentCase || parentCase.status !== "running") return;
+
+  const parentDef = await getWorkflow(parentCase.process_id);
+  if (!parentDef) return;
+
+  // Merge child payload into parent payload before advancing
+  parentCase.payload = { ...parentCase.payload, ...childCase.payload };
+  const histEntry = parentCase.history.find(h => h.work_item_id === wi.work_item_id);
+  if (histEntry) histEntry.output = childCase.payload;
+
+  await advanceCase(parentCase, parentDef);
+}
+
 export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
   const { outEdges, inEdges, byId, edgeConditions } = buildAdjacency(def);
 
@@ -320,6 +385,12 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
           cancelSubscriptionsByInstance(kase.case_id).catch(e =>
             log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
           );
+          // If this is a child case, complete the parent work item and advance the parent
+          if (kase.parent_work_item_id) {
+            completeParentWorkItem(kase).catch(e =>
+              log.error("completeParentWorkItem error", { case_id: kase.case_id, error: e.message }),
+            );
+          }
           return kase;
         }
         kase.status = "error";
@@ -343,6 +414,45 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
     }
 
     if (nextEl.type === "function") {
+      // ── Sub-process call detection ─────────────────────────────────────────
+      const childProcessId = await resolveChildProcess(nextId, nextEl, def);
+
+      if (childProcessId) {
+        const wi = await createWorkItemForElement(kase, nextId, nextEl);
+        kase.position = nextId;
+        kase.history.push({ element_id: nextId, element_type: "function", label: nextEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
+        await saveCase(kase);
+
+        // Launch child case with inherited payload
+        const childCase = await createCase(
+          childProcessId,
+          `${kase.subject} → ${nextEl.label}`,
+          { ...kase.payload },
+          undefined,
+          wi.work_item_id,
+        );
+
+        // Link WI → child case
+        wi.child_case_id = childCase.case_id;
+        await saveWorkItem(wi, "pending");
+
+        if (childCase.status === "done") {
+          // Trivial child — advance immediately
+          const prevStatus = wi.status;
+          wi.status = "done";
+          wi.output = childCase.payload;
+          wi.updated_at = new Date().toISOString();
+          await saveWorkItem(wi, prevStatus);
+          kase.payload = { ...kase.payload, ...childCase.payload };
+          current = nextId;
+          continue;
+        }
+
+        // Child still running — parent suspends here
+        return kase;
+      }
+
+      // ── Regular function (no sub-process) ─────────────────────────────────
       const wi = await createWorkItemForElement(kase, nextId, nextEl);
 
       kase.position = nextId;
@@ -568,6 +678,7 @@ export async function createCase(
   subject: string,
   payload: Record<string, unknown> = {},
   start_node?: string,
+  parentWorkItemId?: string,
 ): Promise<Case> {
   let def = await getWorkflow(process_id);
   if (!def) {
@@ -590,6 +701,13 @@ export async function createCase(
   const case_id = randomUUID();
   const now = new Date().toISOString();
 
+  // Resolve parent case ID from parent work item (if any)
+  let parentCaseId: string | undefined;
+  if (parentWorkItemId) {
+    const parentWI = await loadWorkItem(parentWorkItemId);
+    parentCaseId = parentWI?.case_id ?? undefined;
+  }
+
   const kase: Case = {
     case_id,
     process_id,
@@ -600,6 +718,7 @@ export async function createCase(
     payload,
     history: [{ element_id: startId, element_type: startEl.type, label: startEl.label, timestamp: now }],
     created_at: now,
+    ...(parentWorkItemId ? { parent_work_item_id: parentWorkItemId, parent_case_id: parentCaseId } : {}),
   };
 
   await saveCase(kase);
@@ -611,10 +730,24 @@ export async function getCase(case_id: string): Promise<Case | null> {
   return loadCase(case_id);
 }
 
-export async function forceCloseCase(case_id: string): Promise<Case | null> {
+export async function forceCloseCase(case_id: string, _depth = 0): Promise<Case | null> {
+  if (_depth > 10) {
+    log.warn("forceCloseCase: maxDepth exceeded, stopping recursion", { case_id });
+    return null;
+  }
   const kase = await loadCase(case_id);
   if (!kase) return null;
   if (kase.status !== "running") return kase;
+
+  // Cascade: close any child cases spawned by sub-process calls
+  const wiIds = await redis.smembers(WORKITEMS_IDX_CASE + case_id).catch(() => [] as string[]);
+  for (const wiId of wiIds) {
+    const wi = await loadWorkItem(wiId);
+    if (wi?.child_case_id) {
+      await forceCloseCase(wi.child_case_id, _depth + 1);
+    }
+  }
+
   kase.status = "done";
   await saveCase(kase);
   cancelSubscriptionsByInstance(case_id).catch(() => {});

@@ -61,6 +61,8 @@ export interface WorkflowElement {
   locked?: boolean;
   // Intent-based execution: outcome/goal for AI agent (vs instruction-based label)
   intent?: string;
+  // Sub-process call: explicit reference to child workflow id
+  sub_process_id?: string;
 }
 
 export interface WorkflowTrigger {
