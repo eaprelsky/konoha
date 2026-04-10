@@ -75,7 +75,7 @@
   .aw-input {
     flex: 1; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
     color: #1e293b; font-size: 12px; padding: 7px 10px; outline: none;
-    resize: none; font-family: inherit; min-height: 36px; max-height: 120px;
+    resize: none; font-family: inherit; min-height: 52px; max-height: 120px;
     overflow-y: auto; line-height: 1.5;
   }
   .aw-input:focus { border-color: #6366f1; }

@@ -426,8 +426,8 @@ export function AssistantWidget() {
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            placeholder="Напишите… (Enter — отправить, Shift+Enter — перенос)"
-            rows={1}
+            placeholder={"Напишите…\n(Enter — отправить, Shift+Enter — перенос)"}
+            rows={2}
             disabled={busy}
             autoFocus
           />
