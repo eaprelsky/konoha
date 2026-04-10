@@ -48,6 +48,16 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-latest
     needs: [frontend-build]
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -57,7 +67,7 @@ jobs:
       - run: bunx playwright install --with-deps chromium
       - name: Start server
         run: |
-          KONOHA_TOKEN=konoha-dev-token bun run start &
+          KONOHA_PORT=3202 KONOHA_TOKEN=konoha-dev-token bun run start &
           sleep 5
         env:
           KONOHA_TOKEN: konoha-dev-token

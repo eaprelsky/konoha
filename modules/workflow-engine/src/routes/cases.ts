@@ -59,7 +59,7 @@ casesRouter.get("/:id", async (c) => {
 
 casesRouter.post("/:id/close", requireAuth, async (c) => {
   const id = c.req.param("id");
-  const kase = await forceCloseCase(id);
+  const kase = await forceCloseCase(id!);
   if (!kase) return c.json({ error: "Case not found" }, 404);
   return c.json(kase);
 });

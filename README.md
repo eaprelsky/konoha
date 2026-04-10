@@ -1,5 +1,7 @@
 # Konoha Bus
 
+[![CI](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml/badge.svg)](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml)
+
 Multi-agent communication bus for autonomous Claude Code agents. Redis-backed message routing with file attachments, presence tracking, and real-time streaming.
 
 ## Features

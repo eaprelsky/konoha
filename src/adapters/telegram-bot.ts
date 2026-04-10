@@ -81,7 +81,7 @@ function matchesFilter(update: TgUpdate, filter: Record<string, unknown>): boole
   }
 
   if (filter.content_pattern !== undefined) {
-    const text = msg.text ?? msg.caption ?? "";
+    const text = String(msg.text ?? msg.caption ?? "");
     try {
       if (!new RegExp(String(filter.content_pattern), "i").test(text)) return false;
     } catch {
