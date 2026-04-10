@@ -1,62 +1,62 @@
-# Люди — Руководство пользователя
+# People — User Guide
 
-Справочник людей содержит профили сотрудников и участников процессов. Люди могут назначаться исполнителями ролей и фигурировать в задачах процессов.
-
----
-
-## Просмотр справочника
-
-Раздел **Исполнители → Люди** показывает всех участников системы.
-
-Для каждого человека отображается:
-- Имя и должность
-- Аватар
-- Контакты (Telegram, email)
-- Источник: **системный** (из файла конфигурации) или **добавленный вручную**
+The people directory contains profiles of employees and process participants. People can be assigned as role executors and appear in process tasks.
 
 ---
 
-## Два типа записей
+## Viewing the Directory
 
-**Системные** — загружаются из файла `/opt/shared/.trusted-users.json`. Это сотрудники, которым разрешён доступ к системе. Их нельзя удалить через интерфейс — изменения вносятся в файл администратором.
+The **Executors → People** section shows all participants in the system.
 
-**Пользовательские** — добавляются вручную через интерфейс. Можно создавать, редактировать и удалять.
-
----
-
-## Добавление человека
-
-1. Нажмите **Добавить человека**
-2. Заполните поля:
-   - **Имя** — обязательное поле
-   - **Должность** — роль в организации
-   - **Telegram ID** — числовой ID в Telegram (нужен для уведомлений)
-   - **Telegram @username** — имя пользователя
-   - **Email** — адрес для уведомлений по почте
-3. Дополнительно можно указать ID в интегрированных системах:
-   - **Битрикс24 ID** — для привязки к CRM
-   - **Яндекс Трекер логин** — для назначения задач
-   - **Yonote ID** — для работы с базой знаний
-4. Нажмите **Сохранить**
+For each person the following is displayed:
+- Name and position
+- Avatar
+- Contacts (Telegram, email)
+- Source: **system** (from the configuration file) or **manually added**
 
 ---
 
-## Загрузка аватара
+## Two Types of Records
 
-1. Откройте карточку человека
-2. Нажмите на аватар или иконку загрузки
-3. Выберите изображение (JPG, PNG)
+**System** — loaded from the `/opt/shared/.trusted-users.json` file. These are employees who are granted access to the system. They cannot be deleted through the interface — changes are made to the file by an administrator.
 
----
-
-## Канал уведомлений
-
-В поле **Канал** выберите, как система будет связываться с этим человеком при назначении задачи:
-- `telegram` — уведомление через Telegram-бот
-- `email` — уведомление по электронной почте
+**User-created** — added manually through the interface. Can be created, edited, and deleted.
 
 ---
 
-## Удаление
+## Adding a Person
 
-Удалить можно только пользовательские записи (кнопка **Удалить** в карточке). Системные записи защищены от удаления.
+1. Click **Add person**
+2. Fill in the fields:
+   - **Name** — required field
+   - **Position** — role in the organization
+   - **Telegram ID** — numeric ID in Telegram (needed for notifications)
+   - **Telegram @username** — username
+   - **Email** — address for email notifications
+3. Optionally, you can specify IDs in integrated systems:
+   - **Bitrix24 ID** — for linking to CRM
+   - **Yandex Tracker login** — for task assignment
+   - **Yonote ID** — for working with the knowledge base
+4. Click **Save**
+
+---
+
+## Uploading an Avatar
+
+1. Open the person's card
+2. Click on the avatar or the upload icon
+3. Select an image (JPG, PNG)
+
+---
+
+## Notification Channel
+
+In the **Channel** field, select how the system will contact this person when a task is assigned:
+- `telegram` — notification via Telegram bot
+- `email` — notification by email
+
+---
+
+## Deletion
+
+Only user-created records can be deleted (the **Delete** button in the card). System records are protected from deletion.

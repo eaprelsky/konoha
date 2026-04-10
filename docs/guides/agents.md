@@ -1,102 +1,102 @@
-# Агенты — Руководство пользователя
+# Agents — User Guide
 
-Агенты — это AI-исполнители в Konoha. Каждый агент работает в отдельной сессии Claude Code, имеет собственный набор навыков и может получать задачи из процессов.
-
----
-
-## Просмотр агентов
-
-Раздел **Исполнители → Агенты** показывает все агенты системы.
-
-Для каждого агента отображается:
-- Имя и аватар
-- Статус: работает / остановлен / ошибка
-- Модель (claude-sonnet-4-6, claude-haiku и др.)
-- Навыки (список подключённых capabilities)
-- Время работы (uptime)
+Agents are AI executors in Konoha. Each agent runs in a separate Claude Code session, has its own set of skills, and can receive tasks from processes.
 
 ---
 
-## Создание агента
+## Viewing Agents
 
-1. Нажмите **Создать агента**
-2. Заполните поля:
-   - **ID** — уникальный идентификатор (латиница, дефисы). Нельзя изменить после создания
-   - **Имя** — отображаемое имя (например, "Помощник по продажам")
-   - **Модель** — выберите Claude-модель. Для сложных задач — Sonnet, для быстрых — Haiku
-   - **Инструкции** — описание роли агента, его задачи, правила поведения
-3. Нажмите **Сохранить**
+The **Executors → Agents** section shows all agents in the system.
 
-Агент создан, но ещё не запущен.
-
----
-
-## Назначение навыков
-
-Навыки расширяют агента инструментами (MCP-серверами) и инструкциями.
-
-1. Откройте карточку агента
-2. В разделе **Навыки** нажмите **Добавить навык**
-3. Выберите нужные навыки из списка
-4. Нажмите **Сохранить**
-
-Изменения вступят в силу при следующем запуске агента.
+For each agent, the following is displayed:
+- Name and avatar
+- Status: running / stopped / error
+- Model (claude-sonnet-4-6, claude-haiku, etc.)
+- Skills (list of connected capabilities)
+- Uptime
 
 ---
 
-## Запуск и остановка
+## Creating an Agent
 
-### Запустить агента
+1. Click **Create Agent**
+2. Fill in the fields:
+   - **ID** — unique identifier (Latin characters, hyphens). Cannot be changed after creation
+   - **Name** — display name (e.g., "Sales Assistant")
+   - **Model** — select a Claude model. For complex tasks — Sonnet, for fast tasks — Haiku
+   - **Instructions** — description of the agent's role, tasks, and behavioral rules
+3. Click **Save**
 
-Нажмите кнопку **▶ Запустить** на карточке агента.
-
-Система:
-1. Создаёт рабочую директорию агента
-2. Генерирует CLAUDE.md (инструкции + навыки)
-3. Генерирует .mcp.json (MCP-инструменты)
-4. Запускает Claude Code в tmux-сессии
-5. Отправляет стартовое сообщение
-
-Статус меняется на **запускается** → **работает** (обычно за 10–15 секунд).
-
-### Остановить агента
-
-Нажмите **■ Остановить**. Агент получит команду `/exit`, сессия завершится.
-
-### Перезапустить
-
-Нажмите **↺ Перезапустить** — агент остановится и сразу запустится заново. Используйте после изменения инструкций или навыков.
+The agent is created but not yet running.
 
 ---
 
-## Загрузка аватара
+## Assigning Skills
 
-1. Откройте карточку агента
-2. Нажмите на область аватара (или иконку загрузки)
-3. Выберите изображение (JPG, PNG, до 5 МБ)
+Skills extend an agent with tools (MCP servers) and instructions.
 
-Аватар отобразится в карточке агента и в сообщениях Konoha bus.
+1. Open the agent card
+2. In the **Skills** section, click **Add Skill**
+3. Select the desired skills from the list
+4. Click **Save**
 
----
-
-## Редактирование агента
-
-Нажмите **Редактировать** на карточке агента. Можно изменить:
-- Имя
-- Модель
-- Инструкции (system prompt)
-- Навыки
-
-После сохранения нажмите **Перезапустить**, чтобы применить изменения.
+Changes will take effect on the next agent start.
 
 ---
 
-## Системные агенты
+## Starting and Stopping
 
-Агенты, помеченные тегом **system** (Наруто, Саске, Какаши, Мирай), нельзя удалить через интерфейс. Их запуск и остановка требуют подтверждения.
+### Start an Agent
+
+Click the **▶ Start** button on the agent card.
+
+The system:
+1. Creates the agent's working directory
+2. Generates CLAUDE.md (instructions + skills)
+3. Generates .mcp.json (MCP tools)
+4. Starts Claude Code in a tmux session
+5. Sends the startup message
+
+The status changes to **starting** → **running** (usually within 10–15 seconds).
+
+### Stop an Agent
+
+Click **■ Stop**. The agent will receive the `/exit` command and the session will end.
+
+### Restart
+
+Click **↺ Restart** — the agent will stop and immediately start again. Use this after changing instructions or skills.
 
 ---
 
-## Просмотр памяти агента
+## Uploading an Avatar
 
-В карточке агента есть вкладка **Память** — список файлов в директории памяти агента (`/opt/shared/agent-memory/{id}/`). Файлы можно просматривать и редактировать прямо в интерфейсе.
+1. Open the agent card
+2. Click on the avatar area (or the upload icon)
+3. Select an image (JPG, PNG, up to 5 MB)
+
+The avatar will appear on the agent card and in Konoha bus messages.
+
+---
+
+## Editing an Agent
+
+Click **Edit** on the agent card. You can change:
+- Name
+- Model
+- Instructions (system prompt)
+- Skills
+
+After saving, click **Restart** to apply the changes.
+
+---
+
+## System Agents
+
+Agents tagged as **system** (Naruto, Sasuke, Kakashi, Mirai) cannot be deleted through the interface. Starting and stopping them requires confirmation.
+
+---
+
+## Viewing Agent Memory
+
+The agent card has a **Memory** tab — a list of files in the agent's memory directory (`/opt/shared/agent-memory/{id}/`). Files can be viewed and edited directly in the interface.

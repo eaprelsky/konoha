@@ -1,59 +1,59 @@
-# Информационные системы (ИС) — Руководство пользователя
+# Information Systems (IS) — User Guide
 
-Раздел **Система → ИС** показывает внешние системы, подключённые к Konoha. Эти системы используются в событиях процессов: через них приходят триггеры и уходят действия.
-
----
-
-## Что такое информационная система в Konoha
-
-В eEPC-диаграмме элемент **ИС** обозначает внешнюю систему, с которой взаимодействует процесс. Примеры: CRM Битрикс24, мессенджер Telegram, трекер задач.
-
-На уровне движка каждая ИС реализована как **адаптер** — компонент, который умеет:
-- Слушать входящие события из системы (например, новый лид в Битриксе)
-- Запрашивать данные для условных триггеров (например, количество открытых задач)
+The **System → IS** section displays external systems connected to Konoha. These systems are used in process events: triggers arrive through them and actions are sent back out.
 
 ---
 
-## Доступные информационные системы
+## What is an Information System in Konoha
 
-| Система | Что умеет |
+In an eEPC diagram, the **IS** element represents an external system that a process interacts with. Examples: Bitrix24 CRM, Telegram messenger, task tracker.
+
+At the engine level, each IS is implemented as an **adapter** — a component that can:
+- Listen for incoming events from the system (e.g., a new lead in Bitrix)
+- Query data for conditional triggers (e.g., the number of open tasks)
+
+---
+
+## Available Information Systems
+
+| System | Capabilities |
 |---------|-----------|
-| **Битрикс24** | Получать события по лидам, сделкам, задачам; запрашивать количество записей в CRM |
-| **Telegram** | Получать сообщения от пользователей через бот |
-| **Яндекс Трекер** | Получать события по задачам и комментариям; запрашивать количество задач в очереди |
+| **Bitrix24** | Receive events for leads, deals, and tasks; query the number of CRM records |
+| **Telegram** | Receive messages from users via bot |
+| **Yandex Tracker** | Receive events for tasks and comments; query the number of tasks in a queue |
 
 ---
 
-## Просмотр статуса
+## Viewing Status
 
-На странице **Система → ИС** для каждой системы отображается:
-- Название и тип
-- **Статус подключения**: подключено / ошибка / не проверялось
-- Время последней успешной проверки
-- Текст последней ошибки (если есть)
-- Количество активных слушателей (процессов, которые ждут событий из этой системы)
-
----
-
-## Проверка подключения
-
-Нажмите **Проверить** напротив нужной системы. Konoha выполнит тестовый запрос к системе и обновит статус.
-
-- Зелёный — система доступна, токены действительны
-- Красный — система недоступна или ошибка авторизации
+On the **System → IS** page, the following is shown for each system:
+- Name and type
+- **Connection status**: connected / error / not checked
+- Time of the last successful check
+- Last error message (if any)
+- Number of active listeners (processes waiting for events from this system)
 
 ---
 
-## Настройка подключения
+## Checking the Connection
 
-Учётные данные для подключения к внешним системам хранятся в файле конфигурации на сервере (`/opt/shared/.shared-credentials`) и задаются администратором. Через интерфейс изменить их нельзя.
+Click **Check** next to the relevant system. Konoha will send a test request to the system and update the status.
 
-Если система показывает ошибку подключения — обратитесь к администратору для проверки токенов и webhook-адресов.
+- Green — the system is reachable, tokens are valid
+- Red — the system is unreachable or there is an authorization error
 
 ---
 
-## Использование ИС в процессах
+## Connection Configuration
 
-В редакторе процессов элемент **ИС** на диаграмме визуально показывает, с какой системой взаимодействует данный шаг. При сохранении процесса Trigger Resolver автоматически определяет тип события по тексту метки и привязывает его к нужной ИС.
+Credentials for connecting to external systems are stored in a configuration file on the server (`/opt/shared/.shared-credentials`) and are set by the administrator. They cannot be changed through the interface.
 
-Пример: если в процессе есть событие "Лид добавлен в Битрикс24", Trigger Resolver классифицирует его как `message` с `source=bitrix` и при деплое процесса Event Manager активирует слушателя на адаптере Битрикс24.
+If a system shows a connection error, contact the administrator to verify tokens and webhook addresses.
+
+---
+
+## Using IS in Processes
+
+In the process editor, the **IS** element on the diagram visually indicates which system a given step interacts with. When a process is saved, Trigger Resolver automatically determines the event type from the label text and links it to the appropriate IS.
+
+Example: if a process contains the event "Lead added in Bitrix24", Trigger Resolver classifies it as a `message` with `source=bitrix`, and when the process is deployed, Event Manager activates a listener on the Bitrix24 adapter.

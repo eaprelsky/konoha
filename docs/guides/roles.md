@@ -1,67 +1,67 @@
-# Роли — Руководство пользователя
+# Roles — User Guide
 
-Роль — это абстрактный исполнитель в eEPC-процессе. Роли не привязаны к конкретным людям или агентам напрямую — вместо этого у роли есть список **исполнителей**, которые будут назначены на задачи в процессе.
-
----
-
-## Просмотр ролей
-
-Раздел **Исполнители → Роли** показывает все роли в системе.
-
-Для каждой роли отображается:
-- Название и описание
-- Список исполнителей (люди или агенты)
-- Стратегия назначения
+A role is an abstract executor in an eEPC process. Roles are not bound directly to specific people or agents — instead, a role has a list of **assignees** who will be assigned to tasks within the process.
 
 ---
 
-## Создание роли
+## Viewing Roles
 
-1. Нажмите **Создать роль**
-2. Заполните поля:
-   - **ID роли** — уникальный идентификатор (латиница, дефисы, например `sales-manager`)
-   - **Название** — понятное название на русском (например, "Менеджер по продажам")
-   - **Описание** — необязательное описание обязанностей
-3. Нажмите **Сохранить**
+The **Executors → Roles** section shows all roles in the system.
 
----
-
-## Исполнители роли
-
-После создания роли добавьте исполнителей — людей или AI-агентов, которые будут выполнять задачи этой роли.
-
-1. Откройте карточку роли
-2. В разделе **Исполнители** нажмите **Добавить**
-3. Выберите сотрудника из справочника людей или агента
-
-Исполнителей может быть несколько.
+For each role the following is displayed:
+- Name and description
+- List of assignees (people or agents)
+- Assignment strategy
 
 ---
 
-## Стратегия назначения
+## Creating a Role
 
-Определяет, как задача распределяется между несколькими исполнителями:
+1. Click **Create role**
+2. Fill in the fields:
+   - **Role ID** — unique identifier (Latin characters, hyphens, e.g. `sales-manager`)
+   - **Name** — human-readable name (e.g., "Sales Manager")
+   - **Description** — optional description of responsibilities
+3. Click **Save**
 
-| Стратегия | Описание |
+---
+
+## Role Assignees
+
+After creating a role, add assignees — people or AI agents who will perform tasks for this role.
+
+1. Open the role card
+2. In the **Assignees** section, click **Add**
+3. Select an employee from the people directory or an agent
+
+There can be multiple assignees.
+
+---
+
+## Assignment Strategy
+
+Determines how a task is distributed among multiple assignees:
+
+| Strategy | Description |
 |-----------|----------|
-| `manual` | Задача назначается вручную при каждом прогоне |
-| `round_robin` | Задачи распределяются по очереди между исполнителями |
-| `first_available` | Задача уходит первому свободному исполнителю |
+| `manual` | Task is assigned manually on each run |
+| `round_robin` | Tasks are distributed in turn among assignees |
+| `first_available` | Task goes to the first available assignee |
 
-Стратегию можно изменить в настройках роли.
-
----
-
-## Использование ролей в процессах
-
-В eEPC-редакторе элемент **Роль** (дорожка) связывается с конкретной ролью из справочника. При запуске прогона система смотрит на стратегию назначения и определяет, кто из исполнителей получит задачу.
+The strategy can be changed in the role settings.
 
 ---
 
-## Редактирование роли
+## Using Roles in Processes
 
-Нажмите **Редактировать** в карточке роли. Можно изменить название, описание, список исполнителей и стратегию.
+In the eEPC editor, the **Role** element (lane) is linked to a specific role from the directory. When a run is started, the system looks at the assignment strategy and determines which assignee will receive the task.
 
-## Удаление роли
+---
 
-Нажмите **Удалить** в карточке роли. Роль удалится из справочника, но не исчезнет из уже созданных процессов — там она останется как несвязанный элемент.
+## Editing a Role
+
+Click **Edit** in the role card. You can change the name, description, list of assignees, and strategy.
+
+## Deleting a Role
+
+Click **Delete** in the role card. The role will be removed from the directory, but will not disappear from already-created processes — it will remain there as an unlinked element.

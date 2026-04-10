@@ -1,69 +1,69 @@
-# Навыки — Руководство пользователя
+# Skills — User Guide
 
-Навык — это пакет расширений для AI-агента: дополнительные инструкции и/или инструменты (MCP-серверы). Навык назначается агенту и применяется при следующем запуске.
-
----
-
-## Просмотр навыков
-
-Раздел **Исполнители → Навыки** показывает все доступные навыки.
-
-Для каждого навыка отображается:
-- Название
-- Описание
-- Наличие MCP-инструментов (да/нет)
-- Наличие инструкций (prompt snippet)
+A skill is an extension package for an AI agent: additional instructions and/or tools (MCP servers). A skill is assigned to an agent and takes effect on the next launch.
 
 ---
 
-## Создание навыка
+## Viewing Skills
 
-1. Нажмите **Создать навык**
-2. Заполните поля:
-   - **Название** — понятное название (например, "Яндекс Трекер")
-   - **Описание** — что умеет этот навык
-   - **Инструкции (prompt snippet)** — текст, который будет добавлен в CLAUDE.md агента. Например: как пользоваться инструментами, какие команды есть, когда их применять
-   - **MCP-серверы** — описание дополнительных инструментов (заполняется в формате JSON; обычно настраивается администратором)
-3. Нажмите **Сохранить**
+The **Executors → Skills** section shows all available skills.
 
----
-
-## Как навык работает
-
-При запуске агента, которому назначен навык:
-
-1. **Инструкции** из навыка добавляются в CLAUDE.md агента в блоке `## Skill: {название}`
-2. **MCP-серверы** из навыка добавляются в конфигурацию `.mcp.json` — агент получает доступ к новым инструментам
-
-Агент видит инструкции при старте и знает, когда и как использовать инструменты навыка.
+For each skill the following is displayed:
+- Name
+- Description
+- Whether MCP tools are present (yes/no)
+- Whether instructions are present (prompt snippet)
 
 ---
 
-## Назначение навыка агенту
+## Creating a Skill
 
-1. Откройте раздел **Исполнители → Агенты**
-2. Откройте карточку нужного агента
-3. В разделе **Навыки** добавьте нужные навыки
-4. Сохраните изменения
-5. Перезапустите агента — изменения вступят в силу
-
----
-
-## Редактирование навыка
-
-Нажмите **Редактировать** в карточке навыка. Изменения применятся при следующем запуске агентов, использующих этот навык.
-
-## Удаление навыка
-
-Нажмите **Удалить**. Навык исчезнет из списка, но у агентов, которым он был назначен, он останется в списке `capabilities` до ручного удаления.
+1. Click **Create skill**
+2. Fill in the fields:
+   - **Name** — human-readable name (e.g., "Yandex Tracker")
+   - **Description** — what this skill can do
+   - **Instructions (prompt snippet)** — text that will be added to the agent's CLAUDE.md. For example: how to use the tools, what commands are available, when to use them
+   - **MCP servers** — description of additional tools (filled in JSON format; usually configured by an administrator)
+3. Click **Save**
 
 ---
 
-## Примеры навыков
+## How a Skill Works
 
-| Навык | Что даёт агенту |
+When an agent with an assigned skill is launched:
+
+1. **Instructions** from the skill are added to the agent's CLAUDE.md in the `## Skill: {name}` block
+2. **MCP servers** from the skill are added to the `.mcp.json` configuration — the agent gains access to new tools
+
+The agent sees the instructions on startup and knows when and how to use the skill's tools.
+
+---
+
+## Assigning a Skill to an Agent
+
+1. Open the **Executors → Agents** section
+2. Open the card for the desired agent
+3. In the **Skills** section, add the required skills
+4. Save the changes
+5. Restart the agent — the changes will take effect
+
+---
+
+## Editing a Skill
+
+Click **Edit** in the skill card. Changes will apply on the next launch of agents using this skill.
+
+## Deleting a Skill
+
+Click **Delete**. The skill will disappear from the list, but for agents it was assigned to, it will remain in the `capabilities` list until manually removed.
+
+---
+
+## Skill Examples
+
+| Skill | What it gives the agent |
 |-------|-----------------|
-| Яндекс Трекер | Инструменты для работы с задачами (создание, обновление, комментирование) |
-| Битрикс24 | Работа с лидами, сделками, контактами |
-| Telegram | Отправка сообщений пользователям через бот |
-| GitHub | Работа с issues, PR, commits в репозитории |
+| Yandex Tracker | Tools for working with tasks (creating, updating, commenting) |
+| Bitrix24 | Working with leads, deals, contacts |
+| Telegram | Sending messages to users via bot |
+| GitHub | Working with issues, PRs, commits in a repository |
