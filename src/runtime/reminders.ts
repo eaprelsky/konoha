@@ -8,6 +8,9 @@ import { Queue, Worker } from "bullmq";
 import { redis, REDIS_CONNECTION_OPTS } from "../redis";
 import { pgUpsertReminder, pgDeleteReminder, pgGetReminder, pgListReminders } from "../storage/pg";
 import { completeWorkItem } from "./work-items";
+import { createLogger } from "../logger";
+
+const log = createLogger("runtime:reminders");
 
 const PG_READ = process.env.PG_READ === "true";
 
@@ -88,9 +91,9 @@ async function fireReminder(reminder_id: string): Promise<void> {
   if (r.type === "process-bound" && r.work_item_id) {
     try {
       await completeWorkItem(r.work_item_id, { system: "timer-expired", label: r.message });
-      console.log(`[reminder-scheduler] timer expired — completed work_item ${r.work_item_id}`);
+      log.info("timer expired — completed work_item", { work_item_id: r.work_item_id });
     } catch (e: any) {
-      console.error(`[reminder-scheduler] auto-complete failed for ${r.work_item_id}:`, e.message);
+      log.error("auto-complete failed", { work_item_id: r.work_item_id, error: e.message });
     }
   }
 
@@ -130,7 +133,7 @@ async function scheduleReminderJob(r: Reminder): Promise<void> {
     removeOnComplete: true,
     removeOnFail: { count: 3 },
   });
-  console.log(`[reminder-scheduler] queued reminder=${r.reminder_id} delay=${delayMs}ms`);
+  log.info("queued reminder", { reminder_id: r.reminder_id, delay_ms: delayMs });
 }
 
 export async function createReminder(params: {
@@ -228,10 +231,10 @@ export function startReminderScheduler(): void {
   );
 
   reminderWorker.on("failed", (job, err) => {
-    console.error(`[reminder-scheduler] job failed job=${job?.id}: ${err.message}`);
+    log.error("job failed", { job_id: job?.id, error: err.message });
   });
 
-  console.log("[reminder-scheduler] bullmq worker started");
+  log.info("bullmq worker started");
 
   setInterval(async () => {
     try {
@@ -257,6 +260,6 @@ export async function restoreReminderJobs(): Promise<void> {
     }
   }
   if (restored > 0) {
-    console.log(`[reminder-scheduler] restored ${restored} bullmq jobs on startup`);
+    log.info("restored bullmq jobs on startup", { count: restored });
   }
 }
