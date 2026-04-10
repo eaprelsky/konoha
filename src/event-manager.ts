@@ -63,6 +63,55 @@ function recordAdapterError(name: string, msg: string): void {
   s.error_count++;
 }
 
+// ── Token bucket rate limiter (per adapter, for condition polling) ────────────
+
+const DEFAULT_MAX_RPS = 1;
+
+class TokenBucket {
+  private tokens: number;
+  private lastRefill: number;
+  private readonly maxTokens: number;
+  private readonly refillMs: number; // ms per token
+
+  constructor(maxRps: number) {
+    this.maxTokens = Math.max(1, maxRps);
+    this.refillMs = 1000 / maxRps;
+    this.tokens = this.maxTokens;
+    this.lastRefill = Date.now();
+  }
+
+  async acquire(source: string): Promise<void> {
+    const now = Date.now();
+    const elapsed = now - this.lastRefill;
+    const newTokens = Math.floor(elapsed / this.refillMs);
+    if (newTokens > 0) {
+      this.tokens = Math.min(this.maxTokens, this.tokens + newTokens);
+      this.lastRefill = now + (elapsed % this.refillMs) - elapsed;
+      this.lastRefill = Date.now();
+    }
+    if (this.tokens > 0) {
+      this.tokens--;
+      return;
+    }
+    const waitMs = this.refillMs - (Date.now() - this.lastRefill);
+    const wait = Math.max(1, Math.round(waitMs));
+    console.log(`[event-manager] rate-limit throttle source=${source} wait=${wait}ms`);
+    await new Promise<void>(resolve => setTimeout(resolve, wait));
+    this.tokens = 0;
+  }
+}
+
+const adapterRateLimiters = new Map<string, TokenBucket>();
+
+function getAdapterRateLimiter(source: string): TokenBucket {
+  if (!adapterRateLimiters.has(source)) {
+    const envKey = `ADAPTER_MAX_RPS_${source.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+    const maxRps = parseFloat(process.env[envKey] || '') || DEFAULT_MAX_RPS;
+    adapterRateLimiters.set(source, new TokenBucket(maxRps));
+  }
+  return adapterRateLimiters.get(source)!;
+}
+
 // ── Compute next fire time for timer triggers ─────────────────────────────────
 
 function computeNextFireAt(trigger: TriggerDef, subscribedAt?: string): string | undefined {
@@ -542,8 +591,11 @@ async function activateConditionTrigger(sub: Subscription): Promise<void> {
     console.warn(`[event-manager] invalid poll_interval sub=${sub.id}, defaulting to 30s`);
   }
 
+  const rateLimiter = getAdapterRateLimiter(trigger.data_source);
+
   const timer = setInterval(async () => {
     try {
+      await rateLimiter.acquire(trigger.data_source);
       const value = await withRetry(
         () => adapter.executeQuery({
           entity: trigger.query.entity,
@@ -930,6 +982,10 @@ export function registerEventManagerRoutes(
         status = stats.error_count > 3 ? "unavailable" : "degraded";
       }
 
+      const rl = adapterRateLimiters.get(name);
+      const envKey = `ADAPTER_MAX_RPS_${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+      const configuredRps = parseFloat(process.env[envKey] || '') || DEFAULT_MAX_RPS;
+
       return {
         name,
         status,
@@ -938,6 +994,7 @@ export function registerEventManagerRoutes(
         last_error: stats.last_error ?? null,
         error_count: stats.error_count,
         active_listeners: listenerCount,
+        rate_limit: { max_rps: configuredRps, active: !!rl },
       };
     });
 
