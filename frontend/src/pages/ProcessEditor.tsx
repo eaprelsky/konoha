@@ -16,6 +16,7 @@
  *  - ProcessEditor.css     — all styles
  */
 import React, { useEffect } from 'react';
+import { Inspector } from '../components/Inspector';
 import './ProcessEditor.css';
 import { EW, EH, GR, CW, CH, orthogonalPath, snap, type Pos } from './ArrowRouter';
 import { ElShape, PALETTE } from './ElementShape';
@@ -39,6 +40,46 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
   // Load workflow from URL param on mount
   const { loadWorkflow } = s;
   useEffect(() => { if (initialId) loadWorkflow(initialId); }, [initialId, loadWorkflow]);
+
+  // Sync current process schema to Inspector so AssistantWidget (Tsunade) has context (#413)
+  useEffect(() => {
+    if (!s.wfId) {
+      Inspector.setProcessName(null);
+      Inspector.setProcessSchema(null);
+      return;
+    }
+    Inspector.setProcessName(`${s.wfName} (${s.wfId})`);
+
+    // Build compact schema summary (keeps tokens low, covers structure)
+    const lines: string[] = [
+      `Current process schema — "${s.wfName}" (id: ${s.wfId}):`,
+      `Elements (${s.elements.length}):`,
+    ];
+    for (const el of s.elements) {
+      const parts = [`  [${el.type}] "${el.label || el.id}"`];
+      if (el.role)   parts.push(`role: ${el.role}`);
+      if (el.system) parts.push(`system: ${el.system}`);
+      if (el.trigger?.kind) parts.push(`trigger: ${el.trigger.kind}${el.trigger.confidence != null ? ` (${Math.round(el.trigger.confidence * 100)}%)` : ''}`);
+      if (el.intent) parts.push(`intent: ${el.intent}`);
+      if (el.operator) parts.push(`op: ${el.operator}`);
+      lines.push(parts.join(' · '));
+    }
+    if (s.flow.length > 0) {
+      lines.push(`Flow (${s.flow.length} edges):`);
+      // Summarise edges as label chains (max 40 to keep size bounded)
+      const edgeMap: Record<string, string> = {};
+      s.elements.forEach(e => { edgeMap[e.id] = e.label || e.id; });
+      s.flow.slice(0, 40).forEach(([f, t]) => lines.push(`  ${edgeMap[f] ?? f} → ${edgeMap[t] ?? t}`));
+      if (s.flow.length > 40) lines.push(`  … (${s.flow.length - 40} more)`);
+    }
+    Inspector.setProcessSchema(lines.join('\n'));
+  }, [s.wfId, s.wfName, s.elements, s.flow]);
+
+  // Sync selected element to Inspector
+  useEffect(() => {
+    if (!s.selEl) { Inspector.setSelectedElement(null); return; }
+    Inspector.setSelectedElement(`[${s.selEl.type}] "${s.selEl.label || s.selEl.id}"${s.selEl.role ? ` (role: ${s.selEl.role})` : ''}`);
+  }, [s.selEl]);
 
   // Open mobile props sheet when element selected on mobile
   useEffect(() => {

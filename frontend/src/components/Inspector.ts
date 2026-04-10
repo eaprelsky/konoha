@@ -15,6 +15,7 @@ class InspectorImpl {
   private _openPanels: Set<string> = new Set();
   private _selectedElement: string | null = null;
   private _processName: string | null = null;
+  private _processSchema: string | null = null;
 
   constructor() {
     this._hookConsole();
@@ -78,6 +79,7 @@ class InspectorImpl {
   }
   setSelectedElement(selector: string | null) { this._selectedElement = selector; }
   setProcessName(name: string | null) { this._processName = name; }
+  setProcessSchema(schema: string | null) { this._processSchema = schema; }
 
   /**
    * Returns a compact 500-800 token context summary for every /ai/chat request.
@@ -87,7 +89,8 @@ class InspectorImpl {
 
     lines.push(`URL: ${location.pathname}${location.search}`);
     if (this._processName) lines.push(`Process: ${this._processName}`);
-    if (this._selectedElement) lines.push(`Selected: ${this._selectedElement}`);
+    if (this._processSchema) lines.push(this._processSchema);
+    if (this._selectedElement) lines.push(`Selected element: ${this._selectedElement}`);
 
     const panels = [...this._openPanels];
     if (panels.length) lines.push(`Open panels: ${panels.join(', ')}`);
@@ -138,4 +141,5 @@ export const Inspector = {
   trackAction: (action: string): void => getInspector().trackAction(action),
   setSelectedElement: (selector: string | null): void => getInspector().setSelectedElement(selector),
   setProcessName: (name: string | null): void => getInspector().setProcessName(name),
+  setProcessSchema: (schema: string | null): void => getInspector().setProcessSchema(schema),
 };
