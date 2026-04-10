@@ -311,8 +311,8 @@ export function useProcessEditor(readOnly = false) {
     }
     if (patch.add_elements?.length) {
       const newEls: WorkflowElement[] = patch.add_elements.map(ae => {
-        const id = (ae.id as string) || genId();
-        const type = (ae.type as string) || 'function';
+        const type = (ae.type as EType) || 'function';
+        const id = (ae.id as string) || genId(type, elements);
         const label = (ae.label as string) || DEFAULT_LABELS[type as import('./ArrowRouter').EType] || 'Новый элемент';
         const x = typeof ae.x === 'number' ? ae.x : 100;
         const y = typeof ae.y === 'number' ? ae.y : 100;

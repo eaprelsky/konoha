@@ -60,13 +60,15 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
     }
     Inspector.setProcessName(`${s.wfName} (${s.wfId})`);
 
-    // Build compact schema summary (keeps tokens low, covers structure)
+    // Build compact schema summary (includes element IDs and positions so LLM can generate valid schema_patch)
     const lines: string[] = [
       `Current process schema — "${s.wfName}" (id: ${s.wfId}):`,
       `Elements (${s.elements.length}):`,
     ];
     for (const el of s.elements) {
-      const parts = [`  [${el.type}] "${el.label || el.id}"`];
+      const pos = s.positions[el.id];
+      const posStr = pos ? ` at (${Math.round(pos.x)},${Math.round(pos.y)})` : '';
+      const parts = [`  [${el.type}] id="${el.id}" label="${el.label || el.id}"${posStr}`];
       if (el.role)   parts.push(`role: ${el.role}`);
       if (el.system) parts.push(`system: ${el.system}`);
       if (el.trigger?.kind) parts.push(`trigger: ${el.trigger.kind}${el.trigger.confidence != null ? ` (${Math.round(el.trigger.confidence * 100)}%)` : ''}`);
@@ -75,15 +77,14 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
       lines.push(parts.join(' · '));
     }
     if (s.flow.length > 0) {
-      lines.push(`Flow (${s.flow.length} edges):`);
-      // Summarise edges as label chains (max 40 to keep size bounded)
+      lines.push(`Flow (${s.flow.length} edges, format: from_id → to_id):`);
       const edgeMap: Record<string, string> = {};
       s.elements.forEach(e => { edgeMap[e.id] = e.label || e.id; });
-      s.flow.slice(0, 40).forEach(([f, t]) => lines.push(`  ${edgeMap[f] ?? f} → ${edgeMap[t] ?? t}`));
+      s.flow.slice(0, 40).forEach(([f, t]) => lines.push(`  ${f} → ${t}  (${edgeMap[f] ?? f} → ${edgeMap[t] ?? t})`));
       if (s.flow.length > 40) lines.push(`  … (${s.flow.length - 40} more)`);
     }
     Inspector.setProcessSchema(lines.join('\n'));
-  }, [s.wfId, s.wfName, s.elements, s.flow]);
+  }, [s.wfId, s.wfName, s.elements, s.flow, s.positions]);
 
   // Sync selected element to Inspector
   useEffect(() => {

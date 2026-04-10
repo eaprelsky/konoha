@@ -260,16 +260,20 @@ export function AssistantWidget() {
             if (ev.type === 'delta' && typeof ev.text === 'string') {
               full += ev.text;
               setMsgs(prev => [...prev.slice(0, -1), { role: 'assistant', text: extractStreamingText(full) }]);
-            } else if (ev.type === 'parsed' && typeof ev.reply === 'string') {
+            } else if (ev.type === 'parsed') {
+              // Update message text (reply might be null if only a schema_patch was returned)
+              const replyText = typeof ev.reply === 'string' ? ev.reply : null;
               setMsgs(prev => {
-                const msgs = [...prev.slice(0, -1), { role: 'assistant' as const, text: ev.reply }];
+                const msgs = replyText != null
+                  ? [...prev.slice(0, -1), { role: 'assistant' as const, text: replyText }]
+                  : [...prev];
                 // Notify user that schema was updated
                 if (ev.schema_patch || ev.created_workflow) {
                   msgs.push({ role: 'system' as const, text: 'Схема обновлена. Нажмите 💾 для сохранения.' });
                 }
                 return msgs;
               });
-              // Dispatch DOM events so ProcessEditor can apply the patch
+              // Dispatch DOM events so ProcessEditor can apply the patch (decoupled from reply presence)
               if (ev.schema_patch) {
                 window.dispatchEvent(new CustomEvent('konoha:schema_patch', { detail: ev.schema_patch }));
               }

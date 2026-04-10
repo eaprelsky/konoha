@@ -156,12 +156,15 @@ const TSUNADE_SYSTEM = `Ты — Цунаде, AI-ассистент редак�
 {
   "reply": "Что ты сделал или ответ на вопрос",
   "schema_patch": {
-    "update_elements": [{"id": "...", "label": "...", ...other fields}],
-    "update_positions": {"id": {"x": N, "y": N}, ...},
+    "update_elements": [{"id": "existing-id", "label": "новый label", "role": "...", "operator": "..."}],
+    "update_positions": {"existing-id": {"x": N, "y": N}, "other-id": {"x": N, "y": N}},
     "add_elements": [{"type": "function", "label": "...", "x": N, "y": N}],
-    "remove_elements": ["id1", "id2"]
+    "remove_elements": ["existing-id1", "existing-id2"],
+    "add_flow": [["from-id", "to-id"]],
+    "remove_flow": [["from-id", "to-id"]]
   }
 }
+ВАЖНО: в update_elements, update_positions, remove_elements, add_flow, remove_flow используй ТОЛЬКО реальные id элементов из схемы (поле id="..."). В update_positions можно перечислить все элементы для полного repositioning.
 
 Если схему менять не нужно, отвечай JSON:
 {"reply": "Твой ответ"}
