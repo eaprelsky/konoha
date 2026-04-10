@@ -31,7 +31,7 @@ import {
 const log = createLogger("event-manager");
 
 export const SUBSCRIPTIONS_KEY = "event-manager:subscriptions";
-const HISTORY_KEY = "event-manager:history";
+export const HISTORY_KEY = "event-manager:history";
 const HISTORY_MAX_ENTRIES = 500;
 const SENDER = "event-manager";
 

@@ -13,6 +13,7 @@ import type { Subscription, TriggerDef, TimerTrigger, MessageTrigger, ConditionT
 import { computeNextFireAt, computeUiStatus, buildSummary, parseDurationMs } from "./utils";
 import {
   SUBSCRIPTIONS_KEY,
+  HISTORY_KEY,
   dataAdapters,
   activeListeners,
   scheduleCron,
@@ -25,8 +26,6 @@ import { DEFAULT_MAX_RPS, adapterStats, adapterRateLimiters } from "./utils";
 import { randomUUID } from "crypto";
 
 const log = createLogger("event-manager");
-const HISTORY_KEY = "event-manager:history";
-
 export function registerEventManagerRoutes(
   app: Hono<HonoEnv>,
   requireAuth: MiddlewareHandler<HonoEnv>,

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { randomUUID } from "crypto";
 import { requireAuth } from "../../../../src/middleware/auth";
 import {
   loadWorkflows,
@@ -130,8 +131,11 @@ router.get("/:id{.+}", requireAuth, async (c) => {
 router.post("/", requireAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
-  if (!body.id || !body.name) return c.json({ error: "id and name required" }, 400);
-  const draft = c.req.query("draft") === "true";
+  // id and name are optional — generate defaults for draft workflows (#453)
+  if (!body.id) body.id = randomUUID();
+  if (!body.name) body.name = `Draft ${new Date().toISOString().slice(0, 10)}`;
+  // draft flag: read from body OR query param
+  const draft = body.draft === true || c.req.query("draft") === "true";
   let normalized = false;
   if (body.elements?.length) {
     const nameMap = await normalizeElementNames(body.elements).catch((): Record<string, string> => ({}));
