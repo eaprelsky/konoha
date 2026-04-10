@@ -14,9 +14,9 @@ export default defineConfig({
     },
   },
   webServer: {
-    // Port 3201 is reserved by konoha-dashboard (monitoring UI, pid 2178509).
+    // Port 3201 is reserved by konoha-dashboard service (monitoring UI) — see docs/ports.md.
     // Use 3202 and never reuse an existing server to avoid attaching to the wrong process (closes #435).
-    command: 'KONOHA_PORT=3202 bun run src/server.ts',
+    command: 'KONOHA_PORT=3202 bun run core/src/server.ts',
     url: 'http://127.0.0.1:3202',
     reuseExistingServer: false,
     timeout: 30000,
