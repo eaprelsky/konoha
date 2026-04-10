@@ -95,7 +95,7 @@ app.post("/testbench/navigate", async (c) => {
   const { url, session_id } = await c.req.json().catch(() => ({}));
   if (!url) return c.json({ error: "url required" }, 400);
 
-  const session = await acquireSession().catch((e) => { throw e; });
+  const session = await (session_id !== undefined ? acquireSessionById(Number(session_id)) : acquireSession()).catch((e) => { throw e; });
   try {
     await session.page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
     const finalUrl = session.page.url();
@@ -114,17 +114,18 @@ type ActionType = "click" | "type" | "scroll" | "hover" | "press" | "clear";
 
 app.post("/testbench/action", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const { type, selector, text, amount, key } = body as {
+  const { type, selector, text, amount, key, session_id } = body as {
     type: ActionType;
     selector?: string;
     text?: string;
     amount?: number;
     key?: string;
+    session_id?: number;
   };
 
   if (!type) return c.json({ error: "type required" }, 400);
 
-  const session = await acquireSession().catch((e) => { throw e; });
+  const session = await (session_id !== undefined ? acquireSessionById(Number(session_id)) : acquireSession()).catch((e) => { throw e; });
   try {
     const page = session.page;
 
