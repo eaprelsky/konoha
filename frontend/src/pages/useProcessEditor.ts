@@ -15,7 +15,7 @@ export type WfNode = Workflow & { children: WfNode[] };
 
 export interface DraftWarning { text: string; details: string[] }
 
-export function useProcessEditor() {
+export function useProcessEditor(readOnly = false) {
   const token = useToken();
 
   // ── Workflow canvas state ────────────────────────────────────────────────────
@@ -202,6 +202,7 @@ export function useProcessEditor() {
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
+      if (readOnly) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undoRef.current(); return; }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); redoRef.current(); return; }
@@ -211,7 +212,7 @@ export function useProcessEditor() {
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [selected, multiSelected]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selected, multiSelected, readOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Element management ────────────────────────────────────────────────────────
   function addElement(type: EType, label?: string, refId?: string) {

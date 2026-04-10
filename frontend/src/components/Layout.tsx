@@ -18,7 +18,7 @@ const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] 
     id: 'processes',
     keyRu: 'Процессы',
     keyEn: 'Processes',
-    pages: ['/processes', '/editor', '/monitor', '/documents', '/cases', '/workitems', '/my-tasks', '/my-calendar', '/calendar', '/reminders'],
+    pages: ['/editor', '/monitor', '/documents', '/cases', '/workitems', '/my-tasks', '/my-calendar', '/calendar', '/reminders'],
   },
   {
     id: 'team',
@@ -35,7 +35,6 @@ const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] 
 ];
 
 const NAV_ITEMS: Record<string, { keyRu: string; keyEn: string; to: string }> = {
-  '/processes':    { keyRu: 'Каталог',        keyEn: 'Catalog',    to: '/processes' },
   '/editor':       { keyRu: 'Редактор',       keyEn: 'Editor',     to: '/editor' },
   '/cases':        { keyRu: 'Прогоны',        keyEn: 'Cases',      to: '/cases' },
   '/workitems':    { keyRu: 'Задачи',         keyEn: 'Work Items', to: '/workitems' },

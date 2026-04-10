@@ -290,7 +290,7 @@ function EventCard({ sub, defaultOpen = false }: { sub: Subscription; defaultOpe
           </div>
 
           <div className="em-context">
-            Процесс: <a href={`/ui/processes.html?id=${sub.process_id}`}>{sub.process_name ?? sub.process_id}</a>
+            Процесс: <a href={`/ui/editor/${sub.process_id}`}>{sub.process_name ?? sub.process_id}</a>
             {' · '}
             Экземпляр: <a href={`/ui/cases.html?id=${sub.instance_id}`}>{sub.instance_id}</a>
             {' · '}

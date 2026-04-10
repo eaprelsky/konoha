@@ -15,7 +15,6 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 // Lazy-load all pages
 const Dashboard    = lazy(() => import('../pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const Agents       = lazy(() => import('../pages/Agents').then(m => ({ default: m.Agents })));
-const Processes    = lazy(() => import('../pages/Processes').then(m => ({ default: m.Processes })));
 const ProcessEditor = lazy(() => import('../pages/ProcessEditor').then(m => ({ default: m.ProcessEditor })));
 const Monitor      = lazy(() => import('../pages/Monitor').then(m => ({ default: m.Monitor })));
 const Calendar     = lazy(() => import('../pages/Calendar').then(m => ({ default: m.Calendar })));
@@ -84,7 +83,6 @@ function App() {
             <Route element={<ProtectedLayout />}>
               <Route path="/" element={<SuspenseWrapper label="Dashboard"><Dashboard /></SuspenseWrapper>} />
               <Route path="/agents" element={<SuspenseWrapper label="Agents"><Agents /></SuspenseWrapper>} />
-              <Route path="/processes" element={<SuspenseWrapper label="Processes"><Processes /></SuspenseWrapper>} />
               <Route path="/editor" element={<SuspenseWrapper label="ProcessEditor"><ProcessEditor /></SuspenseWrapper>} />
               <Route path="/editor/:id" element={<SuspenseWrapper label="ProcessEditor"><EditorWithId /></SuspenseWrapper>} />
               <Route path="/monitor" element={<SuspenseWrapper label="Monitor"><Monitor /></SuspenseWrapper>} />

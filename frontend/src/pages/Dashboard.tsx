@@ -139,7 +139,7 @@ export function Dashboard() {
         <div className="panel">
           <h2>{lang === 'ru' ? 'Навигация' : 'Navigation'}</h2>
           <div className="links">
-            <a href="/ui/processes"><span className="icon">🗂</span> {lang === 'ru' ? 'Реестр процессов — eEPC-процессы и активные кейсы' : 'Process Registry — eEPC processes and cases'}</a>
+            <a href="/ui/editor"><span className="icon">🗂</span> {lang === 'ru' ? 'Редактор процессов — eEPC-процессы и активные кейсы' : 'Process Editor — eEPC processes and cases'}</a>
             <a href="/ui/workitems"><span className="icon">✅</span> {lang === 'ru' ? 'Задачи — очередь задач с фильтрами и действиями' : 'Tasks — task queue with filters and actions'}</a>
           </div>
         </div>

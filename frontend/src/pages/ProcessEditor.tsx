@@ -29,7 +29,8 @@ import { RegistryPicker } from './RegistryPicker';
 function isMobile() { return window.innerWidth <= 767; }
 
 export function ProcessEditor({ initialId }: { initialId?: string }) {
-  const s = useProcessEditor();
+  const [readOnly, setReadOnly] = React.useState(false);
+  const s = useProcessEditor(readOnly);
   const [showMobProps, setShowMobProps] = React.useState(false);
   // Load workflow from URL param on mount
   const { loadWorkflow } = s;
@@ -70,12 +71,22 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
             </>
           )}
           <div className="sep" />
-          <button title="Ctrl+Z" style={{ padding: '5px 8px' }} onClick={s.undo} disabled={s.undoStack.length === 0}>↩</button>
-          <button title="Ctrl+Y" style={{ padding: '5px 8px' }} onClick={s.redo} disabled={s.redoStack.length === 0}>↪</button>
-          <div className="sep" />
-          <button className="btn-save" onClick={s.save} disabled={s.saving}>
-            {s.saving ? 'Сохранение…' : '💾 Сохранить'}
-          </button>
+          {!readOnly && (
+            <>
+              <button title="Ctrl+Z" style={{ padding: '5px 8px' }} onClick={s.undo} disabled={s.undoStack.length === 0}>↩</button>
+              <button title="Ctrl+Y" style={{ padding: '5px 8px' }} onClick={s.redo} disabled={s.redoStack.length === 0}>↪</button>
+              <div className="sep" />
+              <button className="btn-save" onClick={s.save} disabled={s.saving}>
+                {s.saving ? 'Сохранение…' : '💾 Сохранить'}
+              </button>
+            </>
+          )}
+          {readOnly && <span style={{ fontSize: 12, color: '#fbbf24', background: '#1c1408', padding: '3px 10px', borderRadius: 4, border: '1px solid #78350f' }}>🔒 Просмотр</span>}
+          <button
+            title={readOnly ? 'Переключить в режим редактирования' : 'Переключить в режим просмотра (без случайных изменений)'}
+            style={{ padding: '5px 8px', background: readOnly ? '#1e3a5f' : undefined, borderColor: readOnly ? '#3b82f6' : undefined, color: readOnly ? '#93c5fd' : undefined }}
+            onClick={() => setReadOnly(r => !r)}
+          >{readOnly ? '✏' : '👁'}</button>
           {s.wfId.trim() && (
             <button
               className={s.showMining ? 'active' : ''}
@@ -218,12 +229,12 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
           <div className="ipe-canvas">
             <svg
               ref={s.svgRef}
-              style={{ cursor: s.canvasCursor }}
-              onMouseDown={s.onSvgMouseDown}
-              onMouseMove={s.onSvgMouseMove}
-              onMouseUp={s.onSvgMouseUp}
-              onMouseLeave={s.onSvgMouseUp}
-              onClick={s.onSvgClick}
+              style={{ cursor: readOnly ? 'default' : s.canvasCursor }}
+              onMouseDown={readOnly ? undefined : s.onSvgMouseDown}
+              onMouseMove={readOnly ? undefined : s.onSvgMouseMove}
+              onMouseUp={readOnly ? undefined : s.onSvgMouseUp}
+              onMouseLeave={readOnly ? undefined : s.onSvgMouseUp}
+              onClick={readOnly ? undefined : s.onSvgClick}
               onContextMenu={e => e.preventDefault()}
             >
               <defs>
@@ -267,9 +278,9 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                       strokeWidth={miningWidth ?? (isHighlighted ? 2 : 1.5)}
                       strokeDasharray={!s.showMining && isRoleEdge ? '5 3' : (s.showMining && edgeCount === 0 ? '4 3' : undefined)}
                       fill="none" markerEnd={arrow} />
-                    <path d={d} stroke="transparent" strokeWidth={12} fill="none"
+                    {!readOnly && <path d={d} stroke="transparent" strokeWidth={12} fill="none"
                       style={{ cursor: 'pointer' }}
-                      onClick={e => { e.stopPropagation(); s.removeEdge(fId, tId); }} />
+                      onClick={e => { e.stopPropagation(); s.removeEdge(fId, tId); }} />}
                   </g>
                 );
               })}
@@ -299,7 +310,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                   : s.mode === 'select' ? ((s.dragging?.id === el.id || s.groupDrag?.ids.includes(el.id)) ? 'grabbing' : 'grab')
                   : 'pointer';
                 const isEditingThis = s.editingId === el.id;
-                const showAnchors = s.hoveredEl === el.id && s.mode === 'select' && !s.dragging && !s.groupDrag && !s.connectDrag && !s.marquee;
+                const showAnchors = !readOnly && s.hoveredEl === el.id && s.mode === 'select' && !s.dragging && !s.groupDrag && !s.connectDrag && !s.marquee;
                 const anchors = el.type === 'gateway' ? [
                   { ax: EW / 2, ay: EH / 2 - GR }, { ax: EW / 2, ay: EH / 2 + GR },
                   { ax: EW / 2 - GR, ay: EH / 2 }, { ax: EW / 2 + GR, ay: EH / 2 },
@@ -308,13 +319,13 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                   { ax: 0, ay: EH / 2 }, { ax: EW, ay: EH / 2 },
                 ];
                 return (
-                  <g key={el.id} transform={`translate(${pos.x},${pos.y})`} style={{ cursor: elCursor }}
+                  <g key={el.id} transform={`translate(${pos.x},${pos.y})`} style={{ cursor: readOnly ? 'default' : elCursor }}
                     onMouseEnter={() => s.setHoveredEl(el.id)}
                     onMouseLeave={() => s.setHoveredEl(null)}
-                    onMouseDown={e => { if (isEditingThis) e.stopPropagation(); else s.onElMouseDown(e, el.id); }}
-                    onMouseUp={e => s.onElMouseUp(e, el.id)}
+                    onMouseDown={readOnly ? undefined : e => { if (isEditingThis) e.stopPropagation(); else s.onElMouseDown(e, el.id); }}
+                    onMouseUp={readOnly ? undefined : e => s.onElMouseUp(e, el.id)}
                     onClick={e => e.stopPropagation()}
-                    onDoubleClick={e => {
+                    onDoubleClick={readOnly ? undefined : e => {
                       if (s.mode !== 'select') return;
                       e.stopPropagation();
                       if (el.locked) return;
