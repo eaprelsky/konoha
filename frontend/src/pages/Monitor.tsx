@@ -7,6 +7,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { EpcRenderer } from '../components/EpcRenderer';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Run, Workflow } from '../api/types';
@@ -50,7 +51,7 @@ function statusLabel(s: string, lang: string): string {
 
 export function Monitor() {
   const token = useToken();
-  const lang = document.documentElement.lang || 'ru';
+  const { lang } = useI18n();
 
   const [runs, setRuns] = useState<Run[]>([]);
   const [total, setTotal] = useState(0);

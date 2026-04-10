@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useInterval } from '../hooks/useApi';
 import { useSetSubtitle } from '../context/SubtitleContext';
+import { useI18n } from '../context/I18nContext';
 import { api } from '../api/client';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -542,6 +543,7 @@ function BySourceView({ subs, adapters }: { subs: Subscription[]; adapters: Adap
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function EventMonitor() {
+  const { lang } = useI18n();
   const [tab, setTab] = useState<Tab>('timeline');
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [summary, setSummary] = useState<Summary>({ total: 0, waiting: 0, fired_today: 0, errors: 0, manual_fallback: 0 });
@@ -661,9 +663,9 @@ export function EventMonitor() {
           {/* Tabs */}
           <div className="em-tabs">
             {([
-              ['timeline', 'Timeline'],
-              ['by-process', 'By Process'],
-              ['by-source', 'By Source'],
+              ['timeline', lang === 'ru' ? 'Лента' : 'Timeline'],
+              ['by-process', lang === 'ru' ? 'По процессу' : 'By Process'],
+              ['by-source', lang === 'ru' ? 'По источнику' : 'By Source'],
             ] as [Tab, string][]).map(([t, label]) => (
               <button
                 key={t}
