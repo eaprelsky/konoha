@@ -278,3 +278,163 @@ export async function pgDeleteSkill(id: string): Promise<void> {
     await sql`DELETE FROM skills WHERE id = ${id}`;
   });
 }
+
+// ── Read functions (Phase 2 — PG as primary read) ─────────────────────────────
+
+// Safe read wrapper: returns null on error (never throws)
+async function pgRead<T>(fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (e: any) {
+    console.error("[pg:read] error:", e.message);
+    return null;
+  }
+}
+
+// ── Workflows ─────────────────────────────────────────────────────────────────
+
+export async function pgGetWorkflow(id: string): Promise<Record<string, unknown> | null> {
+  return pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`SELECT * FROM workflows WHERE id = ${id}`;
+    return (rows[0] as Record<string, unknown>) ?? null;
+  });
+}
+
+export async function pgListWorkflows(): Promise<Record<string, unknown>[]> {
+  return (await pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`SELECT * FROM workflows ORDER BY updated_at ASC`;
+    return rows as Record<string, unknown>[];
+  })) ?? [];
+}
+
+// ── Cases ─────────────────────────────────────────────────────────────────────
+
+export async function pgGetCase(case_id: string): Promise<Record<string, unknown> | null> {
+  return pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`SELECT * FROM cases WHERE case_id = ${case_id}`;
+    return (rows[0] as Record<string, unknown>) ?? null;
+  });
+}
+
+export async function pgListCases(filters: {
+  status?: string;
+  process_id?: string;
+  after?: string;
+  before?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ rows: Record<string, unknown>[]; total: number }> {
+  const result = await pgRead(async () => {
+    const sql = getSql();
+    const { status, process_id, after, before } = filters;
+    const rows = await sql`
+      SELECT * FROM cases
+      WHERE ${status     ? sql`status     = ${status}`          : sql`TRUE`}
+        AND ${process_id ? sql`process_id = ${process_id}`      : sql`TRUE`}
+        AND ${after      ? sql`created_at >= ${new Date(after)}` : sql`TRUE`}
+        AND ${before     ? sql`created_at <= ${new Date(before)}` : sql`TRUE`}
+      ORDER BY created_at ASC
+    `;
+    return rows as Record<string, unknown>[];
+  });
+  const all = result ?? [];
+  const total = all.length;
+  const offset = filters.offset ?? 0;
+  const limit  = filters.limit  ?? 50;
+  return { rows: all.slice(offset, offset + limit), total };
+}
+
+// ── Work Items ────────────────────────────────────────────────────────────────
+
+export async function pgGetWorkItem(id: string): Promise<Record<string, unknown> | null> {
+  return pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`SELECT * FROM work_items WHERE id = ${id}`;
+    return (rows[0] as Record<string, unknown>) ?? null;
+  });
+}
+
+export async function pgListWorkItems(filters: {
+  assignee?: string;
+  status?: string;
+  process_id?: string;
+  deadline_before?: string;
+}): Promise<Record<string, unknown>[]> {
+  return (await pgRead(async () => {
+    const sql = getSql();
+    const { assignee, status, process_id, deadline_before } = filters;
+    const rows = await sql`
+      SELECT * FROM work_items
+      WHERE ${assignee        ? sql`assignee   = ${assignee}`                        : sql`TRUE`}
+        AND ${status          ? sql`status     = ${status}`                          : sql`TRUE`}
+        AND ${process_id      ? sql`process_id = ${process_id}`                      : sql`TRUE`}
+        AND ${deadline_before ? sql`deadline  <= ${new Date(deadline_before)}`       : sql`TRUE`}
+      ORDER BY created_at ASC
+    `;
+    return rows as Record<string, unknown>[];
+  })) ?? [];
+}
+
+// ── Roles ─────────────────────────────────────────────────────────────────────
+
+export async function pgGetRole(id: string): Promise<Record<string, unknown> | null> {
+  return pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`SELECT * FROM roles WHERE id = ${id}`;
+    return (rows[0] as Record<string, unknown>) ?? null;
+  });
+}
+
+export async function pgListRoles(): Promise<Record<string, unknown>[]> {
+  return (await pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`SELECT * FROM roles ORDER BY created_at ASC`;
+    return rows as Record<string, unknown>[];
+  })) ?? [];
+}
+
+// ── Documents ─────────────────────────────────────────────────────────────────
+
+export async function pgGetDoc(id: string): Promise<Record<string, unknown> | null> {
+  return pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`SELECT * FROM documents WHERE id = ${id}`;
+    return (rows[0] as Record<string, unknown>) ?? null;
+  });
+}
+
+export async function pgListDocs(): Promise<Record<string, unknown>[]> {
+  return (await pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`SELECT * FROM documents ORDER BY created_at ASC`;
+    return rows as Record<string, unknown>[];
+  })) ?? [];
+}
+
+// ── Reminders ─────────────────────────────────────────────────────────────────
+
+export async function pgGetReminder(id: string): Promise<Record<string, unknown> | null> {
+  return pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`SELECT * FROM reminders WHERE id = ${id}`;
+    return (rows[0] as Record<string, unknown>) ?? null;
+  });
+}
+
+export async function pgListReminders(filters: {
+  status?: string;
+}): Promise<Record<string, unknown>[]> {
+  return (await pgRead(async () => {
+    const sql = getSql();
+    const { status } = filters;
+    const rows = await sql`
+      SELECT * FROM reminders
+      WHERE ${status ? sql`status = ${status}` : sql`TRUE`}
+      ORDER BY scheduled_at ASC
+    `;
+    return rows as Record<string, unknown>[];
+  })) ?? [];
+}

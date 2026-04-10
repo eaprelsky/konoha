@@ -10,7 +10,16 @@ import {
   pgUpsertCase, pgUpsertWorkItem, pgDeleteWorkItem, pgPurgeAllWorkItems,
   pgUpsertRole, pgDeleteRole, pgUpsertDoc, pgDeleteDoc,
   pgUpsertReminder, pgDeleteReminder,
+  pgGetCase, pgListCases,
+  pgGetWorkItem, pgListWorkItems,
+  pgGetRole, pgListRoles as pgListRolesRaw,
+  pgGetDoc, pgListDocs as pgListDocsRaw,
+  pgGetReminder, pgListReminders,
 } from "./storage/pg";
+
+// Feature flag: when true, reads come from PostgreSQL instead of Redis.
+// Set PG_READ=true in environment to enable. Writes always go to both stores.
+const PG_READ = process.env.PG_READ === "true";
 
 // --- Event log ---
 
@@ -155,11 +164,99 @@ export interface Reminder {
   updated_at: string;
 }
 
+// --- PG row → domain type converters ----------------------------------------
+
+function isoStr(v: unknown): string {
+  if (!v) return new Date().toISOString();
+  return v instanceof Date ? v.toISOString() : String(v);
+}
+
+function pgRowToCase(row: Record<string, unknown>): Case {
+  const raw = (row.payload ?? {}) as Record<string, unknown>;
+  const { __active_branches, ...cleanPayload } = raw;
+  return {
+    case_id: String(row.case_id),
+    process_id: String(row.process_id),
+    process_version: String(row.version ?? ''),
+    subject: String(row.subject ?? ''),
+    status: (row.status ?? 'running') as CaseStatus,
+    position: String(row.position ?? ''),
+    active_branches: Array.isArray(__active_branches) ? __active_branches as ActiveBranch[] : undefined,
+    payload: cleanPayload,
+    history: Array.isArray(row.history) ? row.history as HistoryEntry[] : [],
+    created_at: isoStr(row.created_at),
+  };
+}
+
+function pgRowToWorkItem(row: Record<string, unknown>): WorkItem {
+  return {
+    work_item_id: String(row.id),
+    case_id: row.case_id ? String(row.case_id) : null,
+    process_id: row.process_id ? String(row.process_id) : null,
+    element_id: row.element_id ? String(row.element_id) : null,
+    label: String(row.label ?? ''),
+    assignee: String(row.assignee ?? ''),
+    status: (row.status ?? 'pending') as WorkItemStatus,
+    input: (row.input ?? {}) as Record<string, unknown>,
+    output: (row.output ?? {}) as Record<string, unknown>,
+    deadline: row.deadline ? isoStr(row.deadline) : undefined,
+    created_at: isoStr(row.created_at),
+    updated_at: isoStr(row.updated_at),
+  };
+}
+
+function pgRowToReminder(row: Record<string, unknown>): Reminder {
+  return {
+    reminder_id: String(row.id),
+    type: (row.type ?? 'standalone') as ReminderType,
+    recipient: String(row.recipient ?? ''),
+    message: String(row.message ?? ''),
+    scheduled_at: isoStr(row.scheduled_at),
+    channel: (row.channel ?? 'telegram') as ReminderChannel,
+    status: (row.status ?? 'pending') as ReminderStatus,
+    case_id: row.case_id ? String(row.case_id) : undefined,
+    process_id: row.process_id ? String(row.process_id) : undefined,
+    element_id: row.element_id ? String(row.element_id) : undefined,
+    work_item_id: row.work_item_id ? String(row.work_item_id) : undefined,
+    created_at: isoStr(row.created_at),
+    updated_at: isoStr(row.updated_at),
+  };
+}
+
+function pgRowToRole(row: Record<string, unknown>): RoleDef {
+  return {
+    role_id: String(row.id),
+    name: String(row.name ?? ''),
+    description: row.description ? String(row.description) : undefined,
+    assignees: Array.isArray(row.assignees) ? row.assignees as string[] : [],
+    strategy: (row.strategy ?? 'manual') as AssignmentStrategy,
+    created_at: isoStr(row.created_at),
+    updated_at: isoStr(row.updated_at),
+  };
+}
+
+function pgRowToDoc(row: Record<string, unknown>): DocTemplate {
+  return {
+    doc_id: String(row.id),
+    name: String(row.name ?? ''),
+    type: (row.type ?? 'template') as DocType,
+    content: String(row.content ?? ''),
+    parameters: typeof row.parameters === 'object' && !Array.isArray(row.parameters)
+      ? Object.keys(row.parameters as Record<string, unknown>)
+      : Array.isArray(row.parameters) ? row.parameters as string[]
+      : extractParameters(String(row.content ?? '')),
+    created_at: isoStr(row.created_at),
+    updated_at: isoStr(row.updated_at),
+  };
+}
+
 // --- Helpers ---
 
 async function saveCase(c: Case): Promise<void> {
   await redis.set(CASE_KEY_PREFIX + c.case_id, JSON.stringify(c));
-  pgUpsertCase({ case_id: c.case_id, process_id: c.process_id, version: c.process_version, subject: c.subject, status: c.status, position: c.position, payload: c.payload, history: c.history, created_at: c.created_at, updated_at: new Date().toISOString() });
+  // Embed active_branches into PG payload so it survives PG reads
+  const pgPayload = c.active_branches ? { ...c.payload, __active_branches: c.active_branches } : c.payload;
+  pgUpsertCase({ case_id: c.case_id, process_id: c.process_id, version: c.process_version, subject: c.subject, status: c.status, position: c.position, payload: pgPayload, history: c.history, created_at: c.created_at, updated_at: new Date().toISOString() });
   // Maintain indexes (idempotent — always re-sync)
   await redis.zadd(CASES_IDX_ALL, new Date(c.created_at).getTime(), c.case_id);
   // Remove from all status sets then add to current (handles status transitions)
@@ -172,6 +269,10 @@ async function saveCase(c: Case): Promise<void> {
 }
 
 async function loadCase(case_id: string): Promise<Case | null> {
+  if (PG_READ) {
+    const row = await pgGetCase(case_id);
+    return row ? pgRowToCase(row) : null;
+  }
   const raw = await redis.get(CASE_KEY_PREFIX + case_id);
   return raw ? JSON.parse(raw) : null;
 }
@@ -202,11 +303,19 @@ async function saveWorkItem(wi: WorkItem, prevStatus?: WorkItemStatus, prevAssig
 }
 
 export async function getWorkItem(work_item_id: string): Promise<WorkItem | null> {
+  if (PG_READ) {
+    const row = await pgGetWorkItem(work_item_id);
+    return row ? pgRowToWorkItem(row) : null;
+  }
   const raw = await redis.get(WORKITEM_KEY_PREFIX + work_item_id);
   return raw ? JSON.parse(raw) : null;
 }
 
 async function loadWorkItem(work_item_id: string): Promise<WorkItem | null> {
+  if (PG_READ) {
+    const row = await pgGetWorkItem(work_item_id);
+    return row ? pgRowToWorkItem(row) : null;
+  }
   const raw = await redis.get(WORKITEM_KEY_PREFIX + work_item_id);
   return raw ? JSON.parse(raw) : null;
 }
@@ -818,6 +927,11 @@ export async function listWorkItems(filters: {
   process_id?: string;
   deadline_before?: string;
 }): Promise<WorkItem[]> {
+  if (PG_READ) {
+    const rows = await pgListWorkItems(filters);
+    return rows.map(pgRowToWorkItem);
+  }
+
   // Build candidate set using the most selective index first
   let candidateIds: Set<string> | null = null;
 
@@ -976,6 +1090,11 @@ export async function listCases(filters: {
   limit?: number;
   offset?: number;
 }): Promise<{ cases: Case[]; total: number }> {
+  if (PG_READ) {
+    const { rows, total } = await pgListCases(filters);
+    return { cases: rows.map(pgRowToCase), total };
+  }
+
   let candidateIds: Set<string> | null = null;
 
   function intersect(a: Set<string>, b: string[]): Set<string> {
@@ -1032,6 +1151,10 @@ async function saveReminder(r: Reminder, prevStatus?: ReminderStatus): Promise<v
 }
 
 async function loadReminder(reminder_id: string): Promise<Reminder | null> {
+  if (PG_READ) {
+    const row = await pgGetReminder(reminder_id);
+    return row ? pgRowToReminder(row) : null;
+  }
   const raw = await redis.get(REMINDER_KEY_PREFIX + reminder_id);
   return raw ? JSON.parse(raw) : null;
 }
@@ -1072,6 +1195,13 @@ export async function listReminders(filters: {
   status?: ReminderStatus;
   recipient?: string;
 } = {}): Promise<Reminder[]> {
+  if (PG_READ) {
+    const rows = await pgListReminders({ status: filters.status });
+    let result = rows.map(pgRowToReminder);
+    if (filters.recipient) result = result.filter(r => r.recipient === filters.recipient);
+    return result;
+  }
+
   let ids: string[];
   if (filters.status) {
     ids = await redis.smembers(REMINDERS_IDX_STATUS + filters.status);
@@ -1243,6 +1373,10 @@ async function saveRole(r: RoleDef): Promise<void> {
 }
 
 async function loadRole(role_id: string): Promise<RoleDef | null> {
+  if (PG_READ) {
+    const row = await pgGetRole(role_id);
+    return row ? pgRowToRole(row) : null;
+  }
   const raw = await redis.get(ROLE_KEY_PREFIX + role_id);
   return raw ? JSON.parse(raw) : null;
 }
@@ -1255,6 +1389,10 @@ export async function createRole(params: Omit<RoleDef, "created_at" | "updated_a
 }
 
 export async function listRoles(): Promise<RoleDef[]> {
+  if (PG_READ) {
+    const rows = await pgListRolesRaw();
+    return rows.map(pgRowToRole);
+  }
   const ids = await redis.zrange(ROLES_IDX_ALL, 0, -1);
   const roles = await Promise.all(ids.map(id => loadRole(id)));
   return roles.filter((r): r is RoleDef => r !== null);
@@ -1313,6 +1451,10 @@ async function saveDoc(d: DocTemplate): Promise<void> {
 }
 
 async function loadDoc(doc_id: string): Promise<DocTemplate | null> {
+  if (PG_READ) {
+    const row = await pgGetDoc(doc_id);
+    return row ? pgRowToDoc(row) : null;
+  }
   const raw = await redis.get(DOC_KEY_PREFIX + doc_id);
   return raw ? JSON.parse(raw) : null;
 }
@@ -1333,6 +1475,10 @@ export async function createDoc(params: { name: string; type: DocType; content: 
 }
 
 export async function listDocs(): Promise<DocTemplate[]> {
+  if (PG_READ) {
+    const rows = await pgListDocsRaw();
+    return rows.map(pgRowToDoc);
+  }
   const ids = await redis.zrange(DOCS_IDX_ALL, 0, -1);
   const docs = await Promise.all(ids.map(id => loadDoc(id)));
   return docs.filter((d): d is DocTemplate => d !== null);

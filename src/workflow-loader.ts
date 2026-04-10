@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { redis } from "./redis";
-import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot } from "./storage/pg";
+import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw } from "./storage/pg";
+
+const PG_READ = process.env.PG_READ === "true";
 
 export interface SystemBinding {
   connector: string;  // adapter name (e.g. "telegram", "bitrix24")
@@ -373,12 +375,21 @@ export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: num
 }
 
 export async function getWorkflow(id: string): Promise<WorkflowDefinition | null> {
+  if (PG_READ) {
+    const row = await pgGetWorkflow(id);
+    if (!row) return null;
+    return normalizeWorkflow(row as unknown as WorkflowDefinition);
+  }
   const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
   if (!raw) return null;
   return normalizeWorkflow(JSON.parse(raw));
 }
 
 export async function listWorkflows(): Promise<WorkflowDefinition[]> {
+  if (PG_READ) {
+    const rows = await pgListWorkflowsRaw();
+    return rows.map(r => normalizeWorkflow(r as unknown as WorkflowDefinition));
+  }
   const ids = await redis.smembers(WORKFLOW_INDEX_KEY);
   if (ids.length === 0) return [];
   const keys = ids.map(id => WORKFLOW_KEY_PREFIX + id);

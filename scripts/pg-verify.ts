@@ -1,0 +1,188 @@
+#!/usr/bin/env bun
+/**
+ * pg-verify.ts — сравнение данных Redis vs PostgreSQL
+ *
+ * Запуск:
+ *   cd /home/ubuntu/konoha && bun run scripts/pg-verify.ts
+ *
+ * Выводит:
+ *   - количество записей в Redis и PG по каждой сущности
+ *   - расхождения по конкретным ID
+ *   - итоговый статус: OK / MISMATCH
+ */
+
+import Redis from "ioredis";
+import postgres from "postgres";
+
+const DATABASE_URL = process.env.DATABASE_URL ||
+  "postgres://konoha:konoha2026@127.0.0.1:5432/konoha";
+
+const redis = new Redis({ host: "127.0.0.1", port: 6379, db: 0, lazyConnect: false });
+const sql = postgres(DATABASE_URL, { max: 3, idle_timeout: 10, connect_timeout: 5, onnotice: () => {} });
+
+interface CheckResult {
+  entity: string;
+  redisCount: number;
+  pgCount: number;
+  onlyInRedis: string[];
+  onlyInPg: string[];
+  ok: boolean;
+}
+
+async function checkCases(): Promise<CheckResult> {
+  const redisIds = await redis.zrange("konoha:cases:all", 0, -1);
+  const pgRows = await sql<{ case_id: string }[]>`SELECT case_id FROM cases`;
+  const pgIds = pgRows.map(r => r.case_id);
+
+  const redisSet = new Set(redisIds);
+  const pgSet = new Set(pgIds);
+
+  return {
+    entity: "cases",
+    redisCount: redisIds.length,
+    pgCount: pgIds.length,
+    onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
+    onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
+    ok: redisIds.length === pgIds.length &&
+        redisIds.every(id => pgSet.has(id)),
+  };
+}
+
+async function checkWorkItems(): Promise<CheckResult> {
+  const redisIds = await redis.zrange("konoha:workitems:all", 0, -1);
+  const pgRows = await sql<{ id: string }[]>`SELECT id FROM work_items`;
+  const pgIds = pgRows.map(r => r.id);
+
+  const redisSet = new Set(redisIds);
+  const pgSet = new Set(pgIds);
+
+  return {
+    entity: "work_items",
+    redisCount: redisIds.length,
+    pgCount: pgIds.length,
+    onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
+    onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
+    ok: redisIds.length === pgIds.length &&
+        redisIds.every(id => pgSet.has(id)),
+  };
+}
+
+async function checkWorkflows(): Promise<CheckResult> {
+  const redisIds = await redis.smembers("konoha:workflow:index");
+  const pgRows = await sql<{ id: string }[]>`SELECT id FROM workflows`;
+  const pgIds = pgRows.map(r => r.id);
+
+  const redisSet = new Set(redisIds);
+  const pgSet = new Set(pgIds);
+
+  return {
+    entity: "workflows",
+    redisCount: redisIds.length,
+    pgCount: pgIds.length,
+    onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
+    onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
+    ok: redisIds.length === pgIds.length &&
+        redisIds.every(id => pgSet.has(id)),
+  };
+}
+
+async function checkRoles(): Promise<CheckResult> {
+  const redisIds = await redis.zrange("konoha:roles:all", 0, -1);
+  const pgRows = await sql<{ id: string }[]>`SELECT id FROM roles`;
+  const pgIds = pgRows.map(r => r.id);
+
+  const redisSet = new Set(redisIds);
+  const pgSet = new Set(pgIds);
+
+  return {
+    entity: "roles",
+    redisCount: redisIds.length,
+    pgCount: pgIds.length,
+    onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
+    onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
+    ok: redisIds.length === pgIds.length &&
+        redisIds.every(id => pgSet.has(id)),
+  };
+}
+
+async function checkDocs(): Promise<CheckResult> {
+  const redisIds = await redis.zrange("konoha:docs:all", 0, -1);
+  const pgRows = await sql<{ id: string }[]>`SELECT id FROM documents`;
+  const pgIds = pgRows.map(r => r.id);
+
+  const redisSet = new Set(redisIds);
+  const pgSet = new Set(pgIds);
+
+  return {
+    entity: "documents",
+    redisCount: redisIds.length,
+    pgCount: pgIds.length,
+    onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
+    onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
+    ok: redisIds.length === pgIds.length &&
+        redisIds.every(id => pgSet.has(id)),
+  };
+}
+
+async function checkReminders(): Promise<CheckResult> {
+  const redisIds = await redis.zrange("konoha:reminders:all", 0, -1);
+  const pgRows = await sql<{ id: string }[]>`SELECT id FROM reminders`;
+  const pgIds = pgRows.map(r => r.id);
+
+  const redisSet = new Set(redisIds);
+  const pgSet = new Set(pgIds);
+
+  return {
+    entity: "reminders",
+    redisCount: redisIds.length,
+    pgCount: pgIds.length,
+    onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
+    onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
+    ok: redisIds.length === pgIds.length &&
+        redisIds.every(id => pgSet.has(id)),
+  };
+}
+
+function printResult(r: CheckResult): void {
+  const status = r.ok ? "OK" : "MISMATCH";
+  console.log(`\n[${status}] ${r.entity}: Redis=${r.redisCount} PG=${r.pgCount}`);
+  if (r.onlyInRedis.length > 0) {
+    console.log(`  Only in Redis (${r.onlyInRedis.length}): ${r.onlyInRedis.slice(0, 5).join(", ")}${r.onlyInRedis.length > 5 ? " ..." : ""}`);
+  }
+  if (r.onlyInPg.length > 0) {
+    console.log(`  Only in PG (${r.onlyInPg.length}): ${r.onlyInPg.slice(0, 5).join(", ")}${r.onlyInPg.length > 5 ? " ..." : ""}`);
+  }
+}
+
+async function main(): Promise<void> {
+  console.log("=== Konoha PG Verification ===");
+  console.log(`DB: ${DATABASE_URL.replace(/:\/\/[^@]+@/, "://<creds>@")}`);
+
+  try {
+    const results = await Promise.all([
+      checkCases(),
+      checkWorkItems(),
+      checkWorkflows(),
+      checkRoles(),
+      checkDocs(),
+      checkReminders(),
+    ]);
+
+    let allOk = true;
+    for (const r of results) {
+      printResult(r);
+      if (!r.ok) allOk = false;
+    }
+
+    console.log("\n" + (allOk ? "=== RESULT: OK — Redis and PG are in sync ===" : "=== RESULT: MISMATCH — discrepancies found ==="));
+    process.exit(allOk ? 0 : 1);
+  } finally {
+    redis.disconnect();
+    await sql.end();
+  }
+}
+
+main().catch(e => {
+  console.error("Fatal:", e.message);
+  process.exit(1);
+});
