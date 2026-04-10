@@ -11,14 +11,16 @@ import { publishEvent } from "../redis";
 import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "../workflow-loader";
 import { getAdapter } from "../adapters/index";
 import { dispatchWorkItem } from "../dispatcher";
-import { createSubscriptionProgrammatic, cancelSubscriptionsByInstance } from "../event-manager";
+import { createSubscriptionProgrammatic, cancelSubscriptionsByInstance, type TriggerDef } from "../event-manager";
 import {
   pgUpsertCase, pgUpsertWorkItem, pgDeleteWorkItem,
   pgGetCase, pgListCases,
   pgGetWorkItem, pgListWorkItems,
 } from "../storage/pg";
 import { emitEvent } from "./event-log";
+import { createLogger } from "../logger";
 
+const log = createLogger("runtime:cases");
 const PG_READ = process.env.PG_READ === "true";
 
 // ── Redis key prefixes ────────────────────────────────────────────────────────
@@ -291,7 +293,7 @@ async function subscribeEventNode(kase: Case, el: WorkflowElement): Promise<void
     event_id: el.id,
     process_id: kase.process_id,
     instance_id: kase.case_id,
-    trigger: trigger as any,
+    trigger: trigger as TriggerDef,
   });
 }
 
@@ -316,14 +318,14 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
           kase.history.push({ element_id: current, element_type: "event", label: el.label, timestamp: new Date().toISOString() });
           await saveCase(kase);
           cancelSubscriptionsByInstance(kase.case_id).catch(e =>
-            console.error(`[runtime] subscription cleanup error case=${kase.case_id}: ${e.message}`),
+            log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
           );
           return kase;
         }
         kase.status = "error";
         await saveCase(kase);
         cancelSubscriptionsByInstance(kase.case_id).catch(e =>
-          console.error(`[runtime] subscription cleanup error case=${kase.case_id}: ${e.message}`),
+          log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
         );
         publishEvent({ type: "process.exception", source: "runtime@comind.konoha", village_id: "comind.konoha", timestamp: new Date().toISOString(), payload: { case_id: kase.case_id, process_id: kase.process_id, error: `unexpected terminal element: ${current}` } }).catch(() => {});
         return kase;
@@ -356,7 +358,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
           process_id: kase.process_id,
           element_id: nextId,
           docIds: nextEl.documents || [],
-        }).catch(e => console.error("[runtime] dispatch error:", e.message));
+        }).catch(e => log.error("dispatch error", { case_id: kase.case_id, element_id: nextId, error: e.message }));
       }
 
       const systemBindings = nextEl.systems ?? (nextEl.system ? [{ connector: nextEl.system, operation: "default" }] : []);
@@ -373,7 +375,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
             const out = await adapter.execute(op, kase.payload);
             mergedOutput = { ...mergedOutput, ...out };
           } catch (e: any) {
-            console.error(`[runtime] adapter "${binding.connector}" error for "${nextEl.label}":`, e.message);
+            log.error("adapter error", { connector: binding.connector, label: nextEl.label, error: e.message });
             adapterError = true;
             break;
           }
@@ -413,7 +415,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       if (isIntermediate && trigger?.kind && trigger.kind !== "manual" && trigger.kind !== "ambiguous" && !trigger.manual_override) {
         await saveCase(kase);
         subscribeEventNode(kase, nextEl).catch(e =>
-          console.error(`[runtime] intermediate event subscribe error node=${nextId}: ${e.message}`),
+          log.error("intermediate event subscribe error", { case_id: kase.case_id, node_id: nextId, error: e.message }),
         );
         return kase;
       }
@@ -495,7 +497,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
                 const out = await adapter.execute(op, kase.payload);
                 mergedOut = { ...mergedOut, ...out };
               } catch (e: any) {
-                console.error(`[runtime] adapter error in branch "${branchElId}":`, e.message);
+                log.error("adapter error in branch", { element_id: branchElId, error: e.message });
                 branchErr = true;
                 break;
               }
@@ -652,31 +654,31 @@ export async function handleEventFired(payload: {
     const initPayload = source_data ?? {};
     try {
       const kase = await createCase(process_id, subject, initPayload, event_id);
-      console.log(`[workflow-engine] event_fired → new case ${kase.case_id} process=${process_id} event=${event_id}`);
+      log.info("event_fired: new case created", { case_id: kase.case_id, process_id, event_id });
       return kase;
     } catch (e: any) {
-      console.error(`[workflow-engine] event_fired create case error: ${e.message}`);
+      log.error("event_fired: create case failed", { process_id, event_id, error: e.message });
       return null;
     }
   }
 
   const kase = await loadCase(instance_id);
   if (!kase) {
-    console.warn(`[workflow-engine] event_fired: case ${instance_id} not found`);
+    log.warn("event_fired: case not found", { instance_id });
     return null;
   }
   if (kase.status !== "running") {
-    console.warn(`[workflow-engine] event_fired: case ${instance_id} status=${kase.status}, skipping`);
+    log.warn("event_fired: case not running, skipped", { instance_id, status: kase.status });
     return null;
   }
   if (kase.position !== event_id) {
-    console.warn(`[workflow-engine] event_fired: case ${instance_id} at position=${kase.position}, expected=${event_id}, skipping`);
+    log.warn("event_fired: position mismatch, skipped", { instance_id, position: kase.position, expected: event_id });
     return null;
   }
 
   const def = await getWorkflow(kase.process_id);
   if (!def) {
-    console.error(`[workflow-engine] event_fired: workflow ${kase.process_id} not found`);
+    log.error("event_fired: workflow not found", { process_id: kase.process_id, instance_id });
     return null;
   }
 
@@ -686,10 +688,10 @@ export async function handleEventFired(payload: {
 
   try {
     const updated = await advanceCase(kase, def);
-    console.log(`[workflow-engine] event_fired → advanced case ${instance_id} event=${event_id} status=${updated.status}`);
+    log.info("event_fired: case advanced", { instance_id, event_id, status: updated.status });
     return updated;
   } catch (e: any) {
-    console.error(`[workflow-engine] event_fired advance error case=${instance_id}: ${e.message}`);
+    log.error("event_fired: advance failed", { instance_id, event_id, error: e.message });
     return null;
   }
 }
