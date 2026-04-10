@@ -12,19 +12,20 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     // Ensure screenshot output directory exists
     mkdirSync('/opt/shared/shino/reports', { recursive: true });
 
-    // Create workflow via Playwright request (carries auth-fixture storageState).
-    // Backend mounts /workflows directly — no /api/ prefix.
+    // Create workflow via Playwright request context.
+    // requireAuth (auth.ts:11) only accepts Authorization: Bearer — request fixture does NOT
+    // carry storageState cookies. Pass KONOHA_TOKEN explicitly (closes #434).
     const res = await request.post('/workflows?draft=true', {
+      headers: {
+        'Authorization': `Bearer ${process.env.KONOHA_TOKEN ?? 'konoha-dev-token'}`,
+        'Content-Type': 'application/json'
+      },
       data: { name: `Mobile Assistant Test — ${new Date().toISOString()}`, elements: [] }
     });
 
-    if (res.ok()) {
-      const wf = await res.json() as { id?: string };
-      testProcessId = wf.id ?? WORKFLOW_ID;
-    } else {
-      console.log(`[beforeAll] API returned ${res.status()}, using fallback ID: ${WORKFLOW_ID}`);
-      testProcessId = WORKFLOW_ID;
-    }
+    if (!res.ok()) throw new Error(`beforeAll: POST /workflows → ${res.status()}`);
+    const wf = await res.json() as { id: string };
+    testProcessId = wf.id;
     console.log(`[beforeAll] Created workflow: ${testProcessId}`);
   });
 
