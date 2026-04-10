@@ -61,6 +61,15 @@ const styles = `
 
 function slugify(s: string) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
+function isTestProcess(wf: Workflow): boolean {
+  const id = wf.id.toLowerCase();
+  const name = (wf.name || '').toLowerCase();
+  return id.startsWith('hinata-') || id.startsWith('test-wf-') || id.startsWith('orphan')
+    || /\btc-?\d+\b/.test(id) || /\bsmoke\b/.test(id)
+    || name.includes(' test') || name.includes('тест') || name.includes('smoke')
+    || /\btc[-\s]\d+\b/.test(name) || name.toLowerCase().startsWith('orphan');
+}
+
 function groupByCategory(wfs: Workflow[]) {
   const groups: Record<string, Workflow[]> = {};
   wfs.forEach(wf => {
@@ -182,8 +191,12 @@ export function Processes() {
   const [selected, setSelected] = useState<Workflow | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [opError, setOpError] = useState<string | null>(null);
+  const [hideTests, setHideTests] = useState(true);
 
-  const groups = workflows ? groupByCategory(workflows) : {};
+  const visibleWorkflows = workflows
+    ? (hideTests ? workflows.filter(w => !isTestProcess(w)) : workflows)
+    : [];
+  const groups = groupByCategory(visibleWorkflows);
 
   const handleCreated = useCallback((wf: Workflow) => { refetch?.(); setSelected(wf); }, [refetch]);
 
@@ -228,6 +241,11 @@ export function Processes() {
           <div className="sidebar-top">
             <button className="btn-new-proc" onClick={() => setShowNew(true)}>+ Новый</button>
             <button onClick={importWf} title="Import JSON">↑ Импорт</button>
+            <button
+              onClick={() => setHideTests(h => !h)}
+              title={hideTests ? 'Показать тестовые процессы' : 'Скрыть тестовые процессы'}
+              style={{ color: hideTests ? '#6366f1' : '#94a3b8', fontWeight: hideTests ? 600 : 400 }}
+            >🔬</button>
           </div>
           <h2>Реестр процессов</h2>
           {opError && <div className="error-banner">{opError} <button style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setOpError(null)}>✕</button></div>}

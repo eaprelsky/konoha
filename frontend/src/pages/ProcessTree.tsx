@@ -12,6 +12,15 @@ interface CtxMenu {
   node: Workflow;
 }
 
+function isTestProcess(wf: { id: string; name?: string }): boolean {
+  const id = wf.id.toLowerCase();
+  const name = (wf.name || '').toLowerCase();
+  return id.startsWith('hinata-') || id.startsWith('test-wf-') || id.startsWith('orphan')
+    || /\btc-?\d+\b/.test(id) || /\bsmoke\b/.test(id)
+    || name.includes(' test') || name.includes('тест') || name.includes('smoke')
+    || /\btc[-\s]\d+\b/.test(name) || name.toLowerCase().startsWith('orphan');
+}
+
 interface Props {
   workflows: Workflow[];
   wfId: string;
@@ -46,6 +55,7 @@ export function ProcessTree({
   onCollapsedTreeChange, onCancelCreating, onCancelRename,
 }: Props) {
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
+  const [hideTests, setHideTests] = useState(true);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -180,6 +190,15 @@ export function ProcessTree({
         value={sideSearch}
         onChange={e => onSideSearch(e.target.value)}
       />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+        <button
+          style={{ fontSize: 10, color: hideTests ? '#6366f1' : '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+          onClick={() => setHideTests(h => !h)}
+          title={hideTests ? 'Показать тестовые процессы' : 'Скрыть тестовые процессы'}
+        >
+          {hideTests ? '🔬 показать тест.' : '🔬 скрыть тест.'}
+        </button>
+      </div>
       {creatingNew && (
         <input
           className="proc-new-input"
@@ -196,11 +215,11 @@ export function ProcessTree({
         />
       )}
       <div className="proc-list">
-        {filteredWorkflows.length === 0 && !creatingNew && (
+        {filteredWorkflows.filter(w => !hideTests || !isTestProcess(w)).length === 0 && !creatingNew && (
           <div style={{ fontSize: 11, color: '#94a3b8', padding: '4px 0' }}>Процессов пока нет</div>
         )}
         {sideSearch.trim()
-          ? filteredWorkflows.map(w => (
+          ? filteredWorkflows.filter(w => !hideTests || !isTestProcess(w)).map(w => (
             <div
               key={w.id}
               className={`proc-item${wfId === w.id ? ' active' : ''}`}
@@ -234,7 +253,7 @@ export function ProcessTree({
               )}
             </div>
           ))
-          : workflowTree.map(node => renderNode(node))
+          : workflowTree.filter(n => !hideTests || !isTestProcess(n)).map(node => renderNode(node))
         }
       </div>
       <hr className="load-divider" />

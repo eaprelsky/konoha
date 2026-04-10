@@ -69,16 +69,17 @@ export function ProcessEditor() {
           <button className={`btn-tsunade${s.showChat ? ' active' : ''}`} onClick={() => s.setShowChat(v => !v)}>
             💬 Цунаде
           </button>
-          {s.wfId.trim() && (
-            <button
-              className={s.showMining ? 'active' : ''}
-              onClick={s.toggleMining}
-              title="Process Mining — наложить статистику реальных прогонов на схему"
-              style={{ background: s.showMining ? '#065f46' : '#1e3a2f', borderColor: '#10b981' }}
-            >
-              {s.miningLoading ? '⏳' : '⛏'} Майнинг
-            </button>
-          )}
+          <button
+            className={s.showMining ? 'active' : ''}
+            onClick={s.wfId.trim() ? s.toggleMining : undefined}
+            disabled={!s.wfId.trim()}
+            title={s.wfId.trim()
+              ? 'Анализ процесса: bottleneck, отклонения, пропущенные шаги (на основе логов прогонов)'
+              : 'Откройте процесс для анализа прогонов'}
+            style={{ background: s.showMining ? '#065f46' : '#1e3a2f', borderColor: '#10b981', opacity: s.wfId.trim() ? 1 : 0.5 }}
+          >
+            {s.miningLoading ? '⏳' : '📊'} Анализ
+          </button>
           <VersionSelector
             versions={s.versions}
             viewingVersion={s.viewingVersion}
@@ -180,7 +181,7 @@ export function ProcessEditor() {
             {/* Mining summary */}
             {s.showMining && s.miningData && (
               <div>
-                <h3>⛏ Майнинг — {s.miningData.case_count} прогон(ов)</h3>
+                <h3>📊 Анализ — {s.miningData.case_count} прогон(ов)</h3>
                 {s.miningData.bottleneck_element_id && (
                   <div style={{ fontSize: 11, color: '#fca5a5', background: '#450a0a', padding: '4px 8px', borderRadius: 4, marginBottom: 6 }}>
                     🔥 Узкое место: {s.miningData.elements[s.miningData.bottleneck_element_id]?.label || s.miningData.bottleneck_element_id}
