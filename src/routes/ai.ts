@@ -5,6 +5,7 @@ import { requireAuth } from "../middleware/auth";
 import { redis } from "../redis";
 import Anthropic from "@anthropic-ai/sdk";
 import { createWorkflow, listWorkflows } from "../workflow-loader";
+import { getAgentDef, listAgentDefs } from "../agent-lifecycle";
 
 /** Build content blocks from text + optional attachment paths (closes #321) */
 function buildContent(text: string, attachments?: AttachmentRef[]): Anthropic.MessageParam["content"] {
@@ -52,6 +53,44 @@ const _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 function stripMarkdownFences(raw: string): string {
   const m = raw.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/);
   return m ? m[1].trim() : raw;
+}
+
+// --- Agent Identity Injection (#402) ---
+
+/**
+ * Builds a dynamic identity preamble from the Konoha agent registry.
+ * Prepended to system prompts so agents know who they are and who their colleagues are.
+ * Falls back to empty string if registry is unavailable.
+ */
+async function buildAgentIdentityBlock(agentId: string): Promise<string> {
+  try {
+    const [self, all] = await Promise.all([getAgentDef(agentId), listAgentDefs()]);
+    if (!self) return '';
+
+    const genderNote = self.gender === 'female'
+      ? 'Ты — женского рода. Обращайся к себе в женском роде.'
+      : self.gender === 'male'
+      ? 'Ты — мужского рода. Обращайся к себе в мужском роде.'
+      : '';
+
+    const peers = all.filter(a => a.id !== agentId);
+    const peerList = peers.length > 0
+      ? peers.map(p =>
+          `- ${p.name} (id: ${p.id})` +
+          (p.capabilities?.length ? `, навыки: ${p.capabilities.join(', ')}` : '')
+        ).join('\n')
+      : '(нет зарегистрированных агентов)';
+
+    return `[Идентичность — из реестра Konoha]
+Ты — ${self.name} (id: ${agentId}).${genderNote ? ' ' + genderNote : ''}
+
+Другие агенты системы:
+${peerList}
+
+`;
+  } catch {
+    return '';
+  }
 }
 
 // --- Tsunade Chat API ---
@@ -137,6 +176,7 @@ async function handleTsunadeChatRequest(
   message: string,
   schema?: unknown,
   attachments?: AttachmentRef[],
+  agentId = "tsunade",
 ) {
   const rawHistory = await redis.lrange(histKey, 0, -1).catch(() => [] as string[]);
   const history: Anthropic.MessageParam[] = rawHistory.map(r => {
@@ -154,10 +194,11 @@ async function handleTsunadeChatRequest(
     { role: "user", content: userContent },
   ];
 
+  const identityBlock = await buildAgentIdentityBlock(agentId);
   const response = await _anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 2000,
-    system: TSUNADE_SYSTEM,
+    system: identityBlock + TSUNADE_SYSTEM,
     messages,
   });
 
@@ -290,10 +331,11 @@ router.post("/ai/admin-chat", async (c) => {
   ];
 
   try {
+    const kibaIdentity = await buildAgentIdentityBlock("kiba");
     const response = await _anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
-      system: KIBA_SYSTEM,
+      system: kibaIdentity + KIBA_SYSTEM,
       messages,
     });
 
@@ -398,7 +440,9 @@ router.post("/ai/chat", async (c) => {
 
   const histPrefix = mode === "admin" ? KIBA_CHAT_PREFIX : TSUNADE_CHAT_PREFIX;
   const histKey = histPrefix + chatId;
-  const systemPrompt = mode === "admin" ? KIBA_SYSTEM : TSUNADE_SYSTEM;
+  const agentId = mode === "admin" ? "kiba" : "tsunade";
+  const identityBlock = await buildAgentIdentityBlock(agentId);
+  const systemPrompt = identityBlock + (mode === "admin" ? KIBA_SYSTEM : TSUNADE_SYSTEM);
   const model = mode === "admin" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-6";
   const maxHistory = mode === "admin" ? KIBA_CHAT_MAX_HISTORY : CHAT_MAX_HISTORY;
 
