@@ -196,6 +196,18 @@ async def commands_loop():
                             import json
                             await rd.set(f'telegram:result:{request_id}', json.dumps({'data': 'ok'}), ex=60)
 
+                        elif cmd == 'mark_read':
+                            from telethon import functions as tl_functions
+                            chat_id = int(data['chat_id'])
+                            read_msg_id = int(data['msg_id'])
+                            peer = await client.get_input_entity(chat_id)
+                            await client(tl_functions.messages.ReadHistoryRequest(
+                                peer=peer,
+                                max_id=read_msg_id,
+                            ))
+                            import json
+                            await rd.set(f'telegram:result:{request_id}', json.dumps({'data': 'ok'}), ex=60)
+
                         elif cmd == 'react':
                             from telethon.tl.functions.messages import SendReactionRequest
                             from telethon.tl.types import ReactionEmoji
