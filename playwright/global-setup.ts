@@ -11,12 +11,13 @@ import path from 'path';
 const AUTH_FILE = path.join(__dirname, '.auth/user.json');
 
 async function globalSetup(config: FullConfig) {
-  const baseURL = config.projects[0]?.use?.baseURL ?? 'http://127.0.0.1:3201';
+  const baseURL = config.projects[0]?.use?.baseURL ?? 'http://127.0.0.1:3202';
 
   const browser = await chromium.launch();
   const page = await browser.newPage();
 
-  await page.goto(`${baseURL}/login`);
+  // SPA: navigate to /ui/login (React handles routing)
+  await page.goto(`${baseURL}/ui/login`);
   await page.waitForLoadState('domcontentloaded');
 
   const username = process.env.E2E_USERNAME ?? 'eaprelsky';

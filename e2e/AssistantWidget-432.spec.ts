@@ -16,7 +16,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     // Authorization header is injected globally via extraHTTPHeaders in playwright.config.ts.
     const res = await request.post('/workflows?draft=true', {
       headers: { 'Content-Type': 'application/json' },
-      data: { name: `Mobile Assistant Test — ${new Date().toISOString()}`, elements: [] }
+      data: { id: `e2e-assistant-${Date.now()}`, name: `Mobile Assistant Test — ${new Date().toISOString()}`, elements: [] }
     });
 
     if (!res.ok()) throw new Error(`beforeAll: POST /workflows → ${res.status()}`);
