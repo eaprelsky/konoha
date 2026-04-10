@@ -25,6 +25,7 @@ import { ProcessTree } from './ProcessTree';
 import { PropertiesPanel } from './PropertiesPanel';
 import { VersionSelector } from './VersionSelector';
 import { RegistryPicker } from './RegistryPicker';
+import { Minimap } from './Minimap';
 
 function isMobile() { return window.innerWidth <= 767; }
 
@@ -227,6 +228,14 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
 
           {/* ── Canvas ── */}
           <div className="ipe-canvas">
+            <Minimap
+              elements={s.elements}
+              positions={s.positions}
+              panX={s.panX}
+              panY={s.panY}
+              zoom={s.zoom}
+              svgRef={s.svgRef}
+            />
             <svg
               ref={s.svgRef}
               style={{ cursor: readOnly ? 'default' : s.canvasCursor }}
