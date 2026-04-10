@@ -260,6 +260,108 @@ konoha_send(to=sasuke, text="hinata:e2e send_message chat=<chat_id> text=<test_m
 Sasuke sends the test message via user account; Hinata verifies the bot received and responded correctly.
 Report E2E result to Shino as part of the test report.
 
+## Post-smoke cleanup (issue #415)
+
+After every smoke or regression run, **delete test workflows and their artifacts**.
+Test workflows are identified by ID pattern: `hinata-*`, `test-wf-*`, `orphan*`, ids matching `tc-\d+` or `smoke`.
+
+### Step 1 — find test workflows
+```bash
+GH_TOKEN=$(cat ~/.github-token)  # not needed here, just API token
+curl -s -H "Authorization: Bearer $KONOHA_TOKEN" http://127.0.0.1:3200/api/workflows \
+  | python3 -c "
+import sys, json, re
+wfs = json.load(sys.stdin)
+pat = re.compile(r'^(hinata-|test-wf-|orphan|smoke)', re.I)
+tc  = re.compile(r'\btc-?\d+\b', re.I)
+test_ids = [w['id'] for w in wfs if pat.match(w['id']) or tc.search(w['id'])]
+print('\n'.join(test_ids))
+"
+```
+
+### Step 2 — delete runs (cases) for each test workflow
+```bash
+for WF_ID in $TEST_IDS; do
+  CASES=$(curl -s -H "Authorization: Bearer $KONOHA_TOKEN" \
+    "http://127.0.0.1:3200/api/cases?process_id=$WF_ID" \
+    | python3 -c "import sys,json; [print(c['id']) for c in json.load(sys.stdin)]" 2>/dev/null)
+  for CASE_ID in $CASES; do
+    curl -s -X DELETE -H "Authorization: Bearer $KONOHA_TOKEN" \
+      "http://127.0.0.1:3200/api/cases/$CASE_ID"
+    echo "Deleted case $CASE_ID"
+  done
+done
+```
+
+### Step 3 — delete test workflows
+```bash
+for WF_ID in $TEST_IDS; do
+  curl -s -X DELETE -H "Authorization: Bearer $KONOHA_TOKEN" \
+    "http://127.0.0.1:3200/api/workflows/$WF_ID"
+  echo "Deleted workflow $WF_ID"
+done
+```
+
+### Step 4 — cleanup exclusive test roles and documents (cautious)
+Only delete roles/documents whose `ref_id` starts with `hinata-` or `test-` AND that are NOT referenced by any non-test workflow:
+```bash
+# Get all remaining (non-test) workflows
+curl -s -H "Authorization: Bearer $KONOHA_TOKEN" http://127.0.0.1:3200/api/workflows \
+  | python3 -c "
+import sys, json
+wfs = json.load(sys.stdin)
+used_refs = set()
+for w in wfs:
+  for el in w.get('elements', []):
+    if el.get('ref_id'): used_refs.add(el['ref_id'])
+print(json.dumps(list(used_refs)))
+" > /tmp/used_refs.json
+# Delete test roles not in used_refs (only if role_id starts with hinata- or test-)
+# ... (compare against GET /api/roles, skip if in used_refs)
+```
+> If in doubt — **skip** role/doc deletion. It is safe to leave orphaned test roles; deleting a shared role is NOT safe.
+
+### Step 5 — cancel Redis event subscriptions for deleted workflows
+```bash
+for WF_ID in $TEST_IDS; do
+  # Remove event subscriptions keyed by process_id
+  redis-cli --scan --pattern "sub:*:$WF_ID" | xargs -r redis-cli DEL
+  redis-cli --scan --pattern "event:sub:$WF_ID:*" | xargs -r redis-cli DEL
+  echo "Cleared Redis subscriptions for $WF_ID"
+done
+```
+
+### Step 6 — cancel BullMQ delay jobs for deleted workflows
+```bash
+for WF_ID in $TEST_IDS; do
+  # BullMQ delay queues named by process_id pattern
+  redis-cli --scan --pattern "bull:delay-$WF_ID:*" | xargs -r redis-cli DEL
+  redis-cli --scan --pattern "bull:*:delayed" | xargs -r redis-cli zrangebyscore - 0 +inf \
+    | python3 -c "
+import sys, json, subprocess
+for raw in sys.stdin:
+  raw = raw.strip()
+  if not raw: continue
+  try:
+    job = json.loads(raw)
+    if job.get('data', {}).get('process_id') == '${WF_ID}':
+      print(f'  Job for {WF_ID}: {job.get(\"id\",\"?\")}')
+  except: pass
+" 2>/dev/null
+  echo "Cleared BullMQ delay jobs for $WF_ID"
+done
+```
+> If Redis key patterns differ in production — check with Нарuto or Шикадай before running.
+
+### Cleanup report
+Add to the smoke report:
+```
+## Cleanup
+- Deleted workflows: <list>
+- Deleted cases: N
+- Skipped (in use): <list if any>
+```
+
 ## Important
 - You run on Claude Haiku — fast and efficient
 - Do not analyze deeply — that is Shino's job
