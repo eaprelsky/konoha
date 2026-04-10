@@ -8,6 +8,11 @@ export default defineConfig({
   plugins: [react()],
   root: 'src',
   base: '/ui/',
+  resolve: {
+    alias: {
+      '@core': resolve(__dirname, 'src'),
+    },
+  },
   build: {
     outDir: '../../dist/ui',
     emptyOutDir: true,

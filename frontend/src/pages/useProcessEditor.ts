@@ -7,9 +7,19 @@ import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
 import type { Workflow, WorkflowElement, RoleDef, DocTemplate, ProcessMiningData } from '../api/types';
 import { EW, EH, snap, pinchDist, genId, slugify, type Pos, type EType } from './ArrowRouter';
+import { Inspector } from '../components/Inspector';
 import { DEFAULT_LABELS } from './ElementShape';
 
 export type Mode = 'select' | 'connect';
+
+export interface SchemaPatch {
+  update_elements?: { id: string; [key: string]: unknown }[];
+  update_positions?: Record<string, Pos>;
+  add_elements?: { id?: string; x?: number; y?: number; type?: string; label?: string; [key: string]: unknown }[];
+  remove_elements?: string[];
+  add_flow?: [string, string][];
+  remove_flow?: [string, string][];
+}
 export type Snapshot = { els: WorkflowElement[]; fl: [string, string, string?][]; pos: Record<string, Pos> };
 export type WfNode = Workflow & { children: WfNode[] };
 
@@ -51,6 +61,7 @@ export function useProcessEditor(readOnly = false) {
   const [breadcrumb, setBreadcrumb] = useState<{ id: string; name: string }[]>([]);
   const [adapters, setAdapters] = useState<string[]>([]);
   const [wsFiles,  setWsFiles]  = useState<string[]>([]);
+  const [showChat, setShowChat] = useState(false);
   const [picker,   setPicker]   = useState<'role' | 'document' | 'is' | null>(null);
   const [triggerResolving, setTriggerResolving] = useState<Set<string>>(new Set());
   const [sideSearch,    setSideSearch]    = useState('');
@@ -288,15 +299,6 @@ export function useProcessEditor(readOnly = false) {
   }
 
   // ── Schema patch via DOM event (issue #416: AssistantWidget → canvas) ────────
-  interface SchemaPatch {
-    update_elements?: { id: string; [key: string]: unknown }[];
-    update_positions?: Record<string, Pos>;
-    add_elements?: { id?: string; x?: number; y?: number; type?: string; label?: string; [key: string]: unknown }[];
-    remove_elements?: string[];
-    add_flow?: [string, string][];
-    remove_flow?: [string, string][];
-  }
-
   function applyPatch(patch: SchemaPatch) {
     if (readOnly) return;
     pushSnapshot(); scheduleAutosave();
@@ -423,6 +425,32 @@ export function useProcessEditor(readOnly = false) {
       }
     } catch { /* silent — resolver unavailable */ }
     setTriggerResolving(prev => { const s = new Set(prev); s.delete(elId); return s; });
+  }
+
+  // ── Tsunade patch handler (simplified applyPatch for AI assistant) ────────────
+  function applyTsunadePatch(patch: SchemaPatch) {
+    pushSnapshot();
+    if (patch.update_elements?.length) {
+      patch.update_elements.forEach(upd => {
+        if (upd.id) { const { id, ...rest } = upd; updateElement(id as string, rest as Partial<WorkflowElement>); }
+      });
+    }
+    if (patch.update_positions) setPositions(prev => ({ ...prev, ...patch.update_positions }));
+    if (patch.add_elements?.length) {
+      patch.add_elements.forEach(el => {
+        const id = el.id || `el-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const { x = 100, y = 100, ...rest } = el;
+        setElements(prev => [...prev, { id, type: (rest.type || 'function') as EType, label: (rest.label as string) || 'Новый элемент', ...rest } as WorkflowElement]);
+        setPositions(prev => ({ ...prev, [id]: { x: x as number, y: y as number } }));
+      });
+    }
+    if (patch.remove_elements?.length) {
+      patch.remove_elements.forEach(id => {
+        setElements(prev => prev.filter(e => e.id !== id));
+        setPositions(prev => { const n = { ...prev }; delete n[id]; return n; });
+        setFlow(prev => prev.filter(([f, t]) => f !== id && t !== id));
+      });
+    }
   }
 
   // ── SVG mouse handlers ────────────────────────────────────────────────────────
@@ -596,6 +624,7 @@ export function useProcessEditor(readOnly = false) {
     const wf = workflows.find(w => w.id === id);
     if (!wf) return;
     setWfId(wf.id); setWfName(wf.name || wf.id);
+    Inspector.setProcessName(wf.name || wf.id);
     setViewingVersion(null);
     api.workflows.versions(id).then(setVersions).catch(() => setVersions([]));
     setElements([...wf.elements]); setFlow([...(wf.flow || [])]);
@@ -789,7 +818,7 @@ export function useProcessEditor(readOnly = false) {
     error, saving, draftWarning, autosavePending,
     workflows, sideW, versions, viewingVersion, setViewingVersion,
     roles, docs, adapters, wsFiles, breadcrumb,
-    picker, setPicker,
+    showChat, setShowChat, picker, setPicker,
     triggerResolving, resolveTrigger,
     sideSearch, setSideSearch,
     creatingNew, setCreatingNew, newProcName, setNewProcName,
@@ -805,7 +834,7 @@ export function useProcessEditor(readOnly = false) {
     zoomIn, zoomOut, zoomReset, zoomFit,
     refreshList, newProcess, startCreatingNew, commitNewProc,
     startRename, commitRename, dupWorkflow, delWorkflow,
-    loadWorkflow, drillDown, toggleMining,
+    loadWorkflow, drillDown, toggleMining, applyTsunadePatch,
     addElement, paletteClick, pickFromRegistry, deleteElement, updateElement, removeEdge, applyPatch,
     switchMode, scheduleAutosave, syncEntityOnEdit,
     onResizeMouseDown,
