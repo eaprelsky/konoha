@@ -14,3 +14,7 @@ agents/**/__pycache__/
 tests/__pycache__/
 # Playwright auth state — session cookies, never commit
 playwright/.auth/user.json
+# Playwright test artifacts
+test-results/
+frontend/test-results/
+playwright-report/
