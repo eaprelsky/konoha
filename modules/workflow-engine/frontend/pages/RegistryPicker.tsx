@@ -1,0 +1,60 @@
+/**
+ * RegistryPicker — modal overlay for selecting role / document / IS.
+ * Extracted from ProcessEditor.tsx (issue #330).
+ */
+import type { RoleDef, DocTemplate } from '@core/api/types';
+import type { EType } from './ArrowRouter';
+
+interface Props {
+  picker: 'role' | 'document' | 'is' | null;
+  roles: RoleDef[];
+  docs: DocTemplate[];
+  adapters: string[];
+  onPickFromRegistry: (name: string, refId: string) => void;
+  onAddCustom: (type: EType) => void;
+  onClose: () => void;
+}
+
+export function RegistryPicker({ picker, roles, docs, adapters, onPickFromRegistry, onAddCustom, onClose }: Props) {
+  if (!picker) return null;
+
+  return (
+    <div className="picker-overlay" onClick={onClose}>
+      <div className="picker-box" onClick={e => e.stopPropagation()}>
+        <h3>
+          {picker === 'role' ? '👤 Выбрать роль'
+           : picker === 'document' ? '📄 Выбрать документ'
+           : '🖥 Выбрать информационную систему'}
+        </h3>
+        <div className="picker-list">
+          {picker === 'is'
+            ? adapters.map(name => (
+                <div key={name} className="picker-item" onClick={() => onPickFromRegistry(name, name)}>
+                  <strong>{name}</strong>
+                </div>
+              ))
+            : (picker === 'role' ? roles : docs).map(item => {
+                const id   = (item as any).role_id ?? (item as any).doc_id;
+                const name = (item as any).name;
+                return (
+                  <div key={id} className="picker-item" onClick={() => onPickFromRegistry(name, id)}>
+                    <strong>{name}</strong>
+                    {(item as any).description && (
+                      <span style={{ color: '#64748b', fontSize: 11, marginLeft: 8 }}>
+                        {(item as any).description}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+        </div>
+        <div className="picker-footer">
+          <button className="btn-custom" onClick={() => onAddCustom(picker === 'is' ? 'information_system' : picker!)}>
+            + Добавить своё
+          </button>
+          <button className="btn-cancel" onClick={onClose}>Отмена</button>
+        </div>
+      </div>
+    </div>
+  );
+}

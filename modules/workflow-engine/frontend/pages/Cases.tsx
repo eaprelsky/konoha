@@ -1,0 +1,226 @@
+import { useState, useEffect, useCallback } from 'react';
+import { StatusBadge } from '@core/components/StatusBadge';
+import { RunOverlay } from '../components/RunOverlay';
+import { useToken } from '@core/context/TokenContext';
+import { useInterval } from '@core/hooks/useApi';
+import { api } from '@core/api/client';
+import type { Case, Workflow } from '@core/api/types';
+
+const styles = `
+  .cs-body { padding: 20px; }
+  .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,.1); padding: 20px; }
+  .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .page-header h1 { color: #333; font-size: 24px; }
+  .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+  .filters select, .filters input { padding: 7px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+  .filters button { padding: 7px 14px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .filters button.reset { background: #999; }
+  .table { width: 100%; border-collapse: collapse; }
+  .table th { background: #f9f9f9; padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; color: #666; border-bottom: 2px solid #eee; text-transform: uppercase; }
+  .table td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+  .table tr:hover td { background: #fafafa; cursor: pointer; }
+  .link { color: #0066cc; text-decoration: none; cursor: pointer; font-weight: 500; }
+  .link:hover { text-decoration: underline; }
+  .mono { font-family: monospace; font-size: 12px; color: #555; }
+  .empty { text-align: center; padding: 40px; color: #999; }
+  .error-banner { background: #fee; color: #c33; padding: 12px; border-radius: 4px; margin-bottom: 16px; border-left: 4px solid #c33; }
+  .pagination { display: flex; gap: 8px; margin-top: 16px; align-items: center; font-size: 14px; color: #666; }
+  .pagination button { padding: 6px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; }
+  .pagination button:disabled { opacity: .4; cursor: default; }
+  .refresh-info { font-size: 12px; color: #999; margin-top: 12px; text-align: right; }
+  /* Detail overlay */
+  .detail-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.45); z-index: 1000; display: flex; justify-content: flex-end; }
+  .detail-panel { background: white; width: 560px; max-width: 95vw; overflow-y: auto; padding: 24px; box-shadow: -4px 0 20px rgba(0,0,0,.15); }
+  .detail-panel h2 { font-size: 18px; margin-bottom: 4px; }
+  .detail-panel .sub { font-size: 12px; color: #888; margin-bottom: 20px; }
+  .detail-close { float: right; background: none; border: none; font-size: 20px; cursor: pointer; color: #999; }
+  .detail-close:hover { color: #333; }
+  .section-title { font-size: 12px; font-weight: 700; color: #666; text-transform: uppercase; margin: 16px 0 8px; border-top: 1px solid #eee; padding-top: 12px; }
+  .timeline-item { display: flex; gap: 12px; margin-bottom: 10px; font-size: 13px; }
+  .timeline-dot { width: 10px; height: 10px; border-radius: 50%; background: #10b981; flex-shrink: 0; margin-top: 3px; }
+  .timeline-dot.active { background: #3b82f6; }
+  .timeline-dot.error { background: #ef4444; }
+  .timeline-meta { color: #888; font-size: 11px; margin-top: 2px; }
+  .payload-code { background: #f5f5f5; padding: 8px; border-radius: 3px; font-size: 11px; font-family: monospace; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+  .btn-schema { display:inline-flex;align-items:center;gap:5px;padding:6px 14px;background:#0f172a;color:#f8fafc;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:16px; }
+  .btn-schema:hover { background:#1e293b; }
+  .btn-open-schema { background:none;border:1px solid #e2e8f0;color:#0066cc;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;white-space:nowrap; }
+  .btn-open-schema:hover { background:#f0f7ff; }
+`;
+
+const PAGE_SIZE = 20;
+
+export function Cases() {
+  const token = useToken();
+  const [cases, setCases] = useState<Case[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState('-');
+  const [offset, setOffset] = useState(0);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [processFilter, setProcessFilter] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState({ status: '', process_id: '' });
+  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [runCaseId, setRunCaseId] = useState<string | null>(null);
+  const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!token) return;
+    api.workflows.list().then(wfs => {
+      const m: Record<string, string> = {};
+      wfs.forEach((wf: Workflow) => { m[wf.id] = wf.name || wf.id; });
+      setWfNameMap(m);
+    }).catch(() => {});
+  }, [token]);
+
+  const load = useCallback(() => {
+    if (!token) return;
+    const filters: Record<string, unknown> = { limit: PAGE_SIZE, offset };
+    if (appliedFilters.status)     filters.status = appliedFilters.status;
+    if (appliedFilters.process_id) filters.process_id = appliedFilters.process_id;
+    api.cases.list(filters as any)
+      .then(res => {
+        setCases(res.cases);
+        setTotal(res.total);
+        setLastUpdate(new Date().toLocaleTimeString());
+        setError(null);
+        setLoading(false);
+      })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, [token, offset, appliedFilters]);
+
+  useEffect(() => { load(); }, [load]);
+  useInterval(load, 15000);
+
+  function applyFilters() {
+    setOffset(0);
+    setAppliedFilters({ status: statusFilter, process_id: processFilter });
+  }
+  function resetFilters() {
+    setStatusFilter(''); setProcessFilter('');
+    setOffset(0);
+    setAppliedFilters({ status: '', process_id: '' });
+  }
+
+  async function openDetail(c: Case) {
+    // Refresh case detail
+    try {
+      const fresh = await api.cases.get(c.case_id);
+      setSelectedCase(fresh);
+    } catch { setSelectedCase(c); }
+  }
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+
+  return (
+    <>
+      <style>{styles}</style>
+      <div className="cs-body">
+        <div className="container">
+          <div className="page-header"><h1>Кейсы</h1></div>
+          {error && <div className="error-banner">{error}</div>}
+
+          <div className="filters">
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="">Все статусы</option>
+              <option value="running">Выполняется</option>
+              <option value="done">Завершено</option>
+              <option value="error">Ошибка</option>
+            </select>
+            <input type="text" placeholder="Фильтр по процессу..."
+              value={processFilter} onChange={e => setProcessFilter(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && applyFilters()} />
+            <button onClick={applyFilters}>Применить</button>
+            <button className="reset" onClick={resetFilters}>Сбросить</button>
+          </div>
+
+          {loading && <div className="empty">Загрузка…</div>}
+          {!loading && cases.length === 0 && <div className="empty">Кейсы не найдены.</div>}
+
+          {cases.length > 0 && (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Тема</th>
+                  <th>Процесс</th>
+                  <th>Статус</th>
+                  <th>Позиция</th>
+                  <th>Создано</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {cases.map(c => (
+                  <tr key={c.case_id} onClick={() => openDetail(c)}>
+                    <td><span className="link">{c.subject || '(без темы)'}</span></td>
+                    <td>{wfNameMap[c.process_id] || c.process_id}</td>
+                    <td><StatusBadge status={c.status} /></td>
+                    <td className="mono">{c.position || '-'}</td>
+                    <td>{new Date(c.created_at).toLocaleString()}</td>
+                    <td onClick={e => { e.stopPropagation(); setRunCaseId(c.case_id); }}>
+                      <button className="btn-open-schema">Схема</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {total > PAGE_SIZE && (
+            <div className="pagination">
+              <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Назад</button>
+              <span>Стр. {currentPage} из {totalPages} (всего: {total})</span>
+              <button disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Вперёд →</button>
+            </div>
+          )}
+
+          <div className="refresh-info">Авто-обновление 15с • Последнее: {lastUpdate}</div>
+        </div>
+      </div>
+
+      {runCaseId && (
+        <RunOverlay caseId={runCaseId} onClose={() => setRunCaseId(null)} />
+      )}
+
+      {selectedCase && (
+        <div className="detail-overlay" onClick={e => { if (e.target === e.currentTarget) setSelectedCase(null); }}>
+          <div className="detail-panel">
+            <button className="detail-close" onClick={() => setSelectedCase(null)}>✕</button>
+            <h2>{selectedCase.subject}</h2>
+            <div className="sub">
+              {wfNameMap[selectedCase.process_id] || selectedCase.process_id} •{' '}
+              <span className="mono">{selectedCase.case_id.substring(0, 8)}</span> •{' '}
+              <StatusBadge status={selectedCase.status} />
+            </div>
+
+            <button className="btn-schema" onClick={() => { setRunCaseId(selectedCase.case_id); setSelectedCase(null); }}>
+              🗺 Открыть схему
+            </button>
+
+            <div className="section-title">Данные</div>
+            <pre className="payload-code">{JSON.stringify(selectedCase.payload, null, 2)}</pre>
+
+            <div className="section-title">История ({selectedCase.history?.length || 0} шагов)</div>
+            {(selectedCase.history || []).map((h, i) => (
+              <div className="timeline-item" key={i}>
+                <div className={`timeline-dot${i === (selectedCase.history.length - 1) ? ' active' : ''}`} />
+                <div>
+                  <div><strong>{h.label}</strong> <span style={{ color: '#888', fontSize: 11 }}>({h.element_type})</span></div>
+                  <div className="timeline-meta">{new Date(h.timestamp).toLocaleString()}</div>
+                  {h.output && Object.keys(h.output).length > 0 && (
+                    <pre className="payload-code" style={{ marginTop: 4 }}>{JSON.stringify(h.output, null, 2)}</pre>
+                  )}
+                </div>
+              </div>
+            ))}
+            {(!selectedCase.history || selectedCase.history.length === 0) && (
+              <div style={{ color: '#999', fontSize: 13 }}>История пуста.</div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
