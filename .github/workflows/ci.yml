@@ -65,13 +65,6 @@ jobs:
           bun-version: latest
       - run: bun install
       - run: bunx playwright install --with-deps chromium
-      - name: Start server
-        run: |
-          KONOHA_PORT=3202 KONOHA_TOKEN=konoha-dev-token bun run start &
-          sleep 5
-        env:
-          KONOHA_TOKEN: konoha-dev-token
-          ANTHROPIC_API_KEY: ci-placeholder
       - name: Run E2E tests
         run: bunx playwright test
         env:
