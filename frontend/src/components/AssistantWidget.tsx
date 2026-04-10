@@ -36,6 +36,22 @@ function defaultPos() {
   return { x: Math.max(0, window.innerWidth - 432), y: Math.max(0, window.innerHeight - 532) };
 }
 
+/**
+ * Extract readable text from a partial/in-progress JSON reply.
+ * During SSE streaming the model emits raw JSON fragments like:
+ *   {"reply": "Hello, I'm Tsuna...
+ * This function strips the wrapper so only the reply value is shown.
+ */
+function extractStreamingText(raw: string): string {
+  const m = raw.match(/"reply"\s*:\s*"([\s\S]*)/);
+  if (!m) return raw;
+  return m[1]
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\');
+}
+
 
 export function AssistantWidget() {
   const branding = useBranding();
@@ -165,7 +181,7 @@ export function AssistantWidget() {
             const ev = JSON.parse(payload);
             if (ev.type === 'delta' && typeof ev.text === 'string') {
               full += ev.text;
-              setMsgs(prev => [...prev.slice(0, -1), { role: 'assistant', text: full }]);
+              setMsgs(prev => [...prev.slice(0, -1), { role: 'assistant', text: extractStreamingText(full) }]);
             } else if (ev.type === 'parsed' && typeof ev.reply === 'string') {
               setMsgs(prev => [...prev.slice(0, -1), { role: 'assistant', text: ev.reply }]);
             } else if (ev.type === 'chat_id') {
