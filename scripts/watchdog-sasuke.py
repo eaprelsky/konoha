@@ -261,9 +261,33 @@ def format_batch(events: list[dict]) -> str:
 
 # ── Send loop ─────────────────────────────────────────────────────────────────
 
+async def _mark_read_telegram(events: list[dict], rd: aioredis.Redis) -> None:
+    """Send mark_read to telegram:commands for each Telegram message in the batch."""
+    import time as _time
+    for ev in events:
+        if ev.get("source") != "telegram":
+            continue
+        d = ev.get("data", {})
+        chat_id = d.get("chat_id", "")
+        msg_id = d.get("msg_id", "")
+        if not chat_id or not msg_id:
+            continue
+        try:
+            await rd.xadd("telegram:commands", {
+                "command": "mark_read",
+                "chat_id": chat_id,
+                "msg_id": msg_id,
+                "request_id": f"wr-{int(_time.time())}",
+            })
+            log.info(f"mark_read sent for chat_id={chat_id} msg_id={msg_id}")
+        except Exception as e:
+            log.warning(f"Failed to send mark_read for {chat_id}/{msg_id}: {e}")
+
+
 async def send_loop(batched_queue: asyncio.Queue) -> None:
     """Wait for idle, then flush the pending batch."""
     pending: list[dict] = []
+    rd = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
     while True:
         try:
@@ -293,6 +317,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 prompt = format_batch(pending)
                 await tmux_send(TMUX_SESSION, prompt)
                 _health["last_delivered_at"] = asyncio.get_running_loop().time()
+                await _mark_read_telegram(pending, rd)
             except Exception as e:
                 log.error(f"tmux send failed: {e}")
             pending.clear()
