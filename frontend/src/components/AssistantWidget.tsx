@@ -10,7 +10,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Maximize2, Minimize2, ChevronDown, Paperclip, X } from 'lucide-react';
 import { Inspector } from './Inspector';
 import { useBranding } from '../context/BrandingContext';
@@ -94,6 +94,7 @@ export function AssistantWidget() {
   const branding = useBranding();
   const { showHighlight } = useHighlight();
   const navigate = useNavigate();
+  const location = useLocation();
   const [widgetState, setWidgetState] = useState<WidgetState>('collapsed');
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -300,7 +301,7 @@ export function AssistantWidget() {
               if (ev.created_workflow) {
                 window.dispatchEvent(new CustomEvent('konoha:workflow_created', { detail: ev.created_workflow }));
                 // If ProcessEditor is not currently mounted, navigate to it (#428)
-                if (!window.location.pathname.includes('/editor')) {
+                if (!location.pathname.includes('/editor')) {
                   navigate(`/editor/${ev.created_workflow.id}`);
                 }
               }
