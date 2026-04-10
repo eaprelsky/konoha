@@ -133,7 +133,7 @@ router.post("/", requireAuth, async (c) => {
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
   // id and name are optional — generate defaults for draft workflows (#453)
   if (!body.id) body.id = randomUUID();
-  if (!body.name) body.name = `Draft ${new Date().toISOString().slice(0, 10)}`;
+  if (!body.name) body.name = `Draft ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
   // draft flag: read from body OR query param
   const draft = body.draft === true || c.req.query("draft") === "true";
   let normalized = false;
