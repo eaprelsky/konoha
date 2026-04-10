@@ -54,8 +54,8 @@ const styles = `
   .new-task-form { display: flex; flex-direction: column; gap: 14px; }
   .new-task-form .form-group { display: flex; flex-direction: column; gap: 4px; }
   .new-task-form label { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; }
-  .new-task-form input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; }
-  .new-task-form input:focus { outline: none; border-color: #0066cc; box-shadow: 0 0 0 2px rgba(0,102,204,.1); }
+  .new-task-form input, .new-task-form select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: inherit; }
+  .new-task-form input:focus, .new-task-form select:focus { outline: none; border-color: #0066cc; box-shadow: 0 0 0 2px rgba(0,102,204,.1); }
   .new-task-form .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
   .new-task-form .form-actions button { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
   .new-task-form .btn-submit { background: #10b981; color: white; }
@@ -79,10 +79,11 @@ function getStepLabel(kase: Case, wiId: string): string {
   return `step ${idx + 1}/${kase.history.length}`;
 }
 
-interface NewTaskModalProps { onClose: () => void; onCreated: () => void; }
-function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
+interface NewTaskModalProps { onClose: () => void; onCreated: () => void; assigneeOptions: string[]; workflows: Workflow[]; }
+function NewTaskModal({ onClose, onCreated, assigneeOptions, workflows }: NewTaskModalProps) {
   const [label, setLabel] = useState('');
   const [assignee, setAssignee] = useState('');
+  const [processId, setProcessId] = useState('');
   const [deadline, setDeadline] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +104,8 @@ function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
         label: label.trim(),
         assignee: assignee.trim(),
         deadline: deadline || undefined,
-      });
+        ...(processId ? { process_id: processId } : {}),
+      } as any);
       onCreated();
       onClose();
     } catch (err: any) {
@@ -126,8 +128,17 @@ function NewTaskModal({ onClose, onCreated }: NewTaskModalProps) {
           </div>
           <div className="form-group">
             <label htmlFor="ntAssignee">Исполнитель *</label>
-            <input id="ntAssignee" type="text" placeholder="Роль или агент..." value={assignee}
-              onChange={e => setAssignee(e.target.value)} required />
+            <select id="ntAssignee" value={assignee} onChange={e => setAssignee(e.target.value)} required>
+              <option value="">— выберите исполнителя —</option>
+              {assigneeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="ntProcess">Процесс</label>
+            <select id="ntProcess" value={processId} onChange={e => setProcessId(e.target.value)}>
+              <option value="">— без процесса —</option>
+              {workflows.map(wf => <option key={wf.id} value={wf.id}>{wf.name || wf.id}</option>)}
+            </select>
           </div>
           <div className="form-group">
             <label htmlFor="ntDeadline">Срок</label>
@@ -183,16 +194,29 @@ export function WorkItems() {
   const [detailItem, setDetailItem] = useState<WorkItem | null>(null);
   const [showNewTask, setShowNewTask] = useState(false);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
   const [caseCache, setCaseCache] = useState<Record<string, Case>>({});
 
-  // Load workflow names once
+  // Load workflow names + agents + roles once
   useEffect(() => {
     if (!token) return;
     api.workflows.list().then(wfs => {
       const m: Record<string, string> = {};
       wfs.forEach((wf: Workflow) => { m[wf.id] = wf.name || wf.id; });
       setWfNameMap(m);
+      setWorkflows(wfs);
     }).catch(() => {});
+    Promise.all([
+      api.agents.list().catch(() => [] as import('../api/types').Agent[]),
+      api.roles.list().catch(() => [] as import('../api/types').RoleDef[]),
+    ]).then(([agents, roles]) => {
+      const opts = [
+        ...agents.map((a: import('../api/types').Agent) => a.id),
+        ...roles.map((r: import('../api/types').RoleDef) => r.role_id),
+      ];
+      setAssigneeOptions([...new Set(opts)].sort());
+    });
   }, [token]);
 
   const loadItems = useCallback(() => {
@@ -224,8 +248,6 @@ export function WorkItems() {
       .catch(e => setError(`Ошибка завершения: ${e.message}`));
   }
 
-  const [localFilters, setLocalFilters] = useState<WorkItemFilters>({});
-
   return (
     <>
       <style>{styles}</style>
@@ -240,20 +262,28 @@ export function WorkItems() {
           <div className="filters">
             <div className="filter-group">
               <label htmlFor="filterAssignee">Исполнитель</label>
-              <input id="filterAssignee" type="text" placeholder="Фильтр по исполнителю..."
-                value={localFilters.assignee || ''}
-                onChange={e => setLocalFilters(f => ({ ...f, assignee: e.target.value }))} />
+              <select id="filterAssignee"
+                value={filters.assignee || ''}
+                onChange={e => setFilters(f => ({ ...f, assignee: e.target.value || undefined }))}>
+                <option value="">Все исполнители</option>
+                {assigneeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
             </div>
             <div className="filter-group">
-              <label htmlFor="filterProcess">ID процесса</label>
-              <input id="filterProcess" type="text" placeholder="Фильтр по процессу..."
-                value={localFilters.process_id || ''}
-                onChange={e => setLocalFilters(f => ({ ...f, process_id: e.target.value }))} />
+              <label htmlFor="filterProcess">Процесс</label>
+              <select id="filterProcess"
+                value={filters.process_id || ''}
+                onChange={e => setFilters(f => ({ ...f, process_id: e.target.value || undefined }))}>
+                <option value="">Все процессы</option>
+                {workflows.map(wf => (
+                  <option key={wf.id} value={wf.id}>{wf.name || wf.id}</option>
+                ))}
+              </select>
             </div>
             <div className="filter-group">
               <label htmlFor="filterStatus">Статус</label>
-              <select id="filterStatus" value={localFilters.status || ''}
-                onChange={e => setLocalFilters(f => ({ ...f, status: e.target.value as any }))}>
+              <select id="filterStatus" value={filters.status || ''}
+                onChange={e => setFilters(f => ({ ...f, status: (e.target.value || undefined) as any }))}>
                 <option value="">Все статусы</option>
                 <option value="pending">Ожидает</option>
                 <option value="assigned">Назначено</option>
@@ -265,12 +295,11 @@ export function WorkItems() {
             <div className="filter-group">
               <label htmlFor="filterDeadline">Срок до</label>
               <input id="filterDeadline" type="date"
-                value={localFilters.deadline_before || ''}
-                onChange={e => setLocalFilters(f => ({ ...f, deadline_before: e.target.value }))} />
+                value={filters.deadline_before || ''}
+                onChange={e => setFilters(f => ({ ...f, deadline_before: e.target.value || undefined }))} />
             </div>
             <div className="button-group">
-              <button onClick={() => setFilters(localFilters)}>Применить</button>
-              <button className="reset" onClick={() => { setLocalFilters({}); setFilters({}); }}>Сбросить</button>
+              <button className="reset" onClick={() => setFilters({})}>Сбросить</button>
             </div>
           </div>
 
@@ -333,7 +362,7 @@ export function WorkItems() {
         </div>
       </div>
 
-      {showNewTask && <NewTaskModal onClose={() => setShowNewTask(false)} onCreated={loadItems} />}
+      {showNewTask && <NewTaskModal onClose={() => setShowNewTask(false)} onCreated={loadItems} assigneeOptions={assigneeOptions} workflows={workflows} />}
       <DetailsModal item={detailItem} onClose={() => setDetailItem(null)} />
     </>
   );
