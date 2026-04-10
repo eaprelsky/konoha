@@ -6,6 +6,15 @@ import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Case, Workflow } from '../api/types';
 
+type ViewMode = 'flat' | 'grouped';
+
+interface ProcessGroup {
+  process_id: string;
+  process_name: string;
+  cases: Case[];
+  counts: { running: number; done: number; error: number; total: number };
+}
+
 const styles = `
   .cs-body { padding: 20px; }
   .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,.1); padding: 20px; }
@@ -15,6 +24,19 @@ const styles = `
   .filters select, .filters input { padding: 7px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
   .filters button { padding: 7px 14px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
   .filters button.reset { background: #999; }
+  .view-toggle { display: flex; gap: 4px; margin-left: auto; }
+  .view-toggle button { padding: 6px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px; color: #555; }
+  .view-toggle button.active { background: #0f172a; color: white; border-color: #0f172a; }
+  /* Group rows */
+  .group-row td { background: #f8fafc; font-weight: 600; cursor: pointer; }
+  .group-row:hover td { background: #f1f5f9; }
+  .group-row .group-arrow { font-size: 10px; margin-right: 6px; display: inline-block; transition: transform .15s; }
+  .group-row .group-arrow.open { transform: rotate(90deg); }
+  .group-count { display: inline-flex; gap: 6px; margin-left: 10px; font-weight: 400; font-size: 12px; }
+  .gc-running { color: #2563eb; }
+  .gc-done { color: #16a34a; }
+  .gc-error { color: #dc2626; }
+  .child-row td { padding-left: 28px; }
   .table { width: 100%; border-collapse: collapse; }
   .table th { background: #f9f9f9; padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; color: #666; border-bottom: 2px solid #eee; text-transform: uppercase; }
   .table td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: middle; }
@@ -56,6 +78,7 @@ const styles = `
 `;
 
 const PAGE_SIZE = 20;
+const GROUP_LIMIT = 500;
 
 export function Cases() {
   const token = useToken();
@@ -71,19 +94,65 @@ export function Cases() {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [runCaseId, setRunCaseId] = useState<string | null>(null);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
+  const [wfElementMap, setWfElementMap] = useState<Record<string, Record<string, string>>>({});
+  const [viewMode, setViewMode] = useState<ViewMode>('grouped');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!token) return;
     api.workflows.list().then(wfs => {
       const m: Record<string, string> = {};
-      wfs.forEach((wf: Workflow) => { m[wf.id] = wf.name || wf.id; });
+      const em: Record<string, Record<string, string>> = {};
+      wfs.forEach((wf: Workflow) => {
+        m[wf.id] = wf.name || wf.id;
+        em[wf.id] = {};
+        wf.elements?.forEach(el => { em[wf.id][el.id] = el.label; });
+      });
       setWfNameMap(m);
+      setWfElementMap(em);
     }).catch(() => {});
   }, [token]);
 
+  function positionLabel(c: Case): string {
+    if (!c.position) return '-';
+    return wfElementMap[c.process_id]?.[c.position] ?? c.position;
+  }
+
+  function buildGroups(list: Case[]): ProcessGroup[] {
+    const map = new Map<string, Case[]>();
+    list.forEach(c => {
+      const arr = map.get(c.process_id) ?? [];
+      arr.push(c);
+      map.set(c.process_id, arr);
+    });
+    return Array.from(map.entries()).map(([pid, cs]) => ({
+      process_id: pid,
+      process_name: wfNameMap[pid] || pid,
+      cases: cs,
+      counts: {
+        total: cs.length,
+        running: cs.filter(c => c.status === 'running').length,
+        done: cs.filter(c => c.status === 'done').length,
+        error: cs.filter(c => c.status === 'error').length,
+      },
+    }));
+  }
+
+  function toggleGroup(pid: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(pid)) next.delete(pid); else next.add(pid);
+      return next;
+    });
+  }
+
   const load = useCallback(() => {
     if (!token) return;
-    const filters: Record<string, unknown> = { limit: PAGE_SIZE, offset };
+    const isGrouped = viewMode === 'grouped';
+    const filters: Record<string, unknown> = {
+      limit: isGrouped ? GROUP_LIMIT : PAGE_SIZE,
+      offset: isGrouped ? 0 : offset,
+    };
     if (appliedFilters.status)     filters.status = appliedFilters.status;
     if (appliedFilters.process_id) filters.process_id = appliedFilters.process_id;
     api.cases.list(filters as any)
@@ -95,7 +164,7 @@ export function Cases() {
         setLoading(false);
       })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [token, offset, appliedFilters]);
+  }, [token, offset, appliedFilters, viewMode]);
 
   useEffect(() => { load(); }, [load]);
   useInterval(load, 15000);
@@ -141,6 +210,10 @@ export function Cases() {
               onKeyDown={e => e.key === 'Enter' && applyFilters()} />
             <button onClick={applyFilters}>Применить</button>
             <button className="reset" onClick={resetFilters}>Сбросить</button>
+            <div className="view-toggle">
+              <button className={viewMode === 'grouped' ? 'active' : ''} onClick={() => setViewMode('grouped')}>Группировка</button>
+              <button className={viewMode === 'flat' ? 'active' : ''} onClick={() => setViewMode('flat')}>Список</button>
+            </div>
           </div>
 
           {loading && <div className="empty">Загрузка…</div>}
@@ -159,23 +232,53 @@ export function Cases() {
                 </tr>
               </thead>
               <tbody>
-                {cases.map(c => (
-                  <tr key={c.case_id} onClick={() => openDetail(c)}>
-                    <td><span className="link">{c.subject || '(без темы)'}</span></td>
-                    <td>{wfNameMap[c.process_id] || c.process_id}</td>
-                    <td><StatusBadge status={c.status} /></td>
-                    <td className="mono">{c.position || '-'}</td>
-                    <td>{new Date(c.created_at).toLocaleString()}</td>
-                    <td onClick={e => { e.stopPropagation(); setRunCaseId(c.case_id); }}>
-                      <button className="btn-open-schema">Схема</button>
-                    </td>
-                  </tr>
-                ))}
+                {viewMode === 'grouped'
+                  ? buildGroups(cases).map(group => (
+                    <>
+                      <tr key={group.process_id} className="group-row" onClick={() => toggleGroup(group.process_id)}>
+                        <td colSpan={6}>
+                          <span className={`group-arrow${expandedGroups.has(group.process_id) ? ' open' : ''}`}>▶</span>
+                          <strong>{group.process_name}</strong>
+                          <span className="group-count">
+                            <span>{group.counts.total} всего</span>
+                            {group.counts.running > 0 && <span className="gc-running">{group.counts.running} активных</span>}
+                            {group.counts.done > 0 && <span className="gc-done">{group.counts.done} завершено</span>}
+                            {group.counts.error > 0 && <span className="gc-error">{group.counts.error} ошибок</span>}
+                          </span>
+                        </td>
+                      </tr>
+                      {expandedGroups.has(group.process_id) && group.cases.map(c => (
+                        <tr key={c.case_id} className="child-row" onClick={() => openDetail(c)}>
+                          <td><span className="link">{c.subject || '(без темы)'}</span></td>
+                          <td>{wfNameMap[c.process_id] || c.process_id}</td>
+                          <td><StatusBadge status={c.status} /></td>
+                          <td className="mono">{positionLabel(c)}</td>
+                          <td>{new Date(c.created_at).toLocaleString()}</td>
+                          <td onClick={e => { e.stopPropagation(); setRunCaseId(c.case_id); }}>
+                            <button className="btn-open-schema">Схема</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </>
+                  ))
+                  : cases.map(c => (
+                    <tr key={c.case_id} onClick={() => openDetail(c)}>
+                      <td><span className="link">{c.subject || '(без темы)'}</span></td>
+                      <td>{wfNameMap[c.process_id] || c.process_id}</td>
+                      <td><StatusBadge status={c.status} /></td>
+                      <td className="mono">{positionLabel(c)}</td>
+                      <td>{new Date(c.created_at).toLocaleString()}</td>
+                      <td onClick={e => { e.stopPropagation(); setRunCaseId(c.case_id); }}>
+                        <button className="btn-open-schema">Схема</button>
+                      </td>
+                    </tr>
+                  ))
+                }
               </tbody>
             </table>
           )}
 
-          {total > PAGE_SIZE && (
+          {viewMode === 'flat' && total > PAGE_SIZE && (
             <div className="pagination">
               <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Назад</button>
               <span>Стр. {currentPage} из {totalPages} (всего: {total})</span>
