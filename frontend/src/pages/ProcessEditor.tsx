@@ -116,8 +116,15 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
             </>
           )}
           <div className="sep" />
+          {/* Zoom controls */}
+          <button title="Zoom Out (−)" style={{ padding: '5px 8px', fontWeight: 700, fontSize: 14 }} onClick={s.zoomOut}>−</button>
+          <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 36, textAlign: 'center', flexShrink: 0 }}>{Math.round(s.zoom * 100)}%</span>
+          <button title="Zoom In (+)" style={{ padding: '5px 8px', fontWeight: 700, fontSize: 14 }} onClick={s.zoomIn}>+</button>
+          <button title="По размеру (Fit)" style={{ padding: '5px 8px', fontSize: 12 }} onClick={s.zoomFit}>⊡</button>
+          <button title="Сбросить масштаб (100%)" style={{ padding: '5px 8px', fontSize: 11 }} onClick={s.zoomReset}>1:1</button>
           {!readOnly && (
             <>
+              <div className="sep" />
               <button title="Ctrl+Z" style={{ padding: '5px 8px' }} onClick={s.undo} disabled={s.undoStack.length === 0}>↩</button>
               <button title="Ctrl+Y" style={{ padding: '5px 8px' }} onClick={s.redo} disabled={s.redoStack.length === 0}>↪</button>
               <div className="sep" />

@@ -162,6 +162,27 @@ export function useProcessEditor(readOnly = false) {
     };
   }, []); // refs; no state deps needed
 
+  // ── Mouse wheel zoom ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const newZoom = Math.max(0.15, Math.min(4, zoomRef.current * factor));
+      const r = svg!.getBoundingClientRect();
+      const mx = e.clientX - r.left;
+      const my = e.clientY - r.top;
+      const newPanX = mx - (mx - panXRef.current) * (newZoom / zoomRef.current);
+      const newPanY = my - (my - panYRef.current) * (newZoom / zoomRef.current);
+      setPanX(newPanX); panXRef.current = newPanX;
+      setPanY(newPanY); panYRef.current = newPanY;
+      setZoom(newZoom); zoomRef.current = newZoom;
+    }
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', onWheel);
+  }, []); // refs only
+
   // ── Undo / redo ──────────────────────────────────────────────────────────────
   function pushSnapshot() {
     setUndoStack(prev => [...prev.slice(-49), { els: elements, fl: flow, pos: positions }]);
@@ -264,6 +285,42 @@ export function useProcessEditor(readOnly = false) {
   function removeEdge(f: string, t: string) {
     pushSnapshot(); scheduleAutosave();
     setFlow(prev => prev.filter(([a, b]) => !(a === f && b === t)));
+  }
+
+  // ── Zoom controls (issue #414) ───────────────────────────────────────────────
+  function zoomBy(factor: number) {
+    const svg = svgRef.current;
+    const w = svg?.clientWidth ?? 800;
+    const h = svg?.clientHeight ?? 600;
+    const newZoom = Math.max(0.15, Math.min(4, zoom * factor));
+    // Keep viewport center fixed
+    setPanX(w / 2 - (w / 2 - panX) * (newZoom / zoom));
+    setPanY(h / 2 - (h / 2 - panY) * (newZoom / zoom));
+    setZoom(newZoom);
+  }
+  function zoomIn()    { zoomBy(1.25); }
+  function zoomOut()   { zoomBy(0.8); }
+  function zoomReset() { setZoom(1); setPanX(0); setPanY(0); }
+  function zoomFit() {
+    const svg = svgRef.current;
+    if (!svg || elements.length === 0) return;
+    const w = svg.clientWidth;
+    const h = svg.clientHeight;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const EW_VAL = 160, EH_VAL = 58;
+    for (const el of elements) {
+      const p = positions[el.id];
+      if (!p) continue;
+      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + EW_VAL); maxY = Math.max(maxY, p.y + EH_VAL);
+    }
+    if (!isFinite(minX)) return;
+    const PAD = 40;
+    minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+    const newZoom = Math.min(4, Math.max(0.15, Math.min(w / (maxX - minX), h / (maxY - minY))));
+    setZoom(newZoom);
+    setPanX(w / 2 - ((minX + maxX) / 2) * newZoom);
+    setPanY(h / 2 - ((minY + maxY) / 2) * newZoom);
   }
 
   // ── Trigger auto-resolve (issue #412) ────────────────────────────────────────
@@ -674,6 +731,7 @@ export function useProcessEditor(readOnly = false) {
     selEl, canvasCursor, filteredWorkflows, workflowTree,
     // handlers
     save, undo, redo, undoStack, redoStack,
+    zoomIn, zoomOut, zoomReset, zoomFit,
     refreshList, newProcess, startCreatingNew, commitNewProc,
     startRename, commitRename, dupWorkflow, delWorkflow,
     loadWorkflow, drillDown, toggleMining,
