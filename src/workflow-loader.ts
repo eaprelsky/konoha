@@ -318,7 +318,7 @@ export async function updateRoleWorkflowIndex(def: WorkflowDefinition): Promise<
         role_id: roleId,
         name: roleId,
         description: "",
-        assignees: [roleId],
+        assignees: [],
         strategy: "manual" as const,
         required_capabilities: [],
         created_at: now,
@@ -326,7 +326,7 @@ export async function updateRoleWorkflowIndex(def: WorkflowDefinition): Promise<
       };
       await redis.set(`role:${roleId}`, JSON.stringify(skeleton));
       await redis.zadd("konoha:roles:all", Date.now(), roleId);
-      pgUpsertRole({ id: roleId, name: roleId, description: '', assignees: [roleId], strategy: 'manual', updated_at: skeleton.updated_at });
+      pgUpsertRole({ id: roleId, name: roleId, description: '', assignees: [], strategy: 'manual', updated_at: skeleton.updated_at });
       console.log(`[workflow-loader] Auto-created skeleton role "${roleId}" (workflow "${def.id}")`);
     } else {
       // Role key exists — ensure it's in the sorted set (fix orphaned roles, #316)

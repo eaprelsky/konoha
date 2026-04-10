@@ -46,7 +46,7 @@ async function saveRole(r: RoleDef): Promise<void> {
   pgUpsertRole({ id: r.role_id, name: r.name, description: r.description, assignees: r.assignees || [], strategy: r.strategy, updated_at: new Date().toISOString() });
 }
 
-async function loadRole(role_id: string): Promise<RoleDef | null> {
+export async function loadRole(role_id: string): Promise<RoleDef | null> {
   if (PG_READ) {
     const row = await pgGetRole(role_id);
     return row ? pgRowToRole(row) : null;
