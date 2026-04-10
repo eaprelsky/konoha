@@ -262,6 +262,23 @@ server.tool(
   }
 );
 
+server.tool(
+  "konoha_complete_task",
+  "Complete a work item (process step) and advance the case. Call this after finishing the task that was dispatched to you.",
+  {
+    work_item_id: z.string().describe("Work item ID from the dispatch message"),
+    output: z.record(z.string(), z.unknown()).optional().describe("Task result data to store as step output"),
+  },
+  async ({ work_item_id, output }) => {
+    const result = await agentApi<unknown>(
+      "POST",
+      `/workitems/${encodeURIComponent(work_item_id)}/complete`,
+      output ? { output } : {},
+    );
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
 // ── Process Tools (Skill: process-tools) ─────────────────────────────────────
 // These 14 tools are registered only when KONOHA_SKILLS includes "process-tools".
 // Assign the skill to an agent via capabilities: ["process-tools"] in its AgentDef.
