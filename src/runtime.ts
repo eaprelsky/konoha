@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { readFileSync } from "fs";
 import { Queue, Worker } from "bullmq";
-import { redis, REDIS_CONNECTION_OPTS } from "./redis";
+import { redis, REDIS_CONNECTION_OPTS, publishEvent } from "./redis";
 import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "./workflow-loader";
 import { getAdapter } from "./adapters/index";
 import { dispatchWorkItem } from "./dispatcher";
@@ -487,6 +487,7 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
         cancelSubscriptionsByInstance(kase.case_id).catch(e =>
           console.error(`[runtime] subscription cleanup error case=${kase.case_id}: ${e.message}`),
         );
+        publishEvent({ type: "process.exception", source: "runtime@comind.konoha", village_id: "comind.konoha", timestamp: new Date().toISOString(), payload: { case_id: kase.case_id, process_id: kase.process_id, error: `unexpected terminal element: ${current}` } }).catch(() => {});
         return kase;
       }
 
@@ -497,6 +498,7 @@ async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
     if (!nextEl) {
       kase.status = "error";
       await saveCase(kase);
+      publishEvent({ type: "process.exception", source: "runtime@comind.konoha", village_id: "comind.konoha", timestamp: new Date().toISOString(), payload: { case_id: kase.case_id, process_id: kase.process_id, error: `element not found: ${nextId}` } }).catch(() => {});
       return kase;
     }
 

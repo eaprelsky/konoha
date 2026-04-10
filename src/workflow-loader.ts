@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { redis } from "./redis";
-import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw } from "./storage/pg";
+import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw, pgUpsertRole } from "./storage/pg";
 
 const PG_READ = process.env.PG_READ === "true";
 
@@ -326,6 +326,7 @@ export async function updateRoleWorkflowIndex(def: WorkflowDefinition): Promise<
       };
       await redis.set(`role:${roleId}`, JSON.stringify(skeleton));
       await redis.zadd("konoha:roles:all", Date.now(), roleId);
+      pgUpsertRole({ id: roleId, name: roleId, description: '', assignees: [roleId], strategy: 'manual', updated_at: skeleton.updated_at });
       console.log(`[workflow-loader] Auto-created skeleton role "${roleId}" (workflow "${def.id}")`);
     } else {
       // Role key exists — ensure it's in the sorted set (fix orphaned roles, #316)
@@ -367,6 +368,7 @@ export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: num
     await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
     await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
     await updateRoleWorkflowIndex(def);
+    pgUpsertWorkflow(def as any);
     console.log(`[workflow-loader] Loaded workflow "${def.id}" v${def.version} → Redis key ${WORKFLOW_KEY_PREFIX}${def.id}`);
     loaded++;
   }
@@ -467,6 +469,7 @@ export async function archiveWorkflow(id: string): Promise<boolean> {
   const def: WorkflowDefinition = JSON.parse(raw);
   await redis.srem(WORKFLOW_INDEX_KEY, id);
   await removeFromRoleWorkflowIndex(def);
+  pgDeleteWorkflow(id);
   // Keep the key in Redis (archived, not deleted) — remove from active index only
   return true;
 }
