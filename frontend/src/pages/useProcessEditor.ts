@@ -287,6 +287,77 @@ export function useProcessEditor(readOnly = false) {
     setFlow(prev => prev.filter(([a, b]) => !(a === f && b === t)));
   }
 
+  // ── Schema patch via DOM event (issue #416: AssistantWidget → canvas) ────────
+  interface SchemaPatch {
+    update_elements?: { id: string; [key: string]: unknown }[];
+    update_positions?: Record<string, Pos>;
+    add_elements?: { id?: string; x?: number; y?: number; type?: string; label?: string; [key: string]: unknown }[];
+    remove_elements?: string[];
+    add_flow?: [string, string][];
+    remove_flow?: [string, string][];
+  }
+
+  function applyPatch(patch: SchemaPatch) {
+    if (readOnly) return;
+    pushSnapshot(); scheduleAutosave();
+    if (patch.update_elements?.length) {
+      setElements(prev => prev.map(el => {
+        const upd = patch.update_elements!.find(u => u.id === el.id);
+        return upd ? { ...el, ...upd } : el;
+      }));
+    }
+    if (patch.update_positions && Object.keys(patch.update_positions).length > 0) {
+      setPositions(prev => ({ ...prev, ...patch.update_positions }));
+    }
+    if (patch.add_elements?.length) {
+      const newEls: WorkflowElement[] = patch.add_elements.map(ae => {
+        const id = (ae.id as string) || genId();
+        const type = (ae.type as string) || 'function';
+        const label = (ae.label as string) || DEFAULT_LABELS[type as import('./ArrowRouter').EType] || 'Новый элемент';
+        const x = typeof ae.x === 'number' ? ae.x : 100;
+        const y = typeof ae.y === 'number' ? ae.y : 100;
+        return { id, type, label, x, y } as WorkflowElement;
+      });
+      setElements(prev => [...prev, ...newEls]);
+      setPositions(prev => {
+        const n = { ...prev };
+        for (const el of newEls) n[el.id] = { x: el.x ?? 100, y: el.y ?? 100 };
+        return n;
+      });
+    }
+    if (patch.remove_elements?.length) {
+      const ids = new Set(patch.remove_elements);
+      setElements(prev => prev.filter(e => !ids.has(e.id)));
+      setFlow(prev => prev.filter(([f, t]) => !ids.has(f) && !ids.has(t)));
+      setPositions(prev => {
+        const n = { ...prev };
+        for (const id of ids) delete n[id];
+        return n;
+      });
+    }
+    if (patch.add_flow?.length) {
+      setFlow(prev => {
+        const existing = new Set(prev.map(([f, t]) => `${f}→${t}`));
+        const toAdd = patch.add_flow!.filter(([f, t]) => !existing.has(`${f}→${t}`));
+        return [...prev, ...toAdd];
+      });
+    }
+    if (patch.remove_flow?.length) {
+      const toRemove = new Set(patch.remove_flow!.map(([f, t]) => `${f}→${t}`));
+      setFlow(prev => prev.filter(([f, t]) => !toRemove.has(`${f}→${t}`)));
+    }
+  }
+
+  // Listen for patches dispatched by AssistantWidget
+  useEffect(() => {
+    function onPatch(e: Event) {
+      applyPatch((e as CustomEvent).detail);
+    }
+    window.addEventListener('konoha:schema_patch', onPatch);
+    return () => window.removeEventListener('konoha:schema_patch', onPatch);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readOnly]);
+
   // ── Zoom controls (issue #414) ───────────────────────────────────────────────
   function zoomBy(factor: number) {
     const svg = svgRef.current;
@@ -735,7 +806,7 @@ export function useProcessEditor(readOnly = false) {
     refreshList, newProcess, startCreatingNew, commitNewProc,
     startRename, commitRename, dupWorkflow, delWorkflow,
     loadWorkflow, drillDown, toggleMining,
-    addElement, paletteClick, pickFromRegistry, deleteElement, updateElement, removeEdge,
+    addElement, paletteClick, pickFromRegistry, deleteElement, updateElement, removeEdge, applyPatch,
     switchMode, scheduleAutosave, syncEntityOnEdit,
     onResizeMouseDown,
     onElMouseDown, onSvgMouseDown, onSvgMouseMove, onSvgMouseUp, onElMouseUp, onSvgClick,

@@ -72,7 +72,7 @@ export function Minimap({ elements, positions, panX, panY, zoom, svgRef }: Props
   return (
     <div style={{
       position: 'absolute',
-      bottom: 12,
+      top: 12,
       right: 12,
       width: MM_W,
       height: MM_H,

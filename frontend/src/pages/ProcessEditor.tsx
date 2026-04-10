@@ -41,6 +41,16 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
   const { loadWorkflow } = s;
   useEffect(() => { if (initialId) loadWorkflow(initialId); }, [initialId, loadWorkflow]);
 
+  // Load newly created workflow dispatched by AssistantWidget (#416)
+  useEffect(() => {
+    function onCreated(e: Event) {
+      const wf = (e as CustomEvent).detail as { id: string } | null;
+      if (wf?.id) loadWorkflow(wf.id);
+    }
+    window.addEventListener('konoha:workflow_created', onCreated);
+    return () => window.removeEventListener('konoha:workflow_created', onCreated);
+  }, [loadWorkflow]);
+
   // Sync current process schema to Inspector so AssistantWidget (Tsunade) has context (#413)
   useEffect(() => {
     if (!s.wfId) {

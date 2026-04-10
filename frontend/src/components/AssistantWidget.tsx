@@ -13,6 +13,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Maximize2, Minimize2, ChevronDown, Paperclip, X } from 'lucide-react';
 import { Inspector } from './Inspector';
 import { useBranding } from '../context/BrandingContext';
+import { useHighlight } from './HighlightOverlay';
 import './AssistantWidget.css';
 
 type WidgetState = 'collapsed' | 'expanded' | 'fullscreen';
@@ -78,6 +79,7 @@ function extractStreamingText(raw: string): string {
 
 export function AssistantWidget() {
   const branding = useBranding();
+  const { showHighlight } = useHighlight();
   const [widgetState, setWidgetState] = useState<WidgetState>('collapsed');
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -265,7 +267,27 @@ export function AssistantWidget() {
               full += ev.text;
               setMsgs(prev => [...prev.slice(0, -1), { role: 'assistant', text: extractStreamingText(full) }]);
             } else if (ev.type === 'parsed' && typeof ev.reply === 'string') {
-              setMsgs(prev => [...prev.slice(0, -1), { role: 'assistant', text: ev.reply }]);
+              setMsgs(prev => {
+                const msgs = [...prev.slice(0, -1), { role: 'assistant' as const, text: ev.reply }];
+                // Notify user that schema was updated
+                if (ev.schema_patch || ev.created_workflow) {
+                  msgs.push({ role: 'system' as const, text: 'Схема обновлена. Нажмите 💾 для сохранения.' });
+                }
+                return msgs;
+              });
+              // Dispatch DOM events so ProcessEditor can apply the patch
+              if (ev.schema_patch) {
+                window.dispatchEvent(new CustomEvent('konoha:schema_patch', { detail: ev.schema_patch }));
+              }
+              if (ev.created_workflow) {
+                window.dispatchEvent(new CustomEvent('konoha:workflow_created', { detail: ev.created_workflow }));
+              }
+              if (Array.isArray(ev.actions) && ev.actions.length > 0) {
+                const act = ev.actions[0];
+                if (act.type === 'highlight' && act.target) {
+                  showHighlight({ selector: act.target, style: act.style ?? 'spotlight', message: act.message });
+                }
+              }
             } else if (ev.type === 'chat_id') {
               setChatId(ev.chat_id);
             }

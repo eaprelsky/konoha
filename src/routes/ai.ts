@@ -523,9 +523,20 @@ router.post("/ai/chat", async (c) => {
           try {
             const parsed = JSON.parse(stripMarkdownFences(fullText));
             const reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message;
-            if (reply != null) {
-              ctrl.enqueue(sse(JSON.stringify({ type: "parsed", reply })));
+            let created_workflow = null;
+            if (parsed.create_workflow && mode === "process") {
+              try {
+                const result = await createWorkflow(parsed.create_workflow, { draft: true });
+                if (result.errors.length === 0) created_workflow = result.workflow;
+              } catch { /* ignore workflow creation errors in stream */ }
             }
+            ctrl.enqueue(sse(JSON.stringify({
+              type: "parsed",
+              reply,
+              schema_patch: parsed.schema_patch ?? null,
+              created_workflow,
+              actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+            })));
           } catch { /* not JSON — delta stream is fine as-is */ }
 
           ctrl.enqueue(sse("[DONE]"));
