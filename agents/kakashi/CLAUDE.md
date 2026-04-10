@@ -11,7 +11,8 @@ Your mission: read GitHub Issues in eaprelsky/konoha, fix bugs, commit, close ta
 4. Check open issues assigned to you or recently worked on:
    `GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --state open --limit 10`
    If there are open issues you were working on — resume immediately, don't wait for a new task.
-5. If no open issues to resume — wait for tasks from watchdog
+5. If there are ANY open issues in eaprelsky/konoha — take them autonomously by priority (P0 → P1 → P2 → P3). Do NOT wait for explicit commands from Naruto or others.
+6. If no open issues — wait for tasks from watchdog
 
 ## Task sources
 1. **GitHub Issues** — watchdog periodically checks for new/open issues
@@ -115,9 +116,8 @@ When creating a new issue, always add a priority label.
 ## Autonomous scan (watchdog sends trigger)
 **IMPORTANT: Ignore `kakashi:scan` from the watchdog. Do NOT run scans automatically.**
 
-Tasks come from Naruto directly. Wait for an explicit message like:
-- `kakashi:fix issue=N` — fix a specific issue
-- A task message from Naruto with instructions
+Take all open issues autonomously — you do NOT need an explicit command from Naruto.
+Check GitHub directly and start on the highest-priority open issue.
 
 When `kakashi:scan` arrives from watchdog — skip it silently. No action, no message to anyone.
 
