@@ -10,6 +10,7 @@ import { HighlightProvider } from '../components/HighlightOverlay';
 import { TourProvider } from '../components/Tour';
 import { AssistantWidget } from '../components/AssistantWidget';
 import { SetupWizard } from '../components/SetupWizard';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 // Lazy-load all pages
 const Dashboard    = lazy(() => import('../pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -62,8 +63,12 @@ function EditorWithId() {
   return <ProcessEditor initialId={id} />;
 }
 
-function SuspenseWrapper({ children }: { children: React.ReactNode }) {
-  return <Suspense fallback={<div style={{ padding: 32, color: '#64748b' }}>Loading…</div>}>{children}</Suspense>;
+function SuspenseWrapper({ children, label }: { children: React.ReactNode; label?: string }) {
+  return (
+    <ErrorBoundary label={label}>
+      <Suspense fallback={<div style={{ padding: 32, color: '#64748b' }}>Loading…</div>}>{children}</Suspense>
+    </ErrorBoundary>
+  );
 }
 
 function App() {
@@ -73,38 +78,40 @@ function App() {
   return (
     <I18nProvider><TokenProvider><SubtitleProvider><HighlightProvider><TourProvider>
       <BrowserRouter basename="/ui">
-        <Routes>
-          <Route path="/login" element={<SuspenseWrapper><Login /></SuspenseWrapper>} />
-          <Route element={<ProtectedLayout />}>
-            <Route path="/" element={<SuspenseWrapper><Dashboard /></SuspenseWrapper>} />
-            <Route path="/agents" element={<SuspenseWrapper><Agents /></SuspenseWrapper>} />
-            <Route path="/processes" element={<SuspenseWrapper><Processes /></SuspenseWrapper>} />
-            <Route path="/editor" element={<SuspenseWrapper><ProcessEditor /></SuspenseWrapper>} />
-            <Route path="/editor/:id" element={<SuspenseWrapper><EditorWithId /></SuspenseWrapper>} />
-            <Route path="/monitor" element={<SuspenseWrapper><Monitor /></SuspenseWrapper>} />
-            <Route path="/calendar" element={<SuspenseWrapper><Calendar /></SuspenseWrapper>} />
-            <Route path="/my-calendar" element={<SuspenseWrapper><MyCalendar /></SuspenseWrapper>} />
-            <Route path="/documents" element={<SuspenseWrapper><Documents /></SuspenseWrapper>} />
-            <Route path="/roles" element={<SuspenseWrapper><Roles /></SuspenseWrapper>} />
-            <Route path="/people" element={<SuspenseWrapper><People /></SuspenseWrapper>} />
-            <Route path="/skills" element={<SuspenseWrapper><Skills /></SuspenseWrapper>} />
-            <Route path="/my-tasks" element={<SuspenseWrapper><MyTasks /></SuspenseWrapper>} />
-            <Route path="/cases" element={<SuspenseWrapper><Cases /></SuspenseWrapper>} />
-            <Route path="/workitems" element={<SuspenseWrapper><WorkItems /></SuspenseWrapper>} />
-            <Route path="/reminders" element={<SuspenseWrapper><Reminders /></SuspenseWrapper>} />
-            <Route path="/messages" element={<SuspenseWrapper><Messages /></SuspenseWrapper>} />
-            <Route path="/eventlog" element={<SuspenseWrapper><EventLog /></SuspenseWrapper>} />
-            <Route path="/event-monitor" element={<SuspenseWrapper><EventMonitor /></SuspenseWrapper>} />
-            <Route path="/kb" element={<SuspenseWrapper><Kb /></SuspenseWrapper>} />
-            <Route path="/workspace" element={<SuspenseWrapper><Workspace /></SuspenseWrapper>} />
-            <Route path="/connectors" element={<SuspenseWrapper><Connectors /></SuspenseWrapper>} />
-            <Route path="/health" element={<SuspenseWrapper><Health /></SuspenseWrapper>} />
-            <Route path="/admin" element={<SuspenseWrapper><Admin /></SuspenseWrapper>} />
-            <Route path="/whitelist" element={<SuspenseWrapper><Whitelist /></SuspenseWrapper>} />
-            <Route path="/settings" element={<SuspenseWrapper><Settings /></SuspenseWrapper>} />
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <ErrorBoundary label="Routes">
+          <Routes>
+            <Route path="/login" element={<SuspenseWrapper label="Login"><Login /></SuspenseWrapper>} />
+            <Route element={<ProtectedLayout />}>
+              <Route path="/" element={<SuspenseWrapper label="Dashboard"><Dashboard /></SuspenseWrapper>} />
+              <Route path="/agents" element={<SuspenseWrapper label="Agents"><Agents /></SuspenseWrapper>} />
+              <Route path="/processes" element={<SuspenseWrapper label="Processes"><Processes /></SuspenseWrapper>} />
+              <Route path="/editor" element={<SuspenseWrapper label="ProcessEditor"><ProcessEditor /></SuspenseWrapper>} />
+              <Route path="/editor/:id" element={<SuspenseWrapper label="ProcessEditor"><EditorWithId /></SuspenseWrapper>} />
+              <Route path="/monitor" element={<SuspenseWrapper label="Monitor"><Monitor /></SuspenseWrapper>} />
+              <Route path="/calendar" element={<SuspenseWrapper label="Calendar"><Calendar /></SuspenseWrapper>} />
+              <Route path="/my-calendar" element={<SuspenseWrapper label="MyCalendar"><MyCalendar /></SuspenseWrapper>} />
+              <Route path="/documents" element={<SuspenseWrapper label="Documents"><Documents /></SuspenseWrapper>} />
+              <Route path="/roles" element={<SuspenseWrapper label="Roles"><Roles /></SuspenseWrapper>} />
+              <Route path="/people" element={<SuspenseWrapper label="People"><People /></SuspenseWrapper>} />
+              <Route path="/skills" element={<SuspenseWrapper label="Skills"><Skills /></SuspenseWrapper>} />
+              <Route path="/my-tasks" element={<SuspenseWrapper label="MyTasks"><MyTasks /></SuspenseWrapper>} />
+              <Route path="/cases" element={<SuspenseWrapper label="Cases"><Cases /></SuspenseWrapper>} />
+              <Route path="/workitems" element={<SuspenseWrapper label="WorkItems"><WorkItems /></SuspenseWrapper>} />
+              <Route path="/reminders" element={<SuspenseWrapper label="Reminders"><Reminders /></SuspenseWrapper>} />
+              <Route path="/messages" element={<SuspenseWrapper label="Messages"><Messages /></SuspenseWrapper>} />
+              <Route path="/eventlog" element={<SuspenseWrapper label="EventLog"><EventLog /></SuspenseWrapper>} />
+              <Route path="/event-monitor" element={<SuspenseWrapper label="EventMonitor"><EventMonitor /></SuspenseWrapper>} />
+              <Route path="/kb" element={<SuspenseWrapper label="Kb"><Kb /></SuspenseWrapper>} />
+              <Route path="/workspace" element={<SuspenseWrapper label="Workspace"><Workspace /></SuspenseWrapper>} />
+              <Route path="/connectors" element={<SuspenseWrapper label="Connectors"><Connectors /></SuspenseWrapper>} />
+              <Route path="/health" element={<SuspenseWrapper label="Health"><Health /></SuspenseWrapper>} />
+              <Route path="/admin" element={<SuspenseWrapper label="Admin"><Admin /></SuspenseWrapper>} />
+              <Route path="/whitelist" element={<SuspenseWrapper label="Whitelist"><Whitelist /></SuspenseWrapper>} />
+              <Route path="/settings" element={<SuspenseWrapper label="Settings"><Settings /></SuspenseWrapper>} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ErrorBoundary>
       </BrowserRouter>
     </TourProvider></HighlightProvider></SubtitleProvider></TokenProvider></I18nProvider>
   );
