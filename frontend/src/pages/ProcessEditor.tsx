@@ -27,11 +27,20 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { VersionSelector } from './VersionSelector';
 import { RegistryPicker } from './RegistryPicker';
 
+function isMobile() { return window.innerWidth <= 767; }
+
 export function ProcessEditor({ initialId }: { initialId?: string }) {
   const s = useProcessEditor();
+  const [showMobProps, setShowMobProps] = React.useState(false);
   // Load workflow from URL param on mount
   const { loadWorkflow } = s;
   useEffect(() => { if (initialId) loadWorkflow(initialId); }, [initialId, loadWorkflow]);
+
+  // Open mobile props sheet when element selected on mobile
+  useEffect(() => {
+    if (s.selEl && isMobile()) setShowMobProps(true);
+    if (!s.selEl) setShowMobProps(false);
+  }, [s.selEl]);
 
   return (
     <>
@@ -477,6 +486,38 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
         onAddCustom={type => { s.addElement(type); s.setPicker(null); }}
         onClose={() => s.setPicker(null)}
       />
+
+      {/* Mobile palette strip (#359) */}
+      <div className="mob-palette">
+        {PALETTE.map(p => (
+          <div key={p.type} className="mob-pal-item" onClick={() => s.paletteClick(p.type)}>
+            <div className="mob-pal-dot" style={{ background: p.fill, border: `1px solid ${p.stroke}` }} />
+            <span className="mob-pal-label">{p.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Mobile properties bottom sheet (#359) */}
+      {showMobProps && s.selEl && (
+        <>
+          <div className="mob-sheet-overlay" onClick={() => { setShowMobProps(false); s.setSelected(null); }} />
+          <div className="mob-props-sheet">
+            <div className="mob-props-handle" />
+            <div className="mob-props-inner">
+              <PropertiesPanel
+                selEl={s.selEl}
+                flow={s.flow}
+                roles={s.roles}
+                docs={s.docs}
+                wsFiles={s.wsFiles}
+                wfId={s.wfId}
+                onUpdate={s.updateElement}
+                onDelete={el => { s.deleteElement(el); setShowMobProps(false); }}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

@@ -93,3 +93,42 @@
     .edge-del { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; padding: 0; }
     .btn-tsunade, .ipe-bar button { min-height: 44px; padding: 8px 14px; font-size: 14px; }
   }
+
+  /* ── Mobile ProcessEditor strategy (#359) ── */
+  @media (max-width: 767px) {
+    .ipe-root { height: calc(100vh - 52px); }
+    /* Hide desktop sidebar and resize handle */
+    .ipe-side, .ipe-resize { display: none !important; }
+    /* Canvas takes full width */
+    .ipe-body { position: relative; }
+    .ipe-canvas { flex: 1; width: 100%; }
+    /* Compact toolbar */
+    .ipe-bar { padding: 6px 10px; gap: 6px; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+    .ipe-bar::-webkit-scrollbar { display: none; }
+    .ipe-bar .sep { display: none; }
+    /* Mobile palette strip (bottom of screen) */
+    .mob-palette { display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      background: #1e293b; border-top: 1px solid #334155; padding: 8px 12px;
+      gap: 10px; overflow-x: auto; scrollbar-width: none; }
+    .mob-palette::-webkit-scrollbar { display: none; }
+    .mob-pal-item { display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 6px 10px; border-radius: 6px; border: 1px solid #334155; background: #0f172a;
+      cursor: pointer; flex-shrink: 0; min-width: 56px; }
+    .mob-pal-item:active { background: #334155; }
+    .mob-pal-dot { width: 16px; height: 16px; border-radius: 3px; }
+    .mob-pal-label { font-size: 9px; color: #94a3b8; text-align: center; white-space: nowrap; }
+    /* Bottom sheet for selected element properties */
+    .mob-props-sheet { display: block; position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+      background: white; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 32px rgba(0,0,0,.2);
+      max-height: 60vh; overflow-y: auto; padding: 0 0 16px; }
+    .mob-props-handle { width: 40px; height: 4px; background: #e2e8f0; border-radius: 2px;
+      margin: 10px auto 14px; }
+    .mob-props-inner { padding: 0 16px; }
+    .mob-sheet-overlay { position: fixed; inset: 0; z-index: 199; background: rgba(0,0,0,.3); }
+    /* Mobile toolbar: show side toggle button */
+    .mob-side-toggle { display: flex !important; }
+  }
+  /* Desktop: hide mobile-only elements */
+  .mob-palette, .mob-props-sheet, .mob-sheet-overlay { display: none; }
+  .mob-side-toggle { display: none; }
+
