@@ -550,7 +550,19 @@ async def auto_push_loop() -> None:
                 _, push_err = await asyncio.wait_for(push_proc.communicate(), timeout=60)
                 if push_proc.returncode == 0:
                     log.info(f"auto-push: pushed {n} commit(s) to main successfully")
-                    await _notify_bus(f"Какаши: pushed {n} commits to main")
+                    # Restart konoha.service so production picks up the new code (#381)
+                    restart_proc = await asyncio.create_subprocess_exec(
+                        "sudo", "systemctl", "restart", "konoha.service",
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    _, restart_err = await asyncio.wait_for(restart_proc.communicate(), timeout=30)
+                    if restart_proc.returncode == 0:
+                        log.info("auto-push: konoha.service restarted successfully")
+                        await _notify_bus(f"Какаши: pushed {n} commits to main, konoha.service restarted")
+                    else:
+                        log.warning(f"auto-push: konoha.service restart failed: {restart_err.decode()[:200]}")
+                        await _notify_bus(f"Какаши: pushed {n} commits to main (konoha.service restart FAILED)")
                 else:
                     log.warning(f"auto-push: git push failed: {push_err.decode()[:200]}")
         except Exception as e:
