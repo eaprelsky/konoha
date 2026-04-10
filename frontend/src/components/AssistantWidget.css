@@ -139,6 +139,7 @@
       border-radius: 14px 14px 0 0 !important;
       resize: none !important;
       box-shadow: 0 -4px 24px rgba(0,0,0,.22);
+      padding-bottom: env(safe-area-inset-bottom, 16px);
     }
 
     /* Drag handle — touch target to resize the sheet */
