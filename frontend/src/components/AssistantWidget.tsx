@@ -234,11 +234,11 @@ export function AssistantWidget() {
 
         {/* Header / drag handle */}
         <div className="aw-header" onMouseDown={onDragStart}>
-          {branding.assistant_avatar
-            ? <img src={branding.assistant_avatar} alt="" className="aw-avatar" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+          {branding.assistant_agent_id
+            ? <img src={`/api/avatars/${branding.assistant_agent_id}.webp`} alt="" className="aw-avatar" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
             : <span className="aw-avatar-fallback">🤖</span>
           }
-          <span className="aw-title">{branding.assistant_name}</span>
+          <span className="aw-title">{branding.agent_display_names[branding.assistant_agent_id] || branding.assistant_agent_id || 'Ассистент'}</span>
           {busy && (
             <button
               className="aw-hbtn"

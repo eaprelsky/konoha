@@ -258,27 +258,24 @@ function AutonomyMatrix() {
 
 interface BrandingData {
   product_name: string;
-  assistant_name: string;
-  assistant_avatar: string;
+  assistant_agent_id: string;
   agent_display_names: Record<string, string>;
   theme: { primary_color: string; accent_color: string; logo_url: string };
 }
 
 const BRAND_DEFAULTS: BrandingData = {
   product_name: 'Konoha WE',
-  assistant_name: 'Цунаде',
-  assistant_avatar: '/api/avatars/tsunade.webp',
+  assistant_agent_id: '',
   agent_display_names: {},
   theme: { primary_color: '#6366f1', accent_color: '#f59e0b', logo_url: '' },
 };
-
-const KNOWN_AGENTS = ['naruto', 'sasuke', 'kakashi', 'shino', 'hinata', 'guy'];
 
 function BrandingTab() {
   const [data, setData] = useState<BrandingData>(BRAND_DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [knownAgents, setKnownAgents] = useState<string[]>([]);
 
   useEffect(() => {
     fetch(`${BASE}/branding`)
@@ -286,6 +283,10 @@ function BrandingTab() {
       .then(d => setData({ ...BRAND_DEFAULTS, ...d, theme: { ...BRAND_DEFAULTS.theme, ...(d.theme ?? {}) }, agent_display_names: d.agent_display_names ?? {} }))
       .catch(console.error)
       .finally(() => setLoading(false));
+    fetch(`${BASE}/agents`)
+      .then(r => r.ok ? r.json() : [])
+      .then((agents: { id: string }[]) => setKnownAgents(agents.map(a => a.id)))
+      .catch(() => {});
   }, []);
 
   function set(path: string, value: string) {
@@ -331,15 +332,10 @@ function BrandingTab() {
           <input className="brand-input" value={data.product_name} onChange={e => set('product_name', e.target.value)} />
         </div>
         <div className="brand-field">
-          <label className="brand-label">Имя ассистента</label>
-          <input className="brand-input" value={data.assistant_name} onChange={e => set('assistant_name', e.target.value)} />
+          <label className="brand-label">ID агента-ассистента</label>
+          <input className="brand-input" value={data.assistant_agent_id} onChange={e => set('assistant_agent_id', e.target.value)} placeholder="ID агента из раздела Команда" />
+          <div className="brand-hint">Имя и аватар берутся из записи агента в команде.</div>
         </div>
-      </div>
-
-      <div className="brand-field">
-        <label className="brand-label">URL аватара ассистента</label>
-        <input className="brand-input" value={data.assistant_avatar} onChange={e => set('assistant_avatar', e.target.value)} placeholder="/api/avatars/tsunade.webp" />
-        <div className="brand-hint">Путь к изображению или URL. Используется в виджете ассистента.</div>
       </div>
 
       <div className="brand-section">Тема оформления</div>
@@ -367,7 +363,7 @@ function BrandingTab() {
 
       <div className="brand-section">Имена агентов (display names)</div>
       <p className="brand-hint" style={{ marginBottom: 12 }}>Отображаемые имена агентов. Не меняют API-идентификаторы и MCP-инструменты.</p>
-      {KNOWN_AGENTS.map(id => (
+      {knownAgents.map(id => (
         <div className="brand-row" key={id}>
           <div className="brand-field" style={{ maxWidth: 120 }}>
             <label className="brand-label">{id}</label>

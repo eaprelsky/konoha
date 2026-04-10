@@ -13,16 +13,14 @@ export interface BrandingTheme {
 
 export interface Branding {
   product_name: string;
-  assistant_name: string;
-  assistant_avatar: string;
+  assistant_agent_id: string;
   agent_display_names: Record<string, string>;
   theme: BrandingTheme;
 }
 
 const DEFAULTS: Branding = {
   product_name: 'Konoha WE',
-  assistant_name: 'Цунаде',
-  assistant_avatar: '/api/avatars/tsunade.webp',
+  assistant_agent_id: '',
   agent_display_names: {},
   theme: { primary_color: '#6366f1', accent_color: '#f59e0b' },
 };

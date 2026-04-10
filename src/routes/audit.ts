@@ -107,8 +107,11 @@ const BRANDING_KEY = "konoha:config:branding";
 
 export interface BrandingConfig {
   product_name?: string;
+  /** @deprecated Use assistant_agent_id instead */
   assistant_name?: string;
+  /** @deprecated Use assistant_agent_id instead */
   assistant_avatar?: string;
+  assistant_agent_id?: string;
   agent_display_names?: Record<string, string>;
   theme?: {
     primary_color?: string;
@@ -119,8 +122,6 @@ export interface BrandingConfig {
 
 const BRANDING_DEFAULTS: BrandingConfig = {
   product_name: "Konoha WE",
-  assistant_name: "Цунаде",
-  assistant_avatar: "/api/avatars/tsunade.webp",
   agent_display_names: {},
   theme: { primary_color: "#6366f1", accent_color: "#f59e0b" },
 };
