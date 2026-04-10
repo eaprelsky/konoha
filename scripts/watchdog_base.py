@@ -38,6 +38,15 @@ IDLE_POLL_SEC    = 2.0
 IDLE_TIMEOUT_SEC = 600
 SSE_MAX_BACKOFF  = 60
 
+# On-demand agent wake (0 = agent is always running, no wake needed)
+WAKE_TIMEOUT_SEC = 0
+
+# Circuit breaker — discard new alerts while agent is frozen (0 = disabled)
+CIRCUIT_BREAKER_DURATION = 0  # seconds circuit stays open after freeze event
+
+# Who receives freeze alerts (empty string → "kiba"; override for Kiba's own watchdog)
+FREEZE_ALERT_TARGET = ""
+
 KONOHA_TEXT_LIMIT = 3500  # chars; tmux send-keys has ~4095 byte TTY buffer limit (#299)
 
 # format_batch customisation — override per agent
@@ -73,6 +82,53 @@ def setup_logging() -> None:
         ],
         force=True,
     )
+
+
+# ── On-demand agent wake ────────────────────────────────────────────────────
+
+def is_session_alive(session: str) -> bool:
+    """Check if tmux session exists on its named socket."""
+    try:
+        result = subprocess.run(
+            ["tmux", "-L", session, "has-session", "-t", session],
+            capture_output=True, timeout=5,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def try_wake_agent() -> bool:
+    """Start claude-{AGENT_ID}.service to wake the on-demand agent.
+    Returns True if start was attempted. Only used when WAKE_TIMEOUT_SEC > 0."""
+    service = f"claude-{AGENT_ID}.service"
+    try:
+        subprocess.run(
+            ["sudo", "systemctl", "start", service],
+            capture_output=True, timeout=30,
+        )
+        log.info(f"on-demand wake: started {service}")
+        return True
+    except Exception as e:
+        log.warning(f"failed to wake {service}: {e}")
+        return False
+
+
+# ── Circuit breaker ───────────────────────────────────────────────────────────
+
+_circuit_open_until: float = 0.0  # monotonic timestamp; 0.0 = circuit closed
+
+
+def circuit_is_open() -> bool:
+    """Return True while circuit is open (CIRCUIT_BREAKER_DURATION > 0 and tripped)."""
+    return CIRCUIT_BREAKER_DURATION > 0 and time.monotonic() < _circuit_open_until
+
+
+def open_circuit(reason: str) -> None:
+    """Open the circuit for CIRCUIT_BREAKER_DURATION seconds."""
+    global _circuit_open_until
+    _circuit_open_until = time.monotonic() + CIRCUIT_BREAKER_DURATION
+    log.warning(f"Circuit opened for {CIRCUIT_BREAKER_DURATION}s: {reason}")
 
 
 # ── Noise filter ─────────────────────────────────────────────────────────────
@@ -211,6 +267,15 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
     pending: list[dict] = []
 
     while True:
+        # ── Circuit breaker: drain and discard while circuit is open ──────────
+        if circuit_is_open():
+            try:
+                await asyncio.wait_for(batched_queue.get(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
+            pending.clear()
+            continue
+
         try:
             timeout = 1.0 if pending else None
             batch = await asyncio.wait_for(batched_queue.get(), timeout=timeout)
@@ -222,11 +287,23 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             continue
 
         waited = 0.0
+        wake_attempted = False
         while True:
             if is_agent_idle(TMUX_SESSION):
                 break
-            if waited >= IDLE_TIMEOUT_SEC:
-                log.warning(f"Agent {TMUX_SESSION} busy >{IDLE_TIMEOUT_SEC}s — dropping {len(pending)} msgs")
+            # On-demand wake: start the agent service if session doesn't exist
+            if WAKE_TIMEOUT_SEC > 0 and not is_session_alive(TMUX_SESSION) and not wake_attempted:
+                wake_attempted = True
+                if try_wake_agent():
+                    log.info(f"Waiting for {TMUX_SESSION} session after wake (max {WAKE_TIMEOUT_SEC}s)")
+                    await asyncio.sleep(IDLE_POLL_SEC)
+                    waited += IDLE_POLL_SEC
+                    continue
+            timeout_limit = max(IDLE_TIMEOUT_SEC, WAKE_TIMEOUT_SEC if wake_attempted else IDLE_TIMEOUT_SEC)
+            if waited >= timeout_limit:
+                log.warning(f"Agent {TMUX_SESSION} busy >{waited:.0f}s — dropping {len(pending)} msgs")
+                if CIRCUIT_BREAKER_DURATION > 0:
+                    open_circuit(f"agent={TMUX_SESSION} unresponsive >{waited:.0f}s")
                 await send_freeze_alert(TMUX_SESSION, waited, len(pending))
                 pending.clear()
                 break
@@ -247,11 +324,18 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
 
 
 async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
-    """Alert Kiba when agent has been unresponsive past IDLE_TIMEOUT_SEC."""
+    """Alert the freeze-alert target when agent has been unresponsive past IDLE_TIMEOUT_SEC.
+    Target defaults to 'kiba'; override FREEZE_ALERT_TARGET for Kiba's own watchdog."""
+    target = FREEZE_ALERT_TARGET or "kiba"
+    text = (
+        f"kiba:alert agent={session} frozen timeout={int(waited)}s msgs_dropped={n_msgs}"
+        if target == "kiba"
+        else f"kiba:alert agent={session} frozen timeout={int(waited)}s msgs_dropped={n_msgs} circuit=open — restart may be needed"
+    )
     payload = json.dumps({
         "from": f"watchdog-{session}",
-        "to": "kiba",
-        "text": f"kiba:alert agent={session} frozen timeout={int(waited)}s msgs_dropped={n_msgs}",
+        "to": target,
+        "text": text,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
@@ -267,7 +351,7 @@ async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
             env=env,
         )
         await asyncio.wait_for(proc.wait(), timeout=10)
-        log.warning(f"Freeze alert sent to kiba: agent={session} waited={int(waited)}s")
+        log.warning(f"Freeze alert sent to {target}: agent={session} waited={int(waited)}s")
     except Exception as e:
         log.error(f"Failed to send freeze alert: {e}")
 
