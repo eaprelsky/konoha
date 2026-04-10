@@ -71,7 +71,9 @@ jobs:
           sleep 5
         env:
           KONOHA_TOKEN: konoha-dev-token
+          ANTHROPIC_API_KEY: ci-placeholder
       - name: Run E2E tests
         run: bunx playwright test
         env:
           KONOHA_TOKEN: konoha-dev-token
+          ANTHROPIC_API_KEY: ci-placeholder
