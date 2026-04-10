@@ -18,6 +18,7 @@ test.describe('Issue #426: Markdown rendering in AssistantWidget', () => {
     await trigger.click();
 
     const assistantMessages = await page.locator('.aw-msg.assistant').all();
+    expect(assistantMessages.length).toBeGreaterThan(0);
 
     for (const msg of assistantMessages) {
       const html = await msg.innerHTML();
@@ -36,6 +37,7 @@ test.describe('Issue #426: Markdown rendering in AssistantWidget', () => {
     await trigger.click();
 
     const assistantMessages = await page.locator('.aw-msg.assistant').all();
+    expect(assistantMessages.length).toBeGreaterThan(0);
 
     for (const msg of assistantMessages) {
       const html = await msg.innerHTML();

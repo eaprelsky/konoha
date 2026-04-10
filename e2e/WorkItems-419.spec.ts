@@ -50,7 +50,7 @@ test.describe('Issue #419: WorkItems live filters', () => {
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     const applyBtn = page.locator('button:has-text("Apply"), button:has-text("Применить")').first();
-    await expect(applyBtn).not.toBeVisible({ timeout: 2000 }).catch(() => {});
+    await expect(applyBtn).not.toBeVisible({ timeout: 2000 });
   });
 
   test('TC-10: Screenshot of WorkItems page with filters', async ({ page }) => {
