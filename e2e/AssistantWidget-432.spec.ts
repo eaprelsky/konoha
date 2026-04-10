@@ -13,13 +13,9 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     mkdirSync('/opt/shared/shino/reports', { recursive: true });
 
     // Create workflow via Playwright request context.
-    // requireAuth (auth.ts:11) only accepts Authorization: Bearer — request fixture does NOT
-    // carry storageState cookies. Pass KONOHA_TOKEN explicitly (closes #434).
+    // Authorization header is injected globally via extraHTTPHeaders in playwright.config.ts.
     const res = await request.post('/workflows?draft=true', {
-      headers: {
-        'Authorization': `Bearer ${process.env.KONOHA_TOKEN ?? 'konoha-dev-token'}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       data: { name: `Mobile Assistant Test — ${new Date().toISOString()}`, elements: [] }
     });
 
