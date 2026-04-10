@@ -1,4 +1,4 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 const WORKFLOW_ID     = 'e2e-mobile-428';
@@ -8,20 +8,22 @@ let testProcessId: string;
 // ---------------------------------------------------------------------------
 // beforeAll — create (or re-use) a test workflow so we can navigate directly
 // to /editor/<id> instead of going through the dashboard.
+//
+// Uses the Playwright `request` fixture so session cookies from storageState
+// are included — the request goes to /api/workflows (nginx → port 3200)
+// just like the real frontend does (see frontend/src/api/client.ts BASE='/api').
 // ---------------------------------------------------------------------------
-test.beforeAll(async () => {
-  const apiContext = await playwrightRequest.newContext({
-    baseURL: 'http://127.0.0.1:3201',
-  });
-  const headers = {
-    Authorization: `Bearer ${process.env.KONOHA_TOKEN ?? 'konoha-dev-token'}`,
-  };
+test.beforeAll(async ({ request }) => {
+  const KONOHA_TOKEN = process.env.KONOHA_TOKEN;
+  if (!KONOHA_TOKEN) throw new Error('KONOHA_TOKEN env variable is required');
+
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${KONOHA_TOKEN}` };
   const body = { id: WORKFLOW_ID, name: 'E2E Mobile Test Process', elements: [] };
 
   // POST — create; if it already exists, PUT to update (ensures the record is present)
-  let res = await apiContext.post('/workflows?draft=true', { headers, data: body });
+  let res = await request.post('/api/workflows?draft=true', { headers, data: body });
   if (!res.ok()) {
-    res = await apiContext.put(`/workflows/${WORKFLOW_ID}?draft=true`, {
+    res = await request.put(`/api/workflows/${WORKFLOW_ID}?draft=true`, {
       headers,
       data: { name: body.name, elements: body.elements },
     });
@@ -29,7 +31,6 @@ test.beforeAll(async () => {
 
   const wf = await res.json();
   testProcessId = wf.id ?? WORKFLOW_ID;
-  await apiContext.dispose();
 });
 
 // ---------------------------------------------------------------------------
