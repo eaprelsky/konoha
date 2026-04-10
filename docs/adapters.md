@@ -6,17 +6,16 @@ Adapters in `src/adapters/` connect Konoha workflows to external services. Each 
 
 | Adapter | File | Purpose |
 |---------|------|---------|
-| Telegram | `telegram.ts` | Send messages via Telegram Bot API |
+| DataAdapter (interface) | `data-adapter.ts` | Base interface for all adapters (EventListener + EventEmitter) |
+| Telegram (Telethon) | `telegram.ts` | Send messages via Telegram user account (Telethon) |
+| Telegram Bot | `telegram-bot.ts` | Read from `telegram:bot:incoming` Redis stream via Grammy bot |
 | Bitrix24 | `bitrix24.ts` | Create/update leads and deals in Bitrix24 CRM |
+| Bitrix (webhooks) | `bitrix.ts` | Incoming Bitrix24 webhooks via REST event.bind |
 | Tracker | `tracker.ts` | Create and update issues in Yandex Tracker |
+| Yandex Tracker | `yandex-tracker.ts` | Yandex Tracker adapter (TRACKER_TOKEN, TRACKER_CLOUD_ORG_ID) |
 | Yonote | `yonote.ts` | Read/write pages in Yonote knowledge base |
 | Email | `email.ts` | Send email via SMTP |
 | Image | `image.ts` | Generate or process images |
-| HTTP | `http.ts` | Generic HTTP requests to external APIs |
-| Redis | `redis.ts` | Publish/subscribe and key-value operations |
-| Konoha | `konoha.ts` | Inter-agent messaging via Konoha bus |
-| GitHub | `github.ts` | Create/update issues and PRs on GitHub |
-| Calendar | `calendar.ts` | Read/write events in calendar services |
 
 ## Configuration
 
