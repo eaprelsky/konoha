@@ -92,8 +92,8 @@ router.post("/:agentId/ack", async (c) => {
   if (!caller.isAdmin && caller.agentId !== agentId) {
     return c.json({ error: "Forbidden: can only ack your own messages" }, 403);
   }
-  const body = await c.req.json();
-  const { consumer, ids } = body;
+  const body = await c.req.json().catch(() => ({}));
+  const { consumer, ids } = body as { consumer?: string; ids?: unknown[] };
   if (!consumer || !Array.isArray(ids) || ids.length === 0) {
     return c.json({ error: "consumer and ids[] required" }, 400);
   }
