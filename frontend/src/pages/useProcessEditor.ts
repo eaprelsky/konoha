@@ -52,6 +52,7 @@ export function useProcessEditor(readOnly = false) {
   const [adapters, setAdapters] = useState<string[]>([]);
   const [wsFiles,  setWsFiles]  = useState<string[]>([]);
   const [picker,   setPicker]   = useState<'role' | 'document' | 'is' | null>(null);
+  const [showChat, setShowChat] = useState(false);
   const [triggerResolving, setTriggerResolving] = useState<Set<string>>(new Set());
   const [sideSearch,    setSideSearch]    = useState('');
   const [creatingNew,   setCreatingNew]   = useState(false);
@@ -789,7 +790,7 @@ export function useProcessEditor(readOnly = false) {
     error, saving, draftWarning, autosavePending,
     workflows, sideW, versions, viewingVersion, setViewingVersion,
     roles, docs, adapters, wsFiles, breadcrumb,
-    picker, setPicker,
+    showChat, setShowChat, picker, setPicker,
     triggerResolving, resolveTrigger,
     sideSearch, setSideSearch,
     creatingNew, setCreatingNew, newProcName, setNewProcName,
@@ -807,6 +808,7 @@ export function useProcessEditor(readOnly = false) {
     startRename, commitRename, dupWorkflow, delWorkflow,
     loadWorkflow, drillDown, toggleMining,
     addElement, paletteClick, pickFromRegistry, deleteElement, updateElement, removeEdge, applyPatch,
+    applyTsunadePatch: applyPatch,
     switchMode, scheduleAutosave, syncEntityOnEdit,
     onResizeMouseDown,
     onElMouseDown, onSvgMouseDown, onSvgMouseMove, onSvgMouseUp, onElMouseUp, onSvgClick,

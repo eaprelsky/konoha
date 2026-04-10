@@ -16,6 +16,7 @@
  *  - ProcessEditor.css     — all styles
  */
 import type React from 'react';
+import { useEffect } from 'react';
 import './ProcessEditor.css';
 import { EW, EH, GR, CW, CH, orthogonalPath, snap, type Pos } from './ArrowRouter';
 import { ElShape, PALETTE } from './ElementShape';
@@ -26,9 +27,16 @@ import { ProcessTree } from './ProcessTree';
 import { PropertiesPanel } from './PropertiesPanel';
 import { VersionSelector } from './VersionSelector';
 import { RegistryPicker } from './RegistryPicker';
+import { Inspector } from '@core/components/Inspector';
 
 export function ProcessEditor() {
   const s = useProcessEditor();
+
+  // Sync current process to Inspector so AssistantWidget (Tsunade) has context
+  useEffect(() => {
+    if (!s.wfId) { Inspector.setProcessName(null); return; }
+    Inspector.setProcessName(s.wfName || s.wfId);
+  }, [s.wfId, s.wfName]);
 
   return (
     <>
