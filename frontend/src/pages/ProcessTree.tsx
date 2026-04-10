@@ -2,9 +2,15 @@
  * ProcessTree — sidebar process library with search, tree, and CRUD.
  * Extracted from ProcessEditor.tsx (issue #330).
  */
-import type React from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { Workflow } from '../api/types';
 import type { WfNode } from './useProcessEditor';
+
+interface CtxMenu {
+  x: number;
+  y: number;
+  node: Workflow;
+}
 
 interface Props {
   workflows: Workflow[];
@@ -39,6 +45,31 @@ export function ProcessTree({
   onStartRename, onCommitRename, onRenamingValChange, onDupWorkflow, onDelWorkflow,
   onCollapsedTreeChange, onCancelCreating, onCancelRename,
 }: Props) {
+  const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!ctxMenu) return;
+    function close() { setCtxMenu(null); }
+    window.addEventListener('click', close);
+    window.addEventListener('contextmenu', close);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('contextmenu', close); };
+  }, [ctxMenu]);
+
+  const openCtx = useCallback((e: React.MouseEvent, node: Workflow) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY, node });
+  }, []);
+
+  function exportWf(wf: Workflow) {
+    const blob = new Blob([JSON.stringify(wf, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${wf.id}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 
   function renderNode(node: WfNode): React.ReactNode {
     const hasChildren = node.children.length > 0;
@@ -49,7 +80,8 @@ export function ProcessTree({
           className={`proc-item${wfId === node.id ? ' active' : ''}`}
           onClick={() => { if (renamingWfId !== node.id) onLoadWorkflow(node.id); }}
           onDoubleClick={e => { e.stopPropagation(); onStartRename(node); }}
-          title={node.id}
+          onContextMenu={e => openCtx(e, node)}
+          title={node.name || node.id}
         >
           <span
             className="proc-item-toggle"
@@ -98,6 +130,46 @@ export function ProcessTree({
 
   return (
     <div>
+      {ctxMenu && (
+        <div
+          style={{
+            position: 'fixed', zIndex: 9000,
+            left: ctxMenu.x, top: ctxMenu.y,
+            background: '#1e293b', border: '1px solid #334155',
+            borderRadius: 6, padding: '4px 0',
+            boxShadow: '0 8px 24px rgba(0,0,0,.4)',
+            minWidth: 160, fontSize: 13, color: '#f8fafc',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div style={{ padding: '3px 8px 5px', fontSize: 11, color: '#64748b', borderBottom: '1px solid #334155', marginBottom: 3 }}>
+            {ctxMenu.node.name || ctxMenu.node.id}
+          </div>
+          {[
+            { label: 'Переименовать', action: () => { onStartRename(ctxMenu.node); setCtxMenu(null); } },
+            { label: 'Дублировать', action: () => { onDupWorkflow(ctxMenu.node); setCtxMenu(null); } },
+            { label: 'Экспорт JSON', action: () => { exportWf(ctxMenu.node); setCtxMenu(null); } },
+            { label: '—', action: null },
+            { label: 'Удалить', action: () => { onDelWorkflow(ctxMenu.node); setCtxMenu(null); }, danger: true },
+          ].map((item, i) => item.action === null
+            ? <div key={i} style={{ height: 1, background: '#334155', margin: '3px 0' }} />
+            : (
+              <div
+                key={i}
+                onClick={item.action}
+                style={{
+                  padding: '7px 14px', cursor: 'pointer',
+                  color: (item as any).danger ? '#fca5a5' : '#f8fafc',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#334155'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+              >
+                {item.label}
+              </div>
+            )
+          )}
+        </div>
+      )}
       <div className="proc-new-row">
         <h3 style={{ margin: 0 }}>Процессы</h3>
         <button className="btn-proc-new" onClick={onStartCreatingNew}>+ Новый</button>
@@ -134,7 +206,8 @@ export function ProcessTree({
               className={`proc-item${wfId === w.id ? ' active' : ''}`}
               onClick={() => { if (renamingWfId !== w.id) onLoadWorkflow(w.id); }}
               onDoubleClick={e => { e.stopPropagation(); onStartRename(w); }}
-              title={w.id}
+              onContextMenu={e => openCtx(e, w)}
+              title={w.name || w.id}
             >
               {renamingWfId === w.id ? (
                 <input
