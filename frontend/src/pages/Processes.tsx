@@ -7,6 +7,11 @@ import type { Workflow } from '../api/types';
 
 const styles = `
   .layout { display: grid; grid-template-columns: 300px 1fr; gap: 0; height: calc(100vh - 100px); }
+  @media (max-width: 640px) {
+    .layout { grid-template-columns: 1fr; height: auto; }
+    .sidebar { max-height: 280px; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .main { height: auto; min-height: 400px; }
+  }
   .sidebar { background: #fff; border-right: 1px solid #e2e8f0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; }
   .sidebar-top { display: flex; gap: 8px; margin-bottom: 12px; }
   .sidebar-top button { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; background: white; }

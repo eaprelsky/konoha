@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from "fs";
 import { requireAuth } from "../middleware/auth";
 import { redis } from "../redis";
 import Anthropic from "@anthropic-ai/sdk";
-import { createWorkflow } from "../workflow-loader";
+import { createWorkflow, listWorkflows } from "../workflow-loader";
 
 /** Build content blocks from text + optional attachment paths (closes #321) */
 function buildContent(text: string, attachments?: AttachmentRef[]): Anthropic.MessageParam["content"] {
@@ -407,7 +407,22 @@ router.post("/ai/chat", async (c) => {
     .filter(Boolean);
 
   const contextBlock = body.context ? `\n\n[Inspector context]\n${body.context}` : "";
-  const userMsg = body.message + contextBlock;
+
+  // Inject compact workflow list for process mode so Tsunade can answer questions about existing processes
+  let processListContext = "";
+  if (mode === "process") {
+    try {
+      const wfs = await listWorkflows();
+      if (wfs.length > 0) {
+        const summary = wfs.slice(0, 50).map(w =>
+          `- ${w.id}: ${(w as any).name ?? w.id}${(w as any).status === "draft" ? " [черновик]" : ""}`
+        ).join("\n");
+        processListContext = `\n\n[Registered processes (${wfs.length} total)]\n${summary}`;
+      }
+    } catch { /* skip if workflow store unavailable */ }
+  }
+
+  const userMsg = body.message + contextBlock + processListContext;
 
   const messages: { role: "user" | "assistant"; content: string }[] = [
     ...history,
