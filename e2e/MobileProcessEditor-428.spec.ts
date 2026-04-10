@@ -26,7 +26,7 @@ test.describe('ProcessEditor Mobile Interface (Issue #428/#430)', () => {
     // Authorization header is injected globally via extraHTTPHeaders in playwright.config.ts.
     const res = await request.post('/workflows?draft=true', {
       headers: { 'Content-Type': 'application/json' },
-      data: { id: `e2e-editor-${Date.now()}`, name: `Mobile Editor Test — ${new Date().toISOString()}`, elements: [] }
+      data: { id: WORKFLOW_ID, name: `Mobile Editor Test — ${new Date().toISOString()}`, elements: [] }
     });
 
     if (!res.ok()) throw new Error(`beforeAll: POST /workflows → ${res.status()}`);
