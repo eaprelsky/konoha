@@ -55,6 +55,24 @@ function readFileAsAttachment(file: File): Promise<AttachmentImg> {
 }
 
 /**
+ * Render markdown text to HTML.
+ * Handles: **bold**, *italic*, `code`, and newlines.
+ * Escapes HTML before applying transforms to prevent XSS.
+ */
+function renderMarkdown(text: string): string {
+  // Escape HTML special chars first
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/\n/g, '<br>');
+}
+
+/**
  * Extract readable text from a partial/in-progress JSON reply.
  * During SSE streaming the model emits raw JSON fragments like:
  *   {"reply": "Hello, I'm Tsuna...
@@ -380,7 +398,9 @@ export function AssistantWidget() {
                     ))}
                   </div>
                 )}
-                {m.text}
+                {m.role === 'assistant'
+                  ? <span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
+                  : m.text}
                 {streaming && <span className="aw-cursor">▌</span>}
               </div>
             );
