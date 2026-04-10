@@ -40,6 +40,23 @@ import workflowEngineModule from "../../modules/workflow-engine/src";
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
 mkdirSync(ATTACHMENTS_DIR, { recursive: true });
 
+// ── Env validation ────────────────────────────────────────────────────────────
+// Required vars. Missing any = server refuses to start with a clear message.
+const REQUIRED_ENV: Array<{ key: string; hint: string }> = [
+  { key: "KONOHA_TOKEN",      hint: "Admin auth token — set a strong random value" },
+  { key: "ANTHROPIC_API_KEY", hint: "Anthropic API key — get from console.anthropic.com" },
+];
+
+const missingEnv = REQUIRED_ENV.filter(({ key }) => !process.env[key]);
+if (missingEnv.length > 0) {
+  console.error("[startup] Missing required environment variables:");
+  for (const { key, hint } of missingEnv) {
+    console.error(`  ${key}  →  ${hint}`);
+  }
+  console.error("[startup] Set them in /home/ubuntu/.agent-env (loaded by systemd) or .env");
+  process.exit(1);
+}
+
 // Prevent ioredis disconnect errors from crashing the process
 process.on("uncaughtException", (err) => {
   console.error("[uncaughtException] swallowed:", err.message);
