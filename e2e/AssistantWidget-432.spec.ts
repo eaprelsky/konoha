@@ -7,6 +7,19 @@ const WORKFLOW_ID = `e2e-assistant-432-${Date.now()}`;
 
 let testProcessId: string;
 
+/**
+ * Click .aw-trigger to expand the assistant widget.
+ * .aw-panel and .aw-drag-handle are only rendered when widgetState !== 'collapsed'.
+ * All tests that need the panel must call this first.
+ */
+async function expandWidget(page: import('@playwright/test').Page) {
+  const trigger = page.locator('.aw-trigger');
+  await trigger.waitFor({ state: 'visible', timeout: 10_000 });
+  await trigger.click();
+  // Wait for panel to appear in DOM
+  await page.waitForSelector('.aw-panel', { timeout: 5_000 });
+}
+
 test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
   test.beforeAll(async ({ request }) => {
     // Ensure screenshot output directory exists
@@ -16,7 +29,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     // Authorization header is injected globally via extraHTTPHeaders in playwright.config.ts.
     const res = await request.post('/workflows?draft=true', {
       headers: { 'Content-Type': 'application/json' },
-      data: { id: `e2e-assistant-${Date.now()}`, name: `Mobile Assistant Test — ${new Date().toISOString()}`, elements: [] }
+      data: { id: WORKFLOW_ID, name: `Mobile Assistant Test — ${new Date().toISOString()}`, elements: [] }
     });
 
     if (!res.ok()) throw new Error(`beforeAll: POST /workflows → ${res.status()}`);
@@ -33,20 +46,17 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     page.setViewportSize(MOBILE_VIEWPORT);
     await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
-
-    // Wait for canvas to load
-    await page.waitForSelector('.ipe-canvas', { timeout: 10_000 }).catch(() => {
-      // Canvas may take time, continue anyway
-    });
+    await page.waitForSelector('.ipe-canvas', { timeout: 10_000 }).catch(() => {});
 
     // Canvas must be visible — assistant at 50vh should not cover it
     const canvas = page.locator('.ipe-canvas');
     const canvasVisible = await canvas.isVisible().catch(() => false);
     expect(canvasVisible).toBe(true);
 
-    // Assistant panel should exist (may be collapsed or at bottom)
-    const assistantPanel = page.locator('.aw-panel');
-    const panelExists = await assistantPanel.count().then(c => c > 0).catch(() => false);
+    // Expand widget — .aw-panel only renders when widgetState !== 'collapsed'
+    await expandWidget(page);
+
+    const panelExists = await page.locator('.aw-panel').count().then(c => c > 0).catch(() => false);
     expect(panelExists).toBe(true);
   });
 
@@ -55,12 +65,14 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
-    // Find drag handle
+    // Expand widget — .aw-drag-handle is inside .aw-panel (not rendered when collapsed)
+    await expandWidget(page);
+
     const dragHandle = page.locator('.aw-drag-handle');
     const exists = await dragHandle.count().then(c => c > 0).catch(() => false);
     expect(exists).toBe(true);
 
-    // Drag handle should be visible on mobile (hidden only on desktop via CSS)
+    // Drag handle should be visible on mobile (CSS hides it on desktop via @media min-width 768px)
     const isVisible = await dragHandle.isVisible().catch(() => false);
     expect(isVisible).toBe(true);
   });
@@ -70,21 +82,18 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
+    // Expand widget before checking drag handle
+    await expandWidget(page);
+
     const viewportHeight = MOBILE_VIEWPORT.height;
     const dragHandle = page.locator('.aw-drag-handle');
     const dragExists = await dragHandle.count().then(c => c > 0).catch(() => false);
 
     if (dragExists) {
-      // Get initial panel height
-      const panel = page.locator('.aw-panel');
-      const initialHeight = await panel.evaluate(el => el.getBoundingClientRect().height).catch(() => 0);
-
-      // In theory, we could simulate drag and check height changes
-      // For this test, verify that drag handle can be found and is positioned correctly
       const boundingBox = await dragHandle.boundingBox().catch(() => null);
       if (boundingBox) {
-        // Drag handle should be near the bottom of viewport (for bottom sheet)
-        expect(boundingBox.y).toBeGreaterThan(viewportHeight * 0.3); // Below top 30%
+        // Drag handle should be near the bottom of viewport (bottom sheet)
+        expect(boundingBox.y).toBeGreaterThan(viewportHeight * 0.3);
       }
     }
 
@@ -96,15 +105,14 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
-    // Find fullscreen button (may be in header)
+    // Expand widget — fullscreen button is inside .aw-panel header
+    await expandWidget(page);
+
     const fullscreenBtn = page.locator('button[title*="fullscreen"], button[aria-label*="fullscreen"], .aw-hbtn');
     const btnExists = await fullscreenBtn.count().then(c => c > 0).catch(() => false);
-
-    // Check if panel can be fullscreen
     const panelFullscreen = page.locator('.aw-panel.fullscreen');
     const canBeFullscreen = await panelFullscreen.count().then(c => c > 0).catch(() => false);
 
-    // Either button exists or panel can be fullscreen
     expect(btnExists || canBeFullscreen).toBe(true);
   });
 
@@ -112,6 +120,9 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     page.setViewportSize(MOBILE_VIEWPORT);
     await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
+
+    // Expand widget — fullscreen button is inside .aw-panel
+    await expandWidget(page);
 
     const fullscreenBtn = page.locator('button[title*="fullscreen"], button[aria-label*="fullscreen"], .aw-hbtn').first();
     const btnExists = await fullscreenBtn.count().then(c => c > 0).catch(() => false);
@@ -133,7 +144,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
       expect(fullscreenGone).toBe(true);
       expect(expandedBack).toBe(true);
     } else {
-      // No toggle button found — verify panel is at least in bottom-sheet state
+      // No toggle button — verify panel is in bottom-sheet state
       const panelExpanded = await page.locator('.aw-panel.expanded').count().then(c => c > 0).catch(() => false);
       expect(panelExpanded).toBe(true);
     }
@@ -144,43 +155,42 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
   // ============================================================================
 
   test('TC-07: Resize to desktop (>767px) — isMobile=false, bottom sheet hidden', async ({ page }) => {
-    // Start on mobile
+    // Start on mobile, expand widget so .aw-drag-handle is in DOM
     page.setViewportSize(MOBILE_VIEWPORT);
     await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
+    await expandWidget(page);
 
-    // Verify mobile state: drag handle visible
+    // On mobile: drag handle visible
     const dragHandleMobile = page.locator('.aw-drag-handle');
     const dragVisibleMobile = await dragHandleMobile.isVisible().catch(() => false);
 
     // Resize to desktop
     await page.setViewportSize(DESKTOP_VIEWPORT);
-    await page.waitForTimeout(500); // Let CSS media queries update
+    await page.waitForTimeout(500); // Let CSS media queries + React resize handler update
 
-    // Verify desktop state: drag handle hidden
-    const dragHandleDesktop = page.locator('.aw-drag-handle');
-    const dragVisibleDesktop = await dragHandleDesktop.isVisible().catch(() => false);
-
-    // Desktop should not have mobile drag handle visible
+    // On desktop: drag handle hidden by CSS (@media min-width 768px)
+    const dragVisibleDesktop = await dragHandleMobile.isVisible().catch(() => false);
     expect(dragVisibleDesktop).toBe(false);
   });
 
   test('TC-08: Resize back to mobile (<768px) — isMobile=true, bottom sheet active', async ({ page }) => {
-    // Start on desktop
+    // Start on desktop, expand widget so .aw-drag-handle is in DOM
     page.setViewportSize(DESKTOP_VIEWPORT);
     await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
+    await expandWidget(page);
 
     // Resize to mobile
     await page.setViewportSize(MOBILE_VIEWPORT);
-    await page.waitForTimeout(500); // Let CSS media queries update
+    await page.waitForTimeout(500); // Let CSS media queries + React resize handler update
 
-    // Verify mobile state is restored
+    // Drag handle should exist and be visible on mobile
     const dragHandle = page.locator('.aw-drag-handle');
     const exists = await dragHandle.count().then(c => c > 0).catch(() => false);
-
-    // Drag handle should exist in mobile mode
     expect(exists).toBe(true);
+    const isVisible = await dragHandle.isVisible().catch(() => false);
+    expect(isVisible).toBe(true);
   });
 
   test('TC-09: Screenshot of mobile assistant bottom sheet', async ({ page }) => {
@@ -188,10 +198,11 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
-    // Wait for assistant to mount
-    await page.waitForSelector('.aw-trigger, .aw-panel', { timeout: 10_000 }).catch(() => {
-      // May not have assistant initially, continue anyway
-    });
+    // Expand widget for screenshot
+    await page.waitForSelector('.aw-trigger', { timeout: 10_000 }).catch(() => {});
+    const trigger = page.locator('.aw-trigger');
+    const hasTrigger = await trigger.count().then(c => c > 0).catch(() => false);
+    if (hasTrigger) await trigger.click().catch(() => {});
 
     const screenshot = await page.screenshot({
       path: '/opt/shared/shino/reports/2026-04-10-screenshot-432-mobile.png'

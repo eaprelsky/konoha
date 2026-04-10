@@ -59,12 +59,16 @@ test.describe('ProcessEditor Mobile Interface (Issue #428/#430)', () => {
   test('TC-04: .mob-side-sheet виден на viewport 390x844', async ({ page }) => {
     await goToEditorWithId(page, testProcessId);
 
-    // Check for mobile sidebar
-    const sideSheet = page.locator('.mob-side-sheet');
-    const isVisible = await sideSheet.isVisible().catch(() => false);
+    // .mob-side-sheet is rendered conditionally (React state showMobSide).
+    // Must click .mob-side-toggle first to make it appear in the DOM.
+    const toggle = page.locator('.mob-side-toggle');
+    await toggle.waitFor({ state: 'attached', timeout: 5_000 });
+    await toggle.click();
+    await page.waitForTimeout(200); // allow React state update + CSS transition
 
-    // May be off-screen initially, check if it exists at least
+    const sideSheet = page.locator('.mob-side-sheet');
     const exists = await sideSheet.count().then(c => c > 0).catch(() => false);
+    const isVisible = await sideSheet.isVisible().catch(() => false);
     expect(exists || isVisible).toBe(true);
   });
 
