@@ -16,7 +16,8 @@ receive tasks through watchdog services, and operate autonomously.
 | 7 | [Kiba](kiba/CLAUDE.md) | Sonnet | System guardian — monitoring, alerts | `kiba` | Permanent |
 | 8 | [Kakashi](kakashi/CLAUDE.md) | Sonnet | Bug fixer — reads GitHub Issues, fixes code | `kakashi` | Permanent |
 | 10 | [Guy](guy/CLAUDE.md) | Haiku | Kakashi's sub-agent — fast mechanical tasks (translate, scaffold, replace) | `guy` | Permanent |
-| 9 | [Ibiki](ibiki/CLAUDE.md) | Sonnet | Security pentester — audits Konoha infrastructure | `ibiki` | On-demand |
+| 9 | [Shikadai](shikadai/CLAUDE.md) | Sonnet | Strategic advisor — architecture analysis, process design | `shikadai` | On-demand |
+| 11 | [Ibiki](ibiki/CLAUDE.md) | Sonnet | Security pentester — audits Konoha infrastructure | `ibiki` | On-demand |
 | 12 | [Ino](ino/CLAUDE.md) | Sonnet | Nocturna marketing strategist — content, SEO/AIO, copywriting | `ino` | On-demand |
 | 13 | [Inojin](inojin/CLAUDE.md) | Haiku | Ino's assistant — API calls, bulk generation, formatting | `inojin` | On-demand |
 | — | [Itachi](itachi/CLAUDE.md) | Sonnet+ | Local WSL agent (on owner's machine) | `itachi` | Optional |
