@@ -17,7 +17,6 @@ async function globalSetup(config: FullConfig) {
   const baseURL = config.projects[0]?.use?.baseURL ?? 'http://127.0.0.1:3202';
 
   mkdirSync(path.join(__dirname, '.auth'), { recursive: true });
-  mkdirSync('/opt/shared/shino/reports', { recursive: true });
 
   const browser = await chromium.launch();
   const context = await browser.newContext();
