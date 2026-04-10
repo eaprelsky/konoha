@@ -53,6 +53,7 @@ interface Props {
   trigger: WorkflowElement['trigger'];
   resolving: boolean;
   isStartEvent: boolean;
+  hovered: boolean;
   onClick: () => void;
 }
 
@@ -61,7 +62,7 @@ const BADGE_H = 16;
 const BADGE_X = (EW - BADGE_W) / 2;
 const BADGE_Y = EH - BADGE_H - 2;
 
-export function TriggerBadge({ trigger: tr, resolving, isStartEvent, onClick }: Props) {
+export function TriggerBadge({ trigger: tr, resolving, isStartEvent, hovered, onClick }: Props) {
   if (!isStartEvent) return null;
 
   const color = badgeColor(tr, resolving);
@@ -84,7 +85,7 @@ export function TriggerBadge({ trigger: tr, resolving, isStartEvent, onClick }: 
 
   return (
     <g
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: 'pointer', opacity: hovered ? 0.92 : 0, transition: 'opacity 0.15s' }}
       onClick={e => { e.stopPropagation(); onClick(); }}
     >
       <title>{tooltipParts.join(' · ')}</title>

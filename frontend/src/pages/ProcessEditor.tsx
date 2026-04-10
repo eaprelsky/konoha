@@ -421,7 +421,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                         onClick={e2 => { e2.stopPropagation(); s.drillDown(el); }}>
                         <title>Детализировать (создать под-процесс)</title>
                         <rect x={EW - 24} y={EH - 20} width={22} height={18} rx={4} fill="#1e293b" stroke="#6366f1" strokeWidth={1} />
-                        <text x={EW - 13} y={EH - 8} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="#93c5fd" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">+</text>
+                        <text x={EW - 13} y={EH - 11} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="#93c5fd" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">+</text>
                       </g>
                     )}
                     {el.locked && (
@@ -435,6 +435,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                         trigger={el.trigger}
                         resolving={s.triggerResolving.has(el.id)}
                         isStartEvent={!s.flow.some(([, to]) => to === el.id)}
+                        hovered={s.hoveredEl === el.id}
                         onClick={() => setTriggerPopupId(prev => prev === el.id ? null : el.id)}
                       />
                     )}
