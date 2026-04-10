@@ -35,12 +35,6 @@ const POS_KEY = 'konoha_aw_pos';
 const SIZE_KEY = 'konoha_aw_size';
 const CHAT_KEY = 'konoha_aw_chat_id';
 
-/** Detect mode by current pathname */
-function detectMode(): 'process' | 'admin' {
-  const p = location.pathname;
-  if (/\/(editor|monitor|processes|cases|workitems|calendar|my-calendar|my-tasks|reminders)/.test(p)) return 'process';
-  return 'admin';
-}
 
 function defaultPos() {
   return { x: Math.max(0, window.innerWidth - 432), y: Math.max(0, window.innerHeight - 532) };
@@ -226,7 +220,7 @@ export function AssistantWidget() {
           message: msg || '(см. вложения)',
           context,
           chat_id: chatId || undefined,
-          mode: detectMode(),
+          mode: 'process',
           stream: true,
           images: sentAttachments.length > 0
             ? sentAttachments.map(a => ({ data: a.data, mime: a.mime, name: a.name }))
@@ -365,8 +359,6 @@ export function AssistantWidget() {
           </button>
         </div>
 
-        {/* Context hint */}
-        <div className="aw-hint">{location.pathname} · {detectMode()} mode</div>
 
         {/* Messages */}
         <div className="aw-messages">
