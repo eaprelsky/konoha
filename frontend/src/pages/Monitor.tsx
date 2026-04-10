@@ -61,6 +61,7 @@ export function Monitor() {
   const [selectedWf, setSelectedWf] = useState<Workflow | null>(null);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [wfLoadState, setWfLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
 
   const [statusFilter, setStatusFilter] = useState('');
   const [processFilter, setProcessFilter] = useState('');
@@ -80,7 +81,7 @@ export function Monitor() {
 
   const load = useCallback(() => {
     if (!token) return;
-    const filters: Record<string, unknown> = { limit: 200 };
+    const filters: Record<string, unknown> = { limit: 1000 };
     if (statusFilter) filters.status = statusFilter;
     if (processFilter) filters.process_id = processFilter;
     api.runs.list(filters as any)
@@ -98,10 +99,12 @@ export function Monitor() {
 
   // When a run is selected, load its workflow for diagram
   useEffect(() => {
-    if (!selectedRun || !token) return;
+    if (!selectedRun || !token) { setWfLoadState('idle'); return; }
+    setSelectedWf(null);
+    setWfLoadState('loading');
     api.workflows.get(selectedRun.process_id)
-      .then(setSelectedWf)
-      .catch(() => setSelectedWf(null));
+      .then(wf => { setSelectedWf(wf); setWfLoadState('idle'); })
+      .catch(() => { setSelectedWf(null); setWfLoadState('error'); });
   }, [selectedRun, token]);
 
   // Group runs by process_id, filter by search
@@ -177,6 +180,26 @@ export function Monitor() {
             </div>
           </div>
 
+          <div style={{ padding: '4px 16px 6px', display: 'flex', gap: 12, fontSize: 11, color: '#64748b', borderBottom: '1px solid #f1f5f9', flexWrap: 'wrap' }}>
+            <span title={lang === 'ru' ? 'Статус прогона' : 'Run status'}>
+              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#3b82f6', marginRight: 3 }} />
+              {lang === 'ru' ? 'активен' : 'running'}
+            </span>
+            <span>
+              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef4444', marginRight: 3 }} />
+              {lang === 'ru' ? 'ошибка' : 'error'}
+            </span>
+            <span style={{ marginLeft: 8, color: '#94a3b8' }}>SLA:</span>
+            <span title={lang === 'ru' ? 'Выполняется > 4 часов' : 'Running > 4 hours'}>
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', marginRight: 3 }} />
+              {lang === 'ru' ? '>4ч' : '>4h'}
+            </span>
+            <span title={lang === 'ru' ? 'Застрял: выполняется > 24 часов' : 'Stuck: running > 24 hours'}>
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#ef4444', marginRight: 3 }} />
+              {lang === 'ru' ? '>24ч (застрял)' : '>24h (stuck)'}
+            </span>
+          </div>
+
           <div className="mon-runs-list">
             {loading && <div className="mon-loading">{lang === 'ru' ? 'Загрузка…' : 'Loading…'}</div>}
             {error && <div className="mon-error">{error}</div>}
@@ -200,7 +223,14 @@ export function Monitor() {
                       className={`run-item${selectedRun?.case_id === r.case_id ? ' active' : ''}`}
                       onClick={() => setSelectedRun(r)}
                     >
-                      <div className={`run-dot ${r.status}`} />
+                      <div
+                        className={`run-dot ${r.status}`}
+                        title={r.status === 'error'
+                          ? (lang === 'ru' ? 'Ошибка выполнения' : 'Execution error')
+                          : r.status === 'running'
+                          ? (lang === 'ru' ? 'Выполняется' : 'Running')
+                          : (lang === 'ru' ? 'Завершено' : 'Done')}
+                      />
                       <div className="run-info">
                         <div className="run-subject">{r.subject}</div>
                         <div className="run-step">{currentStep(r)}</div>
@@ -208,11 +238,25 @@ export function Monitor() {
                           <span>{statusLabel(r.status, lang)}</span>
                           <span>{fmtTime(r.created_at)}</span>
                           {r.status === 'running' && <span>{fmtElapsed(elapsedMs(r.created_at))}</span>}
+                          {r.status === 'running' && elapsedMs(r.created_at) > 24 * 3_600_000 && (
+                            <span style={{ color: '#ef4444', fontWeight: 600 }}>
+                              {lang === 'ru' ? '⚠ застрял' : '⚠ stuck'}
+                            </span>
+                          )}
                         </div>
                       </div>
                       {r.status === 'running' && (
                         <div className="run-sla">
-                          <div className={`sla-dot ${slaClass(r)}`} title="SLA" />
+                          <div
+                            className={`sla-dot ${slaClass(r)}`}
+                            title={
+                              slaClass(r) === 'sla-bad'
+                                ? (lang === 'ru' ? 'Застрял: выполняется > 24 часов' : 'Stuck: running > 24 hours')
+                                : slaClass(r) === 'sla-warn'
+                                ? (lang === 'ru' ? 'Задержка: выполняется > 4 часов' : 'Delayed: running > 4 hours')
+                                : (lang === 'ru' ? 'В норме' : 'On schedule')
+                            }
+                          />
                         </div>
                       )}
                     </div>
@@ -271,11 +315,15 @@ export function Monitor() {
               <div className="run-diagram">
                 {selectedWf ? (
                   <EpcRenderer workflow={selectedWf} caseData={selectedRun} />
-                ) : (
+                ) : wfLoadState === 'loading' ? (
                   <div style={{ padding: 40, color: '#94a3b8', textAlign: 'center', fontSize: 14 }}>
                     {lang === 'ru' ? 'Загрузка диаграммы…' : 'Loading diagram…'}
                   </div>
-                )}
+                ) : wfLoadState === 'error' ? (
+                  <div style={{ padding: 40, color: '#ef4444', textAlign: 'center', fontSize: 14 }}>
+                    {lang === 'ru' ? 'Диаграмма недоступна — процесс не найден или удалён' : 'Diagram unavailable — process not found or deleted'}
+                  </div>
+                ) : null}
               </div>
 
               {/* Timeline */}
