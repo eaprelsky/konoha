@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { mkdirSync } from 'fs';
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 const DESKTOP_VIEWPORT = { width: 1280, height: 800 };
@@ -6,55 +7,25 @@ const WORKFLOW_ID = `e2e-assistant-432-${Date.now()}`;
 
 let testProcessId: string;
 
-/**
- * Create a workflow via the correct API endpoint: /api/workflows?draft=true
- * Uses KONOHA_TOKEN for authorization.
- */
-async function createWorkflow(): Promise<string> {
-  try {
-    const apiContext = await playwrightRequest.newContext({
-      baseURL: 'http://127.0.0.1:3201'
+test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
+  test.beforeAll(async ({ request }) => {
+    // Ensure screenshot output directory exists
+    mkdirSync('/opt/shared/shino/reports', { recursive: true });
+
+    // Create workflow via Playwright request (carries auth-fixture storageState).
+    // Backend mounts /workflows directly — no /api/ prefix.
+    const res = await request.post('/workflows?draft=true', {
+      data: { name: `Mobile Assistant Test — ${new Date().toISOString()}`, elements: [] }
     });
-
-    const headers = {
-      Authorization: `Bearer ${process.env.KONOHA_TOKEN ?? 'konoha-dev-token'}`
-    };
-    const body = {
-      id: WORKFLOW_ID,
-      name: `Mobile Assistant Test — ${new Date().toISOString()}`,
-      elements: []
-    };
-
-    // Use /api/workflows (not /workflows) — this is the correct endpoint
-    let res = await apiContext.post('/api/workflows?draft=true', { headers, data: body });
-
-    if (!res.ok()) {
-      res = await apiContext.put(`/api/workflows/${WORKFLOW_ID}?draft=true`, {
-        headers,
-        data: { name: body.name, elements: body.elements }
-      });
-    }
-
-    await apiContext.dispose();
 
     if (res.ok()) {
       const wf = await res.json() as { id?: string };
-      const id = wf.id ?? WORKFLOW_ID;
-      console.log(`[beforeAll] Created workflow via /api/workflows: ${id}`);
-      return id;
+      testProcessId = wf.id ?? WORKFLOW_ID;
     } else {
-      throw new Error(`API failed with ${res.status()}`);
+      console.log(`[beforeAll] API returned ${res.status()}, using fallback ID: ${WORKFLOW_ID}`);
+      testProcessId = WORKFLOW_ID;
     }
-  } catch (err) {
-    console.log(`[beforeAll] API fixture failed, using fallback ID: ${WORKFLOW_ID}`);
-    return WORKFLOW_ID;
-  }
-}
-
-test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
-  test.beforeAll(async () => {
-    // TC-01 (implicit): Create workflow for testing
-    testProcessId = await createWorkflow();
+    console.log(`[beforeAll] Created workflow: ${testProcessId}`);
   });
 
   // ============================================================================
@@ -71,10 +42,10 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
       // Canvas may take time, continue anyway
     });
 
-    // Canvas should be visible (not covered by fullscreen assistant)
+    // Canvas must be visible — assistant at 50vh should not cover it
     const canvas = page.locator('.ipe-canvas');
     const canvasVisible = await canvas.isVisible().catch(() => false);
-    expect(canvasVisible || true).toBe(true); // Canvas is OK if partially visible
+    expect(canvasVisible).toBe(true);
 
     // Assistant panel should exist (may be collapsed or at bottom)
     const assistantPanel = page.locator('.aw-panel');
@@ -92,10 +63,9 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     const exists = await dragHandle.count().then(c => c > 0).catch(() => false);
     expect(exists).toBe(true);
 
-    // Check that drag handle is visible (on mobile, not on desktop)
+    // Drag handle should be visible on mobile (hidden only on desktop via CSS)
     const isVisible = await dragHandle.isVisible().catch(() => false);
-    // May be hidden if assistant is collapsed, but should exist
-    expect(exists).toBe(true);
+    expect(isVisible).toBe(true);
   });
 
   test('TC-04: Drag handle changes height in 25–90% range', async ({ page }) => {
@@ -146,10 +116,30 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
     await page.goto(`/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
-    // Verify panel exists and can have different states
-    const panel = page.locator('.aw-panel');
-    const exists = await panel.count().then(c => c > 0).catch(() => false);
-    expect(exists).toBe(true);
+    const fullscreenBtn = page.locator('button[title*="fullscreen"], button[aria-label*="fullscreen"], .aw-hbtn').first();
+    const btnExists = await fullscreenBtn.count().then(c => c > 0).catch(() => false);
+
+    if (btnExists) {
+      // Step 1: click → panel should enter fullscreen
+      await fullscreenBtn.click();
+      await page.waitForTimeout(300);
+
+      const isFullscreen = await page.locator('.aw-panel.fullscreen').count().then(c => c > 0).catch(() => false);
+      expect(isFullscreen).toBe(true);
+
+      // Step 2: click again → panel should exit fullscreen, return to bottom sheet (.expanded)
+      await fullscreenBtn.click();
+      await page.waitForTimeout(300);
+
+      const fullscreenGone = await page.locator('.aw-panel.fullscreen').count().then(c => c === 0).catch(() => false);
+      const expandedBack = await page.locator('.aw-panel.expanded').count().then(c => c > 0).catch(() => false);
+      expect(fullscreenGone).toBe(true);
+      expect(expandedBack).toBe(true);
+    } else {
+      // No toggle button found — verify panel is at least in bottom-sheet state
+      const panelExpanded = await page.locator('.aw-panel.expanded').count().then(c => c > 0).catch(() => false);
+      expect(panelExpanded).toBe(true);
+    }
   });
 
   // ============================================================================
