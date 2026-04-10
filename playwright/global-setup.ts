@@ -1,11 +1,14 @@
 /**
- * Playwright global setup — logs in once and saves auth state (storageState).
- * Runs before any test suite; the saved cookies/localStorage are reused
- * by all tests via `use.storageState` in playwright.config.ts.
+ * Playwright global setup — injects localStorage auth state directly.
+ * Runs before any test suite; the saved state is reused by all tests
+ * via `use.storageState` in playwright.config.ts.
  *
- * Credentials: test account used only for E2E runs.
+ * Auth is client-side only (Login.tsx validates VALID_USER/VALID_PASS in-browser
+ * and sets localStorage['konoha_dash_auth'] = '1'). No server session involved.
+ * We set it directly to avoid dependency on form rendering or E2E_PASSWORD env var.
  */
 import { chromium, type FullConfig } from '@playwright/test';
+import { mkdirSync } from 'fs';
 import path from 'path';
 
 const AUTH_FILE = path.join(__dirname, '.auth/user.json');
@@ -13,25 +16,26 @@ const AUTH_FILE = path.join(__dirname, '.auth/user.json');
 async function globalSetup(config: FullConfig) {
   const baseURL = config.projects[0]?.use?.baseURL ?? 'http://127.0.0.1:3202';
 
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
+  mkdirSync(path.join(__dirname, '.auth'), { recursive: true });
+  mkdirSync('/opt/shared/shino/reports', { recursive: true });
 
-  // SPA: navigate to /ui/login (React handles routing)
-  await page.goto(`${baseURL}/ui/login`);
+  const browser = await chromium.launch();
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  // Navigate to establish the origin so localStorage is scoped correctly.
+  // The SPA will redirect to /ui/login — that's fine; we set localStorage before the next navigate.
+  await page.goto(`${baseURL}/ui/`);
   await page.waitForLoadState('domcontentloaded');
 
-  const username = process.env.E2E_USERNAME ?? 'eaprelsky';
-  const password = process.env.E2E_PASSWORD;
-  if (!password) throw new Error('E2E_PASSWORD env variable is required');
+  // Set auth flag directly — mirrors what Login.tsx does on successful login.
+  // No E2E_PASSWORD needed; auth is purely client-side (app.tsx:54 checks localStorage).
+  await page.evaluate(() => {
+    localStorage.setItem('konoha_dash_auth', '1');
+    localStorage.setItem('konoha_dash_user', 'eaprelsky');
+  });
 
-  await page.locator('input[autocomplete="username"], input[type="text"]').first().fill(username);
-  await page.locator('input[type="password"]').first().fill(password);
-  await page.locator('button[type="submit"]').click();
-
-  // Wait for redirect away from login
-  await page.waitForURL(url => !url.pathname.includes('/login'), { timeout: 15_000 });
-
-  await page.context().storageState({ path: AUTH_FILE });
+  await context.storageState({ path: AUTH_FILE });
   await browser.close();
 }
 
