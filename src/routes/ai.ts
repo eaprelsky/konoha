@@ -70,6 +70,7 @@ const TSUNADE_SYSTEM = `Ты — Цунаде, AI-ассистент редак�
 - Gateway operator: всегда "XOR", "AND" или "OR" (НЕ "X" — только полное название)
 - Function role: указывай РОЛЬ (например "Менеджер", "Telegram Router"), НЕ имя конкретного исполнителя/агента
 - Роль — это ответственность, исполнители назначаются к ролям отдельно в реестре ролей
+- Вспомогательные элементы (role, document, information_system) НЕ входят в массив flow. Flow содержит только переходы между event, function и gateway. Вспомогательные элементы привязываются к функциям через поле "role" в function-элементе или отображаются как аннотации, но не участвуют в управляющем потоке.
 
 Операции, которые ты можешь выполнять:
 - Создать новый процесс с нуля
@@ -441,6 +442,15 @@ router.post("/ai/chat", async (c) => {
               ctrl.enqueue(sse(JSON.stringify({ type: "delta", text: event.delta.text })));
             }
           }
+
+          // Parse JSON reply and emit parsed event so the widget shows text, not raw JSON
+          try {
+            const parsed = JSON.parse(stripMarkdownFences(fullText));
+            const reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message;
+            if (reply) {
+              ctrl.enqueue(sse(JSON.stringify({ type: "parsed", reply })));
+            }
+          } catch { /* not JSON — delta stream is fine as-is */ }
 
           ctrl.enqueue(sse("[DONE]"));
           ctrl.close();

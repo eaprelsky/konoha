@@ -164,6 +164,8 @@ export function AssistantWidget() {
             if (ev.type === 'delta' && typeof ev.text === 'string') {
               full += ev.text;
               setMsgs(prev => [...prev.slice(0, -1), { role: 'assistant', text: full }]);
+            } else if (ev.type === 'parsed' && typeof ev.reply === 'string') {
+              setMsgs(prev => [...prev.slice(0, -1), { role: 'assistant', text: ev.reply }]);
             } else if (ev.type === 'chat_id') {
               setChatId(ev.chat_id);
             }
