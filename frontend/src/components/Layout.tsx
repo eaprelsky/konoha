@@ -63,7 +63,7 @@ const NAV_ITEMS: Record<string, { keyRu: string; keyEn: string; to: string }> = 
 
 function detectGroup(pathname: string): NavGroup {
   for (const g of NAV_GROUPS) {
-    if (g.pages.includes(pathname)) return g.id;
+    if (g.pages.some(p => pathname === p || pathname.startsWith(p + '/'))) return g.id;
   }
   return 'settings';
 }
