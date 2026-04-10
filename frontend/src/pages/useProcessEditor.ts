@@ -8,7 +8,6 @@ import { api } from '../api/client';
 import type { Workflow, WorkflowElement, RoleDef, DocTemplate, ProcessMiningData } from '../api/types';
 import { EW, EH, snap, pinchDist, genId, slugify, type Pos, type EType } from './ArrowRouter';
 import { DEFAULT_LABELS } from './ElementShape';
-import type { SchemaPatch } from './TsunadeChatPanel';
 
 export type Mode = 'select' | 'connect';
 export type Snapshot = { els: WorkflowElement[]; fl: [string, string, string?][]; pos: Record<string, Pos> };
@@ -52,7 +51,6 @@ export function useProcessEditor() {
   const [breadcrumb, setBreadcrumb] = useState<{ id: string; name: string }[]>([]);
   const [adapters, setAdapters] = useState<string[]>([]);
   const [wsFiles,  setWsFiles]  = useState<string[]>([]);
-  const [showChat, setShowChat] = useState(false);
   const [picker,   setPicker]   = useState<'role' | 'document' | 'is' | null>(null);
   const [sideSearch,    setSideSearch]    = useState('');
   const [creatingNew,   setCreatingNew]   = useState(false);
@@ -564,32 +562,6 @@ export function useProcessEditor() {
     finally { setMiningLoading(false); }
   }
 
-  // ── Tsunade patch handler ─────────────────────────────────────────────────────
-  function applyTsunadePatch(patch: SchemaPatch) {
-    pushSnapshot();
-    if (patch.update_elements?.length) {
-      patch.update_elements.forEach(upd => {
-        if (upd.id) { const { id, ...rest } = upd; updateElement(id as string, rest); }
-      });
-    }
-    if (patch.update_positions) setPositions(prev => ({ ...prev, ...patch.update_positions }));
-    if (patch.add_elements?.length) {
-      patch.add_elements.forEach(el => {
-        const id = el.id || `el-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const { x = 100, y = 100, ...rest } = el;
-        setElements(prev => [...prev, { id, type: (rest.type || 'function') as EType, label: (rest.label as string) || 'Новый элемент', ...rest } as WorkflowElement]);
-        setPositions(prev => ({ ...prev, [id]: { x: x as number, y: y as number } }));
-      });
-    }
-    if (patch.remove_elements?.length) {
-      patch.remove_elements.forEach(id => {
-        setElements(prev => prev.filter(e => e.id !== id));
-        setPositions(prev => { const n = { ...prev }; delete n[id]; return n; });
-        setFlow(prev => prev.filter(([f, t]) => f !== id && t !== id));
-      });
-    }
-  }
-
   // ── Sync role/doc entity on inline edit ──────────────────────────────────────
   function syncEntityOnEdit(el: WorkflowElement, newLabel: string) {
     if (el.type === 'role') {
@@ -656,7 +628,7 @@ export function useProcessEditor() {
     error, saving, draftWarning, autosavePending,
     workflows, sideW, versions, viewingVersion, setViewingVersion,
     roles, docs, adapters, wsFiles, breadcrumb,
-    showChat, setShowChat, picker, setPicker,
+    picker, setPicker,
     sideSearch, setSideSearch,
     creatingNew, setCreatingNew, newProcName, setNewProcName,
     renamingWfId, renamingVal, setRenamingVal,
@@ -670,7 +642,7 @@ export function useProcessEditor() {
     save, undo, redo, undoStack, redoStack,
     refreshList, newProcess, startCreatingNew, commitNewProc,
     startRename, commitRename, dupWorkflow, delWorkflow,
-    loadWorkflow, drillDown, toggleMining, applyTsunadePatch,
+    loadWorkflow, drillDown, toggleMining,
     addElement, paletteClick, pickFromRegistry, deleteElement, updateElement, removeEdge,
     switchMode, scheduleAutosave, syncEntityOnEdit,
     onResizeMouseDown,

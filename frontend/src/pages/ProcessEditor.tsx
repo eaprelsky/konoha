@@ -20,7 +20,6 @@ import './ProcessEditor.css';
 import { EW, EH, GR, CW, CH, orthogonalPath, snap, type Pos } from './ArrowRouter';
 import { ElShape, PALETTE } from './ElementShape';
 import { MiningOverlay, formatDuration } from './MiningOverlay';
-import { TsunadeChatPanel } from './TsunadeChatPanel';
 import { useProcessEditor } from './useProcessEditor';
 import { ProcessTree } from './ProcessTree';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -76,10 +75,6 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
           <div className="sep" />
           <button className="btn-save" onClick={s.save} disabled={s.saving}>
             {s.saving ? 'Сохранение…' : '💾 Сохранить'}
-          </button>
-          <div className="sep" />
-          <button className={`btn-tsunade${s.showChat ? ' active' : ''}`} onClick={() => s.setShowChat(v => !v)}>
-            💬 Цунаде
           </button>
           {s.wfId.trim() && (
             <button
@@ -460,19 +455,6 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
             </svg>
           </div>
 
-          {/* Tsunade chat panel */}
-          <TsunadeChatPanel
-            show={s.showChat}
-            onClose={() => s.setShowChat(false)}
-            wfId={s.wfId}
-            wfName={s.wfName}
-            elements={s.elements}
-            flow={s.flow}
-            positions={s.positions}
-            showMining={s.showMining}
-            miningData={s.miningData}
-            onApplyPatch={s.applyTsunadePatch}
-          />
         </div>
       </div>
 
