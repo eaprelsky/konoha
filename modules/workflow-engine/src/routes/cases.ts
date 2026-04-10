@@ -8,6 +8,7 @@ import {
   completeWorkItem,
   listWorkItems,
   listCases,
+  deleteCasesByProcess,
   createStandaloneWorkItem,
   updateWorkItem,
   createReminder,
@@ -30,7 +31,7 @@ casesRouter.get("/", async (c) => {
   const process_id = c.req.query("process_id") || undefined;
   const after = c.req.query("after") || undefined;
   const before = c.req.query("before") || undefined;
-  const limit = Math.min(parseInt(c.req.query("limit") || "50"), 200);
+  const limit = Math.min(parseInt(c.req.query("limit") || "50"), 2000);
   const offset = parseInt(c.req.query("offset") || "0");
   const result = await listCases({ status, process_id, after, before, limit, offset });
   return c.json(result);
@@ -61,6 +62,14 @@ casesRouter.post("/:id/close", requireAuth, async (c) => {
   const kase = await forceCloseCase(id);
   if (!kase) return c.json({ error: "Case not found" }, 404);
   return c.json(kase);
+});
+
+// DELETE /cases?process_id=... — bulk delete cases for a process (admin cleanup)
+casesRouter.delete("/", requireAuth, async (c) => {
+  const process_id = c.req.query("process_id");
+  if (!process_id) return c.json({ error: "process_id query param required" }, 400);
+  const deleted = await deleteCasesByProcess(process_id);
+  return c.json({ ok: true, deleted, process_id });
 });
 
 // SSE stream: GET /cases/:id/stream — real-time case updates (closes #296)

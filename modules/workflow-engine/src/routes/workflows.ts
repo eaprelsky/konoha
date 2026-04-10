@@ -13,6 +13,7 @@ import {
   type WorkflowDefinition,
 } from "../../../../src/workflow-loader";
 import { normalizeElementNames } from "../../../../src/normalizer";
+import { deleteCasesByProcess } from "../../../../src/runtime";
 import { join } from "path";
 import { resolveBatchProgrammatic, type ProcessContext } from "../../../../src/trigger-resolver";
 import { createSubscriptionProgrammatic, type TriggerDef } from "../../../../src/event-manager";
@@ -225,7 +226,9 @@ router.delete("/:id{.+}", requireAuth, async (c) => {
   const id = c.req.param("id")!;
   const ok = await archiveWorkflow(id);
   if (!ok) return c.json({ error: "Workflow not found" }, 404);
-  return c.json({ ok: true, archived: id });
+  // Cascade: remove all cases for this process
+  const deletedCases = await deleteCasesByProcess(id).catch(() => 0);
+  return c.json({ ok: true, archived: id, deleted_cases: deletedCases });
 });
 
 // Load workflow definitions from disk into Redis on startup

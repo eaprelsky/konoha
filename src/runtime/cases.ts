@@ -14,7 +14,7 @@ import { dispatchWorkItem } from "../dispatcher";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByInstance, type TriggerDef } from "../event-manager";
 import {
   pgUpsertCase, pgUpsertWorkItem, pgDeleteWorkItem,
-  pgGetCase, pgListCases,
+  pgGetCase, pgListCases, pgDeleteCasesByProcess,
   pgGetWorkItem, pgListWorkItems,
 } from "../storage/pg";
 import { emitEvent } from "./event-log";
@@ -743,4 +743,40 @@ export async function listCases(filters: {
   const cases = await Promise.all(pageIds.map(id => loadCase(id)));
   const page = cases.filter((c): c is Case => c !== null);
   return { cases: page, total };
+}
+
+/** Delete all cases (and their index entries) for a given process_id. Returns count deleted. */
+export async function deleteCasesByProcess(process_id: string): Promise<number> {
+  // Delete from PostgreSQL if enabled
+  if (PG_READ) {
+    return pgDeleteCasesByProcess(process_id);
+  }
+
+  const caseIds = await redis.smembers(CASES_IDX_PROCESS + process_id);
+  if (caseIds.length === 0) return 0;
+
+  const BATCH = 200;
+  let deleted = 0;
+  for (let i = 0; i < caseIds.length; i += BATCH) {
+    const batch = caseIds.slice(i, i + BATCH);
+    // Load cases to remove from status indexes
+    const raws = await Promise.all(batch.map(id => redis.get(CASE_KEY_PREFIX + id)));
+    const pipe = redis.pipeline();
+    for (let j = 0; j < batch.length; j++) {
+      const cid = batch[j];
+      const raw = raws[j];
+      if (raw) {
+        try {
+          const c = JSON.parse(raw as string);
+          pipe.srem(CASES_IDX_STATUS + c.status, cid);
+        } catch {}
+      }
+      pipe.del(CASE_KEY_PREFIX + cid);
+      pipe.zrem(CASES_IDX_ALL, cid);
+    }
+    await pipe.exec();
+    deleted += batch.length;
+  }
+  await redis.del(CASES_IDX_PROCESS + process_id);
+  return deleted;
 }

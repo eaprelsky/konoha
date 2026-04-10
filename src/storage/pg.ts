@@ -347,6 +347,14 @@ export async function pgListCases(filters: {
   return { rows: all.slice(offset, offset + limit), total };
 }
 
+export async function pgDeleteCasesByProcess(process_id: string): Promise<number> {
+  return pgRead(async () => {
+    const sql = getSql();
+    const result = await sql`DELETE FROM cases WHERE process_id = ${process_id}`;
+    return (result as any).count ?? 0;
+  }) ?? 0;
+}
+
 // ── Work Items ────────────────────────────────────────────────────────────────
 
 export async function pgGetWorkItem(id: string): Promise<Record<string, unknown> | null> {
