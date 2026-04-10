@@ -9,7 +9,7 @@
  * - Inspector context auto-attached to every request
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Maximize2, Minimize2, ChevronDown } from 'lucide-react';
 import { Inspector } from './Inspector';
 import { useBranding } from '../context/BrandingContext';
@@ -23,6 +23,7 @@ interface Msg {
 }
 
 const POS_KEY = 'konoha_aw_pos';
+const SIZE_KEY = 'konoha_aw_size';
 const CHAT_KEY = 'konoha_aw_chat_id';
 
 /** Detect mode by current pathname */
@@ -66,8 +67,13 @@ export function AssistantWidget() {
     try { const s = localStorage.getItem(POS_KEY); return s ? JSON.parse(s) : defaultPos(); }
     catch { return defaultPos(); }
   });
+  const [size, setSize] = useState<{ w: number; h: number }>(() => {
+    try { const s = localStorage.getItem(SIZE_KEY); return s ? JSON.parse(s) : { w: 400, h: 500 }; }
+    catch { return { w: 400, h: 500 }; }
+  });
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -121,6 +127,22 @@ export function AssistantWidget() {
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
+
+  // Track CSS resize (native browser resize handle) and persist
+  const onSizeChange = useCallback(() => {
+    if (!panelRef.current || widgetState === 'fullscreen') return;
+    const { offsetWidth: w, offsetHeight: h } = panelRef.current;
+    const newSize = { w, h };
+    setSize(newSize);
+    try { localStorage.setItem(SIZE_KEY, JSON.stringify(newSize)); } catch {}
+  }, [widgetState]);
+
+  useEffect(() => {
+    if (!panelRef.current) return;
+    const ro = new ResizeObserver(onSizeChange);
+    ro.observe(panelRef.current);
+    return () => ro.disconnect();
+  }, [onSizeChange, widgetState]);
 
   async function send() {
     const msg = input.trim();
@@ -224,13 +246,13 @@ export function AssistantWidget() {
 
   // ── Expanded / Fullscreen panel ───────────────────────────────────────────
   const panelStyle: React.CSSProperties =
-    widgetState === 'fullscreen' ? {} : { left: pos.x, top: pos.y };
+    widgetState === 'fullscreen' ? {} : { left: pos.x, top: pos.y, width: size.w, height: size.h };
 
   const isStreaming = busy && msgs[msgs.length - 1]?.role === 'assistant';
 
   return (
     <>
-      <div className={`aw-panel ${widgetState}`} style={panelStyle}>
+      <div ref={panelRef} className={`aw-panel ${widgetState}`} style={panelStyle}>
 
         {/* Header / drag handle */}
         <div className="aw-header" onMouseDown={onDragStart}>
