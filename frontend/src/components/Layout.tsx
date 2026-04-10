@@ -30,7 +30,7 @@ const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] 
     id: 'settings',
     keyRu: 'Настройки',
     keyEn: 'Settings',
-    pages: ['/settings', '/health', '/connectors', '/messages', '/eventlog', '/kb', '/workspace', '/whitelist', '/admin', '/event-monitor'],
+    pages: ['/settings', '/health', '/connectors', '/messages', '/eventlog', '/kb', '/workspace', '/whitelist', '/event-monitor'],
   },
 ];
 
@@ -58,7 +58,6 @@ const NAV_ITEMS: Record<string, { keyRu: string; keyEn: string; to: string }> = 
   '/kb':           { keyRu: 'База знаний',    keyEn: 'KB',         to: '/kb' },
   '/workspace':    { keyRu: 'Workspace',      keyEn: 'Workspace',  to: '/workspace' },
   '/whitelist':    { keyRu: 'Доступ',         keyEn: 'Access',     to: '/whitelist' },
-  '/admin':        { keyRu: 'Агенты (adm)',   keyEn: 'Agents (adm)', to: '/admin' },
 };
 
 function detectGroup(pathname: string): NavGroup {
