@@ -1,0 +1,37 @@
+  .mt-root { padding: 24px; max-width: 860px; margin: 0 auto; }
+  .mt-header { margin-bottom: 20px; }
+  .mt-header h1 { font-size: 22px; font-weight: 700; color: #0f172a; }
+  .mt-header p { font-size: 14px; color: #64748b; margin-top: 4px; }
+
+  .mt-group { margin-bottom: 24px; }
+  .mt-group-title { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .mt-group-title h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .mt-group-count { font-size: 12px; background: #f1f5f9; color: #64748b; padding: 1px 8px; border-radius: 10px; }
+
+  .mt-item { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.07); margin-bottom: 8px; padding: 14px 18px; display: flex; align-items: flex-start; gap: 14px; border-left: 4px solid transparent; }
+  .mt-item.overdue    { border-left-color: #ef4444; }
+  .mt-item.soon       { border-left-color: #f59e0b; }
+  .mt-item.inProgress { border-left-color: #3b82f6; }
+
+  .mt-item-body { flex: 1; min-width: 0; }
+  .mt-item-label { font-size: 15px; font-weight: 600; color: #1e293b; }
+  .mt-item-meta { display: flex; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
+  .mt-item-meta span { font-size: 12px; color: #64748b; }
+  .mt-item-meta b { color: #334155; }
+
+  .mt-item-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  .btn-complete { padding: 6px 14px; background: #16a34a; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-complete:hover { background: #15803d; }
+  .btn-complete:disabled { opacity: .5; cursor: default; }
+  .deadline-badge { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 6px; }
+  .deadline-badge.overdue    { background: #fee2e2; color: #dc2626; }
+  .deadline-badge.soon       { background: #fef3c7; color: #d97706; }
+  .deadline-badge.inProgress { background: #dbeafe; color: #2563eb; }
+
+  .mt-empty { text-align: center; padding: 60px 20px; color: #94a3b8; }
+  .mt-empty .icon { font-size: 40px; margin-bottom: 12px; }
+  .mt-error { background: #fee2e2; color: #c33; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; border-left: 3px solid #ef4444; font-size: 13px; }
+
+  .assignee-filter { margin-bottom: 16px; }
+  .assignee-filter label { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-right: 8px; }
+  .assignee-filter input { padding: 6px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; width: 220px; }

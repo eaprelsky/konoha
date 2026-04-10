@@ -10,6 +10,7 @@
  */
 
 import { useState } from 'react';
+import './SetupWizard.css';
 
 interface SetupData {
   owner_tg_id: string;
@@ -20,59 +21,6 @@ interface SetupData {
   admin_token: string;
 }
 
-const CSS = `
-  .sw-overlay {
-    position: fixed; inset: 0; background: #0f172a;
-    display: flex; align-items: center; justify-content: center;
-    z-index: 99999; font-family: system-ui, -apple-system, sans-serif;
-  }
-  .sw-card {
-    background: #fff; border-radius: 16px; padding: 40px 48px;
-    width: 480px; max-width: 95vw; box-shadow: 0 24px 64px rgba(0,0,0,.4);
-  }
-  .sw-logo { font-size: 28px; font-weight: 800; color: #0f172a; margin-bottom: 6px; }
-  .sw-tagline { font-size: 13px; color: #64748b; margin-bottom: 32px; }
-  .sw-steps { display: flex; gap: 6px; margin-bottom: 32px; }
-  .sw-step-dot {
-    flex: 1; height: 4px; border-radius: 2px; background: #e2e8f0;
-    transition: background .2s;
-  }
-  .sw-step-dot.done { background: #6366f1; }
-  .sw-step-dot.active { background: #818cf8; }
-  .sw-step-title { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
-  .sw-step-desc { font-size: 13px; color: #64748b; margin-bottom: 24px; line-height: 1.6; }
-  .sw-field { margin-bottom: 18px; }
-  .sw-label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
-  .sw-input {
-    width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
-    color: #1e293b; font-size: 14px; padding: 10px 14px; outline: none;
-    box-sizing: border-box; transition: border-color .15s;
-  }
-  .sw-input:focus { border-color: #6366f1; }
-  .sw-input::placeholder { color: #94a3b8; }
-  .sw-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
-  .sw-actions { display: flex; gap: 10px; justify-content: space-between; margin-top: 28px; align-items: center; }
-  .sw-btn-primary {
-    background: #6366f1; border: none; color: white; border-radius: 8px;
-    padding: 10px 24px; font-size: 14px; font-weight: 600; cursor: pointer;
-    transition: background .15s;
-  }
-  .sw-btn-primary:hover:not(:disabled) { background: #4f46e5; }
-  .sw-btn-primary:disabled { opacity: .5; cursor: not-allowed; }
-  .sw-btn-secondary {
-    background: none; border: 1px solid #e2e8f0; color: #64748b; border-radius: 8px;
-    padding: 10px 20px; font-size: 14px; cursor: pointer;
-    transition: background .15s;
-  }
-  .sw-btn-secondary:hover { background: #f8fafc; }
-  .sw-skip { font-size: 12px; color: #94a3b8; cursor: pointer; text-decoration: underline; }
-  .sw-skip:hover { color: #64748b; }
-  .sw-error { color: #dc2626; font-size: 12px; margin-top: 8px; }
-  .sw-success { text-align: center; padding: 16px 0; }
-  .sw-success-icon { font-size: 48px; margin-bottom: 12px; }
-  .sw-success-title { font-size: 20px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
-  .sw-success-desc { font-size: 13px; color: #64748b; }
-`;
 
 const STEPS = [
   {
@@ -168,7 +116,6 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
   return (
     <>
-      <style>{CSS}</style>
       <div className="sw-overlay">
         <div className="sw-card">
           <div className="sw-logo">🌿 Konoha WE</div>

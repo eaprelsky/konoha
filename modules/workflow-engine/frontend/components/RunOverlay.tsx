@@ -12,8 +12,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { EpcRenderer } from './EpcRenderer';
-import { api } from '../api/client';
-import type { Run, Workflow, HistoryEntry } from '../api/types';
+import { api } from '@core/api/client';
+import type { Run, Workflow, HistoryEntry } from '@core/api/types';
 import './RunOverlay.css';
 
 

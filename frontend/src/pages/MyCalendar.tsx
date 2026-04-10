@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
+import './MyCalendar.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,90 +79,6 @@ const WEEK_DAYS_RU = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 // ── CSS (same structure as Calendar.tsx) ────────────────────────────────────
 
-const CSS = `
-  .mycal-root { display: flex; height: calc(100vh - 96px); overflow: hidden; background: #f8fafc; }
-
-  .mycal-left { width: 210px; flex-shrink: 0; background: #fff; border-right: 1px solid #e2e8f0;
-    display: flex; flex-direction: column; overflow-y: auto; padding: 14px 12px; gap: 16px; }
-  .mycal-left h3 { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
-    letter-spacing: .06em; margin-bottom: 6px; }
-  .mycal-filter-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #334155;
-    cursor: pointer; padding: 3px 0; user-select: none; }
-  .mycal-filter-item input { width: 14px; height: 14px; cursor: pointer; accent-color: #6366f1; flex-shrink: 0; }
-  .mycal-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-
-  .mycal-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-
-  .mycal-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 16px;
-    background: #fff; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
-  .mycal-toolbar h2 { font-size: 16px; font-weight: 700; color: #0f172a; flex: 1; }
-  .mycal-subtitle { font-size: 12px; color: #6366f1; font-weight: 500; background: #eff6ff;
-    padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
-  .mycal-nav-btn { padding: 4px 11px; border: 1px solid #e2e8f0; border-radius: 6px;
-    background: #fff; cursor: pointer; font-size: 16px; color: #475569; line-height: 1.4; }
-  .mycal-nav-btn:hover { background: #f1f5f9; }
-  .mycal-view-btns { display: flex; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; }
-  .mycal-view-btn { padding: 5px 13px; border: none; background: #fff; cursor: pointer;
-    font-size: 13px; color: #64748b; border-left: 1px solid #e2e8f0; }
-  .mycal-view-btn:first-child { border-left: none; }
-  .mycal-view-btn.active { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
-  .mycal-view-btn:hover:not(.active) { background: #f8fafc; }
-  .mycal-today-btn { padding: 5px 12px; border: 1px solid #6366f1; border-radius: 6px;
-    background: #eff6ff; color: #6366f1; cursor: pointer; font-size: 13px; font-weight: 600; }
-  .mycal-today-btn:hover { background: #e0e7ff; }
-
-  /* Week view */
-  .mycal-week { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .mycal-week-head { display: grid; grid-template-columns: 50px repeat(7, 1fr);
-    border-bottom: 2px solid #e2e8f0; background: #fff; flex-shrink: 0; }
-  .mycal-wh-cell { padding: 8px 4px; text-align: center; }
-  .mycal-wh-cell .wd { font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; }
-  .mycal-wh-cell .dd { font-size: 20px; font-weight: 700; color: #1e293b; line-height: 1.1; margin-top: 2px; }
-  .mycal-wh-cell.today .dd { background: #6366f1; color: #fff; border-radius: 50%;
-    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; }
-  .mycal-week-body { flex: 1; overflow-y: auto; display: flex; position: relative; }
-  .mycal-time-col { width: 50px; flex-shrink: 0; position: relative; }
-  .mycal-time-label { font-size: 10px; color: #94a3b8; text-align: right; padding-right: 6px;
-    position: absolute; transform: translateY(-50%); right: 0; white-space: nowrap; }
-  .mycal-day-cols { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); position: relative; }
-  .mycal-day-col { border-left: 1px solid #e2e8f0; position: relative; }
-  .mycal-day-col.today { background: rgba(99,102,241,.04); }
-  .mycal-hour-line { border-top: 1px solid #f1f5f9; position: absolute; left: 0; right: 0; }
-  .mycal-event { position: absolute; left: 2px; right: 2px; border-radius: 4px; padding: 2px 5px;
-    font-size: 11px; font-weight: 600; overflow: hidden; cursor: pointer; z-index: 1;
-    border-left: 3px solid; transition: filter .15s; }
-  .mycal-event:hover { filter: brightness(.92); }
-  .mycal-event-time { font-size: 10px; font-weight: 400; opacity: .7; }
-
-  /* Month view */
-  .mycal-month { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .mycal-month-head { display: grid; grid-template-columns: repeat(7, 1fr);
-    background: #fff; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
-  .mycal-month-head-cell { padding: 8px 4px; text-align: center; font-size: 10px;
-    font-weight: 700; color: #94a3b8; text-transform: uppercase; }
-  .mycal-month-grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(7, 1fr);
-    grid-auto-rows: minmax(80px, 1fr); align-content: start; }
-  .mycal-month-cell { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;
-    padding: 4px; background: #fff; overflow: hidden; }
-  .mycal-month-cell.other-month { background: #f8fafc; }
-  .mycal-month-cell.today-cell { background: rgba(99,102,241,.04); }
-  .mycal-month-day { font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 3px; }
-  .mycal-month-day.today-num { background: #6366f1; color: #fff; border-radius: 50%;
-    width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; }
-  .mycal-month-event { border-radius: 3px; padding: 1px 5px; font-size: 11px; font-weight: 600;
-    color: #fff; margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    cursor: pointer; }
-  .mycal-month-event:hover { filter: brightness(.9); }
-  .mycal-more { font-size: 11px; color: #6366f1; cursor: pointer; padding: 1px 5px; font-weight: 600; }
-
-  .mycal-tooltip { position: fixed; background: #1e293b; color: #f8fafc; padding: 9px 13px;
-    border-radius: 8px; font-size: 12px; pointer-events: none; z-index: 1000; max-width: 260px;
-    box-shadow: 0 4px 16px rgba(0,0,0,.25); line-height: 1.6; }
-  .mycal-tooltip-title { font-weight: 700; margin-bottom: 2px; }
-  .mycal-tooltip-row { color: #94a3b8; font-size: 11px; }
-  .mycal-loading { flex: 1; display: flex; align-items: center; justify-content: center;
-    color: #94a3b8; font-size: 14px; }
-`;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -325,7 +242,6 @@ export function MyCalendar() {
 
   return (
     <>
-      <style>{CSS}</style>
       <div className="mycal-root" onClick={() => setTooltip(null)}>
         {/* Left panel */}
         <div className="mycal-left">
