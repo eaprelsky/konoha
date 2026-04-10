@@ -112,12 +112,38 @@ export function AssistantWidget() {
   });
 
   const [attachments, setAttachments] = useState<AttachmentImg[]>([]);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [mobileHeight, setMobileHeight] = useState(() => Math.round(window.innerHeight * 0.5));
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+  const touchDragRef = useRef<{ startY: number; startH: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Track mobile breakpoint
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Touch drag — resize the mobile bottom sheet by dragging the handle
+  function onHandleTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    touchDragRef.current = { startY: t.clientY, startH: mobileHeight };
+  }
+  function onHandleTouchMove(e: React.TouchEvent) {
+    if (!touchDragRef.current) return;
+    e.preventDefault();
+    const { startY, startH } = touchDragRef.current;
+    const delta = startY - e.touches[0].clientY; // up = positive = taller
+    const minH = Math.round(window.innerHeight * 0.25);
+    const maxH = Math.round(window.innerHeight * 0.9);
+    setMobileHeight(Math.max(minH, Math.min(maxH, startH + delta)));
+  }
+  function onHandleTouchEnd() { touchDragRef.current = null; }
 
   // Keyboard shortcut Ctrl+/
   useEffect(() => {
@@ -336,23 +362,24 @@ export function AssistantWidget() {
 
   // ── Collapsed state: just the trigger button ──────────────────────────────
   if (widgetState === 'collapsed') {
-    const isMobile = window.innerWidth < 768;
     return (
-      <>
-        <button
-          className={`aw-trigger${isMobile ? ' aw-trigger-mobile' : ''}`}
-          onClick={() => setWidgetState(isMobile ? 'fullscreen' : 'expanded')}
-          title="Ассистент (Ctrl+/)"
-        >
-          💬
-        </button>
-      </>
+      <button
+        className={`aw-trigger${isMobile ? ' aw-trigger-mobile' : ''}`}
+        onClick={() => setWidgetState('expanded')}
+        title="Ассистент (Ctrl+/)"
+      >
+        💬
+      </button>
     );
   }
 
   // ── Expanded / Fullscreen panel ───────────────────────────────────────────
+  // Mobile expanded = bottom sheet (CSS positions it; we only supply height).
+  // Desktop expanded = draggable floating panel (pos + size from state).
   const panelStyle: React.CSSProperties =
-    widgetState === 'fullscreen' ? {} : { left: pos.x, top: pos.y, width: size.w, height: size.h };
+    widgetState === 'fullscreen' ? {}
+    : isMobile ? { height: mobileHeight }
+    : { left: pos.x, top: pos.y, width: size.w, height: size.h };
 
   const isStreaming = busy && msgs[msgs.length - 1]?.role === 'assistant';
 
@@ -360,6 +387,16 @@ export function AssistantWidget() {
     <>
       <div ref={panelRef} className={`aw-panel ${widgetState}`} style={panelStyle}
         onDragOver={onDragOver} onDrop={onDrop}>
+
+        {/* Mobile drag handle — touch to resize the bottom sheet */}
+        <div
+          className="aw-drag-handle"
+          onTouchStart={onHandleTouchStart}
+          onTouchMove={onHandleTouchMove}
+          onTouchEnd={onHandleTouchEnd}
+        >
+          <div className="aw-drag-handle-pill" />
+        </div>
 
         {/* Header / drag handle */}
         <div className="aw-header" onMouseDown={onDragStart}>

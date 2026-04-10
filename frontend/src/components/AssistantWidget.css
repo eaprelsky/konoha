@@ -127,8 +127,37 @@
   }
   .aw-msg-img:hover { opacity: .9; }
 
-  /* Mobile: smaller trigger, higher position (#360) */
+  /* Mobile: bottom-sheet panel (#432) */
   @media (max-width: 767px) {
     .aw-trigger { width: 40px; height: 40px; font-size: 18px; bottom: 72px; right: 16px; }
-    .aw-panel.expanded { width: 100vw !important; height: 100vh !important; left: 0 !important; top: 0 !important; border-radius: 0; resize: none; }
+
+    /* expanded = bottom sheet — height set via inline style, rest from here */
+    .aw-panel.expanded {
+      bottom: 0 !important; left: 0 !important;
+      top: auto !important; right: 0 !important;
+      width: 100vw !important;
+      border-radius: 14px 14px 0 0 !important;
+      resize: none !important;
+      box-shadow: 0 -4px 24px rgba(0,0,0,.22);
+    }
+
+    /* Drag handle — touch target to resize the sheet */
+    .aw-drag-handle {
+      display: flex; justify-content: center; align-items: center;
+      padding: 8px 0 4px; flex-shrink: 0;
+      background: #0f172a; border-radius: 14px 14px 0 0;
+      touch-action: none; cursor: row-resize;
+    }
+    .aw-drag-handle-pill {
+      width: 36px; height: 4px;
+      background: rgba(255,255,255,.28); border-radius: 2px;
+    }
+
+    /* Header loses its own top border-radius on mobile (drag handle sits above it) */
+    .aw-panel.expanded .aw-header { border-radius: 0; }
+  }
+
+  /* Drag handle hidden on desktop */
+  @media (min-width: 768px) {
+    .aw-drag-handle { display: none; }
   }
