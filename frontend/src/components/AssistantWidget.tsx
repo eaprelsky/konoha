@@ -10,6 +10,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { Maximize2, Minimize2, ChevronDown } from 'lucide-react';
 import { Inspector } from './Inspector';
 import { useBranding } from '../context/BrandingContext';
 import './AssistantWidget.css';
@@ -216,7 +217,11 @@ export function AssistantWidget() {
 
         {/* Header / drag handle */}
         <div className="aw-header" onMouseDown={onDragStart}>
-          <span className="aw-title">🤖 {branding.assistant_name}</span>
+          {branding.assistant_avatar
+            ? <img src={branding.assistant_avatar} alt="" className="aw-avatar" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+            : <span className="aw-avatar-fallback">🤖</span>
+          }
+          <span className="aw-title">{branding.assistant_name}</span>
           {busy && (
             <button
               className="aw-hbtn"
@@ -227,11 +232,14 @@ export function AssistantWidget() {
           <button
             className="aw-hbtn"
             onClick={() => setWidgetState(s => s === 'fullscreen' ? 'expanded' : 'fullscreen')}
-            title={widgetState === 'fullscreen' ? 'Свернуть' : 'Полный экран'}
+            title={widgetState === 'fullscreen' ? 'Свернуть окно' : 'Полный экран'}
+            aria-label={widgetState === 'fullscreen' ? 'Свернуть окно' : 'Полный экран'}
           >
-            {widgetState === 'fullscreen' ? '⊡' : '⊞'}
+            {widgetState === 'fullscreen' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
-          <button className="aw-hbtn" onClick={() => setWidgetState('collapsed')} title="Закрыть">✕</button>
+          <button className="aw-hbtn" onClick={() => setWidgetState('collapsed')} title="Скрыть чат" aria-label="Скрыть чат">
+            <ChevronDown size={14} />
+          </button>
         </div>
 
         {/* Context hint */}
