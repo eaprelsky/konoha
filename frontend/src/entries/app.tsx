@@ -110,6 +110,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ErrorBoundary>
+        <AssistantWidget />
       </BrowserRouter>
     </TourProvider></HighlightProvider></SubtitleProvider></TokenProvider></I18nProvider>
   );
@@ -119,7 +120,6 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrandingProvider>
       <App />
-      <AssistantWidget />
     </BrandingProvider>
   </StrictMode>
 );
