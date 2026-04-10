@@ -7,6 +7,7 @@ import { useToken } from '@core/context/TokenContext';
 import { api } from '@core/api/client';
 import type { Workflow, WorkflowElement, RoleDef, DocTemplate, ProcessMiningData } from '@core/api/types';
 import { EW, EH, snap, pinchDist, genId, slugify, type Pos, type EType } from './ArrowRouter';
+import { Inspector } from '@core/components/Inspector';
 import { DEFAULT_LABELS } from './ElementShape';
 import type { SchemaPatch } from './TsunadeChatPanel';
 
@@ -437,6 +438,7 @@ export function useProcessEditor() {
     const wf = workflows.find(w => w.id === id);
     if (!wf) return;
     setWfId(wf.id); setWfName(wf.name || wf.id);
+    Inspector.setProcessName(wf.name || wf.id);
     setViewingVersion(null);
     api.workflows.versions(id).then(setVersions).catch(() => setVersions([]));
     setElements([...wf.elements]); setFlow([...(wf.flow || [])]);
