@@ -188,11 +188,12 @@ export function AssistantWidget() {
 
   // ── Collapsed state: just the trigger button ──────────────────────────────
   if (widgetState === 'collapsed') {
+    const isMobile = window.innerWidth < 768;
     return (
       <>
         <button
-          className="aw-trigger"
-          onClick={() => setWidgetState('expanded')}
+          className={`aw-trigger${isMobile ? ' aw-trigger-mobile' : ''}`}
+          onClick={() => setWidgetState(isMobile ? 'fullscreen' : 'expanded')}
           title="Ассистент (Ctrl+/)"
         >
           💬

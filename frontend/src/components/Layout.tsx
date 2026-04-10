@@ -130,6 +130,8 @@ const styles = `
     .kw-hamburger { display: block; }
     nav { padding: 8px 12px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
     nav::-webkit-scrollbar { display: none; }
+    /* Touch targets: min 44px for subnav links (#361) */
+    nav a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; }
   }
 `;
 

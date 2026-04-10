@@ -427,7 +427,12 @@ function SetupTab() {
         </div>
       )}
 
-      <button className="setup-link" onClick={() => setShowWizard(true)}>
+      <button className="setup-link" onClick={() => {
+        if (status?.complete) {
+          if (!window.confirm('Мастер настройки уже завершён. Повторный запуск перезапишет текущие параметры (включая admin token). Продолжить?')) return;
+        }
+        setShowWizard(true);
+      }}>
         {status?.complete ? 'Повторно запустить мастер настройки' : 'Запустить мастер настройки'}
       </button>
     </div>

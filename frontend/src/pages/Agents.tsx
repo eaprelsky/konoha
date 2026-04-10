@@ -16,7 +16,7 @@ const styles = `
   .table { width: 100%; border-collapse: collapse; }
   .table th { background: #f9f9f9; padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; color: #666; border-bottom: 2px solid #eee; text-transform: uppercase; }
   .table td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: middle; }
-  .table tr:hover td { background: #fafafa; }
+  .table tr:hover td { background: #f8fafc; }
   .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
   .dot-online { background: #10b981; }
   .dot-offline { background: #9ca3af; }
@@ -63,6 +63,16 @@ const styles = `
   .ag-filter-select { padding: 5px 10px; border: 1px solid #e2e8f0; border-radius: 5px; font-size: 13px; background: white; cursor: pointer; }
   .ag-filter-select:focus { outline: none; border-color: #6366f1; }
   .ag-filter-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+  /* Mobile card view (#358) */
+  @media (max-width: 767px) {
+    .table thead { display: none; }
+    .table tr { display: block; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; padding: 12px; }
+    .table td { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; border: none; font-size: 13px; }
+    .table td[data-label]::before { content: attr(data-label); font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; min-width: 80px; flex-shrink: 0; padding-top: 2px; }
+    .table tr:hover td { background: transparent; }
+    .actions { flex-wrap: nowrap; gap: 6px; margin-top: 6px; }
+    .actions button { padding: 8px 14px; font-size: 13px; }
+  }
 `;
 
 function lifecycleColor(lc?: { status: string }): string {

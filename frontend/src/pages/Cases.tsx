@@ -17,8 +17,8 @@ const styles = `
   .filters button.reset { background: #999; }
   .table { width: 100%; border-collapse: collapse; }
   .table th { background: #f9f9f9; padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; color: #666; border-bottom: 2px solid #eee; text-transform: uppercase; }
-  .table td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
-  .table tr:hover td { background: #fafafa; cursor: pointer; }
+  .table td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: middle; }
+  .table tr:hover td { background: #f8fafc; cursor: pointer; }
   .link { color: #0066cc; text-decoration: none; cursor: pointer; font-weight: 500; }
   .link:hover { text-decoration: underline; }
   .mono { font-family: monospace; font-size: 12px; color: #555; }
@@ -46,6 +46,13 @@ const styles = `
   .btn-schema:hover { background:#1e293b; }
   .btn-open-schema { background:none;border:1px solid #e2e8f0;color:#0066cc;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;white-space:nowrap; }
   .btn-open-schema:hover { background:#f0f7ff; }
+  /* Mobile card view (#358) */
+  @media (max-width: 767px) {
+    .table thead { display: none; }
+    .table tr { display: block; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; padding: 12px; cursor: pointer; }
+    .table td { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; border: none; font-size: 13px; }
+    .table tr:hover td { background: transparent; }
+  }
 `;
 
 const PAGE_SIZE = 20;

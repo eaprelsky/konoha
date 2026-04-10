@@ -88,3 +88,8 @@
   .warn-wrap:hover .warn-pop { display:block; }
   .warn-pop ul { margin:0; padding:0 0 0 14px; }
   .warn-pop li { color:#fde68a; font-size:11px; line-height:1.6; }
+  /* Touch targets: min 44x44px on mobile (WCAG, #361) */
+  @media (max-width: 767px) {
+    .edge-del { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; padding: 0; }
+    .btn-tsunade, .ipe-bar button { min-height: 44px; padding: 8px 14px; font-size: 14px; }
+  }

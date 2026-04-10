@@ -86,3 +86,9 @@
   }
   .aw-send:hover:not(:disabled) { background: #4f46e5; }
   .aw-send:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* Mobile: smaller trigger, higher position (#360) */
+  @media (max-width: 767px) {
+    .aw-trigger { width: 40px; height: 40px; font-size: 18px; bottom: 72px; right: 16px; }
+    .aw-panel.expanded { width: 100vw !important; height: 100vh !important; left: 0 !important; top: 0 !important; border-radius: 0; resize: none; }
+  }
