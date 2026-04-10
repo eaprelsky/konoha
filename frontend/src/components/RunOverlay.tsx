@@ -40,22 +40,25 @@ export function RunOverlay({ caseId, onClose }: RunOverlayProps) {
   const [run, setRun] = useState<Run | null>(null);
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [wfError, setWfError] = useState(false);
   const [live, setLive] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const esRef = useRef<EventSource | null>(null);
   const logBottomRef = useRef<HTMLDivElement>(null);
 
-  // Load initial case + workflow
+  // Load case and workflow independently so history shows even if schema is gone
   useEffect(() => {
     async function load() {
       try {
         const c = await api.cases.get(caseId);
         setRun(c);
-        const wf = await api.workflows.get(c.process_id);
-        setWorkflow(wf);
+        setLoading(false);
+        // Load workflow separately — failure here doesn't block case display
+        api.workflows.get(c.process_id)
+          .then(setWorkflow)
+          .catch(() => setWfError(true));
       } catch (e: any) {
-        console.error('RunOverlay load:', e.message);
-      } finally {
+        console.error('RunOverlay load case:', e.message);
         setLoading(false);
       }
     }
@@ -139,8 +142,16 @@ export function RunOverlay({ caseId, onClose }: RunOverlayProps) {
             {/* Schema pane */}
             <div className="ro-schema">
               {loading && <div className="ro-empty">Загрузка…</div>}
-              {!loading && (!workflow || !run) && (
-                <div className="ro-empty">Не удалось загрузить схему</div>
+              {!loading && !run && (
+                <div className="ro-empty">Прогон не найден</div>
+              )}
+              {!loading && run && !workflow && !wfError && (
+                <div className="ro-empty">Загрузка схемы…</div>
+              )}
+              {!loading && run && wfError && (
+                <div className="ro-empty" style={{ color: '#f59e0b' }}>
+                  Схема недоступна — процесс был удалён или ещё не сохранён
+                </div>
               )}
               {workflow && run && (
                 <EpcRenderer workflow={workflow} caseData={run} />
