@@ -33,6 +33,14 @@ test.beforeAll(async ({ request }) => {
   testProcessId = wf.id ?? WORKFLOW_ID;
 });
 
+test.afterAll(async ({ request }) => {
+  const KONOHA_TOKEN = process.env.KONOHA_TOKEN;
+  if (!KONOHA_TOKEN || !testProcessId) return;
+  await request.delete(`/api/workflows/${testProcessId}`, {
+    headers: { Authorization: `Bearer ${KONOHA_TOKEN}` },
+  }).catch(() => {}); // best-effort cleanup
+});
+
 // ---------------------------------------------------------------------------
 
 test.describe('Issue #428: Mobile editor — process list + chat navigation', () => {
