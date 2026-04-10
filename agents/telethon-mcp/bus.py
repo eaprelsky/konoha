@@ -123,6 +123,11 @@ async def outgoing_loop():
                         else:
                             sent = await client.send_message(chat_id, text, reply_to=reply_to, link_preview=False, parse_mode=None)
                             print(f'OUT [{chat_id}]: {text[:40]}', flush=True)
+                        # Save sent msg_id for delete_last support
+                        sent_key = f'telegram:sent:{chat_id}'
+                        await rd.hset(sent_key, msg_id, str(sent.id))
+                        await rd.hset(sent_key, 'last', str(sent.id))
+                        await rd.expire(sent_key, 7 * 24 * 3600)
                         await rd.xack('telegram:outgoing', 'claude-agents', msg_id)
                     except Exception as e:
                         print(f'SEND ERR: {e}', flush=True)
@@ -173,6 +178,16 @@ async def commands_loop():
                             await client.delete_messages(chat_id, [msg_id])
                             import json
                             await rd.set(f'telegram:result:{request_id}', json.dumps({'data': 'ok'}), ex=60)
+
+                        elif cmd == 'delete_last':
+                            chat_id = int(data['chat_id'])
+                            last_id = await rd.hget(f'telegram:sent:{chat_id}', 'last')
+                            import json
+                            if last_id:
+                                await client.delete_messages(chat_id, [int(last_id)])
+                                await rd.set(f'telegram:result:{request_id}', json.dumps({'data': f'deleted {last_id}'}), ex=60)
+                            else:
+                                await rd.set(f'telegram:result:{request_id}', json.dumps({'data': 'error: no last message found for this chat'}), ex=60)
 
                         elif cmd == 'react':
                             from telethon.tl.functions.messages import SendReactionRequest
