@@ -2,78 +2,58 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Issue #407: Cross-consistency between schema and registry', () => {
   test('TC-07: Role on schema synchronizes to Roles registry', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
-    // Navigate to ProcessEditor
-    const editorLink = await page.locator('a[href*="editor"], button:has-text("Редактор")').first();
+    const editorLink = page.locator('a[href*="editor"], button:has-text("Редактор")').first();
+    await expect(editorLink).toBeVisible({ timeout: 3000 });
+    await editorLink.click();
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
-    if (await editorLink.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await editorLink.click();
-      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    }
-
-    // Check that ProcessEditor loaded
-    const pageUrl = page.url();
-    expect(pageUrl).toBeTruthy();
+    await expect(page.locator('#root')).toBeVisible();
   });
 
   test('TC-08: Document on schema synchronizes to Documents registry', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
-    // Navigate to Documents or registry
-    const docsLink = await page.locator('a[href*="documents"], a[href*="docs"]').first();
+    const docsLink = page.locator('a[href*="documents"], a[href*="docs"]').first();
+    await expect(docsLink).toBeVisible({ timeout: 3000 });
+    await docsLink.click();
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
-    if (await docsLink.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await docsLink.click();
-      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    }
-
-    // Page should load
-    const pageUrl = page.url();
-    expect(pageUrl).toBeTruthy();
+    await expect(page.locator('#root')).toBeVisible();
   });
 
   test('TC-09: Deleting process removes runs from Runs section', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
-    // Look for Runs/Cases page
-    const runsLink = await page.locator('a[href*="runs"], a[href*="cases"], button:has-text("Прогоны")').first();
+    const runsLink = page.locator('a[href*="runs"], a[href*="cases"], button:has-text("Прогоны")').first();
+    await expect(runsLink).toBeVisible({ timeout: 3000 });
+    await runsLink.click();
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
-    if (await runsLink.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await runsLink.click();
-      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    }
-
-    // Runs page should load
-    const pageUrl = page.url();
-    expect(pageUrl).toBeTruthy();
+    await expect(page.locator('#root')).toBeVisible();
   });
 
   test('TC-10: Screenshot of editor after adding role + registry', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
-    // Take screenshot of main page
     const screenshotBuffer1 = await page.screenshot({
       path: '/opt/shared/shino/reports/2026-04-10-screenshot-407-app.png'
     });
-    expect(screenshotBuffer1).toBeTruthy();
+    expect(screenshotBuffer1.byteLength).toBeGreaterThan(10_000);
 
-    // Navigate to Roles registry
-    const rolesLink = await page.locator('a[href*="roles"], button:has-text("Роли")').first();
+    const rolesLink = page.locator('a[href*="roles"], button:has-text("Роли")').first();
+    await expect(rolesLink).toBeVisible({ timeout: 3000 });
+    await rolesLink.click();
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
-    if (await rolesLink.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await rolesLink.click();
-      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    }
-
-    // Take screenshot of Roles registry
     const screenshotBuffer2 = await page.screenshot({
       path: '/opt/shared/shino/reports/2026-04-10-screenshot-407-roles.png'
     });
-    expect(screenshotBuffer2).toBeTruthy();
+    expect(screenshotBuffer2.byteLength).toBeGreaterThan(10_000);
   });
 });

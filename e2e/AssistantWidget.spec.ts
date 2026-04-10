@@ -2,40 +2,31 @@ import { test, expect } from '@playwright/test';
 
 test.describe('AssistantWidget attachment feature', () => {
   test('should open app and AssistantWidget (TC-05, TC-06 prep)', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
-    // App loaded successfully
-    expect(page).toBeTruthy();
+    await expect(page.locator('#root')).toBeVisible();
   });
 
   test('should display attachment button in AssistantWidget (TC-06)', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
-    // Look for AssistantWidget or Tsunade panel
-    const tsunadeWidget = await page.locator('[class*="tsunade"], [class*="assistant-widget"], .aw-input').first();
+    // Open AssistantWidget via trigger button
+    const trigger = page.locator('button.aw-trigger');
+    await expect(trigger).toBeVisible({ timeout: 5000 });
+    await trigger.click();
 
-    if (await tsunadeWidget.isVisible()) {
-      // Look for attachment button (📎 icon or input[type=file])
-      const attachBtn = await page.locator('button:has-text("📎"), input[type="file"], [class*="attach"]').first();
-
-      // If button not found by text, look for any button in the widget
-      const widgetButtons = await page.locator('button').filter({ hasText: /📎|attach|file/ }).first();
-
-      expect(widgetButtons).toBeTruthy();
-    } else {
-      // Widget may not be visible by default, skip to screenshot
-      console.log('AssistantWidget not immediately visible (may require navigation)');
-    }
+    // Attachment button should be visible inside the opened widget
+    const attachBtn = page.locator('button.aw-attach-btn');
+    await expect(attachBtn).toBeVisible({ timeout: 3000 });
   });
 
   test('should save screenshot of AssistantWidget (TC-07)', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
-    // Take screenshot of full page (AssistantWidget should be visible)
     const screenshotBuffer = await page.screenshot({ path: '/opt/shared/shino/reports/2026-04-10-screenshot-382.png' });
-    expect(screenshotBuffer).toBeTruthy();
+    expect(screenshotBuffer.byteLength).toBeGreaterThan(10_000);
   });
 });

@@ -2,49 +2,48 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Issue #425: AssistantWidget placeholder fix', () => {
   test('TC-05: Application loads', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
-    // Verify page loaded
-    expect(page.url()).toContain('3201');
+    await expect(page.locator('#root')).toBeVisible();
   });
 
   test('TC-06: Placeholder visible and not truncated', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
+    // Open AssistantWidget first
+    const trigger = page.locator('button.aw-trigger');
+    await expect(trigger).toBeVisible({ timeout: 5000 });
+    await trigger.click();
+
     // Find textarea with placeholder
-    const textarea = await page.locator('textarea.aw-input, textarea[placeholder*="Напишите"]').first();
+    const textarea = page.locator('textarea.aw-input, textarea[placeholder*="Напишите"]').first();
+    await expect(textarea).toBeVisible({ timeout: 3000 });
 
-    // Check if textarea is visible
-    if (await textarea.isVisible({ timeout: 2000 }).catch(() => false)) {
-      // Get the computed style
-      const placeholder = await textarea.getAttribute('placeholder');
-      expect(placeholder).toContain('\n');
-      expect(placeholder).toContain('Напишите');
-      expect(placeholder).toContain('Enter');
-    }
-
-    // Page should be functional
-    expect(page.url()).toContain('3201');
+    const placeholder = await textarea.getAttribute('placeholder');
+    expect(placeholder).toContain('\n');
+    expect(placeholder).toContain('Напишите');
+    expect(placeholder).toContain('Enter');
   });
 
   test('TC-07: Screenshot of AssistantWidget with placeholder', async ({ page }) => {
-    await page.goto('http://127.0.0.1:3201/');
+    await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
-    // Find and scroll to textarea if needed
-    const textarea = await page.locator('textarea.aw-input, textarea[placeholder*="Напишите"]').first();
-    if (await textarea.isVisible({ timeout: 2000 }).catch(() => false)) {
-      // Scroll into view
-      await textarea.scrollIntoViewIfNeeded();
-      await page.waitForTimeout(500);
-    }
+    // Open AssistantWidget first
+    const trigger = page.locator('button.aw-trigger');
+    await expect(trigger).toBeVisible({ timeout: 5000 });
+    await trigger.click();
 
-    // Take screenshot of the whole page
+    const textarea = page.locator('textarea.aw-input, textarea[placeholder*="Напишите"]').first();
+    await expect(textarea).toBeVisible({ timeout: 3000 });
+    await textarea.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(500);
+
     const screenshotBuffer = await page.screenshot({
       path: '/opt/shared/shino/reports/2026-04-10-screenshot-425.png'
     });
-    expect(screenshotBuffer).toBeTruthy();
+    expect(screenshotBuffer.byteLength).toBeGreaterThan(10_000);
   });
 });

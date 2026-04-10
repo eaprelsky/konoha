@@ -13,8 +13,8 @@ test.describe('Work Items (workitems.html)', () => {
     await page.waitForTimeout(1000);
 
     // Check if table exists
-    const table = await page.locator('table, .table, [role="grid"]');
-    expect(table).toBeTruthy();
+    const table = page.locator('table, .table, [role="grid"]');
+    await expect(table).toBeVisible({ timeout: 3000 });
 
     // Check for column headers or content
     const headers = await page.locator('th, [role="columnheader"]');
@@ -48,7 +48,7 @@ test.describe('Work Items (workitems.html)', () => {
     // OR check if page makes periodic requests
     // This is harder to verify in Playwright without network interception
     // For now, we just verify the UI exists
-    expect(hasRefreshUI).toBe(hasRefreshUI); // Always true, tests for existence
+    expect(hasRefreshUI).toBe(true);
   });
 
   test('TC-25: Filter by assignee parameter works', async ({ page }) => {

@@ -12,8 +12,8 @@ test.describe('Process Registry (processes.html)', () => {
     await page.waitForLoadState('networkidle');
 
     // Check that sidebar exists
-    const sidebar = await page.locator('.sidebar');
-    expect(sidebar).toBeTruthy();
+    const sidebar = page.locator('.sidebar');
+    await expect(sidebar).toBeVisible();
 
     // Check for at least one category
     const categories = await page.locator('.category-label');
@@ -99,9 +99,8 @@ test.describe('Process Registry (processes.html)', () => {
       await page.waitForTimeout(500);
 
       // Check if SVG appears in diagram
-      const svg = await page.locator('#diagram svg, .diagram svg');
-      // SVG may or may not render depending on JS
-      expect(svg).toBeTruthy();
+      const svg = page.locator('#diagram svg, .diagram svg');
+      await expect(svg).toBeVisible({ timeout: 3000 });
     }
   });
 });
