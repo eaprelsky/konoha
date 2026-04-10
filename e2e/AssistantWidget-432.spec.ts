@@ -31,7 +31,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
 
   test('TC-02: Assistant opens as bottom sheet ~50vh (canvas visible above)', async ({ page }) => {
     page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     // Wait for canvas to load
@@ -52,7 +52,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
 
   test('TC-03: Drag handle is present and draggable', async ({ page }) => {
     page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     // Find drag handle
@@ -67,7 +67,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
 
   test('TC-04: Drag handle changes height in 25–90% range', async ({ page }) => {
     page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     const viewportHeight = MOBILE_VIEWPORT.height;
@@ -93,7 +93,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
 
   test('TC-05: Fullscreen button expands to 100%', async ({ page }) => {
     page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     // Find fullscreen button (may be in header)
@@ -110,7 +110,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
 
   test('TC-06: Fullscreen toggle returns to bottom sheet', async ({ page }) => {
     page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     const fullscreenBtn = page.locator('button[title*="fullscreen"], button[aria-label*="fullscreen"], .aw-hbtn').first();
@@ -146,7 +146,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
   test('TC-07: Resize to desktop (>767px) — isMobile=false, bottom sheet hidden', async ({ page }) => {
     // Start on mobile
     page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     // Verify mobile state: drag handle visible
@@ -168,7 +168,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
   test('TC-08: Resize back to mobile (<768px) — isMobile=true, bottom sheet active', async ({ page }) => {
     // Start on desktop
     page.setViewportSize(DESKTOP_VIEWPORT);
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     // Resize to mobile
@@ -185,7 +185,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
 
   test('TC-09: Screenshot of mobile assistant bottom sheet', async ({ page }) => {
     page.setViewportSize(MOBILE_VIEWPORT);
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     // Wait for assistant to mount
@@ -202,7 +202,7 @@ test.describe('Issue #432: Mobile Assistant Bottom Sheet', () => {
 
   test('TC-10: Screenshot of desktop assistant (window resize)', async ({ page }) => {
     page.setViewportSize(DESKTOP_VIEWPORT);
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     const screenshot = await page.screenshot({

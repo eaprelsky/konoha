@@ -6,10 +6,10 @@ const WORKFLOW_ID = `e2e-mobile-428-${Date.now()}`;
 
 /**
  * Navigate to editor for a specific workflow ID.
- * Uses /editor/<id> route directly.
+ * Uses /ui/editor/<id> route directly.
  */
 async function goToEditorWithId(page: import('@playwright/test').Page, id: string) {
-  await page.goto(`/editor/${id}`);
+  await page.goto(`/ui/editor/${id}`);
   await page.waitForLoadState('domcontentloaded');
 
   // Wait for editor canvas to appear
@@ -40,12 +40,12 @@ test.describe('ProcessEditor Mobile Interface (Issue #428/#430)', () => {
     await page.setViewportSize({ width: 390, height: 844 });
   });
 
-  test('TC-02: Playwright открывает /editor/<id> без редиректа', async ({ page }) => {
+  test('TC-02: Playwright открывает /ui/editor/<id> без редиректа', async ({ page }) => {
     await goToEditorWithId(page, testProcessId);
 
     // Verify we're on the editor page (no redirect to login)
     const url = page.url();
-    expect(url).toContain(`/editor/${testProcessId}`);
+    expect(url).toContain(`/ui/editor/${testProcessId}`);
   });
 
   test('TC-03: .ipe-canvas найден на странице (редактор загружен)', async ({ page }) => {
