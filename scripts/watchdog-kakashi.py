@@ -29,6 +29,9 @@ IDLE_POLL_SEC    = 2.0
 IDLE_TIMEOUT_SEC = 1800  # 30 min — fixes can take time
 SSE_MAX_BACKOFF  = 60
 
+KONOHA_REPO        = os.path.expanduser("~/konoha")
+AUTO_PUSH_INTERVAL = 300  # 5 minutes — push unpushed commits (#367)
+
 # SESSION_ONLINE/OFFLINE are system noise — never deliver to agent
 NOISE_TEXT_PREFIXES = ("SESSION_ONLINE:", "SESSION_OFFLINE:")
 NOISE_TEXT_CONTAINS = ("going offline (session end)",)
@@ -164,6 +167,8 @@ async def tmux_send(session: str, text: str) -> bool:
 
 # ── Message formatting ────────────────────────────────────────────────────────
 
+KONOHA_TEXT_LIMIT = 3500  # chars; tmux send-keys has ~4095 byte TTY buffer limit (#299)
+
 def format_batch(events: list[dict]) -> str:
     lines = ["Задание для Какаши:"]
     for ev in events:
@@ -171,6 +176,9 @@ def format_batch(events: list[dict]) -> str:
         sender = d.get("from", "?")
         text   = d.get("text", "")
         ts     = d.get("timestamp", "")
+        if len(text) > KONOHA_TEXT_LIMIT:
+            log.warning(f"Konoha message from {sender} truncated: {len(text)} chars → {KONOHA_TEXT_LIMIT}")
+            text = text[:KONOHA_TEXT_LIMIT] + f"... [сообщение обрезано: {len(d.get('text',''))} символов — вызови konoha_read для полного текста]"
         lines.append(f"[{ts[:16] if ts else ''}] {sender}: {text}")
     lines.append("Выполни задание согласно CLAUDE.md. Результат сообщи в Коноха.")
     return " | ".join(lines)
@@ -488,6 +496,68 @@ async def heartbeat_loop() -> None:
 
 
 
+# ── Auto-push (#367) ─────────────────────────────────────────────────────────
+
+async def _notify_bus(text: str) -> None:
+    """Send a notification to naruto via Konoha bus."""
+    payload = json.dumps({
+        "from": f"watchdog-{AGENT_ID}",
+        "to": "naruto",
+        "text": text,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-s", "-X", "POST",
+            "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+            "-H", "Content-Type: application/json",
+            "-d", payload,
+            f"{KONOHA_URL}/messages",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=env,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=10)
+    except Exception as e:
+        log.warning(f"Failed to notify bus: {e}")
+
+
+async def auto_push_loop() -> None:
+    """Periodically push unpushed commits from KONOHA_REPO to origin/main (#367).
+
+    Checks every AUTO_PUSH_INTERVAL seconds. If unpushed commits exist,
+    runs git push and notifies naruto via the bus.
+    """
+    await asyncio.sleep(60)  # startup delay — let agent settle first
+    while True:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "-C", KONOHA_REPO, "log", "origin/main..main", "--oneline",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+            lines = [l for l in stdout.decode().strip().split("\n") if l.strip()]
+            if lines:
+                n = len(lines)
+                log.info(f"auto-push: {n} unpushed commit(s) found, pushing to origin/main")
+                push_proc = await asyncio.create_subprocess_exec(
+                    "git", "-C", KONOHA_REPO, "push", "origin", "main",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, push_err = await asyncio.wait_for(push_proc.communicate(), timeout=60)
+                if push_proc.returncode == 0:
+                    log.info(f"auto-push: pushed {n} commit(s) to main successfully")
+                    await _notify_bus(f"Какаши: pushed {n} commits to main")
+                else:
+                    log.warning(f"auto-push: git push failed: {push_err.decode()[:200]}")
+        except Exception as e:
+            log.warning(f"auto-push check error: {e!r}")
+        await asyncio.sleep(AUTO_PUSH_INTERVAL)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
@@ -505,6 +575,7 @@ async def main() -> None:
         debouncer(raw_queue, batched_queue),
         send_loop(batched_queue),
         heartbeat_loop(),
+        auto_push_loop(),
     )
 
 

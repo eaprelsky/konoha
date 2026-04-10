@@ -28,6 +28,9 @@ WAKE_TIMEOUT_SEC      = 120   # max wait for on-demand agent to start
 SSE_MAX_BACKOFF       = 60
 CIRCUIT_BREAKER_DURATION = 600  # 10 min: no delivery attempts while circuit is open (#111)
 
+KONOHA_REPO      = os.path.expanduser("~/konoha")
+GIT_POLL_INTERVAL = 300  # 5 minutes — check for new pushes to main (#363)
+
 # SESSION_ONLINE/OFFLINE are system noise — never deliver to agent
 NOISE_TEXT_PREFIXES = ("SESSION_ONLINE:", "SESSION_OFFLINE:")
 NOISE_TEXT_CONTAINS = ("going offline (session end)",)
@@ -399,6 +402,108 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
         backoff = min(backoff * 2, SSE_MAX_BACKOFF)
 
 
+# ── Git push poller (#363) ────────────────────────────────────────────────────
+
+async def git_push_poller(raw_queue: asyncio.Queue) -> None:
+    """Poll for new pushes to origin/main every GIT_POLL_INTERVAL seconds.
+
+    Checks git log --oneline to detect HEAD changes. On change, fetches the diff
+    and sends it to Shikadai via Konoha bus for code review (SHIKADAI-2).
+    """
+    await asyncio.sleep(30)  # startup delay
+
+    # Record current HEAD at startup
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git", "-C", KONOHA_REPO, "rev-parse", "origin/main",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        last_head = stdout.decode().strip()
+    except Exception as e:
+        log.warning(f"git-poller: failed to get initial HEAD: {e!r}")
+        last_head = ""
+
+    log.info(f"git-poller: starting with HEAD={last_head[:8]}")
+    env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+
+    while True:
+        await asyncio.sleep(GIT_POLL_INTERVAL)
+        try:
+            # Fetch latest from remote
+            fetch_proc = await asyncio.create_subprocess_exec(
+                "git", "-C", KONOHA_REPO, "fetch", "origin", "main",
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(fetch_proc.wait(), timeout=30)
+
+            # Get current HEAD
+            head_proc = await asyncio.create_subprocess_exec(
+                "git", "-C", KONOHA_REPO, "rev-parse", "origin/main",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            head_stdout, _ = await asyncio.wait_for(head_proc.communicate(), timeout=10)
+            current_head = head_stdout.decode().strip()
+
+            if current_head == last_head:
+                log.debug(f"git-poller: no change (HEAD={current_head[:8]})")
+                continue
+
+            log.info(f"git-poller: HEAD changed {last_head[:8]} → {current_head[:8]}, fetching diff")
+
+            # Get diff between old and new HEAD
+            diff_proc = await asyncio.create_subprocess_exec(
+                "git", "-C", KONOHA_REPO, "diff", f"{last_head}..{current_head}",
+                "--stat", "--no-color",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            diff_stdout, _ = await asyncio.wait_for(diff_proc.communicate(), timeout=30)
+            diff_stat = diff_stdout.decode().strip()
+
+            # Get commit log
+            log_proc = await asyncio.create_subprocess_exec(
+                "git", "-C", KONOHA_REPO, "log", f"{last_head}..{current_head}",
+                "--oneline", "--no-color",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            log_stdout, _ = await asyncio.wait_for(log_proc.communicate(), timeout=10)
+            commit_log = log_stdout.decode().strip()
+
+            # Send to Shikadai for review
+            msg_text = (
+                f"shikadai:review push={current_head[:8]} "
+                f"prev={last_head[:8]}\n"
+                f"Commits:\n{commit_log}\n\n"
+                f"Diff stat:\n{diff_stat}"
+            )
+            # Truncate if too long
+            if len(msg_text) > 3000:
+                msg_text = msg_text[:3000] + f"\n... [truncated]"
+
+            payload = json.dumps({
+                "from": f"watchdog-{AGENT_ID}",
+                "to": "shikadai",
+                "text": msg_text,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            curl_proc = await asyncio.create_subprocess_exec(
+                "curl", "-s", "-X", "POST",
+                "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                "-H", "Content-Type: application/json",
+                "-d", payload,
+                f"{KONOHA_URL}/messages",
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                env=env,
+            )
+            await asyncio.wait_for(curl_proc.wait(), timeout=10)
+            log.info(f"git-poller: sent diff to shikadai for review ({current_head[:8]})")
+
+            last_head = current_head
+
+        except Exception as e:
+            log.warning(f"git-poller error: {e!r}")
+
+
 # ── Heartbeat ─────────────────────────────────────────────────────────────────
 
 async def _send_lifecycle(text: str, env: dict) -> None:
@@ -486,6 +591,7 @@ async def main() -> None:
 
     await asyncio.gather(
         konoha_sse_watcher(raw_queue),
+        git_push_poller(raw_queue),
         debouncer(raw_queue, batched_queue),
         send_loop(batched_queue),
         heartbeat_loop(),

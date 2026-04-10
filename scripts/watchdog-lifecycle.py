@@ -29,6 +29,9 @@ IDLE_TIMEOUT_SEC = 300
 SSE_MAX_BACKOFF  = 30
 WAKE_TIMEOUT_SEC = 120  # max seconds to wait for on-demand agent to start
 
+KONOHA_REPO        = os.path.expanduser("~/konoha")
+AUTO_PUSH_INTERVAL = 300  # 5 minutes — push unpushed commits (#367)
+
 LOG_FILE = "/tmp/watchdog-lifecycle.log"
 
 logging.basicConfig(
@@ -478,6 +481,55 @@ async def watch_agent(agent_id: str) -> None:
     await asyncio.gather(*tasks)
 
 
+async def auto_push_loop() -> None:
+    """Periodically push unpushed commits from KONOHA_REPO to origin/main (#367)."""
+    await asyncio.sleep(60)  # startup delay
+    while True:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "-C", KONOHA_REPO, "log", "origin/main..main", "--oneline",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+            lines = [l for l in stdout.decode().strip().split("\n") if l.strip()]
+            if lines:
+                n = len(lines)
+                log.info(f"auto-push: {n} unpushed commit(s) found, pushing to origin/main")
+                push_proc = await asyncio.create_subprocess_exec(
+                    "git", "-C", KONOHA_REPO, "push", "origin", "main",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, push_err = await asyncio.wait_for(push_proc.communicate(), timeout=60)
+                if push_proc.returncode == 0:
+                    log.info(f"auto-push: pushed {n} commit(s) to main successfully")
+                    # Notify naruto via bus
+                    payload = json.dumps({
+                        "from": "watchdog-lifecycle",
+                        "to": "naruto",
+                        "text": f"watchdog-lifecycle: pushed {n} commits to main",
+                        "timestamp": datetime.now().isoformat(),
+                    })
+                    env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+                    curl_proc = await asyncio.create_subprocess_exec(
+                        "curl", "-s", "-X", "POST",
+                        "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                        "-H", "Content-Type: application/json",
+                        "-d", payload,
+                        f"{KONOHA_URL}/messages",
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                        env=env,
+                    )
+                    await asyncio.wait_for(curl_proc.wait(), timeout=10)
+                else:
+                    log.warning(f"auto-push: git push failed: {push_err.decode()[:200]}")
+        except Exception as e:
+            log.warning(f"auto-push check error: {e!r}")
+        await asyncio.sleep(AUTO_PUSH_INTERVAL)
+
+
 async def main():
     agents = get_agents()
     if not agents:
@@ -511,6 +563,7 @@ async def main():
 
     log.info(f"Watching {len(agents)} agents: {agents}")
     tasks = [asyncio.create_task(watch_agent(aid)) for aid in agents]
+    tasks.append(asyncio.create_task(auto_push_loop()))
     await asyncio.gather(*tasks)
 
 
