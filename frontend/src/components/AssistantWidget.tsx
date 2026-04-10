@@ -149,8 +149,9 @@ export function AssistantWidget() {
       const dec = new TextDecoder();
       let buf = '';
       let full = '';
+      let streamDone = false;
 
-      while (true) {
+      while (!streamDone) {
         const { done, value } = await reader.read();
         if (done) break;
         buf += dec.decode(value, { stream: true });
@@ -159,7 +160,7 @@ export function AssistantWidget() {
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           const payload = line.slice(6).trim();
-          if (payload === '[DONE]') break;
+          if (payload === '[DONE]') { streamDone = true; break; }
           try {
             const ev = JSON.parse(payload);
             if (ev.type === 'delta' && typeof ev.text === 'string') {
