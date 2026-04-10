@@ -340,7 +340,13 @@ export async function ackMessages(agentId: string, consumer: string, ids: string
   if (ids.length === 0) return 0;
   const stream = AGENT_STREAM_PREFIX + agentId;
   const group = `${agentId}:${consumer}`;
-  return redis.xack(stream, group, ...ids);
+  try {
+    return await redis.xack(stream, group, ...ids);
+  } catch (e: any) {
+    // NOGROUP or WRONGTYPE: group/stream doesn't exist — nothing to ack
+    if (e.message?.includes("NOGROUP") || e.message?.includes("WRONGTYPE")) return 0;
+    throw e;
+  }
 }
 
 export async function readHistory(target: string, count = 20): Promise<Message[]> {

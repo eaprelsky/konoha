@@ -97,8 +97,13 @@ router.post("/:agentId/ack", async (c) => {
   if (!consumer || !Array.isArray(ids) || ids.length === 0) {
     return c.json({ error: "consumer and ids[] required" }, 400);
   }
-  const acked = await ackMessages(agentId, consumer, ids);
-  return c.json({ acked });
+  const stringIds = ids.map(String);
+  try {
+    const acked = await ackMessages(agentId, consumer, stringIds);
+    return c.json({ acked });
+  } catch (e: any) {
+    return c.json({ error: e.message, acked: 0 }, 500);
+  }
 });
 
 router.get("/:agentId/history", async (c) => {
