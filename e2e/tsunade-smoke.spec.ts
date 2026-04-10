@@ -14,8 +14,12 @@ import { test, expect } from '@playwright/test';
 
 const LOGIN_URL   = '/ui/login';
 const EDITOR_URL  = '/ui/editor';
-const USERNAME    = 'eaprelsky';
-const PASSWORD    = 'Ufkbvfnm9';
+const USERNAME    = process.env.E2E_USERNAME ?? 'eaprelsky';
+const PASSWORD    = (() => {
+  const p = process.env.E2E_PASSWORD;
+  if (!p) throw new Error('E2E_PASSWORD env variable is required');
+  return p;
+})();
 
 test.describe('Tsunade chat panel smoke test', () => {
 

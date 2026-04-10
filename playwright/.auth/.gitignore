@@ -1,0 +1,2 @@
+# Playwright auth state — contains session cookies, do not commit
+user.json

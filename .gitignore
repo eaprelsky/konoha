@@ -12,3 +12,5 @@ agents/**/.mcp-*.json
 scripts/__pycache__/
 agents/**/__pycache__/
 tests/__pycache__/
+# Playwright auth state — session cookies, never commit
+playwright/.auth/user.json

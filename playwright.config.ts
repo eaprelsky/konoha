@@ -2,7 +2,11 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  use: { baseURL: 'http://127.0.0.1:3201' },
+  globalSetup: './playwright/global-setup.ts',
+  use: {
+    baseURL: 'http://127.0.0.1:3201',
+    storageState: 'playwright/.auth/user.json',
+  },
   webServer: {
     command: 'KONOHA_PORT=3201 bun run src/server.ts',
     url: 'http://127.0.0.1:3201',
