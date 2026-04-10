@@ -224,7 +224,7 @@ export function useProcessEditor() {
     const pos: Pos = { x: snap(40 + col * (EW + 60)), y: snap(40 + row * (EH + 80)) };
     const el: WorkflowElement = { id, type, label: label || DEFAULT_LABELS[type] || type };
     if (type === 'gateway') el.operator = 'AND';
-    if (refId) (el as any).ref_id = refId;
+    if (refId) el.ref_id = refId;
     setElements(prev => [...prev, el]);
     setPositions(prev => ({ ...prev, [id]: pos }));
     setSelected(id); setMultiSelected([id]);
@@ -453,13 +453,13 @@ export function useProcessEditor() {
     setPositions(pos);
     if (fromBreadcrumb !== undefined) {
       setBreadcrumb(fromBreadcrumb);
-    } else if ((wf as any).parent_id) {
+    } else if (wf.parent_id) {
       const chain: { id: string; name: string }[] = [];
       let cur: Workflow | undefined = wf;
       const visited = new Set<string>();
-      while (cur && (cur as any).parent_id && !visited.has(cur.id)) {
+      while (cur && cur.parent_id && !visited.has(cur.id)) {
         visited.add(cur.id);
-        const parent = workflows.find(w => w.id === (cur as any).parent_id);
+        const parent = workflows.find(w => w.id === cur!.parent_id);
         if (parent) chain.unshift({ id: parent.id, name: parent.name || parent.id });
         cur = parent;
       }
@@ -593,10 +593,10 @@ export function useProcessEditor() {
   // ── Sync role/doc entity on inline edit ──────────────────────────────────────
   function syncEntityOnEdit(el: WorkflowElement, newLabel: string) {
     if (el.type === 'role') {
-      const refId = (el as any).ref_id as string | undefined;
+      const refId = el.ref_id;
       if (!refId) {
         api.roles.create({ role_id: newLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_' + Date.now(), name: newLabel, assignees: [], strategy: 'manual' })
-          .then(r => { updateElement(el.id, { ref_id: r.role_id } as any); setRoles(prev => [...prev, r]); })
+          .then(r => { updateElement(el.id, { ref_id: r.role_id }); setRoles(prev => [...prev, r]); })
           .catch(() => {});
       } else {
         const existing = roles.find(r => r.role_id === refId);
@@ -606,10 +606,10 @@ export function useProcessEditor() {
         }
       }
     } else if (el.type === 'document') {
-      const refId = (el as any).ref_id as string | undefined;
+      const refId = el.ref_id;
       if (!refId) {
         api.documents.create({ name: newLabel, type: 'template', content: '' })
-          .then(d => { updateElement(el.id, { ref_id: d.doc_id } as any); setDocs(prev => [...prev, d]); })
+          .then(d => { updateElement(el.id, { ref_id: d.doc_id }); setDocs(prev => [...prev, d]); })
           .catch(() => {});
       } else {
         const existing = docs.find(d => d.doc_id === refId);

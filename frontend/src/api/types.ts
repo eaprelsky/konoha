@@ -49,6 +49,8 @@ export interface WorkflowElement {
     event_type?: string;
     webhook_path?: string;
   };
+  // Registry reference: role_id or doc_id from the registry picker
+  ref_id?: string;
   // Sub-process: immutable boundary events locked to parent interface
   locked?: boolean;
   // Intent-based execution: outcome/goal for AI agent (vs instruction-based label)

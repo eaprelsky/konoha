@@ -4,6 +4,9 @@
  */
 import type { WorkflowElement, RoleDef, DocTemplate } from '../api/types';
 
+type TriggerKind = NonNullable<WorkflowElement['trigger']>['kind'];
+type TriggerType = NonNullable<WorkflowElement['trigger']>['type'];
+
 interface Props {
   selEl: WorkflowElement;
   flow: [string, string, string?][];
@@ -126,7 +129,7 @@ function TriggerSection({ selEl, wfId, onUpdate }: { selEl: WorkflowElement; wfI
         </div>
       )}
 
-      {(tr as any)?.mode === 'manual' && (
+      {tr?.mode === 'manual' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, marginBottom: 10, fontSize: 12, color: '#0369a1' }}>
           <span>👁</span> Отслеживается вручную — адаптер для источника не зарегистрирован
         </div>
@@ -148,12 +151,12 @@ function TriggerSection({ selEl, wfId, onUpdate }: { selEl: WorkflowElement; wfI
       {tr?.kind === 'ambiguous' && (
         <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '10px 12px', marginBottom: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#991b1b', marginBottom: 8 }}>⚠ Неоднозначный триггер — выберите вариант</div>
-          {((tr as any).candidates || []).map((c: any, i: number) => {
+          {(tr.candidates ?? []).map((c, i) => {
             const confColor = c.confidence >= 0.9 ? '#22c55e' : c.confidence >= 0.7 ? '#f59e0b' : '#ef4444';
             return (
               <button key={i}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '6px 10px', marginBottom: 4, background: 'white', border: '1px solid #fca5a5', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
-                onClick={() => onUpdate(selEl.id, { trigger: { ...tr, kind: c.kind, confidence: c.confidence, candidates: undefined, manual_override: true } })}
+                onClick={() => onUpdate(selEl.id, { trigger: { ...tr, kind: c.kind as TriggerKind, confidence: c.confidence, candidates: undefined, manual_override: true } })}
               >
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: confColor, display: 'inline-block', flexShrink: 0 }} />
                 <span style={{ flex: 1 }}>{c.description}</span>
@@ -168,7 +171,7 @@ function TriggerSection({ selEl, wfId, onUpdate }: { selEl: WorkflowElement; wfI
             onKeyDown={e => {
               if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
                 const val = (e.target as HTMLInputElement).value.trim();
-                onUpdate(selEl.id, { trigger: { ...tr, kind: val as any, candidates: undefined, manual_override: true } });
+                onUpdate(selEl.id, { trigger: { ...tr, kind: val as TriggerKind, candidates: undefined, manual_override: true } });
               }
             }}
           />
@@ -179,7 +182,7 @@ function TriggerSection({ selEl, wfId, onUpdate }: { selEl: WorkflowElement; wfI
         <label>Тип триггера</label>
         <select
           value={tr?.type || 'manual'}
-          onChange={e => onUpdate(selEl.id, { trigger: { ...tr, type: e.target.value as any, manual_override: true } })}
+          onChange={e => onUpdate(selEl.id, { trigger: { ...tr, type: e.target.value as TriggerType, manual_override: true } })}
         >
           <option value="manual">Manual — кнопка / API</option>
           <option value="webhook">Webhook — HTTP POST</option>
@@ -209,18 +212,18 @@ function TriggerSection({ selEl, wfId, onUpdate }: { selEl: WorkflowElement; wfI
         <>
           <div className="props-field">
             <label>Chat ID</label>
-            <input value={(tr as any)?.chat_id || ''} onChange={e => onUpdate(selEl.id, { trigger: { ...tr, type: 'telegram', chat_id: e.target.value } as any })} placeholder="Числовой ID чата" />
+            <input value={tr?.chat_id || ''} onChange={e => onUpdate(selEl.id, { trigger: { ...tr, type: 'telegram', chat_id: e.target.value } })} placeholder="Числовой ID чата" />
           </div>
           <div className="props-field">
             <label>Ключевое слово (опционально)</label>
-            <input value={(tr as any)?.keyword || ''} onChange={e => onUpdate(selEl.id, { trigger: { ...tr, type: 'telegram', keyword: e.target.value } as any })} placeholder="Фильтр по тексту сообщения" />
+            <input value={tr?.keyword || ''} onChange={e => onUpdate(selEl.id, { trigger: { ...tr, type: 'telegram', keyword: e.target.value } })} placeholder="Фильтр по тексту сообщения" />
           </div>
         </>
       )}
       {tr?.type === 'event' && (
         <div className="props-field">
           <label>Тип события</label>
-          <input value={(tr as any)?.event_type || ''} onChange={e => onUpdate(selEl.id, { trigger: { ...tr, type: 'event', event_type: e.target.value } as any })} placeholder="Например: lead.qualified" />
+          <input value={tr?.event_type || ''} onChange={e => onUpdate(selEl.id, { trigger: { ...tr, type: 'event', event_type: e.target.value } })} placeholder="Например: lead.qualified" />
         </div>
       )}
     </div>

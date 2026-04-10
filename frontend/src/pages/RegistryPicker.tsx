@@ -34,14 +34,15 @@ export function RegistryPicker({ picker, roles, docs, adapters, onPickFromRegist
                 </div>
               ))
             : (picker === 'role' ? roles : docs).map(item => {
-                const id   = (item as any).role_id ?? (item as any).doc_id;
-                const name = (item as any).name;
+                const id   = 'role_id' in item ? item.role_id : item.doc_id;
+                const name = item.name;
+                const description = 'description' in item ? item.description : undefined;
                 return (
                   <div key={id} className="picker-item" onClick={() => onPickFromRegistry(name, id)}>
                     <strong>{name}</strong>
-                    {(item as any).description && (
+                    {description && (
                       <span style={{ color: '#64748b', fontSize: 11, marginLeft: 8 }}>
-                        {(item as any).description}
+                        {description}
                       </span>
                     )}
                   </div>
