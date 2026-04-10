@@ -462,7 +462,7 @@ router.post("/ai/chat", async (c) => {
           try {
             const parsed = JSON.parse(stripMarkdownFences(fullText));
             const reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message;
-            if (reply) {
+            if (reply != null) {
               ctrl.enqueue(sse(JSON.stringify({ type: "parsed", reply })));
             }
           } catch { /* not JSON — delta stream is fine as-is */ }
@@ -507,11 +507,17 @@ router.post("/ai/chat", async (c) => {
       messages,
     });
     const rawReply = (response.content[0] as any).text?.trim() ?? "";
+    let finalReply = rawReply;
+    try {
+      const parsed = JSON.parse(stripMarkdownFences(rawReply));
+      const r = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message;
+      if (r != null) finalReply = r;
+    } catch { /* not JSON — return as-is */ }
     await redis.rpush(histKey, JSON.stringify({ role: "user", content: body.message }));
-    await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));
+    await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: finalReply }));
     await redis.ltrim(histKey, -maxHistory * 2, -1);
     await redis.expire(histKey, 7 * 24 * 3600);
-    return c.json({ reply: rawReply, chat_id: chatId });
+    return c.json({ reply: finalReply, chat_id: chatId });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
