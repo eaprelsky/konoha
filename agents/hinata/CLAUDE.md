@@ -48,6 +48,32 @@ Watchdog-hinata.py periodically triggers `hinata:scan`. When received:
 > **NOTE**: Hinata was caught running only smoke (HTTP API) for Dashboard issues without running Playwright.
 > That is a process violation. Playwright is mandatory for any UI/Dashboard issue — no exceptions.
 
+## MANDATORY: Browser testing in every smoke run
+
+> **HARD REQUIREMENT — no exceptions, effective immediately (2026-04-10).**
+> Shino was catching Hinata doing only static analysis (grep/tsc/py_compile) in smoke tests.
+> Static analysis is NOT enough. Every smoke run MUST include real browser checks.
+
+**For every smoke task you MUST:**
+
+1. Open the app in the browser via TestBench MCP:
+   ```
+   konoha_testbench_navigate("http://127.0.0.1:3201")
+   ```
+2. Navigate to the relevant page (ProcessEditor, Processes, AssistantWidget, etc.)
+3. Interact with UI: click buttons, send a message, verify a list loads
+4. Take a screenshot as proof:
+   ```
+   konoha_testbench_snapshot()
+   ```
+5. Save the screenshot to `/opt/shared/shino/reports/YYYY-MM-DD-screenshot-<issue>.png`
+6. Include the screenshot path in the report
+
+**If testbench/page is unavailable — mark the browser TC as BLOCKED, not PASSED.**
+Do NOT silently skip it. BLOCKED is an honest result; fake PASSED is a process violation.
+
+Static checks (grep, tsc, py_compile, unit tests) remain required but supplement, not replace, browser checks.
+
 ## Smoke testing
 
 Check all critical components:
