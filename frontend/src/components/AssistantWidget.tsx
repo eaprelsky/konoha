@@ -10,7 +10,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Maximize2, Minimize2, ChevronDown } from 'lucide-react';
+import { Maximize2, Minimize2, ChevronDown, Paperclip, X } from 'lucide-react';
 import { Inspector } from './Inspector';
 import { useBranding } from '../context/BrandingContext';
 import './AssistantWidget.css';
@@ -20,6 +20,14 @@ type WidgetState = 'collapsed' | 'expanded' | 'fullscreen';
 interface Msg {
   role: 'user' | 'assistant' | 'system';
   text: string;
+  images?: string[]; // data URLs for display
+}
+
+interface AttachmentImg {
+  data: string;   // base64 without prefix
+  mime: string;
+  name: string;
+  dataUrl: string; // full data URL for preview
 }
 
 const POS_KEY = 'konoha_aw_pos';
@@ -35,6 +43,20 @@ function detectMode(): 'process' | 'admin' {
 
 function defaultPos() {
   return { x: Math.max(0, window.innerWidth - 432), y: Math.max(0, window.innerHeight - 532) };
+}
+
+function readFileAsAttachment(file: File): Promise<AttachmentImg> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const [prefix, data] = dataUrl.split(',');
+      const mime = prefix.replace('data:', '').replace(';base64', '');
+      resolve({ data, mime, name: file.name, dataUrl });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 /**
@@ -72,8 +94,11 @@ export function AssistantWidget() {
     catch { return { w: 400, h: 500 }; }
   });
 
+  const [attachments, setAttachments] = useState<AttachmentImg[]>([]);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -144,12 +169,44 @@ export function AssistantWidget() {
     return () => ro.disconnect();
   }, [onSizeChange, widgetState]);
 
+  async function addFiles(files: FileList | File[]) {
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    const results = await Promise.all(imageFiles.map(readFileAsAttachment));
+    setAttachments(prev => [...prev, ...results]);
+  }
+
+  function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files) addFiles(e.target.files);
+    e.target.value = '';
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const imageItems = Array.from(e.clipboardData.items).filter(it => it.type.startsWith('image/'));
+    if (imageItems.length === 0) return;
+    e.preventDefault();
+    const files = imageItems.map(it => it.getAsFile()).filter(Boolean) as File[];
+    addFiles(files);
+  }
+
+  function onDragOver(e: React.DragEvent) { e.preventDefault(); }
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
+  }
+
   async function send() {
     const msg = input.trim();
-    if (!msg || busy) return;
+    if (!msg && attachments.length === 0) return;
+    if (busy) return;
     setInput('');
+    const sentAttachments = attachments;
+    setAttachments([]);
     Inspector.trackAction(`assistant: ${msg.slice(0, 60)}`);
-    setMsgs(prev => [...prev, { role: 'user', text: msg }]);
+    setMsgs(prev => [...prev, {
+      role: 'user',
+      text: msg,
+      images: sentAttachments.length > 0 ? sentAttachments.map(a => a.dataUrl) : undefined,
+    }]);
     setBusy(true);
 
     const context = Inspector.snapshot();
@@ -164,11 +221,14 @@ export function AssistantWidget() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: msg,
+          message: msg || '(см. вложения)',
           context,
           chat_id: chatId || undefined,
           mode: detectMode(),
           stream: true,
+          images: sentAttachments.length > 0
+            ? sentAttachments.map(a => ({ data: a.data, mime: a.mime, name: a.name }))
+            : undefined,
         }),
         signal: ctrl.signal,
       });
@@ -226,6 +286,7 @@ export function AssistantWidget() {
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    if (e.key === 'Escape') { setAttachments([]); }
   }
 
   // ── Collapsed state: just the trigger button ──────────────────────────────
@@ -252,7 +313,8 @@ export function AssistantWidget() {
 
   return (
     <>
-      <div ref={panelRef} className={`aw-panel ${widgetState}`} style={panelStyle}>
+      <div ref={panelRef} className={`aw-panel ${widgetState}`} style={panelStyle}
+        onDragOver={onDragOver} onDrop={onDrop}>
 
         {/* Header / drag handle */}
         <div className="aw-header" onMouseDown={onDragStart}>
@@ -293,6 +355,13 @@ export function AssistantWidget() {
             const streaming = isStreaming && i === msgs.length - 1 && m.role === 'assistant';
             return (
               <div key={i} className={`aw-msg ${m.role}${streaming ? ' streaming' : ''}`}>
+                {m.images && m.images.length > 0 && (
+                  <div className="aw-msg-images">
+                    {m.images.map((src, j) => (
+                      <img key={j} src={src} className="aw-msg-img" alt="вложение" />
+                    ))}
+                  </div>
+                )}
                 {m.text}
                 {streaming && <span className="aw-cursor">▌</span>}
               </div>
@@ -301,19 +370,50 @@ export function AssistantWidget() {
           <div ref={bottomRef} />
         </div>
 
+        {/* Attachment preview strip */}
+        {attachments.length > 0 && (
+          <div className="aw-attachments">
+            {attachments.map((att, i) => (
+              <div key={i} className="aw-att-thumb">
+                <img src={att.dataUrl} alt={att.name} />
+                <button className="aw-att-remove" title="Удалить" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}>
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Input */}
         <div className="aw-input-row">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={onFileInput}
+          />
+          <button
+            className="aw-attach-btn"
+            title="Прикрепить изображение (или перетащите / Ctrl+V)"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy}
+          >
+            <Paperclip size={14} />
+          </button>
           <textarea
             className="aw-input"
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             placeholder="Напишите… (Enter — отправить, Shift+Enter — перенос)"
             rows={1}
             disabled={busy}
             autoFocus
           />
-          <button className="aw-send" onClick={send} disabled={busy || !input.trim()}>
+          <button className="aw-send" onClick={send} disabled={busy || (!input.trim() && attachments.length === 0)}>
             {busy ? '…' : '→'}
           </button>
         </div>

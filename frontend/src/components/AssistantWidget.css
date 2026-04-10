@@ -89,6 +89,44 @@
   .aw-send:hover:not(:disabled) { background: #4f46e5; }
   .aw-send:disabled { opacity: .45; cursor: not-allowed; }
 
+  /* Attachment preview strip */
+  .aw-attachments {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 6px 12px 0; background: #fff; flex-shrink: 0;
+  }
+  .aw-att-thumb {
+    position: relative; width: 56px; height: 56px;
+    border-radius: 6px; overflow: hidden;
+    border: 1px solid #e2e8f0;
+  }
+  .aw-att-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .aw-att-remove {
+    position: absolute; top: 2px; right: 2px;
+    background: rgba(0,0,0,.55); border: none; border-radius: 50%;
+    width: 16px; height: 16px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: #fff; line-height: 1;
+  }
+  .aw-att-remove:hover { background: rgba(220,38,38,.8); }
+
+  /* Attach button (📎) in input row */
+  .aw-attach-btn {
+    background: none; border: none; color: #94a3b8; cursor: pointer;
+    padding: 4px 6px; border-radius: 4px; display: flex; align-items: center;
+    flex-shrink: 0; transition: color .15s;
+  }
+  .aw-attach-btn:hover:not(:disabled) { color: #6366f1; }
+  .aw-attach-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* Image thumbnails inside chat messages */
+  .aw-msg-images { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  .aw-msg-img {
+    max-width: 160px; max-height: 120px; border-radius: 6px;
+    object-fit: cover; border: 1px solid rgba(0,0,0,.1);
+    cursor: zoom-in;
+  }
+  .aw-msg-img:hover { opacity: .9; }
+
   /* Mobile: smaller trigger, higher position (#360) */
   @media (max-width: 767px) {
     .aw-trigger { width: 40px; height: 40px; font-size: 18px; bottom: 72px; right: 16px; }

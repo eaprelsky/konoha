@@ -46,6 +46,20 @@ function guessMime(path: string): string {
 }
 
 interface AttachmentRef { path: string; name: string; mime?: string; }
+interface InlineImage { data: string; mime: string; name?: string; }
+
+/** Build content blocks from text + inline base64 images (closes #382) */
+function buildInlineContent(text: string, images?: InlineImage[]): Anthropic.MessageParam["content"] {
+  if (!images || images.length === 0) return text;
+  const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+  for (const img of images) {
+    const validMime = (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(img.mime)
+      ? img.mime : "image/png") as "image/png";
+    blocks.push({ type: "image", source: { type: "base64", media_type: validMime, data: img.data } });
+  }
+  blocks.push({ type: "text", text });
+  return blocks;
+}
 
 const _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -429,6 +443,7 @@ router.post("/ai/chat", async (c) => {
     chat_id?: string;
     mode?: "process" | "admin";
     stream?: boolean;
+    images?: InlineImage[];
   }>().catch(() => null);
 
   if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
@@ -468,10 +483,11 @@ router.post("/ai/chat", async (c) => {
   }
 
   const userMsg = body.message + contextBlock + processListContext;
+  const userContent = buildInlineContent(userMsg, body.images);
 
-  const messages: { role: "user" | "assistant"; content: string }[] = [
+  const messages: Anthropic.MessageParam[] = [
     ...history,
-    { role: "user", content: userMsg },
+    { role: "user", content: userContent },
   ];
 
   if (useStream) {
