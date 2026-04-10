@@ -94,7 +94,11 @@
     .btn-tsunade, .ipe-bar button { min-height: 44px; padding: 8px 14px; font-size: 14px; }
   }
 
-  /* ── Mobile ProcessEditor strategy (#359) ── */
+  /* Desktop: hide mobile-only elements (must come BEFORE media queries so overrides work) */
+  .mob-palette, .mob-props-sheet, .mob-sheet-overlay,
+  .mob-side-toggle, .mob-side-sheet, .mob-side-overlay { display: none; }
+
+  /* ── Mobile ProcessEditor strategy (#359, #428) ── */
   @media (max-width: 767px) {
     .ipe-root { height: calc(100vh - 52px); }
     /* Hide desktop sidebar and resize handle */
@@ -125,10 +129,12 @@
       margin: 10px auto 14px; }
     .mob-props-inner { padding: 0 16px; }
     .mob-sheet-overlay { position: fixed; inset: 0; z-index: 199; background: rgba(0,0,0,.3); }
-    /* Mobile toolbar: show side toggle button */
-    .mob-side-toggle { display: flex !important; }
+    /* Mobile toolbar: show process list toggle button */
+    .mob-side-toggle { display: flex !important; align-items: center; }
+    /* Mobile process list bottom sheet */
+    .mob-side-sheet { display: block; position: fixed; bottom: 0; left: 0; right: 0; z-index: 300;
+      background: white; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 32px rgba(0,0,0,.2);
+      max-height: 75vh; overflow-y: auto; padding: 0 0 env(safe-area-inset-bottom, 16px); }
+    .mob-side-overlay { display: block; position: fixed; inset: 0; z-index: 299; background: rgba(0,0,0,.3); }
   }
-  /* Desktop: hide mobile-only elements */
-  .mob-palette, .mob-props-sheet, .mob-sheet-overlay { display: none; }
-  .mob-side-toggle { display: none; }
 

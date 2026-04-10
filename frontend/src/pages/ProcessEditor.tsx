@@ -16,6 +16,7 @@
  *  - ProcessEditor.css     — all styles
  */
 import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Inspector } from '../components/Inspector';
 import './ProcessEditor.css';
 import { EW, EH, GR, CW, CH, orthogonalPath, snap, type Pos } from './ArrowRouter';
@@ -36,6 +37,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
   const [readOnly, setReadOnly] = React.useState(false);
   const s = useProcessEditor(readOnly);
   const [showMobProps, setShowMobProps] = React.useState(false);
+  const [showMobSide, setShowMobSide] = React.useState(false);
   const [triggerPopupId, setTriggerPopupId] = React.useState<string | null>(null);
   // Load workflow from URL param on mount
   const { loadWorkflow } = s;
@@ -104,6 +106,8 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
 
         {/* ── Toolbar ── */}
         <div className="ipe-bar">
+          {/* Mobile: process list toggle (#428) */}
+          <button className="mob-side-toggle" onClick={() => setShowMobSide(v => !v)} title="Список процессов">☰</button>
           <span style={{ color: '#94a3b8', fontSize: 12, flexShrink: 0 }}>Редактор процессов</span>
           {s.wfName && (
             <>
@@ -553,6 +557,43 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
           </div>
         ))}
       </div>
+
+      {/* Mobile process list bottom sheet (#428) */}
+      {showMobSide && (
+        <>
+          <div className="mob-side-overlay" onClick={() => setShowMobSide(false)} />
+          <div className="mob-side-sheet">
+            <div className="mob-props-handle" />
+            <div className="mob-props-inner">
+              <ProcessTree
+                workflows={s.workflows}
+                wfId={s.wfId}
+                sideSearch={s.sideSearch}
+                filteredWorkflows={s.filteredWorkflows}
+                workflowTree={s.workflowTree}
+                creatingNew={s.creatingNew}
+                newProcName={s.newProcName}
+                renamingWfId={s.renamingWfId}
+                renamingVal={s.renamingVal}
+                collapsedTree={s.collapsedTree}
+                onSideSearch={s.setSideSearch}
+                onLoadWorkflow={(id, bc) => { s.loadWorkflow(id, bc); setShowMobSide(false); }}
+                onStartCreatingNew={s.startCreatingNew}
+                onCommitNewProc={() => { s.commitNewProc(); setShowMobSide(false); }}
+                onNewProcNameChange={s.setNewProcName}
+                onStartRename={s.startRename}
+                onCommitRename={s.commitRename}
+                onRenamingValChange={s.setRenamingVal}
+                onDupWorkflow={s.dupWorkflow}
+                onDelWorkflow={s.delWorkflow}
+                onCollapsedTreeChange={s.setCollapsedTree}
+                onCancelCreating={() => { s.setCreatingNew(false); s.setNewProcName(''); }}
+                onCancelRename={() => s.setRenamingVal('')}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Mobile properties bottom sheet (#359) */}
       {showMobProps && s.selEl && (
