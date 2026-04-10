@@ -1,56 +1,8 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 // Global state: workflow ID created by beforeAll
 let testProcessId: string;
 const WORKFLOW_ID = `e2e-mobile-428-${Date.now()}`;
-
-/**
- * Create a workflow (process) via API with proper auth headers.
- * Falls back to using a fixed ID if API creation fails.
- * The /editor/<id> route supports both existing and draft processes.
- */
-async function createWorkflow(): Promise<string> {
-  try {
-    const apiContext = await playwrightRequest.newContext({
-      baseURL: 'http://127.0.0.1:3201'
-    });
-
-    const headers = {
-      Authorization: `Bearer ${process.env.KONOHA_TOKEN ?? 'konoha-dev-token'}`
-    };
-    const body = {
-      id: WORKFLOW_ID,
-      name: `Mobile Editor Test — ${new Date().toISOString()}`,
-      elements: []
-    };
-
-    let res = await apiContext.post('/workflows?draft=true', { headers, data: body });
-
-    if (!res.ok()) {
-      // If POST fails, try PUT
-      res = await apiContext.put(`/workflows/${WORKFLOW_ID}?draft=true`, {
-        headers,
-        data: { name: body.name, elements: body.elements }
-      });
-    }
-
-    await apiContext.dispose();
-
-    if (res.ok()) {
-      const wf = await res.json() as { id?: string };
-      const id = wf.id ?? WORKFLOW_ID;
-      console.log(`[beforeAll] Created workflow via API: ${id}`);
-      return id;
-    } else {
-      throw new Error(`API failed with ${res.status()}`);
-    }
-  } catch (err) {
-    // API creation failed — fall back to using fixed ID
-    // The /editor/<id> route will create a draft if it doesn't exist
-    console.log(`[beforeAll] API fixture failed, using fallback ID: ${WORKFLOW_ID}`);
-    return WORKFLOW_ID;
-  }
-}
 
 /**
  * Navigate to editor for a specific workflow ID.
@@ -69,9 +21,22 @@ async function goToEditorWithId(page: import('@playwright/test').Page, id: strin
 }
 
 test.describe('ProcessEditor Mobile Interface (Issue #428/#430)', () => {
-  test.beforeAll(async () => {
-    // TC-01: Create workflow via API (beforeAll fixture)
-    testProcessId = await createWorkflow();
+  test.beforeAll(async ({ request }) => {
+    // TC-01: Create workflow via Playwright request context (carries storageState session cookies).
+    // Backend mounts /workflows directly — no /api/ prefix (closes #431).
+    const res = await request.post('/workflows?draft=true', {
+      data: { name: `Mobile Editor Test — ${new Date().toISOString()}`, elements: [] },
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (res.ok()) {
+      const wf = await res.json() as { id?: string };
+      testProcessId = wf.id ?? WORKFLOW_ID;
+    } else {
+      // Fall back to fixed ID — /editor/<id> will create a draft if it doesn't exist
+      console.log(`[beforeAll] API returned ${res.status()}, using fallback ID: ${WORKFLOW_ID}`);
+      testProcessId = WORKFLOW_ID;
+    }
     console.log(`[beforeAll] Created workflow: ${testProcessId}`);
   });
 
