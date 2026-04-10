@@ -358,6 +358,8 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
           process_id: kase.process_id,
           element_id: nextId,
           docIds: nextEl.documents || [],
+          def,
+          payload: kase.payload,
         }).catch(e => log.error("dispatch error", { case_id: kase.case_id, element_id: nextId, error: e.message }));
       }
 

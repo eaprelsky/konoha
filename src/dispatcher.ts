@@ -5,6 +5,7 @@
 import { redis } from "./redis";
 import { listAgents, sendMessage } from "./redis";
 import { isSystemRole, executeSystemFunction } from "./system-agent";
+import type { WorkflowDefinition } from "./workflow-loader";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { readFileSync, existsSync } from "fs";
@@ -75,6 +76,42 @@ export interface DispatchParams {
   process_id: string;
   element_id: string;
   docIds: string[];
+  def?: WorkflowDefinition;                // full workflow def — for process context (#404)
+  payload?: Record<string, unknown>;       // current case payload — forwarded to agent
+}
+
+/** Build compact process context block for an agent dispatch message (#404). */
+function buildProcessContext(def: WorkflowDefinition, elementId: string): string {
+  const byId = new Map(def.elements.map(e => [e.id, e]));
+  const outEdges = new Map<string, string[]>();
+  for (const el of def.elements) outEdges.set(el.id, []);
+  for (const [from, to] of def.flow) outEdges.get(from)?.push(to);
+
+  const predecessorIds: string[] = [];
+  for (const [from, to] of def.flow) {
+    if (to === elementId) predecessorIds.push(from);
+  }
+  const successorIds = outEdges.get(elementId) || [];
+
+  const fmt = (id: string) => {
+    const el = byId.get(id);
+    return el ? `${el.label} [${el.type}]` : id;
+  };
+
+  const lines: string[] = [`Процесс: ${def.name} (${def.id})`];
+  if (predecessorIds.length) lines.push(`До: ${predecessorIds.map(fmt).join(", ")}`);
+  lines.push(`→ СЕЙЧАС: ${fmt(elementId)}`);
+  if (successorIds.length) lines.push(`После: ${successorIds.map(fmt).join(", ")}`);
+
+  const el = byId.get(elementId);
+  if (el?.systems?.length) {
+    lines.push(`Системы: ${el.systems.map(s => s.connector + (s.operation ? ` (${s.operation})` : "")).join(", ")}`);
+  }
+  if (el?.intent) {
+    lines.push(`Цель: ${el.intent}`);
+  }
+
+  return lines.join("\n");
 }
 
 /** Count pending/running work items assigned to an agent (load indicator). */
@@ -127,11 +164,18 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
   const agent = await findAgent(role);
   if (agent) {
     const routeReason = (agent.id === role || agent.name === role) ? "name-match" : "capability-match";
+    const processCtx = params.def ? buildProcessContext(params.def, element_id) : null;
+    const payloadBlock = params.payload && Object.keys(params.payload).length > 0
+      ? `\nДанные прогона:\n${JSON.stringify(params.payload, null, 2)}`
+      : "";
     const text = [
-      `[Задача от runtime] Процесс: ${process_id} | Кейс: ${case_id}`,
-      `Функция: ${label}`,
-      hasExtra ? `\nИнструкция:\n${instruction}` : "",
-      `\nwork_item_id: ${work_item_id}`,
+      `[Задача от runtime]`,
+      processCtx || `Процесс: ${process_id} | Кейс: ${case_id}`,
+      processCtx ? `Прогон: ${case_id}` : "",
+      `Роль: ${role}`,
+      `work_item_id: ${work_item_id}`,
+      hasExtra ? `\nИнструкция:\n${instruction}` : `\nФункция: ${label}`,
+      payloadBlock,
     ].filter(Boolean).join("\n");
 
     await sendMessage({ from: "runtime", to: agent.id, type: "task", text });
