@@ -205,7 +205,7 @@ export function AssistantWidget() {
   const panelStyle: React.CSSProperties =
     widgetState === 'fullscreen' ? {} : { left: pos.x, top: pos.y };
 
-  const isStreaming = busy && msgs.at(-1)?.role === 'assistant';
+  const isStreaming = busy && msgs[msgs.length - 1]?.role === 'assistant';
 
   return (
     <>
@@ -261,7 +261,7 @@ export function AssistantWidget() {
             placeholder="Напишите… (Enter — отправить, Shift+Enter — перенос)"
             rows={1}
             disabled={busy}
-            autoFocus={widgetState !== 'collapsed'}
+            autoFocus
           />
           <button className="aw-send" onClick={send} disabled={busy || !input.trim()}>
             {busy ? '…' : '→'}

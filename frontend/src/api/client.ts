@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, ProcessMiningData } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode } from './types';
 export type { KibaAction, HighlightAction };
 
 export interface AttachmentRef { path: string; name: string; mime?: string; }
@@ -164,7 +164,7 @@ export const api = {
     get: (id: string) => apiFetch<Agent>(`${BASE}/agents/${id}`),
     create: (params: { id: string; name: string; system_prompt?: string; model?: string }) =>
       apiFetch<Agent>(`${BASE}/agents`, { method: 'POST', body: JSON.stringify(params) }),
-    update: (id: string, patch: { name?: string; system_prompt?: string; model?: string }) =>
+    update: (id: string, patch: { name?: string; system_prompt?: string; model?: string; capabilities?: string[]; gender?: string }) =>
       apiFetch<Agent>(`${BASE}/agents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
     start: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/start`, { method: 'POST', body: '{}' }),
     stop: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/stop`, { method: 'POST', body: '{}' }),
@@ -322,7 +322,7 @@ export const api = {
       if (filters?.source)       p.set('source', filters.source);
       if (filters?.status)       p.set('status', filters.status);
       const qs = p.toString();
-      return apiFetch<{ subscriptions: any[]; summary: Record<string, number> }>(
+      return apiFetch<{ subscriptions: any[]; summary: { total: number; waiting: number; fired_today: number; errors: number; manual_fallback: number } }>(
         `${BASE}/event-manager/subscriptions${qs ? '?' + qs : ''}`,
       );
     },
@@ -350,7 +350,7 @@ export const api = {
 
   skills: {
     list: () => apiFetch<Skill[]>(`${BASE}/skills`),
-    create: (params: { id?: string; name: string; name_en?: string; description?: string; prompt_snippet?: string; tools?: string[] }) =>
+    create: (params: { id?: string; name: string; name_en?: string; description?: string; prompt_snippet?: string; tools?: string[]; mcp_servers?: McpServerDef[] }) =>
       apiFetch<Skill>(`${BASE}/skills`, { method: 'POST', body: JSON.stringify(params) }),
     update: (id: string, patch: Partial<Omit<Skill, 'id' | 'created_at' | 'updated_at'>>) =>
       apiFetch<Skill>(`${BASE}/skills/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
@@ -390,5 +390,3 @@ export const api = {
       apiFetch<{ ok: boolean }>(`${BASE}/whitelist/group/${chat_id}`, { method: 'DELETE' }),
   },
 };
-
-export { getToken, ensureToken };

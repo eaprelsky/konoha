@@ -42,7 +42,7 @@ class InspectorImpl {
 
   private _hookNetwork() {
     const orig = window.fetch;
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url =
         typeof input === 'string'
           ? input
@@ -54,7 +54,7 @@ class InspectorImpl {
       this._networkLog.push(entry);
       if (this._networkLog.length > 20) this._networkLog.shift();
       return orig(input, init);
-    };
+    }) as typeof fetch;
   }
 
   private _hookWindowErrors() {

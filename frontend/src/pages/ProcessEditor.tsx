@@ -15,7 +15,7 @@
  *  - RegistryPicker.tsx    — role/doc/IS picker modal
  *  - ProcessEditor.css     — all styles
  */
-import type React from 'react';
+import React, { useEffect } from 'react';
 import './ProcessEditor.css';
 import { EW, EH, GR, CW, CH, orthogonalPath, snap, type Pos } from './ArrowRouter';
 import { ElShape, PALETTE } from './ElementShape';
@@ -27,8 +27,11 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { VersionSelector } from './VersionSelector';
 import { RegistryPicker } from './RegistryPicker';
 
-export function ProcessEditor() {
+export function ProcessEditor({ initialId }: { initialId?: string }) {
   const s = useProcessEditor();
+  // Load workflow from URL param on mount
+  const { loadWorkflow } = s;
+  useEffect(() => { if (initialId) loadWorkflow(initialId); }, [initialId, loadWorkflow]);
 
   return (
     <>

@@ -584,7 +584,7 @@ export function EventMonitor() {
         api.eventMonitor.adaptersStatus().catch(() => ({ adapters: [] })),
       ]);
       setSubs(subsRes.subscriptions);
-      setSummary(subsRes.summary as Summary);
+      setSummary(subsRes.summary);
       setAdapters(adaptersRes.adapters);
       setLastUpdate(new Date().toLocaleTimeString('ru-RU'));
       setError(null);

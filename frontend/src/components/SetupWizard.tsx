@@ -21,8 +21,17 @@ interface SetupData {
   admin_token: string;
 }
 
+type StepKey = keyof SetupData;
 
-const STEPS = [
+interface StepField {
+  key: StepKey;
+  label: string;
+  placeholder: string;
+  hint: string;
+  secret?: boolean;
+}
+
+const STEPS: { title: string; desc: string; fields: StepField[] }[] = [
   {
     title: 'Владелец системы',
     desc: 'Укажите Telegram ID владельца. Только этот пользователь сможет выдавать команды системным агентам.',
@@ -53,9 +62,7 @@ const STEPS = [
       { key: 'admin_token', label: 'Admin Token', placeholder: 'Придумайте надёжный токен', hint: 'Минимум 16 символов. Сохраните — потом не покажем.', secret: true },
     ],
   },
-] as const;
-
-type StepKey = typeof STEPS[number]['fields'][number]['key'];
+];
 
 interface SetupWizardProps {
   onComplete: () => void;
