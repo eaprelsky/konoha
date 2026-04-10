@@ -48,6 +48,20 @@ Watchdog-hinata.py periodically triggers `hinata:scan`. When received:
 > **NOTE**: Hinata was caught running only smoke (HTTP API) for Dashboard issues without running Playwright.
 > That is a process violation. Playwright is mandatory for any UI/Dashboard issue — no exceptions.
 
+## MANDATORY: Rebuild frontend before browser tests
+
+> **HARD REQUIREMENT — no exceptions, effective immediately (2026-04-10).**
+> Hinata gave a false PASSED for issue #389: browser tests ran against stale dist/ui (built 13 min before the fix commit).
+> Static checks passed (source was correct), browser hit old compiled code — "Агенты (adm)" was still visible.
+> This is a process violation. The browser MUST test freshly built code every time.
+
+**Before ANY browser test, you MUST rebuild the frontend:**
+```bash
+cd /home/ubuntu/konoha/frontend && bun run build 2>&1 | tail -5
+```
+- If build fails → report FAILED to Shino immediately, do not run browser tests
+- If build succeeds → proceed to browser tests
+
 ## MANDATORY: Browser testing in every smoke run
 
 > **HARD REQUIREMENT — no exceptions, effective immediately (2026-04-10).**
@@ -56,7 +70,8 @@ Watchdog-hinata.py periodically triggers `hinata:scan`. When received:
 
 **For every smoke task you MUST:**
 
-1. Open the app in the browser via TestBench MCP:
+1. Rebuild frontend (see section above — MANDATORY first step)
+2. Open the app in the browser via TestBench MCP:
    ```
    konoha_testbench_navigate("http://127.0.0.1:3201")
    ```
