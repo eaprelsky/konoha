@@ -52,6 +52,7 @@ export function useProcessEditor(readOnly = false) {
   const [adapters, setAdapters] = useState<string[]>([]);
   const [wsFiles,  setWsFiles]  = useState<string[]>([]);
   const [picker,   setPicker]   = useState<'role' | 'document' | 'is' | null>(null);
+  const [triggerResolving, setTriggerResolving] = useState<Set<string>>(new Set());
   const [sideSearch,    setSideSearch]    = useState('');
   const [creatingNew,   setCreatingNew]   = useState(false);
   const [newProcName,   setNewProcName]   = useState('');
@@ -263,6 +264,37 @@ export function useProcessEditor(readOnly = false) {
   function removeEdge(f: string, t: string) {
     pushSnapshot(); scheduleAutosave();
     setFlow(prev => prev.filter(([a, b]) => !(a === f && b === t)));
+  }
+
+  // ── Trigger auto-resolve (issue #412) ────────────────────────────────────────
+  async function resolveTrigger(elId: string, label: string) {
+    const el = elements.find(e => e.id === elId);
+    if (!el || el.type !== 'event') return;
+    if (el.trigger?.manual_override) return;
+    // Skip if already resolved with same label and high confidence
+    if (
+      el.trigger?.kind && el.trigger.kind !== 'ambiguous' &&
+      (el.trigger.confidence ?? 0) > 0.7 &&
+      el.label === label
+    ) return;
+
+    setTriggerResolving(prev => new Set([...prev, elId]));
+    try {
+      const res = await fetch('/api/trigger-resolver/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label, process_context: { process_id: wfId || 'unknown' } }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { trigger?: WorkflowElement['trigger'] };
+        if (data.trigger) {
+          // Update trigger without snapshot (auto-resolved, not user action)
+          setElements(prev => prev.map(e => e.id === elId ? { ...e, trigger: data.trigger } : e));
+          scheduleAutosave();
+        }
+      }
+    } catch { /* silent — resolver unavailable */ }
+    setTriggerResolving(prev => { const s = new Set(prev); s.delete(elId); return s; });
   }
 
   // ── SVG mouse handlers ────────────────────────────────────────────────────────
@@ -630,6 +662,7 @@ export function useProcessEditor(readOnly = false) {
     workflows, sideW, versions, viewingVersion, setViewingVersion,
     roles, docs, adapters, wsFiles, breadcrumb,
     picker, setPicker,
+    triggerResolving, resolveTrigger,
     sideSearch, setSideSearch,
     creatingNew, setCreatingNew, newProcName, setNewProcName,
     renamingWfId, renamingVal, setRenamingVal,

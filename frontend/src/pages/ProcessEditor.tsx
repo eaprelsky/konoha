@@ -26,6 +26,8 @@ import { PropertiesPanel } from './PropertiesPanel';
 import { VersionSelector } from './VersionSelector';
 import { RegistryPicker } from './RegistryPicker';
 import { Minimap } from './Minimap';
+import { TriggerBadge } from './TriggerBadge';
+import { TriggerPopup } from './TriggerPopup';
 
 function isMobile() { return window.innerWidth <= 767; }
 
@@ -33,6 +35,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
   const [readOnly, setReadOnly] = React.useState(false);
   const s = useProcessEditor(readOnly);
   const [showMobProps, setShowMobProps] = React.useState(false);
+  const [triggerPopupId, setTriggerPopupId] = React.useState<string | null>(null);
   // Load workflow from URL param on mount
   const { loadWorkflow } = s;
   useEffect(() => { if (initialId) loadWorkflow(initialId); }, [initialId, loadWorkflow]);
@@ -368,43 +371,14 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                         <text x={EW - 12} y={12} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none">🔒</text>
                       </g>
                     )}
-                    {el.type === 'event' && !isEditingThis && (() => {
-                      const tr = el.trigger;
-                      const isStartEvt = !s.flow.some(([, to]) => to === el.id);
-                      if (!isStartEvt) return null;
-                      if (!tr || (!tr.kind && !tr.type)) {
-                        return (
-                          <g style={{ cursor: 'pointer' }} onClick={e2 => { e2.stopPropagation(); s.setSelected(el.id); }}>
-                            <title>Триггер не определён — нажмите, чтобы настроить</title>
-                            <circle cx={EW - 10} cy={10} r={8} fill="#94a3b8" stroke="white" strokeWidth={1.5} />
-                            <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="white" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">?</text>
-                          </g>
-                        );
-                      }
-                      if (tr.manual_override) {
-                        return (
-                          <g>
-                            <title>Триггер задан вручную</title>
-                            <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="#f59e0b" fontFamily="system-ui" pointerEvents="none">🔒</text>
-                          </g>
-                        );
-                      }
-                      const conf = tr.confidence;
-                      const isAmbiguous = tr.kind === 'ambiguous';
-                      if (conf === undefined && !isAmbiguous) return null;
-                      const dotColor = isAmbiguous || (conf !== undefined && conf < 0.7) ? '#ef4444' : conf !== undefined && conf < 0.9 ? '#f59e0b' : '#22c55e';
-                      const pct = conf !== undefined ? `${Math.round(conf * 100)}%` : '?';
-                      const tooltipText = isAmbiguous ? 'Триггер неоднозначен — требует уточнения' : `Уверенность определения триггера: ${pct}`;
-                      return (
-                        <g style={{ cursor: 'pointer' }} onClick={e2 => { e2.stopPropagation(); s.setSelected(el.id); }}>
-                          <title>{tooltipText}</title>
-                          <circle cx={EW - 10} cy={10} r={8} fill={dotColor} stroke="white" strokeWidth={1.5} />
-                          <text x={EW - 10} y={10} textAnchor="middle" dominantBaseline="middle" fontSize={7} fill="white" fontFamily="system-ui" fontWeight="bold" pointerEvents="none">
-                            {isAmbiguous ? '!' : pct}
-                          </text>
-                        </g>
-                      );
-                    })()}
+                    {el.type === 'event' && !isEditingThis && (
+                      <TriggerBadge
+                        trigger={el.trigger}
+                        resolving={s.triggerResolving.has(el.id)}
+                        isStartEvent={!s.flow.some(([, to]) => to === el.id)}
+                        onClick={() => setTriggerPopupId(prev => prev === el.id ? null : el.id)}
+                      />
+                    )}
                     {s.showMining && s.miningData && <MiningOverlay el={el} miningData={s.miningData} />}
                     {showAnchors && anchors.map(({ ax, ay }, i) => (
                       <circle key={i} cx={ax} cy={ay} r={5} fill="#6366f1" fillOpacity={0.85} stroke="white" strokeWidth={1.5}
@@ -431,6 +405,8 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                                 ? s.updateElement(el.id, { operator: v, label: v })
                                 : s.updateElement(el.id, { label: v });
                               s.syncEntityOnEdit(el, v);
+                              // Auto-resolve trigger for event nodes after label edit
+                              if (el.type === 'event') s.resolveTrigger(el.id, v);
                             }
                             s.setEditingId(null);
                           }}
@@ -471,6 +447,25 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                   Кликните элемент в палитре, чтобы добавить его на холст
                 </text>
               )}
+
+              {/* Trigger popup */}
+              {triggerPopupId && (() => {
+                const el = s.elements.find(e => e.id === triggerPopupId);
+                const pos = s.positions[triggerPopupId];
+                if (!el || !pos) return null;
+                return (
+                  <TriggerPopup
+                    el={el}
+                    posX={pos.x}
+                    posY={pos.y}
+                    zoom={s.zoom}
+                    panX={s.panX}
+                    panY={s.panY}
+                    onUpdate={s.updateElement}
+                    onClose={() => setTriggerPopupId(null)}
+                  />
+                );
+              })()}
               </g>
             </svg>
           </div>

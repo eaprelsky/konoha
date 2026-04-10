@@ -33,7 +33,7 @@ export interface WorkflowElement {
     // Legacy type field (kept for backward compat)
     type?: 'manual' | 'telegram' | 'schedule' | 'event' | 'webhook';
     // Extended trigger kind from event-manager
-    kind?: 'timer' | 'message' | 'condition' | 'delay_after' | 'manual' | 'ambiguous';
+    kind?: 'timer' | 'message' | 'condition' | 'delay_after' | 'manual' | 'system' | 'ambiguous';
     /** 0–1 confidence score from trigger-resolver */
     confidence?: number;
     /** Candidates when kind=ambiguous */
