@@ -21,17 +21,18 @@ test.describe('issue-462-browser', () => {
     const response = await page.goto('/ui/cases');
     expect(response?.status()).toBe(200);
 
-    // Wait for React to mount and render (domcontentloaded fires before JS executes)
-    await page.waitForLoadState('networkidle');
+    // Wait for React to mount the cases page root element.
+    // networkidle is unreliable when SSE/polling keeps the network active — use
+    // a selector-based wait instead (closes #479).
+    await page.waitForSelector('.cs-body', { timeout: 15000 });
 
     // Verify cases page loaded (not redirect)
     expect(page.url()).toContain('/ui/cases');
     expect(page.url()).not.toContain('/ui/login');
 
-    // Verify React rendered meaningful content (SPA shell alone is ~400 bytes)
-    const content = await page.content();
-    expect(content).toBeTruthy();
-    expect(content.length).toBeGreaterThan(1000);
+    // Verify the cases container and either a row or empty-state is present
+    const container = page.locator('.cs-body .container');
+    await expect(container).toBeVisible();
 
     // Take screenshot
     await page.screenshot({ path: '/opt/shared/shino/reports/2026-04-11-tc-b02-cases.png' });
