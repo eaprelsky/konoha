@@ -77,6 +77,7 @@ app.post("/testbench/login", async (c) => {
       await session.page.fill(password_selector, password, { timeout: 5_000 });
       await session.page.click(submit_selector, { timeout: 5_000 });
       await session.page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => {});
+      await session.page.evaluate(() => { localStorage.setItem("konoha_dash_auth", "1"); }).catch(() => {});
       results.push({ session_id: sid, ok: true, url: session.page.url() });
     } catch (e: any) {
       results.push({ session_id: sid, ok: false, error: e.message });
@@ -98,6 +99,11 @@ app.post("/testbench/navigate", async (c) => {
   const session = await (session_id !== undefined ? acquireSessionById(Number(session_id)) : acquireSession()).catch((e) => { throw e; });
   try {
     await session.page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    // Inject dashboard auth token so Playwright sessions bypass the login wall (#463).
+    // localStorage is per-origin; this is a no-op on pages that don't use this key.
+    await session.page.evaluate(() => {
+      localStorage.setItem("konoha_dash_auth", "1");
+    }).catch(() => {});
     const finalUrl = session.page.url();
     const title = await session.page.title().catch(() => "");
     return c.json({ ok: true, session_id: session.id, url: finalUrl, title });
