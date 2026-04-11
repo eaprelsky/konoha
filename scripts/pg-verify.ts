@@ -153,22 +153,27 @@ async function checkReminders(): Promise<CheckResult> {
 // At 1.0 (100%) PG has 2x Redis — possible phantom duplicates from dual-write.
 const PG_BLOAT_THRESHOLD = parseFloat(process.env.PG_BLOAT_THRESHOLD ?? "1.0");
 
-function printResult(r: CheckResult): void {
+// Returns true if a bloat threshold was exceeded for this entity.
+function printResult(r: CheckResult): boolean {
   const status = r.ok ? "OK" : "MISMATCH";
   console.log(`\n[${status}] ${r.entity}: Redis=${r.redisCount} PG=${r.pgCount}`);
   if (r.onlyInRedis.length > 0) {
     // CRITICAL: these records would be lost if Redis were turned off
     console.log(`  !! Only in Redis (${r.onlyInRedis.length}): ${r.onlyInRedis.slice(0, 5).join(", ")}${r.onlyInRedis.length > 5 ? " ..." : ""}`);
   }
+  let bloat = false;
   if (r.onlyInPg.length > 0) {
     // INFO: archived/historical data in PG no longer active in Redis — acceptable pre-migration
     console.log(`  -- Only in PG (${r.onlyInPg.length}) [archived/historical, OK]: ${r.onlyInPg.slice(0, 3).join(", ")}${r.onlyInPg.length > 3 ? " ..." : ""}`);
     // WARN: onlyInPg exceeds threshold — may indicate phantom duplicates from dual-write
     if (r.redisCount > 0 && r.onlyInPg.length > r.redisCount * PG_BLOAT_THRESHOLD) {
       const pct = Math.round((r.onlyInPg.length / r.redisCount) * 100);
-      console.log(`  ⚠ BLOAT WARNING: onlyInPg (${r.onlyInPg.length}) is ${pct}% of redisCount — may include phantom duplicates, not just archives. Run migrate script to investigate.`);
+      console.log(`  ⚠ BLOAT WARNING: onlyInPg (${r.onlyInPg.length}) is ${pct}% of redisCount (${PG_BLOAT_THRESHOLD * 100}% threshold).`);
+      console.log(`    Action: bun run scripts/migrate-redis-to-pg.ts --dry-run`);
+      bloat = true;
     }
   }
+  return bloat;
 }
 
 async function main(): Promise<void> {
@@ -186,13 +191,23 @@ async function main(): Promise<void> {
     ]);
 
     let allOk = true;
+    let hasBloat = false;
     for (const r of results) {
-      printResult(r);
+      if (printResult(r)) hasBloat = true;
       if (!r.ok) allOk = false;
     }
 
-    console.log("\n" + (allOk ? "=== RESULT: OK — Redis and PG are in sync ===" : "=== RESULT: MISMATCH — discrepancies found ==="));
-    process.exit(allOk ? 0 : 1);
+    if (!allOk) {
+      console.log("\n=== RESULT: MISMATCH — discrepancies found ===");
+      process.exit(1);
+    } else if (hasBloat) {
+      console.log("\n=== RESULT: BLOAT — sync OK but PG exceeds bloat threshold ===");
+      console.log("    Investigate: bun run scripts/migrate-redis-to-pg.ts --dry-run");
+      process.exit(2);
+    } else {
+      console.log("\n=== RESULT: OK — Redis and PG are in sync ===");
+      process.exit(0);
+    }
   } finally {
     redis.disconnect();
     await sql.end();
