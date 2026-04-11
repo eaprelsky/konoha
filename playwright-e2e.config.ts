@@ -1,19 +1,18 @@
 import { defineConfig } from '@playwright/test';
+import { base } from './playwright/base.config';
 
+// E2E config: attaches to an existing server on port 3201 (konoha-testbench).
+// Used for running ./tests/e2e specs against a live staging instance.
+const token = process.env.KONOHA_TOKEN ?? 'konoha-dev-token';
 export default defineConfig({
+  ...base,
   testDir: './tests/e2e',
-  globalSetup: './playwright/global-setup.ts',
   use: {
+    ...base.use,
     baseURL: 'http://127.0.0.1:3201',
-    storageState: 'playwright/.auth/user.json',
     extraHTTPHeaders: {
-      'Authorization': `Bearer ${process.env.KONOHA_TOKEN ?? 'konoha-dev-token'}`
+      'Authorization': `Bearer ${token}`,
     },
   },
   webServer: undefined, // Use existing server on 3201
-  reporter: [
-    ['line'],
-    ['json', { outputFile: '/opt/shared/shino/reports/playwright-results.json' }],
-  ],
-  timeout: 30000,
 });
