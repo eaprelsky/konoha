@@ -22,7 +22,7 @@ export default defineConfig({
     command: 'KONOHA_PORT=3202 KONOHA_TOKEN=konoha-dev-token bun run core/src/server.ts',
     url: 'http://127.0.0.1:3202',
     reuseExistingServer: false,
-    timeout: 30000,
+    timeout: 90000, // server startup timeout (not test timeout) — 90s needed for bun startup in CI
   },
   reporter: [
     ['line'],
