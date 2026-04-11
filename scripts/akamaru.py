@@ -430,6 +430,15 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                     # actually rendered — prevents false positives when jiraiya writes/displays
                     # documents that happen to contain "(Y/n)" or "Do you want to proceed" in their
                     # text content (repeating false alerts for jiraiya MemPalace operations, issue #XXX).
+                    #
+                    # MAINTENANCE NOTE: these strings are sourced from Claude Code's permission
+                    # prompt UI (verified 2026-04-11, claude-sonnet-4-6). If Claude Code is
+                    # upgraded and the prompt wording changes (e.g. "❯ 1. Yes" → different format),
+                    # these markers may silently stop matching — real frozen prompts will go
+                    # undetected. After any Claude Code update, run:
+                    #   tmux -L <agent> capture-pane -pt <agent>
+                    # while an agent is at a permission prompt, and verify the markers below
+                    # still appear verbatim in the pane output. Update if needed.
                     PERMISSION_UI_MARKERS = [
                         "don't ask again",
                         "Esc to cancel",
