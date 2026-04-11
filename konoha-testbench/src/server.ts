@@ -16,6 +16,10 @@ import {
 const PORT = parseInt(process.env.TESTBENCH_PORT || "3201");
 const TOKEN = process.env.KONOHA_TOKEN || "";
 
+// localStorage key used by the Konoha dashboard to check login state (#463).
+// Must stay in sync with frontend/src/entries/app.tsx and frontend/src/components/Layout.tsx.
+const DASH_AUTH_KEY = DASH_AUTH_KEY;
+
 const app = new Hono();
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
@@ -77,7 +81,7 @@ app.post("/testbench/login", async (c) => {
       await session.page.fill(password_selector, password, { timeout: 5_000 });
       await session.page.click(submit_selector, { timeout: 5_000 });
       await session.page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => {});
-      await session.page.evaluate(() => { localStorage.setItem("konoha_dash_auth", "1"); }).catch(() => {});
+      await session.page.evaluate(() => { localStorage.setItem(DASH_AUTH_KEY, "1"); }).catch(() => {});
       results.push({ session_id: sid, ok: true, url: session.page.url() });
     } catch (e: any) {
       results.push({ session_id: sid, ok: false, error: e.message });
@@ -102,7 +106,7 @@ app.post("/testbench/navigate", async (c) => {
     // Inject dashboard auth token so Playwright sessions bypass the login wall (#463).
     // localStorage is per-origin; this is a no-op on pages that don't use this key.
     await session.page.evaluate(() => {
-      localStorage.setItem("konoha_dash_auth", "1");
+      localStorage.setItem(DASH_AUTH_KEY, "1");
     }).catch(() => {});
     const finalUrl = session.page.url();
     const title = await session.page.title().catch(() => "");

@@ -430,6 +430,11 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                     # writes, etc.). False positives occur when tool output happens to contain
                     # prompt-like strings ("(Y/n)" in a document being written, for example).
                     # "Doodling" = MemPalace in-progress indicator; spinner chars = MCP tool running.
+                    #
+                    # Known limitation: if a spinner char lingers in the tmux scroll-back buffer
+                    # after an MCP call completes, and a real permission_prompt appears immediately
+                    # after, is_actively_working may be True and the alert will be suppressed (false
+                    # negative). Risk is low — the next 60s check will catch it once the buffer scrolls.
                     ACTIVE_WORK_INDICATORS = [
                         "Doodling",                            # MemPalace write indicator
                         "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",  # spinner chars
