@@ -426,6 +426,15 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                         "(Y/n)",
                         "(y/N)",
                     ]
+                    # Require at least one of these to confirm the Claude Code permission UI is
+                    # actually rendered — prevents false positives when jiraiya writes/displays
+                    # documents that happen to contain "(Y/n)" or "Do you want to proceed" in their
+                    # text content (repeating false alerts for jiraiya MemPalace operations, issue #XXX).
+                    PERMISSION_UI_MARKERS = [
+                        "don't ask again",
+                        "Esc to cancel",
+                        "\u276f 1. Yes",   # ❯ 1. Yes  — Claude Code choice cursor
+                    ]
                     # Skip check when the agent is visibly doing active work (MCP calls, MemPalace
                     # writes, etc.). False positives occur when tool output happens to contain
                     # prompt-like strings ("(Y/n)" in a document being written, for example).
@@ -443,7 +452,11 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                         any(ind in l for ind in ACTIVE_WORK_INDICATORS)
                         for l in lines[-20:]
                     )
-                    if not is_actively_working and any(p in pane_text for p in PERMISSION_PATTERNS):
+                    is_permission_prompt = (
+                        any(p in pane_text for p in PERMISSION_PATTERNS) and
+                        any(m in pane_text for m in PERMISSION_UI_MARKERS)
+                    )
+                    if not is_actively_working and is_permission_prompt:
                         key = f"tmux:{session}:permission_prompt"
                         if should_alert(key):
                             alerts.append(
