@@ -132,6 +132,17 @@ registerWorkCalendarRoutes(app, requireAuth);
 // Mount workflow-engine module (cases, workitems, reminders, workflows)
 app.route("/", workflowEngineModule);
 
+// ── /api/* compatibility shim (closes #464) ──────────────────────────────────
+// The frontend JS uses BASE = '/api' for all API calls.
+// In production nginx strips the prefix (location /api/ { proxy_pass /; }).
+// When the built UI is served directly from this process (TestBench, local dev),
+// no nginx is involved so we strip the prefix ourselves by re-fetching internally.
+app.all("/api/*", async (c) => {
+  const url = new URL(c.req.url);
+  url.pathname = url.pathname.slice("/api".length) || "/";
+  return app.fetch(new Request(url.toString(), c.req.raw));
+});
+
 // Initialize Tsunade event handler (KWE-006)
 export const tsunadeReady: Promise<void> = initTsunade().catch((e) => {
   console.error("[tsunade] init error:", e.message);
