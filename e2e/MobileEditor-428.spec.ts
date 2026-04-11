@@ -47,7 +47,7 @@ test.describe('Issue #428: Mobile editor — process list + chat navigation', ()
   test.use({ viewport: MOBILE_VIEWPORT });
 
   test('TC-01: Palette strip is visible on mobile', async ({ page }) => {
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     const palette = page.locator('.mob-palette');
@@ -59,7 +59,7 @@ test.describe('Issue #428: Mobile editor — process list + chat navigation', ()
   });
 
   test('TC-02: Process list toggle button is visible on mobile', async ({ page }) => {
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     const toggleBtn = page.locator('.mob-side-toggle');
@@ -67,7 +67,7 @@ test.describe('Issue #428: Mobile editor — process list + chat navigation', ()
   });
 
   test('TC-03: Process list sheet opens and closes on mobile', async ({ page }) => {
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     // Open the sheet
@@ -87,7 +87,7 @@ test.describe('Issue #428: Mobile editor — process list + chat navigation', ()
   });
 
   test('TC-04: Desktop sidebar is hidden on mobile', async ({ page }) => {
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     const sidebar = page.locator('.ipe-side');
@@ -108,13 +108,13 @@ test.describe('Issue #428: Mobile editor — process list + chat navigation', ()
 
     // AssistantWidget only navigates when it's mounted; verify the editor route
     // is reachable and renders the root element.
-    const response = await page.goto(`/editor/${testProcessId}`);
+    const response = await page.goto(`/ui/editor/${testProcessId}`);
     expect(response?.status()).toBe(200);
     await expect(page.locator('#root')).toBeVisible();
   });
 
   test('TC-06: Screenshot of mobile editor with palette and toggle', async ({ page }) => {
-    await page.goto(`/editor/${testProcessId}`);
+    await page.goto(`/ui/editor/${testProcessId}`);
     await page.waitForLoadState('domcontentloaded');
 
     await page.locator('.mob-palette').waitFor({ state: 'visible', timeout: 5000 });
