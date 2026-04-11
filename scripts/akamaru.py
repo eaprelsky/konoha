@@ -55,7 +55,7 @@ WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "
 # On-demand agents: stop after mission complete — inactive state is expected, not a failure.
 # Do NOT alert when their services are inactive or tmux sessions are missing.
 # Still alert on "failed" status.
-ON_DEMAND_AGENTS = {"shino", "hinata", "ibiki", "ino", "inojin"}
+ON_DEMAND_AGENTS = {"shino", "hinata", "ibiki", "ino", "inojin", "shikadai"}
 
 # For each agent: watchdog service that MUST be running when the tmux session is alive (#98)
 AGENT_WATCHDOGS = {
@@ -319,7 +319,7 @@ def check_services(paused: set[str] = frozenset()) -> list[str]:
             status = r.stdout.strip()
             if status not in ("active", "activating"):
                 # On-demand agents stop after mission — inactive is expected, not a failure
-                if status == "inactive" and short in ON_DEMAND_AGENTS:
+                if status in ("inactive", "deactivating") and short in ON_DEMAND_AGENTS:
                     log.debug(f"Skipping alert for on-demand agent service {svc} (inactive)")
                     continue
                 key = f"service:{svc}"
