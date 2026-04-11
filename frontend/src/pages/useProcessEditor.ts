@@ -9,6 +9,7 @@ import type { Workflow, WorkflowElement, RoleDef, DocTemplate, ProcessMiningData
 import { EW, EH, snap, pinchDist, genId, slugify, type Pos, type EType } from './ArrowRouter';
 import { Inspector } from '../components/Inspector';
 import { DEFAULT_LABELS } from './ElementShape';
+import { applyPatchToState } from './applyPatchHelper';
 
 export type Mode = 'select' | 'connect';
 
@@ -299,55 +300,14 @@ export function useProcessEditor(readOnly = false) {
   }
 
   // ── Schema patch via DOM event (issue #416: AssistantWidget → canvas) ────────
+  // Pure transformation logic lives in applyPatchHelper.ts for unit testability (issue #461).
   function applyPatch(patch: SchemaPatch) {
     if (readOnly) return;
     pushSnapshot(); scheduleAutosave();
-    if (patch.update_elements?.length) {
-      setElements(prev => prev.map(el => {
-        const upd = patch.update_elements!.find(u => u.id === el.id);
-        return upd ? { ...el, ...upd } : el;
-      }));
-    }
-    if (patch.update_positions && Object.keys(patch.update_positions).length > 0) {
-      setPositions(prev => ({ ...prev, ...patch.update_positions }));
-    }
-    if (patch.add_elements?.length) {
-      const newEls: WorkflowElement[] = patch.add_elements.map(ae => {
-        const type = (ae.type as EType) || 'function';
-        const id = (ae.id as string) || genId(type, elements);
-        const label = (ae.label as string) || DEFAULT_LABELS[type as import('./ArrowRouter').EType] || 'Новый элемент';
-        const x = typeof ae.x === 'number' ? ae.x : 100;
-        const y = typeof ae.y === 'number' ? ae.y : 100;
-        return { id, type, label, x, y } as WorkflowElement;
-      });
-      setElements(prev => [...prev, ...newEls]);
-      setPositions(prev => {
-        const n = { ...prev };
-        for (const el of newEls) n[el.id] = { x: el.x ?? 100, y: el.y ?? 100 };
-        return n;
-      });
-    }
-    if (patch.remove_elements?.length) {
-      const ids = new Set(patch.remove_elements);
-      setElements(prev => prev.filter(e => !ids.has(e.id)));
-      setFlow(prev => prev.filter(([f, t]) => !ids.has(f) && !ids.has(t)));
-      setPositions(prev => {
-        const n = { ...prev };
-        for (const id of ids) delete n[id];
-        return n;
-      });
-    }
-    if (patch.add_flow?.length) {
-      setFlow(prev => {
-        const existing = new Set(prev.map(([f, t]) => `${f}→${t}`));
-        const toAdd = patch.add_flow!.filter(([f, t]) => !existing.has(`${f}→${t}`));
-        return [...prev, ...toAdd];
-      });
-    }
-    if (patch.remove_flow?.length) {
-      const toRemove = new Set(patch.remove_flow!.map(([f, t]) => `${f}→${t}`));
-      setFlow(prev => prev.filter(([f, t]) => !toRemove.has(`${f}→${t}`)));
-    }
+    const next = applyPatchToState({ elements, flow, positions }, patch);
+    setElements(next.elements);
+    setFlow(next.flow);
+    setPositions(next.positions);
   }
 
   // Listen for patches dispatched by AssistantWidget
