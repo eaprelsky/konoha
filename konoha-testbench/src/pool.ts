@@ -47,6 +47,19 @@ async function _createSession(idx: number): Promise<void> {
     userAgent: "KonohaTestBench/1.0 (Playwright)",
   });
   const page = await context.newPage();
+
+  // Inject Authorization header on all /api/* requests (#467 fix).
+  // page.route() intercepts at Playwright level — more reliable than setExtraHTTPHeaders()
+  // which doesn't consistently apply to browser-initiated fetch() calls after goto().
+  const token = process.env.KONOHA_TOKEN || "";
+  if (token) {
+    await page.route("**/api/**", async (route) => {
+      await route.continue({
+        headers: { ...route.request().headers(), Authorization: `Bearer ${token}` },
+      });
+    });
+  }
+
   const session: Session = {
     id: idx,
     context,

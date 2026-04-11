@@ -82,10 +82,6 @@ app.post("/testbench/login", async (c) => {
       await session.page.click(submit_selector, { timeout: 5_000 });
       await session.page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => {});
       await session.page.evaluate(() => { localStorage.setItem(DASH_AUTH_KEY, "1"); }).catch(() => {});
-      // Inject Bearer token into all subsequent browser requests (#467).
-      if (TOKEN) {
-        await session.page.context().setExtraHTTPHeaders({ Authorization: `Bearer ${TOKEN}` }).catch(() => {});
-      }
       results.push({ session_id: sid, ok: true, url: session.page.url() });
     } catch (e: any) {
       results.push({ session_id: sid, ok: false, error: e.message });
@@ -112,12 +108,6 @@ app.post("/testbench/navigate", async (c) => {
     await session.page.evaluate(() => {
       localStorage.setItem(DASH_AUTH_KEY, "1");
     }).catch(() => {});
-    // Inject Bearer token into all subsequent browser requests so fetch() calls
-    // to /api/* endpoints pass auth without nginx (#467).
-    // setExtraHTTPHeaders applies to the entire BrowserContext (all future requests).
-    if (TOKEN) {
-      await session.page.context().setExtraHTTPHeaders({ Authorization: `Bearer ${TOKEN}` }).catch(() => {});
-    }
     const finalUrl = session.page.url();
     const title = await session.page.title().catch(() => "");
     return c.json({ ok: true, session_id: session.id, url: finalUrl, title });
