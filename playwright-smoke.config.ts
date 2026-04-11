@@ -1,24 +1,14 @@
 import { defineConfig } from '@playwright/test';
+import { base } from './playwright/base.config';
 
+// Smoke config: fast subset of tests tagged *smoke* or *-smoke.spec.ts*.
+// Reuses an existing server to avoid startup overhead on quick smoke runs.
 export default defineConfig({
-  testDir: './e2e',
-  globalSetup: './playwright/global-setup.ts',
-  use: {
-    baseURL: 'http://127.0.0.1:3202',
-    storageState: 'playwright/.auth/user.json',
-    extraHTTPHeaders: {
-      'Authorization': 'Bearer konoha-dev-token'
-    },
-  },
+  ...base,
+  // Only run files matching the smoke pattern (e.g. tsunade-smoke.spec.ts)
+  testMatch: ['**/*smoke*.spec.ts', '**/*smoke*.spec.js'],
   webServer: {
-    command: 'KONOHA_PORT=3202 KONOHA_TOKEN=konoha-dev-token bun run core/src/server.ts',
-    url: 'http://127.0.0.1:3202/health',
+    ...base.webServer!,
     reuseExistingServer: true,
-    timeout: 90000,
   },
-  reporter: [
-    ['line'],
-    ['json', { outputFile: '/opt/shared/shino/reports/playwright-results.json' }],
-  ],
-  timeout: 30000,
 });
