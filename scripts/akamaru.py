@@ -52,6 +52,11 @@ WATCHED_SERVICES = [
 WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki", "ino", "inojin"]
 WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki", "ino", "inojin"]
 
+# On-demand agents: stop after mission complete — inactive state is expected, not a failure.
+# Do NOT alert when their services are inactive or tmux sessions are missing.
+# Still alert on "failed" status.
+ON_DEMAND_AGENTS = {"shino", "hinata", "ibiki", "ino", "inojin"}
+
 # For each agent: watchdog service that MUST be running when the tmux session is alive (#98)
 AGENT_WATCHDOGS = {
     "naruto":  "claude-watchdog-naruto.service",
@@ -313,6 +318,10 @@ def check_services(paused: set[str] = frozenset()) -> list[str]:
             )
             status = r.stdout.strip()
             if status not in ("active", "activating"):
+                # On-demand agents stop after mission — inactive is expected, not a failure
+                if status == "inactive" and short in ON_DEMAND_AGENTS:
+                    log.debug(f"Skipping alert for on-demand agent service {svc} (inactive)")
+                    continue
                 key = f"service:{svc}"
                 if should_alert(key):
                     alerts.append(f"kiba:alert service={svc} status={status}")
@@ -338,6 +347,10 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                 alive = False
 
             if not alive:
+                # On-demand agents stop after mission — missing session is expected
+                if session in ON_DEMAND_AGENTS:
+                    log.debug(f"Skipping tmux alert for on-demand agent: {session}")
+                    continue
                 key = f"tmux:{session}"
                 if should_alert(key):
                     alerts.append(f"kiba:alert tmux=missing session={session}")
@@ -541,6 +554,9 @@ async def check_konoha(paused: set[str] = frozenset()) -> list[str]:
                         if age > HEARTBEAT_ALERT:
                             if aid in paused:
                                 log.debug(f"Skipping heartbeat alert for paused agent: {aid}")
+                                continue
+                            if aid in ON_DEMAND_AGENTS:
+                                log.debug(f"Skipping heartbeat alert for on-demand agent: {aid}")
                                 continue
                             key = f"agent:{aid}:offline"
                             if should_alert(key):
