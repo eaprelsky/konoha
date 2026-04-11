@@ -44,9 +44,18 @@ export interface UseAssistantChatResult {
   abort: () => void;
 }
 
-export function useAssistantChat(): UseAssistantChatResult {
-  const navigate = useNavigate();
-  const location = useLocation();
+/** Optional overrides for router dependencies — inject in tests to avoid Router wrapper. */
+export interface UseAssistantChatOptions {
+  navigate?: (to: string) => void;
+  location?: { pathname: string };
+}
+
+export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssistantChatResult {
+  // Always call router hooks (Rules of Hooks) — overrides apply in tests/isolation.
+  const routerNavigate = useNavigate();
+  const routerLocation = useLocation();
+  const navigate = options.navigate ?? routerNavigate;
+  const location = options.location ?? routerLocation;
   const { showHighlight } = useHighlight();
 
   const [msgs, setMsgs] = useState<Msg[]>([]);
