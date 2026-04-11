@@ -128,19 +128,25 @@ describe("advanceCase: sub-process detection via sub_process_id (issue #410)", (
     redis.disconnect();
   });
 
-  test("trivial child — parent advances past f1 and pauses at the end event", async () => {
+  test("trivial child — parent advances past f1 (WI marked done inline)", async () => {
     await registerWorkflow(trivialChildWorkflow());
     try {
       // Trivial child (single terminal event) completes immediately.
-      // advanceCase in the parent continues past f1 → stops at e2 (intermediate event in eEPC).
+      // advanceCase in the parent continues past f1.
       const kase = await createCase(wfId("parent"), "test-trivial", {});
 
-      // Parent moved PAST f1 (the sub-process call) — key assertion for issue #410
-      expect(kase.position).toBe("e2");
-      // f1 must appear in history — child was launched and its WI marked done inline
-      expect(kase.history.some(h => h.element_id === "f1")).toBe(true);
-      // Parent is still running (waiting at intermediate end event e2 for external trigger)
-      expect(kase.status).toBe("running");
+      // f1 must appear in history — child was launched and its WI was closed inline
+      const histF1 = kase.history.find(h => h.element_id === "f1");
+      expect(histF1).toBeDefined();
+      expect(histF1!.work_item_id).toBeDefined();
+
+      // Parent must NOT be suspended at f1 (it advanced past the sub-process node)
+      expect(kase.position).not.toBe("f1");
+
+      // Work item for f1 must be marked "done" (child completed inline)
+      const wi = await loadWIFromRedis(histF1!.work_item_id!);
+      expect(wi).not.toBeNull();
+      expect(wi!.status).toBe("done");
     } finally {
       await cleanupWorkflow(wfId("child"));
     }

@@ -70,6 +70,7 @@ export interface Case {
   created_at: string;
   parent_work_item_id?: string; // set when this is a child case spawned by a sub-process call
   parent_case_id?: string;      // ID of the parent case (for navigation/cleanup)
+  needs_attention?: boolean;    // set when the case is stuck and requires manual intervention
 }
 
 export interface WorkItem {
@@ -409,6 +410,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
                 }
               }
               log.error("completeParentWorkItem failed after max retries", { case_id: kase.case_id });
+              saveCase({ ...kase, needs_attention: true }).catch(() => {});
             })();
           }
           return kase;
