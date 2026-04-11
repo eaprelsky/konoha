@@ -137,6 +137,10 @@ app.route("/", workflowEngineModule);
 // In production nginx strips the prefix (location /api/ { proxy_pass /; }).
 // When the built UI is served directly from this process (TestBench, local dev),
 // no nginx is involved so we strip the prefix ourselves by re-fetching internally.
+//
+// Body-reading risk: c.req.raw is forwarded as-is so the body stream is intact.
+// If a future middleware consumes the body before routing reaches this handler,
+// the re-fetch will receive an empty body. Avoid body-reading middleware above this.
 app.all("/api/*", async (c) => {
   const url = new URL(c.req.url);
   url.pathname = url.pathname.slice("/api".length) || "/";
