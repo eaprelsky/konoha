@@ -7,7 +7,7 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:3201',
     storageState: 'playwright/.auth/user.json',
     extraHTTPHeaders: {
-      'Authorization': 'Bearer konoha-dev-token'
+      'Authorization': `Bearer ${process.env.KONOHA_TOKEN ?? 'konoha-dev-token'}`
     },
   },
   webServer: undefined, // Use existing server on 3201
