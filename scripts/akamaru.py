@@ -417,7 +417,8 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
 
                     # Detect permission prompt freeze (#69)
                     # Filter out status-bar lines (e.g. "bypass permissions on (shift+tab to cycle)")
-                    STATUS_BAR_NOISE = ["bypass permissions", "shift+tab", "bypassPermissions"]
+                    # and MemPalace write-progress lines (e.g. "Doodling…").
+                    STATUS_BAR_NOISE = ["bypass permissions", "shift+tab", "bypassPermissions", "Doodling"]
                     prompt_lines = [l for l in lines[-15:] if not any(n in l for n in STATUS_BAR_NOISE)]
                     pane_text = "\n".join(prompt_lines)
                     PERMISSION_PATTERNS = [
@@ -425,7 +426,19 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                         "(Y/n)",
                         "(y/N)",
                     ]
-                    if any(p in pane_text for p in PERMISSION_PATTERNS):
+                    # Skip check when the agent is visibly doing active work (MCP calls, MemPalace
+                    # writes, etc.). False positives occur when tool output happens to contain
+                    # prompt-like strings ("(Y/n)" in a document being written, for example).
+                    # "Doodling" = MemPalace in-progress indicator; spinner chars = MCP tool running.
+                    ACTIVE_WORK_INDICATORS = [
+                        "Doodling",                            # MemPalace write indicator
+                        "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",  # spinner chars
+                    ]
+                    is_actively_working = any(
+                        any(ind in l for ind in ACTIVE_WORK_INDICATORS)
+                        for l in lines[-20:]
+                    )
+                    if not is_actively_working and any(p in pane_text for p in PERMISSION_PATTERNS):
                         key = f"tmux:{session}:permission_prompt"
                         if should_alert(key):
                             alerts.append(
