@@ -317,7 +317,11 @@ async function resolveChildProcess(
   // 1. Explicit reference wins
   if (el.sub_process_id) return el.sub_process_id;
 
-  // 2. Scan workflow registry for a child that declares this element as its parent function
+  // 2. Fallback: O(n) scan — sub_process_id not set on this element.
+  // TODO: make sub_process_id mandatory on function elements to eliminate this scan (issue #460).
+  log.warn("resolveChildProcess: sub_process_id missing, falling back to O(n) registry scan", {
+    element_id: elementId, workflow_id: parentDef.id,
+  });
   const allIds = await redis.smembers(WORKFLOW_INDEX_KEY);
   for (const id of allIds) {
     if (id === parentDef.id) continue;
@@ -385,11 +389,27 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
           cancelSubscriptionsByInstance(kase.case_id).catch(e =>
             log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
           );
-          // If this is a child case, complete the parent work item and advance the parent
+          // If this is a child case, complete the parent work item and advance the parent.
+          // Wrapped in a retry loop (exponential backoff) so a transient failure does not
+          // leave the parent case permanently stuck.
           if (kase.parent_work_item_id) {
-            completeParentWorkItem(kase).catch(e =>
-              log.error("completeParentWorkItem error", { case_id: kase.case_id, error: e.message }),
-            );
+            void (async () => {
+              const MAX_ATTEMPTS = 3;
+              let delay = 500;
+              for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                try {
+                  await completeParentWorkItem(kase);
+                  return;
+                } catch (e: any) {
+                  log.error("completeParentWorkItem error", { case_id: kase.case_id, error: e.message, attempt });
+                  if (attempt < MAX_ATTEMPTS) {
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 2;
+                  }
+                }
+              }
+              log.error("completeParentWorkItem failed after max retries", { case_id: kase.case_id });
+            })();
           }
           return kase;
         }
