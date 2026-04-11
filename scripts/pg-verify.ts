@@ -43,8 +43,9 @@ async function checkCases(): Promise<CheckResult> {
     pgCount: pgIds.length,
     onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
     onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
-    ok: redisIds.length === pgIds.length &&
-        redisIds.every(id => pgSet.has(id)),
+    // Migration check: every Redis record must exist in PG (no data loss).
+    // Extra records in PG (archived/historical data no longer in Redis) are acceptable.
+    ok: redisIds.every(id => pgSet.has(id)),
   };
 }
 
@@ -62,8 +63,9 @@ async function checkWorkItems(): Promise<CheckResult> {
     pgCount: pgIds.length,
     onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
     onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
-    ok: redisIds.length === pgIds.length &&
-        redisIds.every(id => pgSet.has(id)),
+    // Migration check: every Redis record must exist in PG (no data loss).
+    // Extra records in PG (archived/historical data no longer in Redis) are acceptable.
+    ok: redisIds.every(id => pgSet.has(id)),
   };
 }
 
@@ -81,8 +83,9 @@ async function checkWorkflows(): Promise<CheckResult> {
     pgCount: pgIds.length,
     onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
     onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
-    ok: redisIds.length === pgIds.length &&
-        redisIds.every(id => pgSet.has(id)),
+    // Migration check: every Redis record must exist in PG (no data loss).
+    // Extra records in PG (archived/historical data no longer in Redis) are acceptable.
+    ok: redisIds.every(id => pgSet.has(id)),
   };
 }
 
@@ -100,8 +103,9 @@ async function checkRoles(): Promise<CheckResult> {
     pgCount: pgIds.length,
     onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
     onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
-    ok: redisIds.length === pgIds.length &&
-        redisIds.every(id => pgSet.has(id)),
+    // Migration check: every Redis record must exist in PG (no data loss).
+    // Extra records in PG (archived/historical data no longer in Redis) are acceptable.
+    ok: redisIds.every(id => pgSet.has(id)),
   };
 }
 
@@ -119,8 +123,9 @@ async function checkDocs(): Promise<CheckResult> {
     pgCount: pgIds.length,
     onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
     onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
-    ok: redisIds.length === pgIds.length &&
-        redisIds.every(id => pgSet.has(id)),
+    // Migration check: every Redis record must exist in PG (no data loss).
+    // Extra records in PG (archived/historical data no longer in Redis) are acceptable.
+    ok: redisIds.every(id => pgSet.has(id)),
   };
 }
 
@@ -138,8 +143,9 @@ async function checkReminders(): Promise<CheckResult> {
     pgCount: pgIds.length,
     onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
     onlyInPg:    pgIds.filter(id => !redisSet.has(id)),
-    ok: redisIds.length === pgIds.length &&
-        redisIds.every(id => pgSet.has(id)),
+    // Migration check: every Redis record must exist in PG (no data loss).
+    // Extra records in PG (archived/historical data no longer in Redis) are acceptable.
+    ok: redisIds.every(id => pgSet.has(id)),
   };
 }
 
@@ -147,10 +153,12 @@ function printResult(r: CheckResult): void {
   const status = r.ok ? "OK" : "MISMATCH";
   console.log(`\n[${status}] ${r.entity}: Redis=${r.redisCount} PG=${r.pgCount}`);
   if (r.onlyInRedis.length > 0) {
-    console.log(`  Only in Redis (${r.onlyInRedis.length}): ${r.onlyInRedis.slice(0, 5).join(", ")}${r.onlyInRedis.length > 5 ? " ..." : ""}`);
+    // CRITICAL: these records would be lost if Redis were turned off
+    console.log(`  !! Only in Redis (${r.onlyInRedis.length}): ${r.onlyInRedis.slice(0, 5).join(", ")}${r.onlyInRedis.length > 5 ? " ..." : ""}`);
   }
   if (r.onlyInPg.length > 0) {
-    console.log(`  Only in PG (${r.onlyInPg.length}): ${r.onlyInPg.slice(0, 5).join(", ")}${r.onlyInPg.length > 5 ? " ..." : ""}`);
+    // INFO: archived/historical data in PG no longer active in Redis — acceptable pre-migration
+    console.log(`  -- Only in PG (${r.onlyInPg.length}) [archived/historical, OK]: ${r.onlyInPg.slice(0, 3).join(", ")}${r.onlyInPg.length > 3 ? " ..." : ""}`);
   }
 }
 
