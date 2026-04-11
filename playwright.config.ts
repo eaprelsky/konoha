@@ -20,7 +20,7 @@ export default defineConfig({
     // Use 3202 and never reuse an existing server to avoid attaching to the wrong process (closes #435).
     // KONOHA_TOKEN hardcoded to dev token so server and extraHTTPHeaders always agree (closes #438).
     command: 'KONOHA_PORT=3202 KONOHA_TOKEN=konoha-dev-token bun run core/src/server.ts',
-    url: 'http://127.0.0.1:3202',
+    url: 'http://127.0.0.1:3202/health',
     reuseExistingServer: false,
     timeout: 90000, // server startup timeout (not test timeout) — 90s needed for bun startup in CI
   },

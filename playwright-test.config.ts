@@ -10,7 +10,7 @@ export default defineConfig({
   },
   webServer: {
     command: `KONOHA_PORT=3202 KONOHA_TOKEN=${process.env.KONOHA_TOKEN ?? 'konoha-dev-token'} bun run core/src/server.ts`,
-    url: 'http://127.0.0.1:3202',
+    url: 'http://127.0.0.1:3202/health',
     reuseExistingServer: false,
     timeout: 120000,
   },
