@@ -149,6 +149,10 @@ async function checkReminders(): Promise<CheckResult> {
   };
 }
 
+// Warn if onlyInPg exceeds this fraction of redisCount.
+// At 1.0 (100%) PG has 2x Redis — possible phantom duplicates from dual-write.
+const PG_BLOAT_THRESHOLD = parseFloat(process.env.PG_BLOAT_THRESHOLD ?? "1.0");
+
 function printResult(r: CheckResult): void {
   const status = r.ok ? "OK" : "MISMATCH";
   console.log(`\n[${status}] ${r.entity}: Redis=${r.redisCount} PG=${r.pgCount}`);
@@ -159,6 +163,11 @@ function printResult(r: CheckResult): void {
   if (r.onlyInPg.length > 0) {
     // INFO: archived/historical data in PG no longer active in Redis — acceptable pre-migration
     console.log(`  -- Only in PG (${r.onlyInPg.length}) [archived/historical, OK]: ${r.onlyInPg.slice(0, 3).join(", ")}${r.onlyInPg.length > 3 ? " ..." : ""}`);
+    // WARN: onlyInPg exceeds threshold — may indicate phantom duplicates from dual-write
+    if (r.redisCount > 0 && r.onlyInPg.length > r.redisCount * PG_BLOAT_THRESHOLD) {
+      const pct = Math.round((r.onlyInPg.length / r.redisCount) * 100);
+      console.log(`  ⚠ BLOAT WARNING: onlyInPg (${r.onlyInPg.length}) is ${pct}% of redisCount — may include phantom duplicates, not just archives. Run migrate script to investigate.`);
+    }
   }
 }
 
