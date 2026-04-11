@@ -18,3 +18,5 @@ playwright/.auth/user.json
 test-results/
 frontend/test-results/
 playwright-report/
+# Local manual Playwright config (per-env settings, not for repo)
+playwright-manual.config.ts

@@ -547,16 +547,20 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       const isIntermediate = (inEdges.get(nextId) || []).length > 0;
       const trigger = nextEl.trigger;
       if (isIntermediate) {
-        // Always pause at intermediate events — regardless of trigger kind.
-        // Auto-trigger: subscribe to the event source so it fires externally.
-        // Manual/no-trigger: wait for explicit API call (handleEventFired).
-        await saveCase(kase);
         if (trigger?.kind && trigger.kind !== "manual" && trigger.kind !== "ambiguous" && !trigger.manual_override) {
+          // Active trigger configured: subscribe and wait for the external event source.
+          await saveCase(kase);
           subscribeEventNode(kase, nextEl).catch(e =>
             log.error("intermediate event subscribe error", { case_id: kase.case_id, node_id: nextId, error: e.message }),
           );
+          return kase;
         }
-        return kase;
+        if (trigger?.kind) {
+          // Manual or ambiguous trigger: pause and wait for explicit handleEventFired call.
+          await saveCase(kase);
+          return kase;
+        }
+        // No trigger configured: connector event — record position and auto-advance.
       }
 
       current = nextId;
