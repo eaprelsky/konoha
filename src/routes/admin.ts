@@ -5,10 +5,32 @@ import { createAgentDef, getAgentDef } from "../agent-lifecycle";
 import { listAdapters, getAdapter } from "../adapters/index";
 
 const SYSTEM_AGENTS = [
-  { id: "naruto", name: "Наруто (Оркестратор)", model: "claude-sonnet-4-6", tags: ["system"], tmux_session_override: "naruto", gender: "male" as const },
-  { id: "sasuke", name: "Саске", model: "claude-sonnet-4-6", tags: ["system"], tmux_session_override: "sasuke", gender: "male" as const },
-  { id: "kakashi", name: "Какаши (Мастер багфиксинга)", model: "claude-sonnet-4-6", tags: ["system"], tmux_session_override: "kakashi", gender: "male" as const },
-  { id: "mirai", name: "Мирай", model: "claude-haiku-4-5-20251001", tags: ["system"], tmux_session_override: "mirai", gender: "female" as const },
+  {
+    id: "naruto",
+    name: "Наруто (Оркестратор)",
+    runtime: "cursor" as const,
+    fallback_runtime: "codex" as const,
+    launch_strategy: "persistent_interactive" as const,
+    startup_timeout_sec: 180,
+    model: "gpt-5.4-medium",
+    tags: ["system"],
+    tmux_session_override: "naruto",
+    gender: "male" as const,
+  },
+  {
+    id: "sasuke",
+    name: "Саске",
+    runtime: "codex" as const,
+    fallback_runtime: "cursor" as const,
+    launch_strategy: "persistent_interactive" as const,
+    startup_timeout_sec: 180,
+    model: "openai/gpt-5.3-codex",
+    tags: ["system"],
+    tmux_session_override: "sasuke",
+    gender: "male" as const,
+  },
+  { id: "kakashi", name: "Какаши (Мастер багфиксинга)", runtime: "claude" as const, model: "claude-sonnet-4-6", tags: ["system"], tmux_session_override: "kakashi", gender: "male" as const },
+  { id: "mirai", name: "Мирай", runtime: "claude" as const, model: "claude-haiku-4-5-20251001", tags: ["system"], tmux_session_override: "mirai", gender: "female" as const },
 ];
 
 export async function seedSystemAgents() {

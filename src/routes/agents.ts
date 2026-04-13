@@ -74,9 +74,35 @@ router.post("/register", async (c) => {
 // POST /agents — create a managed agent definition
 router.post("/", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const { id, name, system_prompt, model = "claude:claude-sonnet-4-6", env, tags, capabilities, memory } = body;
+  const {
+    id,
+    name,
+    system_prompt,
+    runtime,
+    fallback_runtime,
+    launch_strategy,
+    startup_timeout_sec,
+    model = "claude:claude-sonnet-4-6",
+    env,
+    tags,
+    capabilities,
+    memory,
+  } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
-  const def = await createAgentDef({ id, name, system_prompt, model, env, tags, capabilities, memory });
+  const def = await createAgentDef({
+    id,
+    name,
+    system_prompt,
+    runtime,
+    fallback_runtime,
+    launch_strategy,
+    startup_timeout_sec,
+    model,
+    env,
+    tags,
+    capabilities,
+    memory,
+  });
   // Prepare personal memory directory
   mkdirSync(`/opt/shared/agent-memory/${id}`, { recursive: true });
   return c.json(def, 201);
@@ -158,7 +184,7 @@ router.get("/tmux/:id", async (c) => {
 router.get("/:id/system-template", async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
-  const base = def ?? { id, name: id, model: "claude:claude-sonnet-4-6", system_prompt: undefined, capabilities: [] };
+  const base = def ?? { id, name: id, runtime: "claude" as const, model: "claude-sonnet-4-6", system_prompt: undefined, capabilities: [] };
   const template = await buildSystemPrompt(id, base);
   return c.json({ template });
 });

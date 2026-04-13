@@ -18,7 +18,8 @@ const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
 const CODEX_CONFIG_PATH = "/home/ubuntu/.codex/config.toml";
 
-type AgentProvider = "claude" | "codex" | "cursor";
+export type AgentProvider = "claude" | "codex" | "cursor";
+export type LaunchStrategy = "persistent_interactive" | "headless_task";
 
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\''`)}'`;
@@ -52,9 +53,15 @@ ${block}` : block;
   writeFileSync(CODEX_CONFIG_PATH, next, "utf-8");
 }
 
-function resolveAgentRuntime(model?: string): { provider: AgentProvider; runtimeModel: string } {
-  const raw = (model || DEFAULT_AGENT_MODEL).trim();
+function resolveAgentRuntime(def: Pick<AgentDef, "model" | "runtime">): { provider: AgentProvider; runtimeModel: string } {
+  const raw = (def.model || DEFAULT_AGENT_MODEL).trim();
   const namespaced = raw.match(/^(claude|codex|cursor):(.*)$/);
+  if (def.runtime) {
+    return {
+      provider: def.runtime,
+      runtimeModel: (namespaced ? namespaced[2] : raw || DEFAULT_AGENT_MODEL).trim(),
+    };
+  }
   if (namespaced) {
     return {
       provider: namespaced[1] as AgentProvider,
@@ -71,6 +78,13 @@ function resolveAgentRuntime(model?: string): { provider: AgentProvider; runtime
     return { provider: "cursor", runtimeModel: raw };
   }
   return { provider: "claude", runtimeModel: raw };
+}
+
+function formatAgentModel(def: Pick<AgentDef, "model" | "runtime">): string {
+  const raw = (def.model || DEFAULT_AGENT_MODEL).trim();
+  if (/^(claude|codex|cursor):/.test(raw)) return raw;
+  if (def.runtime) return `${def.runtime}:${raw}`;
+  return raw;
 }
 
 // ── System template ──────────────────────────────────────────────────────────
@@ -104,11 +118,11 @@ Session cleanup fires every 2h — save work-state and do /new when requested.
 ---
 # User Instructions`;
 
-export function renderSystemTemplate(def: Pick<AgentDef, "id" | "name" | "model">): string {
+export function renderSystemTemplate(def: Pick<AgentDef, "id" | "name" | "model" | "runtime">): string {
   return SYSTEM_TEMPLATE
     .replace(/{{id}}/g, def.id)
     .replace(/{{name}}/g, def.name)
-    .replace(/{{model}}/g, def.model || DEFAULT_AGENT_MODEL);
+    .replace(/{{model}}/g, formatAgentModel(def));
 }
 
 /**
@@ -187,7 +201,7 @@ export async function buildRoleBlocks(agentId: string): Promise<string> {
  * Builds the complete agent system prompt: system template + user instructions + role blocks + skill snippets.
  * Used by startAgent() and GET /agents/:id/system-template.
  */
-export async function buildSystemPrompt(agentId: string, def: Pick<AgentDef, "id" | "name" | "model" | "system_prompt" | "capabilities">): Promise<string> {
+export async function buildSystemPrompt(agentId: string, def: Pick<AgentDef, "id" | "name" | "model" | "runtime" | "system_prompt" | "capabilities">): Promise<string> {
   // Substitute {display_name} from branding config (closes #298)
   const branding = await getBranding().catch(() => null);
   const displayName = branding?.agent_display_names?.[agentId] ?? def.name;
@@ -236,6 +250,10 @@ export interface AgentDef {
   id: string;
   name: string;
   system_prompt?: string;
+  runtime?: AgentProvider;
+  fallback_runtime?: AgentProvider;
+  launch_strategy?: LaunchStrategy;
+  startup_timeout_sec?: number;
   model: string;
   env?: Record<string, string>;
   tags?: string[];
@@ -391,8 +409,8 @@ function buildCodexMcpConfigArgs(mcpConfig: McpConfig): string[] {
   return args;
 }
 
-function buildLaunchCommand(def: Pick<AgentDef, "model">, workdir: string, mcpConfigPath: string, mcpConfig: McpConfig): { provider: AgentProvider; command: string } {
-  const runtime = resolveAgentRuntime(def.model);
+function buildLaunchCommand(def: Pick<AgentDef, "model" | "runtime">, workdir: string, mcpConfigPath: string, mcpConfig: McpConfig): { provider: AgentProvider; command: string } {
+  const runtime = resolveAgentRuntime(def);
 
   if (runtime.provider === "codex") {
     const args = [
