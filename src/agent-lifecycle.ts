@@ -556,7 +556,9 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     }
 
     // Inject startup message so agent executes its startup sequence.
-    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Прочитай CLAUDE.md и выполни startup sequence.", "Enter"]);
+    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Прочитай CLAUDE.md и выполни startup sequence."]);
+    await new Promise(res => setTimeout(res, 350));
+    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Enter"]);
 
     const pid = await getTmuxPid(id);
     const state: AgentState = {
