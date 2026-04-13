@@ -16,6 +16,7 @@ import { join } from "path";
 
 const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
+const CODEX_CONFIG_PATH = "/home/ubuntu/.codex/config.toml";
 
 type AgentProvider = "claude" | "codex" | "cursor";
 
@@ -35,6 +36,20 @@ function toToml(value: string | string[] | Record<string, string>): string {
 
 function configPathSegment(value: string): string {
   return /^[A-Za-z0-9_]+$/.test(value) ? value : JSON.stringify(value);
+}
+
+function ensureCodexProjectTrusted(workdir: string): void {
+  const section = `[projects.${JSON.stringify(workdir)}]`;
+  const block = `${section}
+trust_level = "trusted"
+`;
+  const current = existsSync(CODEX_CONFIG_PATH) ? readFileSync(CODEX_CONFIG_PATH, "utf-8") : "";
+  if (current.includes(section)) return;
+  const next = current.trimEnd() ? `${current.trimEnd()}
+
+${block}` : block;
+  mkdirSync(join(CODEX_CONFIG_PATH, ".."), { recursive: true });
+  writeFileSync(CODEX_CONFIG_PATH, next, "utf-8");
 }
 
 function resolveAgentRuntime(model?: string): { provider: AgentProvider; runtimeModel: string } {
@@ -517,6 +532,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     writeFileSync(join(cursorConfigDir, "mcp.json"), JSON.stringify(mcpConfig, null, 2), "utf-8");
 
     const launch = buildLaunchCommand(def, workdir, mcpConfigPath, mcpConfig);
+    if (launch.provider === "codex") ensureCodexProjectTrusted(workdir);
 
     // Build env prefix if custom env vars provided
     const envPrefix = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${shellEscape(v)}`).join(" ") + " " : "";
@@ -530,10 +546,16 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const r = await sh("tmux", ["-L", socket, "new-session", "-d", "-s", session, "-x", "200", "-y", "50", "-c", workdir, "bash", "-c", loopScript]);
     if (!r.ok) throw new Error(r.stderr || "tmux new-session failed");
 
-    // Wait for Claude Code to start and show the prompt (7s to be safe on slow init)
+    // Wait for the interactive CLI to boot and become ready.
     await new Promise(res => setTimeout(res, 7000));
 
-    // Inject startup message so agent executes its startup sequence
+    // Cursor requires an explicit one-key workspace trust on first launch.
+    if (launch.provider === "cursor") {
+      await sh("tmux", ["-L", socket, "send-keys", "-t", session, "a"]);
+      await new Promise(res => setTimeout(res, 1200));
+    }
+
+    // Inject startup message so agent executes its startup sequence.
     await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Прочитай CLAUDE.md и выполни startup sequence.", "Enter"]);
 
     const pid = await getTmuxPid(id);
