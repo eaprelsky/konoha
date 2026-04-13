@@ -1,11 +1,13 @@
 #!/bin/bash
-# Restart Sasuke (Claude Agent #2) via systemd.
-# Can be called by Naruto or any trusted process.
+# Restart Sasuke via Konoha managed lifecycle API.
 # Usage: restart-sasuke.sh [delay_seconds]
+
+set -euo pipefail
 
 DELAY="${1:-5}"
 echo "[$(date)] Restart requested. Waiting ${DELAY}s before restart..."
 sleep "$DELAY"
-echo "[$(date)] Restarting claude-sasuke.service..."
-sudo systemctl restart claude-sasuke.service
+source /home/ubuntu/.agent-env
+echo "[$(date)] Restarting managed agent sasuke via Konoha API..."
+curl -sf -X POST -H "Authorization: Bearer $KONOHA_TOKEN" "http://127.0.0.1:3200/agents/sasuke/restart" >/dev/null
 echo "[$(date)] Restart complete."
