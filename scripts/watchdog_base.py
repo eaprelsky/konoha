@@ -156,12 +156,19 @@ def tmux_pane_content(session: str) -> str:
 
 def is_agent_idle(session: str, stable_checks: int = 2) -> bool:
     def has_prompt(content: str) -> bool:
-        lines = [l.strip() for l in content.strip().split("\n")]
-        return any(
+        lines = [l.strip() for l in content.strip().split("\n") if l.strip()]
+        last_lines = lines[-12:]
+        has_claude_prompt = any(
             (l == "❯" or l == "❯\xa0" or l.startswith("❯ ") or l.startswith("❯\xa0"))
             and "Pasted text" not in l
-            for l in lines[-6:]
+            for l in last_lines
         )
+        has_cursor_ready = (
+            any("→ Add a follow-up" in l for l in last_lines)
+            or any("ctrl+c to stop" in l for l in last_lines)
+            or any("▶︎ Auto-run everything" in l for l in last_lines)
+        )
+        return has_claude_prompt or has_cursor_ready
     for _ in range(stable_checks):
         if not has_prompt(tmux_pane_content(session)):
             return False
@@ -194,9 +201,12 @@ async def tmux_send(session: str, text: str) -> bool:
     # Wait for compacting to finish before sending — avoids [Pasted text] race (#147)
     compacting_waited = 0
     while compacting_waited < 120:
-        last_lines = [l.strip() for l in tmux_pane_content(session).strip().split(chr(10))[-6:]]
-        # Prompt visible → session idle, not compacting (fixes false-positive from stale pane output, #320)
-        if any(l == "❯" or l == "❯ " or l.startswith("❯ ") or l.startswith("❯ ") for l in last_lines):
+        pane = tmux_pane_content(session)
+        last_lines = [l.strip() for l in pane.strip().split(chr(10))[-12:] if l.strip()]
+        has_claude_prompt = any(l == "❯" or l == "❯ " or l.startswith("❯ ") or l.startswith("❯ ") for l in last_lines)
+        has_cursor_ready = any("→ Add a follow-up" in l for l in last_lines) or any("▶︎ Auto-run everything" in l for l in last_lines)
+        # Prompt visible → session idle, not compacting.
+        if has_claude_prompt or has_cursor_ready:
             break
         log.info(f"Agent {session} compacting — waiting (waited {compacting_waited}s)")
         await asyncio.sleep(2.0)
@@ -498,25 +508,20 @@ async def _send_lifecycle(text: str, env: dict) -> None:
 
 
 async def heartbeat_loop() -> None:
-    """Send heartbeat only when claude-{agent}.service is active (#106).
+    """Send heartbeat while the managed tmux session is alive.
 
-    Skips heartbeat and broadcasts SESSION_OFFLINE when service is inactive.
-    Broadcasts SESSION_ONLINE when service comes back up.
+    Managed agents no longer map 1:1 to legacy claude-{agent}.service units, so
+    liveness must follow the named tmux session used by Konoha lifecycle.
     """
     url = f"{KONOHA_URL}/agents/{AGENT_ID}/heartbeat"
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
-    service = f"claude-{AGENT_ID}.service"
-    was_active = True  # assume active on start — avoids spurious SESSION_OFFLINE at boot
+    was_active = is_session_alive(TMUX_SESSION)
     while True:
         try:
-            r = subprocess.run(
-                ["systemctl", "is-active", service],
-                capture_output=True, text=True, timeout=5
-            )
-            is_active = r.stdout.strip() in ("active", "activating")
+            is_active = is_session_alive(TMUX_SESSION)
         except Exception as e:
-            log.warning(f"Could not check {service}: {e}")
-            is_active = True  # fail open — assume active
+            log.warning(f"Could not check tmux session {TMUX_SESSION}: {e}")
+            is_active = True
 
         if is_active:
             if not was_active:
@@ -535,7 +540,7 @@ async def heartbeat_loop() -> None:
             except Exception as e:
                 log.warning(f"Heartbeat failed: {e}")
         else:
-            log.info(f"{service} inactive — skipping heartbeat")
+            log.info(f"tmux session {TMUX_SESSION} inactive — skipping heartbeat")
             if was_active:
                 await _send_lifecycle(f"SESSION_OFFLINE:{AGENT_ID}", env)
 
