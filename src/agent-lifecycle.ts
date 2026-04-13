@@ -522,7 +522,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const runtimeCmd = envPrefix ? `env ${envPrefix}${launch.command}` : launch.command;
 
     // Wrap in restart loop — without it the interactive CLI may exit after startup or on crash.
-    const loopScript = `export PATH="$HOME/.local/bin:$PATH"; while true; do ${runtimeCmd}; echo "[$(date)] ${launch.provider} exited (code $?), restarting in 5s..."; sleep 5; done`;
+    const loopScript = `export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"; while true; do ${runtimeCmd}; echo "[$(date)] ${launch.provider} exited (code $?), restarting in 5s..."; sleep 5; done`;
 
     // Use named socket (-L) to isolate each agent on its own tmux server.
     // If one tmux server crashes, only that agent is affected — not all lifecycle agents.
