@@ -314,6 +314,7 @@ async function getTmuxPid(id: string): Promise<number | null> {
 // ── MCP config helpers ───────────────────────────────────────────────────────
 
 const GLOBAL_ENV_PATH = "/opt/konoha/.env.global";
+const SHARED_MCP_CONFIG_PATHS = ["/home/ubuntu/.mcp.json"];
 
 function loadGlobalEnv(): Record<string, string> {
   if (!existsSync(GLOBAL_ENV_PATH)) return {};
@@ -341,6 +342,33 @@ type McpServerDef = { name: string; command: string; args?: string[]; env?: Reco
 type ResolvedMcpServerDef = { command: string; args?: string[]; env?: Record<string, string> };
 type McpConfig = { mcpServers: Record<string, ResolvedMcpServerDef> };
 
+function loadSharedMcpServers(agentEnv: Record<string, string>): Record<string, ResolvedMcpServerDef> {
+  const globalEnv = loadGlobalEnv();
+  const vars = { ...globalEnv, ...agentEnv };
+  const merged: Record<string, ResolvedMcpServerDef> = {};
+
+  for (const configPath of SHARED_MCP_CONFIG_PATHS) {
+    if (!existsSync(configPath)) continue;
+    try {
+      const raw = JSON.parse(readFileSync(configPath, "utf-8")) as { mcpServers?: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> };
+      for (const [name, server] of Object.entries(raw.mcpServers ?? {})) {
+        if (!server.command) continue;
+        merged[name] = {
+          command: resolveVars(server.command, vars),
+          ...(server.args?.length ? { args: server.args.map(arg => resolveVars(arg, vars)) } : {}),
+          ...(server.env && Object.keys(server.env).length
+            ? { env: Object.fromEntries(Object.entries(server.env).map(([k, v]) => [k, resolveVars(v, vars)])) }
+            : {}),
+        };
+      }
+    } catch (error) {
+      console.warn(`[agent-lifecycle] failed to load shared MCP config ${configPath}:`, (error as Error).message);
+    }
+  }
+
+  return merged;
+}
+
 // Konoha MCP server is always included so agents can call konoha_register/send/read
 // Use absolute path to bun — tmux server may not have ~/.bun/bin in PATH
 const KONOHA_MCP_SERVER: McpServerDef & { name: string } = {
@@ -361,7 +389,11 @@ async function buildMcpConfig(
   const globalEnv = loadGlobalEnv();
   const vars = { ...globalEnv, ...agentEnv };
 
-  // Always start with Konoha MCP server
+  // Start with shared MCP servers mirrored from the Claude environment, then override with Konoha and skill-specific servers.
+  const servers: Record<string, ResolvedMcpServerDef> = {
+    ...loadSharedMcpServers(agentEnv),
+  };
+
   const kEnv = Object.fromEntries(
     Object.entries(KONOHA_MCP_SERVER.env!).map(([k, v]) => [k, resolveVars(v, vars)])
   );
@@ -369,12 +401,10 @@ async function buildMcpConfig(
   if (capabilities.length > 0) {
     kEnv["KONOHA_SKILLS"] = capabilities.join(",");
   }
-  const servers: Record<string, ResolvedMcpServerDef> = {
-    [KONOHA_MCP_SERVER.name]: {
-      command: KONOHA_MCP_SERVER.command,
-      args: KONOHA_MCP_SERVER.args,
-      env: kEnv,
-    },
+  servers[KONOHA_MCP_SERVER.name] = {
+    command: KONOHA_MCP_SERVER.command,
+    args: KONOHA_MCP_SERVER.args,
+    env: kEnv,
   };
 
   for (const skillId of capabilities) {
