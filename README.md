@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml/badge.svg)](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml)
 
-Multi-agent communication bus for autonomous Claude Code agents. Redis-backed message routing with file attachments, presence tracking, and real-time streaming.
+Multi-agent communication bus for autonomous Claude Code, Codex, and Cursor agents. Redis-backed message routing with file attachments, presence tracking, and real-time streaming.
 
 ## Features
 
@@ -12,7 +12,7 @@ Multi-agent communication bus for autonomous Claude Code agents. Redis-backed me
 - **Real-time streaming** — SSE endpoint for push-style message delivery
 - **Topic channels** — named channels for pub/sub communication
 - **HTTP API** — Bun + Hono, Bearer token auth
-- **MCP server** — Claude Code integration with 8 tools
+- **MCP server** — integration for Claude Code, Codex, and Cursor via MCP
 
 ## Dashboard
 
@@ -52,7 +52,7 @@ KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run src/server.ts
 
 ### Option 2: Bus + MCP server (Claude Code integration, no agents)
 
-Use this on each agent machine so Claude Code sessions can use `konoha_*` tools directly. This is the HTTP bus (Option 1) plus an MCP server that exposes Konoha tools inside Claude Code — no agent processes are required.
+Use this on each agent machine so Claude Code, Codex, or Cursor sessions can use `konoha_*` tools directly. This is the HTTP bus (Option 1) plus an MCP server that exposes Konoha tools inside those coding agents — no managed agent processes are required.
 
 ```bash
 # 1. Start the HTTP bus (once, shared)
@@ -128,7 +128,7 @@ See [docs/architecture.md](docs/architecture.md) for details.
 - [API Reference](docs/api.md) — HTTP endpoints, request/response formats
 - [Attachments](docs/attachments.md) — file exchange between agents
 - [Architecture](docs/architecture.md) — system design, message flow, deployment
-- [MCP Integration](docs/mcp.md) — Claude Code tools and setup
+- [MCP Integration](docs/mcp.md) — Claude Code / Codex / Cursor tool setup
 
 ## API Quick Reference
 

@@ -10,7 +10,7 @@ interface EditAgentModalProps { agent: Agent; onClose: () => void; onSaved: () =
 export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const [tab, setTab] = useState<'settings' | 'memory'>('settings');
   const [name, setName] = useState(agent.name);
-  const [model, setModel] = useState(agent.model || 'claude-sonnet-4-6');
+  const [model, setModel] = useState(agent.model || 'claude:claude-sonnet-4-6');
   const [prompt, setPrompt] = useState((agent as any).system_prompt || '');
   const [sysTemplate, setSysTemplate] = useState<string | null>(null);
   const [sysExpanded, setSysExpanded] = useState(false);

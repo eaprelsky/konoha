@@ -15,6 +15,48 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 
 const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
+const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
+
+type AgentProvider = "claude" | "codex" | "cursor";
+
+function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, `'\''`)}'`;
+}
+
+function tomlEscape(value: string): string {
+  return JSON.stringify(value);
+}
+
+function toToml(value: string | string[] | Record<string, string>): string {
+  if (typeof value === "string") return tomlEscape(value);
+  if (Array.isArray(value)) return `[${value.map(tomlEscape).join(", ")}]`;
+  return `{ ${Object.entries(value).map(([k, v]) => `${k} = ${tomlEscape(v)}`).join(", ")} }`;
+}
+
+function configPathSegment(value: string): string {
+  return /^[A-Za-z0-9_]+$/.test(value) ? value : JSON.stringify(value);
+}
+
+function resolveAgentRuntime(model?: string): { provider: AgentProvider; runtimeModel: string } {
+  const raw = (model || DEFAULT_AGENT_MODEL).trim();
+  const namespaced = raw.match(/^(claude|codex|cursor):(.*)$/);
+  if (namespaced) {
+    return {
+      provider: namespaced[1] as AgentProvider,
+      runtimeModel: (namespaced[2] || DEFAULT_AGENT_MODEL).trim(),
+    };
+  }
+  if (raw.startsWith("claude-")) return { provider: "claude", runtimeModel: raw };
+  if (raw.startsWith("cursor-")) return { provider: "cursor", runtimeModel: raw.slice("cursor-".length) || "sonnet-4" };
+  if (raw.startsWith("codex-") && raw !== "codex") return { provider: "codex", runtimeModel: raw.slice("codex-".length) || "gpt-5" };
+  if (raw.startsWith("gpt-") || raw.startsWith("o1") || raw.startsWith("o3") || raw.startsWith("o4")) {
+    return { provider: "codex", runtimeModel: raw };
+  }
+  if (raw.startsWith("sonnet-") || raw === "gpt-5") {
+    return { provider: "cursor", runtimeModel: raw };
+  }
+  return { provider: "claude", runtimeModel: raw };
+}
 
 // ── System template ──────────────────────────────────────────────────────────
 
@@ -51,7 +93,7 @@ export function renderSystemTemplate(def: Pick<AgentDef, "id" | "name" | "model"
   return SYSTEM_TEMPLATE
     .replace(/{{id}}/g, def.id)
     .replace(/{{name}}/g, def.name)
-    .replace(/{{model}}/g, def.model || "claude-sonnet-4-6");
+    .replace(/{{model}}/g, def.model || DEFAULT_AGENT_MODEL);
 }
 
 /**
@@ -263,6 +305,8 @@ function resolveVars(value: string, vars: Record<string, string>): string {
 }
 
 type McpServerDef = { name: string; command: string; args?: string[]; env?: Record<string, string> };
+type ResolvedMcpServerDef = { command: string; args?: string[]; env?: Record<string, string> };
+type McpConfig = { mcpServers: Record<string, ResolvedMcpServerDef> };
 
 // Konoha MCP server is always included so agents can call konoha_register/send/read
 // Use absolute path to bun — tmux server may not have ~/.bun/bin in PATH
@@ -280,7 +324,7 @@ const KONOHA_MCP_SERVER: McpServerDef & { name: string } = {
 async function buildMcpConfig(
   capabilities: string[],
   agentEnv: Record<string, string>,
-): Promise<Record<string, unknown>> {
+): Promise<McpConfig> {
   const globalEnv = loadGlobalEnv();
   const vars = { ...globalEnv, ...agentEnv };
 
@@ -292,7 +336,7 @@ async function buildMcpConfig(
   if (capabilities.length > 0) {
     kEnv["KONOHA_SKILLS"] = capabilities.join(",");
   }
-  const servers: Record<string, unknown> = {
+  const servers: Record<string, ResolvedMcpServerDef> = {
     [KONOHA_MCP_SERVER.name]: {
       command: KONOHA_MCP_SERVER.command,
       args: KONOHA_MCP_SERVER.args,
@@ -319,6 +363,53 @@ async function buildMcpConfig(
   }
 
   return { mcpServers: servers };
+}
+
+function buildCodexMcpConfigArgs(mcpConfig: McpConfig): string[] {
+  const args: string[] = [];
+  for (const [name, server] of Object.entries(mcpConfig.mcpServers)) {
+    const path = `mcp_servers.${configPathSegment(name)}`;
+    args.push("-c", `${path}.command=${toToml(server.command)}`);
+    if (server.args?.length) args.push("-c", `${path}.args=${toToml(server.args)}`);
+    if (server.env && Object.keys(server.env).length) args.push("-c", `${path}.env=${toToml(server.env)}`);
+  }
+  return args;
+}
+
+function buildLaunchCommand(def: Pick<AgentDef, "model">, workdir: string, mcpConfigPath: string, mcpConfig: McpConfig): { provider: AgentProvider; command: string } {
+  const runtime = resolveAgentRuntime(def.model);
+
+  if (runtime.provider === "codex") {
+    const args = [
+      "codex",
+      "--model", runtime.runtimeModel,
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "-C", workdir,
+      ...buildCodexMcpConfigArgs(mcpConfig),
+    ];
+    return { provider: runtime.provider, command: args.map(shellEscape).join(" ") };
+  }
+
+  if (runtime.provider === "cursor") {
+    const args = [
+      "cursor-agent",
+      "--model", runtime.runtimeModel,
+      "--yolo",
+      "--approve-mcps",
+      "--sandbox", "disabled",
+      "--workspace", workdir,
+    ];
+    return { provider: runtime.provider, command: args.map(shellEscape).join(" ") };
+  }
+
+  const args = [
+    "claude",
+    "--model", runtime.runtimeModel,
+    "--dangerously-skip-permissions",
+    "--mcp-config", mcpConfigPath,
+  ];
+  return { provider: runtime.provider, command: args.map(shellEscape).join(" ") };
 }
 
 // ── State persistence ────────────────────────────────────────────────────────
@@ -413,23 +504,25 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
 
     const claudeMd = await buildSystemPrompt(id, def);
     writeFileSync(join(workdir, "CLAUDE.md"), claudeMd, "utf-8");
+    writeFileSync(join(workdir, "AGENTS.md"), claudeMd, "utf-8");
 
-    // Build .mcp.json — always includes Konoha MCP server + any skill mcp_servers
+    // Build MCP configs for supported runtimes.
     const mcpConfig = await buildMcpConfig(def.capabilities ?? [], def.env ?? {});
     const mcpConfigPath = join(workdir, ".mcp.json");
     writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
-    const mcpConfigFlag = ["--mcp-config", mcpConfigPath];
 
-    const modelFlag = def.model ? ["--model", def.model] : [];
-    const launchCmd = ["claude", ...modelFlag, ...mcpConfigFlag].join(" ");
+    const cursorConfigDir = join(workdir, ".cursor");
+    mkdirSync(cursorConfigDir, { recursive: true });
+    writeFileSync(join(cursorConfigDir, "mcp.json"), JSON.stringify(mcpConfig, null, 2), "utf-8");
+
+    const launch = buildLaunchCommand(def, workdir, mcpConfigPath, mcpConfig);
 
     // Build env prefix if custom env vars provided
-    const envPrefix = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : "";
-    const claudeCmd = envPrefix ? `env ${envPrefix}${launchCmd}` : launchCmd;
+    const envPrefix = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${shellEscape(v)}`).join(" ") + " " : "";
+    const runtimeCmd = envPrefix ? `env ${envPrefix}${launch.command}` : launch.command;
 
-    // Wrap in restart loop — without it Claude exits after processing the startup message
-    // and the tmux session dies within ~15s (fixes #236).
-    const loopScript = `while true; do ${claudeCmd}; echo "[$(date)] Claude exited (code $?), restarting in 5s..."; sleep 5; done`;
+    // Wrap in restart loop — without it the interactive CLI may exit after startup or on crash.
+    const loopScript = `export PATH="$HOME/.local/bin:$PATH"; while true; do ${runtimeCmd}; echo "[$(date)] ${launch.provider} exited (code $?), restarting in 5s..."; sleep 5; done`;
 
     // Use named socket (-L) to isolate each agent on its own tmux server.
     // If one tmux server crashes, only that agent is affected — not all lifecycle agents.

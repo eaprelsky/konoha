@@ -7,7 +7,7 @@ interface NewAgentModalProps { onClose: () => void; onCreated: () => void; }
 export function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
   const [id, setId] = useState('');
   const [name, setName] = useState('');
-  const [model, setModel] = useState('claude-sonnet-4-6');
+  const [model, setModel] = useState('claude:claude-sonnet-4-6');
   const [prompt, setPrompt] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,9 +45,14 @@ export function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
           <div className="form-group">
             <label>Модель</label>
             <select value={model} onChange={e => setModel(e.target.value)}>
-              <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
-              <option value="claude-opus-4-6">claude-opus-4-6</option>
-              <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
+              <option value="claude:claude-sonnet-4-6">Claude: Sonnet 4.6</option>
+              <option value="claude:claude-opus-4-6">Claude: Opus 4.6</option>
+              <option value="claude:claude-haiku-4-5-20251001">Claude: Haiku 4.5</option>
+              <option value="codex:gpt-5">Codex: GPT-5</option>
+              <option value="codex:o4-mini">Codex: o4-mini</option>
+              <option value="cursor:sonnet-4">Cursor: Sonnet 4</option>
+              <option value="cursor:sonnet-4-thinking">Cursor: Sonnet 4 Thinking</option>
+              <option value="cursor:gpt-5">Cursor: GPT-5</option>
             </select>
           </div>
           <div className="form-group">
