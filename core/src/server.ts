@@ -57,12 +57,21 @@ if (missingEnv.length > 0) {
   process.exit(1);
 }
 
-// Prevent ioredis disconnect errors from crashing the process
+function isFatalStartupError(message: string): boolean {
+  return message.includes("Failed to start server. Is port") || message.includes("EADDRINUSE");
+}
+
+// Prevent transient ioredis disconnect errors from crashing the process,
+// but let fatal startup errors fail fast so systemd can restart cleanly.
 process.on("uncaughtException", (err) => {
-  console.error("[uncaughtException] swallowed:", err.message);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error("[uncaughtException]", message);
+  if (isFatalStartupError(message)) process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
-  console.error("[unhandledRejection] swallowed:", reason);
+  const message = reason instanceof Error ? reason.message : String(reason);
+  console.error("[unhandledRejection]", reason);
+  if (isFatalStartupError(message)) process.exit(1);
 });
 
 const PORT = parseInt(process.env.KONOHA_PORT || "3100");
