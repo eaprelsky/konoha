@@ -15,6 +15,10 @@ import {
   pgUpsertCase, pgUpsertWorkItem,
   pgUpsertRole, pgUpsertDoc, pgUpsertReminder, pgUpsertSkill,
 } from "../src/storage/pg";
+import {
+  pgRegisterAgent,
+  pgStoreMessage,
+} from "../src/storage/pg-bus";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -246,6 +250,100 @@ async function migrateSkills() {
   console.log(`  ok=${ok} fail=${fail}`);
 }
 
+async function migrateAgentsAndTokens() {
+  const map = await redis.hgetall("konoha:registry");
+  const tokensMap = await redis.hgetall("konoha:tokens");
+  console.log(`Agents: ${Object.keys(map).length} keys`);
+  let ok = 0, fail = 0;
+
+  for (const raw of Object.values(map)) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed?.id) continue;
+      if (!DRY_RUN) {
+        const newToken = await pgRegisterAgent({
+          id: parsed.id,
+          name: parsed.name || parsed.id,
+          capabilities: parsed.capabilities || [],
+          roles: parsed.roles || [],
+          model: parsed.model || undefined,
+          status: parsed.status || "offline",
+          lastHeartbeat: parsed.lastHeartbeat || Date.now(),
+          eventSubscriptions: parsed.eventSubscriptions || [],
+          village_id: parsed.village_id,
+          address: parsed.address,
+        });
+        // Keep a visible log when token rotated by migration.
+        const oldToken = Object.entries(tokensMap).find(([, v]) => v === parsed.id)?.[0];
+        if (oldToken && oldToken !== newToken) {
+          console.log(`  token rotated for ${parsed.id}`);
+        }
+      }
+      ok++;
+    } catch (e: any) {
+      console.error("  FAIL agent:", e.message);
+      fail++;
+    }
+  }
+  console.log(`  ok=${ok} fail=${fail}`);
+}
+
+function toMessageFromFields(id: string, fields: string[]): Record<string, unknown> {
+  const obj: Record<string, string> = {};
+  for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
+  let attachments: unknown[] = [];
+  if (obj.attachments) {
+    try { attachments = JSON.parse(obj.attachments); } catch {}
+  }
+  return {
+    id,
+    from: obj.from || "unknown",
+    to: obj.to || "unknown",
+    channel: obj.channel,
+    type: obj.type || "message",
+    text: obj.text || "",
+    replyTo: obj.replyTo,
+    timestamp: obj.timestamp || new Date().toISOString(),
+    attachments,
+    village_id: obj.village_id,
+  };
+}
+
+async function migrateMessageHistory() {
+  const agentStreams = await scanKeys("konoha:agent:*");
+  const channelStreams = await scanKeys("konoha:channel:*");
+  const streams = [...agentStreams, ...channelStreams];
+  console.log(`Message streams: ${streams.length} keys`);
+  let ok = 0, fail = 0;
+  for (const stream of streams) {
+    try {
+      const entries = await redis.xrange(stream, "-", "+");
+      for (const [id, fields] of entries) {
+        const msg = toMessageFromFields(id, fields);
+        if (!DRY_RUN) {
+          await pgStoreMessage({
+            id: String(msg.id),
+            from: String(msg.from),
+            to: String(msg.to),
+            type: String(msg.type) as any,
+            text: String(msg.text),
+            channel: msg.channel ? String(msg.channel) : undefined,
+            replyTo: msg.replyTo ? String(msg.replyTo) : undefined,
+            timestamp: String(msg.timestamp),
+            attachments: Array.isArray(msg.attachments) ? msg.attachments as any[] : undefined,
+            village_id: msg.village_id ? String(msg.village_id) : undefined,
+          });
+        }
+        ok++;
+      }
+    } catch (e: any) {
+      console.error(`  FAIL stream ${stream}:`, e.message);
+      fail++;
+    }
+  }
+  console.log(`  ok=${ok} fail=${fail}`);
+}
+
 async function verify() {
   const { default: postgres } = await import("postgres");
   const sql = postgres(process.env.DATABASE_URL || "postgres://konoha:konoha2026@127.0.0.1:5432/konoha");
@@ -256,6 +354,8 @@ async function verify() {
   const [do_] = await sql`SELECT COUNT(*)::int AS n FROM documents`;
   const [re] = await sql`SELECT COUNT(*)::int AS n FROM reminders`;
   const [sk] = await sql`SELECT COUNT(*)::int AS n FROM skills`;
+  const [ag] = await sql`SELECT COUNT(*)::int AS n FROM konoha_agents`;
+  const [msg] = await sql`SELECT COUNT(*)::int AS n FROM konoha_messages`;
   console.log("\n=== PostgreSQL row counts ===");
   console.log(`  workflows:   ${wf.n}`);
   console.log(`  cases:       ${ca.n}`);
@@ -264,6 +364,8 @@ async function verify() {
   console.log(`  documents:   ${do_.n}`);
   console.log(`  reminders:   ${re.n}`);
   console.log(`  skills:      ${sk.n}`);
+  console.log(`  agents:      ${ag.n}`);
+  console.log(`  messages:    ${msg.n}`);
   await sql.end();
 }
 
@@ -277,6 +379,8 @@ async function main() {
   await migrateDocs();
   await migrateReminders();
   await migrateSkills();
+  await migrateAgentsAndTokens();
+  await migrateMessageHistory();
   console.log("\nDone.");
   if (!DRY_RUN) await verify();
   process.exit(0);

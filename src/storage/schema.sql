@@ -153,3 +153,59 @@ CREATE TABLE IF NOT EXISTS skills (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ── Konoha bus persistent data (Redis → PostgreSQL migration) ────────────────
+
+CREATE TABLE IF NOT EXISTS konoha_agents (
+  id                  TEXT PRIMARY KEY,
+  name                TEXT NOT NULL DEFAULT '',
+  capabilities        JSONB NOT NULL DEFAULT '[]',
+  roles               JSONB NOT NULL DEFAULT '[]',
+  model               TEXT,
+  status              TEXT NOT NULL DEFAULT 'online',
+  last_heartbeat      BIGINT NOT NULL,
+  event_subscriptions JSONB NOT NULL DEFAULT '[]',
+  village_id          TEXT,
+  address             TEXT,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_konoha_agents_status ON konoha_agents(status);
+CREATE INDEX IF NOT EXISTS idx_konoha_agents_last_heartbeat ON konoha_agents(last_heartbeat DESC);
+
+CREATE TABLE IF NOT EXISTS konoha_tokens (
+  token      TEXT PRIMARY KEY,
+  agent_id   TEXT NOT NULL REFERENCES konoha_agents(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_konoha_tokens_agent_id ON konoha_tokens(agent_id);
+
+CREATE TABLE IF NOT EXISTS konoha_invites (
+  token       TEXT PRIMARY KEY,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_konoha_invites_expires_at ON konoha_invites(expires_at);
+CREATE INDEX IF NOT EXISTS idx_konoha_invites_consumed_at ON konoha_invites(consumed_at);
+
+CREATE TABLE IF NOT EXISTS konoha_messages (
+  id          BIGSERIAL PRIMARY KEY,
+  stream_id   TEXT,
+  sender      TEXT NOT NULL,
+  recipient   TEXT NOT NULL,
+  channel     TEXT,
+  type        TEXT NOT NULL DEFAULT 'message',
+  text        TEXT NOT NULL DEFAULT '',
+  reply_to    TEXT,
+  timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  attachments JSONB NOT NULL DEFAULT '[]',
+  village_id  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_konoha_messages_recipient_ts ON konoha_messages(recipient, timestamp DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_konoha_messages_channel_ts ON konoha_messages(channel, timestamp DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_konoha_messages_stream_id ON konoha_messages(stream_id);

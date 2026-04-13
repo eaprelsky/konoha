@@ -242,8 +242,9 @@ describe("POST /agents/:id/heartbeat", () => {
     await req("POST", `/agents/${agentId}/heartbeat`, { body: {} });
     const after = Date.now();
 
-    const raw = await redis.hget("konoha:registry", agentId);
-    const stored = JSON.parse(raw!);
+    const listed = await req("GET", "/agents");
+    const stored = listed.body.find((a: any) => a.id === agentId);
+    expect(stored).toBeDefined();
     expect(stored.lastHeartbeat).toBeGreaterThanOrEqual(before);
     expect(stored.lastHeartbeat).toBeLessThanOrEqual(after + 100);
     expect(stored.status).toBe("online");
@@ -431,9 +432,9 @@ describe("DELETE /agents/:id", () => {
     expect(status).toBe(200);
     expect(body.ok).toBe(true);
 
-    const raw = await redis.hget("konoha:registry", agentId);
-    expect(raw).not.toBeNull();
-    const stored = JSON.parse(raw!);
+    const listed = await req("GET", "/agents");
+    const stored = listed.body.find((a: any) => a.id === agentId);
+    expect(stored).toBeDefined();
     expect(stored.status).toBe("offline");
   });
 

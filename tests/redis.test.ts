@@ -64,14 +64,13 @@ describe("registerAgent", () => {
     expect(agent.roles).toContain("r1");
   });
 
-  test("stores agent in registry", async () => {
+  test("stores agent in persistent registry", async () => {
     const agentId = id("reg2");
     await registerAgent({ id: agentId, name: "Redis Reg2", capabilities: [], roles: [] });
-    const raw = await redis.hget("konoha:registry", agentId);
-    expect(raw).not.toBeNull();
-    const stored = JSON.parse(raw!);
-    expect(stored.id).toBe(agentId);
-    expect(stored.status).toBe("online");
+    const agents = await listAgents(false);
+    const stored = agents.find(a => a.id === agentId);
+    expect(stored).toBeDefined();
+    expect(stored!.status).toBe("online");
   });
 
   test("token maps to agent id in tokens hash", async () => {
@@ -128,9 +127,8 @@ describe("createInvite / consumeInvite", () => {
     const invite = await createInvite();
     expect(invite.token.startsWith("inv-")).toBe(true);
     expect(typeof invite.expiresAt).toBe("string");
-    const ttl = await redis.ttl(`konoha:invites:${invite.token}`);
-    expect(ttl).toBeGreaterThan(0);
-    expect(ttl).toBeLessThanOrEqual(3600);
+    const expiresAtMs = Date.parse(invite.expiresAt);
+    expect(expiresAtMs).toBeGreaterThan(Date.now());
   });
 
   test("consumeInvite returns true and deletes key", async () => {
@@ -161,9 +159,10 @@ describe("unregisterAgent", () => {
     const agentId = id("unreg-soft");
     await registerAgent({ id: agentId, name: "Unreg Soft", capabilities: [], roles: [] });
     await unregisterAgent(agentId, false);
-    const raw = await redis.hget("konoha:registry", agentId);
-    const stored = JSON.parse(raw!);
-    expect(stored.status).toBe("offline");
+    const agents = await listAgents(false);
+    const stored = agents.find(a => a.id === agentId);
+    expect(stored).toBeDefined();
+    expect(stored!.status).toBe("offline");
   });
 
   test("hard unregister removes agent from registry", async () => {
@@ -188,11 +187,12 @@ describe("heartbeat", () => {
     await heartbeat(agentId);
     const after = Date.now();
 
-    const raw = await redis.hget("konoha:registry", agentId);
-    const stored = JSON.parse(raw!);
-    expect(stored.status).toBe("online");
-    expect(stored.lastHeartbeat).toBeGreaterThanOrEqual(before);
-    expect(stored.lastHeartbeat).toBeLessThanOrEqual(after + 100);
+    const agents = await listAgents(false);
+    const stored = agents.find(a => a.id === agentId);
+    expect(stored).toBeDefined();
+    expect(stored!.status).toBe("online");
+    expect(stored!.lastHeartbeat).toBeGreaterThanOrEqual(before);
+    expect(stored!.lastHeartbeat).toBeLessThanOrEqual(after + 100);
   });
 
   test("heartbeat on unknown agent is a no-op (no throw)", async () => {
@@ -215,12 +215,14 @@ describe("listAgents", () => {
   test("marks stale agents as offline", async () => {
     const agentId = id("stale");
     await registerAgent({ id: agentId, name: "Stale Agent", capabilities: [], roles: [] });
-    // Manually set lastHeartbeat to old timestamp
-    const raw = await redis.hget("konoha:registry", agentId);
-    const stored = JSON.parse(raw!);
-    stored.lastHeartbeat = Date.now() - 700_000; // > 600s ago
-    stored.status = "online";
-    await redis.hset("konoha:registry", agentId, JSON.stringify(stored));
+    const postgres = (await import("postgres")).default;
+    const sql = postgres(process.env.DATABASE_URL || "postgres://konoha:konoha2026@127.0.0.1:5432/konoha");
+    await sql`
+      UPDATE konoha_agents
+      SET last_heartbeat = ${Date.now() - 700_000}, status = 'online'
+      WHERE id = ${agentId}
+    `;
+    await sql.end();
 
     const agents = await listAgents();
     const found = agents.find(a => a.id === agentId);

@@ -1,16 +1,21 @@
 import Redis from "ioredis";
-import { randomUUID } from "crypto";
+import {
+  pgRegisterAgent,
+  pgGetAgentIdByToken,
+  pgCreateInvite,
+  pgConsumeInvite,
+  pgUnregisterAgent,
+  pgHeartbeat,
+  pgListAgents,
+  pgStoreMessage,
+  pgReadHistory,
+  pgListChannels,
+} from "./storage/pg-bus";
 
-const REGISTRY_KEY = "konoha:registry";
-const TOKENS_KEY = "konoha:tokens"; // token → agentId
-const AGENT_TOKEN_KEY = "konoha:atoken"; // agentId → token (reverse index for O(1) cleanup)
-const INVITES_KEY = "konoha:invites"; // invite token → expiry (stored as Redis key with TTL)
-const INVITE_TTL = 3600; // seconds (1 hour)
 const BUS_STREAM = "konoha:bus";
 const AGENT_STREAM_PREFIX = "konoha:agent:";
 const CHANNEL_STREAM_PREFIX = "konoha:channel:";
 const EVENTS_STREAM = "konoha:events";
-const HEARTBEAT_TTL = 600; // seconds (10 minutes)
 
 export const DEFAULT_VILLAGE = "comind.konoha";
 
@@ -81,15 +86,7 @@ export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat
     status: "online",
     lastHeartbeat: Date.now(),
   };
-  await redis.hset(REGISTRY_KEY, agent.id, JSON.stringify(stored));
-
-  // generate and store per-agent token (delete old token for this agent first)
-  // Use reverse index (agentId → token) for O(1) lookup instead of scanning all tokens
-  const oldToken = await redis.hget(AGENT_TOKEN_KEY, agent.id);
-  if (oldToken) await redis.hdel(TOKENS_KEY, oldToken);
-  const agentToken = randomUUID();
-  await redis.hset(TOKENS_KEY, agentToken, agent.id);
-  await redis.hset(AGENT_TOKEN_KEY, agent.id, agentToken);
+  const agentToken = await pgRegisterAgent(stored);
 
   // ensure consumer group exists for this agent
   const agentStream = AGENT_STREAM_PREFIX + agent.id;
@@ -105,80 +102,31 @@ export async function registerAgent(agent: Omit<Agent, "status" | "lastHeartbeat
   } catch (e: any) {
     if (!e.message?.includes("BUSYGROUP")) throw e;
   }
-
-  invalidateRegistryCache();
   return { ...stored, token: agentToken };
 }
 
 export async function getAgentIdByToken(token: string): Promise<string | null> {
-  return redis.hget(TOKENS_KEY, token);
+  return pgGetAgentIdByToken(token);
 }
 
 export async function createInvite(): Promise<{ token: string; expiresAt: string }> {
-  const token = "inv-" + randomUUID();
-  await redis.set(`${INVITES_KEY}:${token}`, "1", "EX", INVITE_TTL);
-  const expiresAt = new Date(Date.now() + INVITE_TTL * 1000).toISOString();
-  return { token, expiresAt };
+  return pgCreateInvite();
 }
 
 export async function consumeInvite(token: string): Promise<boolean> {
-  const key = `${INVITES_KEY}:${token}`;
-  const deleted = await redis.del(key);
-  return deleted === 1;
+  return pgConsumeInvite(token);
 }
 
 export async function unregisterAgent(id: string, hard = false): Promise<void> {
-  if (hard) {
-    const oldToken = await redis.hget(AGENT_TOKEN_KEY, id);
-    const pl = redis.pipeline();
-    pl.hdel(REGISTRY_KEY, id);
-    pl.hdel(AGENT_TOKEN_KEY, id);
-    if (oldToken) pl.hdel(TOKENS_KEY, oldToken);
-    await pl.exec();
-  } else {
-    const data = await redis.hget(REGISTRY_KEY, id);
-    if (data) {
-      const agent: Agent = JSON.parse(data);
-      agent.status = "offline";
-      await redis.hset(REGISTRY_KEY, id, JSON.stringify(agent));
-    }
-  }
-  invalidateRegistryCache();
+  await pgUnregisterAgent(id, hard);
 }
 
 export async function heartbeat(id: string): Promise<void> {
-  const data = await redis.hget(REGISTRY_KEY, id);
-  if (!data) return;
-  const agent: Agent = JSON.parse(data);
-  agent.status = "online";
-  agent.lastHeartbeat = Date.now();
-  await redis.hset(REGISTRY_KEY, id, JSON.stringify(agent));
-  invalidateRegistryCache();
-}
-
-let _registryCache: Agent[] | null = null;
-let _registryCacheAt = 0;
-const REGISTRY_CACHE_TTL_MS = 5000;
-
-function invalidateRegistryCache(): void {
-  _registryCache = null;
+  await pgHeartbeat(id);
 }
 
 export async function listAgents(onlineOnly = false): Promise<Agent[]> {
-  const now = Date.now();
-  if (!_registryCache || now - _registryCacheAt > REGISTRY_CACHE_TTL_MS) {
-    const all = await redis.hgetall(REGISTRY_KEY);
-    _registryCache = Object.values(all).map(val => {
-      const agent: Agent = JSON.parse(val);
-      if (now - agent.lastHeartbeat > HEARTBEAT_TTL * 1000) {
-        agent.status = "offline";
-      }
-      return agent;
-    });
-    _registryCacheAt = now;
-  }
-  if (onlineOnly) return _registryCache.filter(a => a.status === "online");
-  return _registryCache;
+  return pgListAgents(onlineOnly);
 }
 
 const NOTIFY_PREFIX = "konoha:notify:";
@@ -209,19 +157,22 @@ export async function sendMessage(msg: Message): Promise<string> {
     const senderIsTest = msg.from.startsWith("rtest-");
     const targets = agents.filter(a => a.id !== msg.from && senderIsTest === a.id.startsWith("rtest-"));
     if (targets.length > 0) {
-      // Phase 1: xadd to capture per-agent stream IDs
-      const xaddPl = redis.pipeline();
       for (const agent of targets) {
-        xaddPl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...entry, _sid: sid }));
+        await pgStoreMessage({
+          id: sid ?? undefined,
+          from: msg.from,
+          to: agent.id,
+          type: msg.type,
+          text: msg.text,
+          channel: msg.channel,
+          replyTo: msg.replyTo,
+          timestamp: entry.timestamp,
+          attachments: msg.attachments,
+          village_id: entry.village_id,
+        });
       }
-      const xaddResults = await xaddPl.exec();
-      // Phase 2: publish with _sid so SSE clients can track position
-      const pubPl = redis.pipeline();
-      for (let i = 0; i < targets.length; i++) {
-        const sid = (xaddResults![i][1] as string) || "";
-        pubPl.publish(NOTIFY_PREFIX + targets[i].id, JSON.stringify({...entry, _sid: sid}));
-      }
-      await pubPl.exec();
     }
   } else if (msg.to.startsWith("role:")) {
     // role-based routing
@@ -229,22 +180,39 @@ export async function sendMessage(msg: Message): Promise<string> {
     const agents = await listAgents(true);
     const targets = agents.filter(a => a.roles.includes(role) && a.id !== msg.from);
     if (targets.length > 0) {
-      const xaddPl = redis.pipeline();
       for (const agent of targets) {
-        xaddPl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...entry, _sid: sid }));
+        await pgStoreMessage({
+          id: sid ?? undefined,
+          from: msg.from,
+          to: agent.id,
+          type: msg.type,
+          text: msg.text,
+          channel: msg.channel,
+          replyTo: msg.replyTo,
+          timestamp: entry.timestamp,
+          attachments: msg.attachments,
+          village_id: entry.village_id,
+        });
       }
-      const xaddResults = await xaddPl.exec();
-      const pubPl = redis.pipeline();
-      for (let i = 0; i < targets.length; i++) {
-        const sid = (xaddResults![i][1] as string) || "";
-        pubPl.publish(NOTIFY_PREFIX + targets[i].id, JSON.stringify({...entry, _sid: sid}));
-      }
-      await pubPl.exec();
     }
   } else {
     // direct message: capture stream ID and include in pub/sub so SSE clients can track position
     const streamId = await redis.xadd(AGENT_STREAM_PREFIX + msg.to, "*", ...Object.entries(entry).flat());
-    await redis.publish(NOTIFY_PREFIX + msg.to, JSON.stringify({...entry, _sid: streamId}));
+    await redis.publish(NOTIFY_PREFIX + msg.to, JSON.stringify({ ...entry, _sid: streamId }));
+    await pgStoreMessage({
+      id: streamId ?? undefined,
+      from: msg.from,
+      to: msg.to,
+      type: msg.type,
+      text: msg.text,
+      channel: msg.channel,
+      replyTo: msg.replyTo,
+      timestamp: entry.timestamp,
+      attachments: msg.attachments,
+      village_id: entry.village_id,
+    });
   }
 
   // channel routing
@@ -350,15 +318,7 @@ export async function ackMessages(agentId: string, consumer: string, ids: string
 }
 
 export async function readHistory(target: string, count = 20): Promise<Message[]> {
-  // target can be agent id or channel name
-  let stream = AGENT_STREAM_PREFIX + target;
-  const exists = await redis.exists(stream);
-  if (!exists) {
-    stream = CHANNEL_STREAM_PREFIX + target;
-  }
-
-  const entries = await redis.xrevrange(stream, "+", "-", "COUNT", count);
-  return entries.map(([id, fields]) => fieldsToMessage(id, fields)).reverse();
+  return pgReadHistory(target, count);
 }
 
 // Replay messages from agent stream after sinceId (exclusive) — used by SSE on reconnect.
@@ -369,20 +329,8 @@ export async function replayStream(agentId: string, sinceId: string, count = 200
   return entries.map(([id, fields]) => fieldsToMessage(id, fields));
 }
 
-async function scanKeys(pattern: string): Promise<string[]> {
-  const keys: string[] = [];
-  let cursor = "0";
-  do {
-    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 100) as [string, string[]];
-    keys.push(...batch);
-    cursor = nextCursor;
-  } while (cursor !== "0");
-  return keys;
-}
-
 export async function listChannels(): Promise<string[]> {
-  const keys = await scanKeys(CHANNEL_STREAM_PREFIX + "*");
-  return keys.map(k => k.replace(CHANNEL_STREAM_PREFIX, ""));
+  return pgListChannels();
 }
 
 export function createSubscriber(agentId: string, onMessage: (msg: Message) => void): { close: () => void } {
@@ -435,7 +383,6 @@ export async function publishEvent(event: KonohaEvent): Promise<string> {
   const all = await listAgents();
   const subscribers = all.filter(a => a.eventSubscriptions?.includes(event.type));
   if (subscribers.length > 0) {
-    const pl = redis.pipeline();
     for (const agent of subscribers) {
       const msgEntry: Record<string, string> = {
         from: event.source,
@@ -444,10 +391,18 @@ export async function publishEvent(event: KonohaEvent): Promise<string> {
         text: JSON.stringify(event),
         timestamp: event.timestamp,
       };
-      pl.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(msgEntry).flat());
-      pl.publish(NOTIFY_PREFIX + agent.id, JSON.stringify(msgEntry));
+      const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(msgEntry).flat());
+      await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...msgEntry, _sid: sid }));
+      await pgStoreMessage({
+        id: sid ?? undefined,
+        from: event.source,
+        to: agent.id,
+        type: "event",
+        text: JSON.stringify(event),
+        timestamp: event.timestamp,
+        village_id: event.village_id,
+      });
     }
-    await pl.exec();
   }
 
   return id;

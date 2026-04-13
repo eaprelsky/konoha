@@ -149,6 +149,44 @@ async function checkReminders(): Promise<CheckResult> {
   };
 }
 
+async function checkAgents(): Promise<CheckResult> {
+  const redisIds = await redis.hkeys("konoha:registry");
+  const pgRows = await sql<{ id: string }[]>`SELECT id FROM konoha_agents`;
+  const pgIds = pgRows.map(r => r.id);
+
+  const redisSet = new Set(redisIds);
+  const pgSet = new Set(pgIds);
+
+  return {
+    entity: "agents",
+    redisCount: redisIds.length,
+    pgCount: pgIds.length,
+    onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
+    onlyInPg: pgIds.filter(id => !redisSet.has(id)),
+    ok: redisIds.every(id => pgSet.has(id)),
+  };
+}
+
+async function checkMessages(): Promise<CheckResult> {
+  const streamKeys = await redis.keys("konoha:agent:*");
+  let redisCount = 0;
+  for (const key of streamKeys) {
+    const n = await redis.xlen(key);
+    redisCount += n;
+  }
+  const pgRows = await sql<{ n: number }[]>`SELECT COUNT(*)::int AS n FROM konoha_messages`;
+  const pgCount = pgRows[0]?.n ?? 0;
+
+  return {
+    entity: "messages",
+    redisCount,
+    pgCount,
+    onlyInRedis: [],
+    onlyInPg: [],
+    ok: pgCount >= redisCount,
+  };
+}
+
 // Warn if onlyInPg exceeds this fraction of redisCount.
 // At 1.0 (100%) PG has 2x Redis — possible phantom duplicates from dual-write.
 const PG_BLOAT_THRESHOLD = parseFloat(process.env.PG_BLOAT_THRESHOLD ?? "1.0");
@@ -188,6 +226,8 @@ async function main(): Promise<void> {
       checkRoles(),
       checkDocs(),
       checkReminders(),
+      checkAgents(),
+      checkMessages(),
     ]);
 
     let allOk = true;
