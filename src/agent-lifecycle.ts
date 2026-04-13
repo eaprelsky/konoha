@@ -383,7 +383,6 @@ function buildLaunchCommand(def: Pick<AgentDef, "model">, workdir: string, mcpCo
     const args = [
       "codex",
       "--model", runtime.runtimeModel,
-      "--skip-git-repo-check",
       "--dangerously-bypass-approvals-and-sandbox",
       "-C", workdir,
       ...buildCodexMcpConfigArgs(mcpConfig),
