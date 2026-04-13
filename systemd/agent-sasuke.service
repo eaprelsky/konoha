@@ -1,13 +1,13 @@
 [Unit]
 Description=Claude Sasuke (Agent #2 - Telegram Monitor)
 After=network.target redis-server.service telegram-bus.service
-Wants=claude-watchdog-sasuke.service
-After=claude-watchdog-sasuke.service
+Wants=agent-watchdog-sasuke.service
+After=agent-watchdog-sasuke.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-sasuke-service.sh
+ExecStart=/home/ubuntu/scripts/agent-sasuke-service.sh
 Restart=always
 MemoryMax=800M
 RestartSec=10

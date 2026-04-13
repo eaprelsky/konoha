@@ -7,11 +7,11 @@ type: project
 Mirai (Мирай) — третий агент Конохи. Женское имя, дочь Асумы и Курэнай из вселенной Боруто.
 
 **Текущая архитектура:** Постоянная Claude Code headless сессия в tmux `mirai`, модель claude-haiku-4-5-20251001.
-- systemd: `claude-mirai.service` — запускает Claude Code в tmux
+- systemd: `agent-mirai.service` — запускает Claude Code в tmux
 - MCP: `/home/ubuntu/telethon-mcp/.mcp-mirai.json` (konoha + email)
 - Token: `cfd606b5-bc5f-431b-8db5-542b63fdc146`
 
-**Watchdog:** `claude-watchdog-mirai.service` (всегда запущен)
+**Watchdog:** `agent-watchdog-mirai.service` (всегда запущен)
 - Слушает Коноха SSE `/messages/mirai/stream`
 - Доставляет события в tmux `mirai` когда агент idle
 - Log: `/tmp/watchdog-mirai.log`

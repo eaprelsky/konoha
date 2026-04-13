@@ -10,9 +10,9 @@ Hinata is an **on-demand** agent — started explicitly when Shino needs tests r
 Do not leave the service running permanently; stop it when the testing session is complete.
 ```bash
 # Start
-sudo systemctl start claude-hinata.service claude-watchdog-hinata.service
+sudo systemctl start agent-hinata.service agent-watchdog-hinata.service
 # Stop
-sudo systemctl stop claude-hinata.service claude-watchdog-hinata.service
+sudo systemctl stop agent-hinata.service agent-watchdog-hinata.service
 ```
 
 ## First steps on startup
@@ -95,14 +95,14 @@ Check all critical components:
 
 ### 1. Services are alive
 ```bash
-systemctl is-active claude-naruto.service
-systemctl is-active claude-sasuke.service
-systemctl is-active claude-watchdog-naruto.service
-systemctl is-active claude-watchdog-sasuke.service
-systemctl is-active claude-watchdog-mirai.service
-systemctl is-active claude-watchdog-jiraiya.service
-systemctl is-active claude-watchdog-shino.service
-systemctl is-active claude-watchdog-hinata.service
+systemctl is-active agent-naruto.service
+systemctl is-active agent-sasuke.service
+systemctl is-active agent-watchdog-naruto.service
+systemctl is-active agent-watchdog-sasuke.service
+systemctl is-active agent-watchdog-mirai.service
+systemctl is-active agent-watchdog-jiraiya.service
+systemctl is-active agent-watchdog-shino.service
+systemctl is-active agent-watchdog-hinata.service
 ```
 
 ### 2. Konoha bus responds
@@ -371,7 +371,7 @@ Add to the smoke report:
 
 ## Lifecycle (on-demand)
 
-Start: `sudo systemctl start claude-hinata.service claude-watchdog-hinata.service`
+Start: `sudo systemctl start agent-hinata.service agent-watchdog-hinata.service`
 
 Stop: after mission done — send konoha_send(to=kiba, text="[Hinata] going offline: mission complete"), then systemctl stop
 

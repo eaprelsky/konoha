@@ -9,6 +9,6 @@
 DELAY="${1:-5}"
 echo "[$(date)] Restart requested. Waiting ${DELAY}s before restart..."
 sleep "$DELAY"
-echo "[$(date)] Restarting claude-naruto.service..."
-sudo systemctl restart claude-naruto.service
+echo "[$(date)] Restarting agent-naruto.service..."
+sudo systemctl restart agent-naruto.service
 echo "[$(date)] Restart complete."

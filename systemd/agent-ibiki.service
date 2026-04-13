@@ -1,13 +1,13 @@
 [Unit]
 Description=Claude Agent Ibiki (Security Pentester) — on-demand
 After=network.target redis.service
-Wants=claude-watchdog-ibiki.service
-After=claude-watchdog-ibiki.service
+Wants=agent-watchdog-ibiki.service
+After=agent-watchdog-ibiki.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-ibiki-service.sh
+ExecStart=/home/ubuntu/scripts/agent-ibiki-service.sh
 ExecStop=/usr/bin/tmux kill-session -t ibiki
 Restart=on-failure
 MemoryMax=800M

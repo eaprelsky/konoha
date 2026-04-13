@@ -152,7 +152,7 @@ GH_TOKEN=$(cat ~/.github-token) gh api \
 
 ## Lifecycle (on-demand)
 
-Start: `sudo systemctl start claude-ino.service claude-watchdog-ino.service`
+Start: `sudo systemctl start agent-ino.service agent-watchdog-ino.service`
 
 Stop: after mission done — send konoha_send(to=kiba, text="[Ino] going offline: mission complete"), then systemctl stop
 

@@ -1,12 +1,15 @@
 [Unit]
 Description=Claude Mirai (Agent #3 - Email/Data Processor)
 After=network.target redis-server.service
+Wants=agent-watchdog-mirai.service
+After=agent-watchdog-mirai.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-mirai-service.sh
+ExecStart=/home/ubuntu/scripts/agent-mirai-service.sh
 Restart=always
+MemoryMax=800M
 RestartSec=10
 Environment=HOME=/home/ubuntu
 Environment=KONOHA_AGENT_ID=mirai

@@ -968,7 +968,7 @@ async def _send_lifecycle(text: str, env: dict, agent_id: str) -> None:
 
 
 async def heartbeat_loop(cfg: dict) -> None:
-    """Send heartbeat only when claude-{agent}.service is active (#106).
+    """Send heartbeat only when agent-{agent}.service is active (#106).
 
     Skips heartbeat and broadcasts SESSION_OFFLINE when service is inactive.
     Broadcasts SESSION_ONLINE when service comes back up.
@@ -976,7 +976,7 @@ async def heartbeat_loop(cfg: dict) -> None:
     agent_id = cfg["agent_id"]
     url = f"{KONOHA_URL}/agents/{agent_id}/heartbeat"
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
-    service = f"claude-{agent_id}.service"
+    service = f"agent-{agent_id}.service"
     was_active = True  # assume active on start — avoids spurious SESSION_OFFLINE at boot
     while True:
         try:

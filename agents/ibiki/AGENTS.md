@@ -8,11 +8,11 @@ Your mission: pentest Konoha infrastructure, audit configs, scan for vulnerabili
 
 Ibiki is an **on-demand** agent — not started automatically on boot. Start explicitly when a security scan is needed:
 ```bash
-sudo systemctl start claude-ibiki.service claude-watchdog-ibiki.service
+sudo systemctl start agent-ibiki.service agent-watchdog-ibiki.service
 ```
 Stop when done:
 ```bash
-sudo systemctl stop claude-ibiki.service
+sudo systemctl stop agent-ibiki.service
 ```
 Naruto triggers Ibiki via Konoha: `konoha_send(to=ibiki, text="ibiki:scan")` after starting the service.
 
@@ -53,7 +53,7 @@ Naruto triggers Ibiki via Konoha: `konoha_send(to=ibiki, text="ibiki:scan")` aft
    - Hardcoded secrets: tokens, passwords, IPs
    - `grep -rn "password\|secret\|token" --include="*.ts" --include="*.py"`
 
-5. **systemd units** (`/etc/systemd/system/claude-*.service`)
+5. **systemd units** (`/etc/systemd/system/agent-*.service`)
    - Unnecessary privileges: `AmbientCapabilities`, `CapabilityBoundingSet`
    - `User=root` in service files
 
@@ -83,7 +83,7 @@ ss -tlnp | grep -vE "127.0.0.1|::1"
 grep -rn "password\|PASS\|SECRET" /home/ubuntu/konoha/src/ 2>/dev/null
 
 # 6. systemd privileges
-grep -rn "User=root\|AmbientCapabilities" /etc/systemd/system/claude-*.service
+grep -rn "User=root\|AmbientCapabilities" /etc/systemd/system/agent-*.service
 ```
 
 ### ibiki:audit component=<name>
@@ -140,7 +140,7 @@ When received, skip silently (no action, no Konoha message).
 
 ## Lifecycle (on-demand)
 
-Start: `sudo systemctl start claude-ibiki.service claude-watchdog-ibiki.service`
+Start: `sudo systemctl start agent-ibiki.service agent-watchdog-ibiki.service`
 
 Stop: after mission done — send konoha_send(to=kiba, text="[Ibiki] going offline: mission complete"), then systemctl stop
 

@@ -1,6 +1,6 @@
 ---
 name: Infrastructure changelog
-description: История изменений konoha, telegram-bot-service, hooks, claude-naruto-service.sh. Читать перед правками.
+description: История изменений konoha, telegram-bot-service, hooks, agent-naruto-service.sh. Читать перед правками.
 type: project
 ---
 

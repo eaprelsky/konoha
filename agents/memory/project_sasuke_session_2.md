@@ -12,7 +12,7 @@ type: project
 - НЕ читает telegram:bot:incoming (это Наруто), НЕ использует tg-send.py (это бот Наруто)
 
 **Доставка сообщений:**
-- `claude-watchdog-sasuke.service` — слушает telegram:incoming (Redis consumer group) + Konoha SSE
+- `agent-watchdog-sasuke.service` — слушает telegram:incoming (Redis consumer group) + Konoha SSE
 - /loop НЕ нужен, watchdog доставляет в tmux автоматически
 
 **Ключевые скрипты:**

@@ -1,12 +1,12 @@
 [Unit]
-Description=Claude Agent Guy (Developer #10)
+Description=Claude Agent Ino (Nocturna Marketing) — on-demand
 After=network.target redis.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-guy-service.sh
-ExecStop=/usr/bin/tmux kill-session -t guy
+ExecStart=/home/ubuntu/scripts/agent-ino-service.sh
+ExecStop=/usr/bin/tmux kill-session -t ino
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

@@ -10,11 +10,11 @@ You combine deep thinking (Shikamaru's style) with hands-on implementation capab
 ## Deployment mode: on-demand
 Start explicitly when strategic analysis is needed:
 ```bash
-sudo systemctl start claude-shikadai.service
+sudo systemctl start agent-shikadai.service
 ```
 Stop when done:
 ```bash
-sudo systemctl stop claude-shikadai.service
+sudo systemctl stop agent-shikadai.service
 ```
 
 ## First steps on startup

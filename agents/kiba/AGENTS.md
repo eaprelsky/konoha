@@ -48,7 +48,7 @@ To resume monitoring: remove the line.
 ### compacting_loop / stuck alert (#39)
 When `kiba:alert agent=<id> compacting_loop duration=Nmin` arrives:
 1. Notify Naruto immediately: `konoha_send(to=naruto, text="[Kiba] Agent <id> stuck in compacting loop Nmin — restarting")`
-2. Restart the agent service: `sudo systemctl restart claude-<id>.service`
+2. Restart the agent service: `sudo systemctl restart agent-<id>.service`
 3. Log to /opt/shared/kiba/logs/YYYY-MM-DD.md
 
 When `kiba:alert agent=<id> stuck duration=Nmin` arrives (no compacting text):
@@ -66,8 +66,8 @@ When `kiba:alert agent=<id> idle_with_messages` arrives:
 
 ### watchdog=dead session=alive alert (#98)
 When `kiba:alert agent=<id> watchdog=dead session=alive` arrives:
-1. Restart the watchdog service: `sudo systemctl restart claude-watchdog-<id>.service`
-2. Verify it's running: `systemctl is-active claude-watchdog-<id>.service`
+1. Restart the watchdog service: `sudo systemctl restart agent-watchdog-<id>.service`
+2. Verify it's running: `systemctl is-active agent-watchdog-<id>.service`
 3. Log: `[HH:MM] Restarted watchdog for <id> — was dead while session alive`
 4. Notify Naruto: `konoha_send(to=naruto, text="[Kiba] Restarted watchdog-<id>: session was alive but watchdog dead")`
 
@@ -76,12 +76,12 @@ Check everything and write a report:
 
 ```bash
 # 1. Systemd services
-systemctl is-active claude-naruto.service claude-sasuke.service claude-mirai.service \
-  claude-jiraiya.service claude-shino.service claude-hinata.service \
-  claude-watchdog-naruto.service claude-watchdog-sasuke.service \
-  claude-watchdog-mirai.service claude-watchdog-jiraiya.service \
-  claude-watchdog-shino.service claude-watchdog-hinata.service \
-  claude-watchdog-kiba.service akamaru.service
+systemctl is-active agent-naruto.service agent-sasuke.service agent-mirai.service \
+  agent-jiraiya.service agent-shino.service agent-hinata.service \
+  agent-watchdog-naruto.service agent-watchdog-sasuke.service \
+  agent-watchdog-mirai.service agent-watchdog-jiraiya.service \
+  agent-watchdog-shino.service agent-watchdog-hinata.service \
+  agent-watchdog-kiba.service akamaru.service
 
 # 2. tmux sessions
 tmux list-sessions

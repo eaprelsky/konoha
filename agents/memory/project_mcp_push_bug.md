@@ -11,7 +11,7 @@ Push notifications через MCP claude/channel нестабильны — не
 
 **Рабочая схема:**
 1. Grammy бот получает сообщения от Telegram, пишет в message-queue.jsonl
-2. claude-watchdog-naruto.service следит за файлом (1s poll) + Konoha SSE
+2. agent-watchdog-naruto.service следит за файлом (1s poll) + Konoha SSE
 3. При новом сообщении — watchdog делает tmux send-keys в сессию naruto
 4. Наруто отвечает через python3 /home/ubuntu/tg-send.py
 

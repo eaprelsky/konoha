@@ -1,13 +1,13 @@
 [Unit]
 Description=Claude Jiraiya (Agent #4 - Chronicler)
 After=network.target redis-server.service konoha.service
-Wants=claude-watchdog-jiraiya.service
-After=claude-watchdog-jiraiya.service
+Wants=agent-watchdog-jiraiya.service
+After=agent-watchdog-jiraiya.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-jiraiya-service.sh
+ExecStart=/home/ubuntu/scripts/agent-jiraiya-service.sh
 Restart=always
 MemoryMax=800M
 RestartSec=15

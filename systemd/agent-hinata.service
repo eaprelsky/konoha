@@ -1,13 +1,13 @@
 [Unit]
 Description=Claude Agent Hinata (QA Runner) — on-demand
 After=network.target redis.service
-Wants=claude-watchdog-hinata.service
-After=claude-watchdog-hinata.service
+Wants=agent-watchdog-hinata.service
+After=agent-watchdog-hinata.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-hinata-service.sh
+ExecStart=/home/ubuntu/scripts/agent-hinata-service.sh
 ExecStop=/usr/bin/tmux kill-session -t hinata
 Restart=on-failure
 MemoryMax=800M

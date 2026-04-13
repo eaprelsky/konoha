@@ -6,7 +6,7 @@ type: project
 
 Агенты получают сообщения через systemd watchdog-сервисы, а не через polling /loop.
 
-**Нарушо (Agent #1):** `claude-watchdog-naruto.service`
+**Нарушо (Agent #1):** `agent-watchdog-naruto.service`
 - Источник 1: `~/.claude/channels/telegram/message-queue.jsonl` (polling 1s, tracks last message_id via `/tmp/watchdog-naruto-last-tg-id`)
 - Источник 2: Коноха SSE `/messages/naruto/stream` (curl subprocess, reconnect с backoff)
 - Доставка: tmux send-keys в сессию `naruto`, только когда агент idle (❯ prompt)
@@ -14,13 +14,13 @@ type: project
 - Log: `/tmp/watchdog-naruto.log`
 - Script: `/home/ubuntu/scripts/watchdog-naruto.py`
 
-**Мирай (Agent #3):** `claude-watchdog-mirai.service`
+**Мирай (Agent #3):** `agent-watchdog-mirai.service`
 - Источник: Коноха SSE `/messages/mirai/stream`
 - Доставка: tmux send-keys в сессию `mirai`
 - Log: `/tmp/watchdog-mirai.log`
 - Script: `/home/ubuntu/scripts/watchdog-mirai.py`
 
-**Саске (Agent #2):** `claude-watchdog-sasuke.service` — запущен (реализован 2026-03-26)
+**Саске (Agent #2):** `agent-watchdog-sasuke.service` — запущен (реализован 2026-03-26)
 - Источник 1: `telegram:incoming` Redis stream (consumer group `sasuke`, consumer `sasuke-worker`)
 - Источник 2: Коноха SSE `/messages/sasuke/stream`
 - Доставка: tmux send-keys в сессию `sasuke`, только когда агент idle

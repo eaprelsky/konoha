@@ -1,12 +1,12 @@
 [Unit]
-Description=Claude Agent Inojin (Nocturna Marketing) — on-demand
+Description=Claude Agent Hinata (QA Runner) — on-demand
 After=network.target redis.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-inojin-service.sh
-ExecStop=/usr/bin/tmux kill-session -t inojin
+ExecStart=/home/ubuntu/scripts/agent-hinata-service.sh
+ExecStop=/usr/bin/tmux kill-session -t hinata
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

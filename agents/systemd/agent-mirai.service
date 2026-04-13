@@ -1,18 +1,15 @@
 [Unit]
-Description=Claude Naruto (Agent #1 - Bot/Orchestrator)
+Description=Claude Mirai (Agent #3 - Email/Data Processor)
 After=network.target redis-server.service
-Wants=claude-watchdog-naruto.service
-After=claude-watchdog-naruto.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-naruto-service.sh
+ExecStart=/home/ubuntu/scripts/agent-mirai-service.sh
 Restart=always
-MemoryMax=800M
 RestartSec=10
 Environment=HOME=/home/ubuntu
-Environment=KONOHA_AGENT_ID=naruto
+Environment=KONOHA_AGENT_ID=mirai
 Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.local/bin
 
 [Install]

@@ -12,7 +12,7 @@ type: project
 - Адрес: hinata@comind.konoha
 - Token: 275e761c-065a-4220-aabf-5ba2b5d1f3bc
 - Capabilities: run-tests, smoke, regression, report
-- Сервисы запущены: claude-hinata.service, claude-watchdog-hinata.service
+- Сервисы запущены: agent-hinata.service, agent-watchdog-hinata.service
 - tmux сессия hinata активна
 
 ## Ожидание команд

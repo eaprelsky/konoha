@@ -5,7 +5,7 @@
 При обнаружении проблем отправляет алерты в Коноха → watchdog будит Кибу.
 
 Сервисы под наблюдением:
-- systemd: claude-*.service + watchdog-*.service
+- systemd: agent-*.service + watchdog-*.service
 - tmux сессии агентов
 - Redis ping
 - Коноха HTTP API
@@ -31,22 +31,22 @@ DISK_WARN_PCT   = 85
 DISK_CRIT_PCT   = 90
 
 WATCHED_SERVICES = [
-    "claude-naruto.service",
-    "claude-sasuke.service",
-    "claude-mirai.service",
-    "claude-jiraiya.service",
-    "claude-shino.service",
-    "claude-hinata.service",
-    "claude-kiba.service",
-    "claude-watchdog-naruto.service",
-    "claude-watchdog-sasuke.service",
-    "claude-watchdog-mirai.service",
-    "claude-watchdog-jiraiya.service",
-    "claude-watchdog-shino.service",
-    "claude-watchdog-hinata.service",
-    "claude-watchdog-kiba.service",
-    "claude-ibiki.service",
-    "claude-watchdog-ibiki.service",
+    "agent-naruto.service",
+    "agent-sasuke.service",
+    "agent-mirai.service",
+    "agent-jiraiya.service",
+    "agent-shino.service",
+    "agent-hinata.service",
+    "agent-kiba.service",
+    "agent-watchdog-naruto.service",
+    "agent-watchdog-sasuke.service",
+    "agent-watchdog-mirai.service",
+    "agent-watchdog-jiraiya.service",
+    "agent-watchdog-shino.service",
+    "agent-watchdog-hinata.service",
+    "agent-watchdog-kiba.service",
+    "agent-ibiki.service",
+    "agent-watchdog-ibiki.service",
 ]
 
 WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki", "ino", "inojin"]
@@ -59,18 +59,18 @@ ON_DEMAND_AGENTS = {"shino", "hinata", "ibiki", "ino", "inojin", "shikadai"}
 
 # For each agent: watchdog service that MUST be running when the tmux session is alive (#98)
 AGENT_WATCHDOGS = {
-    "naruto":  "claude-watchdog-naruto.service",
-    "sasuke":  "claude-watchdog-sasuke.service",
-    "mirai":   "claude-watchdog-mirai.service",
-    "jiraiya": "claude-watchdog-jiraiya.service",
-    "shino":   "claude-watchdog-shino.service",
-    "hinata":  "claude-watchdog-hinata.service",
-    "kiba":    "claude-watchdog-kiba.service",
-    "ibiki":   "claude-watchdog-ibiki.service",
-    "ino":     "claude-watchdog-ino.service",
-    "inojin":  "claude-watchdog-inojin.service",
-    "guy":     "claude-watchdog-guy.service",
-    "kakashi": "claude-watchdog-kakashi.service",
+    "naruto":  "agent-watchdog-naruto.service",
+    "sasuke":  "agent-watchdog-sasuke.service",
+    "mirai":   "agent-watchdog-mirai.service",
+    "jiraiya": "agent-watchdog-jiraiya.service",
+    "shino":   "agent-watchdog-shino.service",
+    "hinata":  "agent-watchdog-hinata.service",
+    "kiba":    "agent-watchdog-kiba.service",
+    "ibiki":   "agent-watchdog-ibiki.service",
+    "ino":     "agent-watchdog-ino.service",
+    "inojin":  "agent-watchdog-inojin.service",
+    "guy":     "agent-watchdog-guy.service",
+    "kakashi": "agent-watchdog-kakashi.service",
 }
 
 PAUSED_FILE = os.getenv("AKAMARU_PAUSED_FILE", "/opt/shared/kiba/paused-services.txt")

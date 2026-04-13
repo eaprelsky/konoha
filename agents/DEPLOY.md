@@ -124,9 +124,9 @@ Get your Telegram ID from @userinfobot.
 
 ```bash
 # Copy systemd services
-sudo cp agents/systemd/claude-naruto.service /etc/systemd/system/
-sudo cp agents/systemd/claude-sasuke.service /etc/systemd/system/
-sudo cp agents/systemd/claude-telegram.service /etc/systemd/system/
+sudo cp agents/systemd/agent-naruto.service /etc/systemd/system/
+sudo cp agents/systemd/agent-sasuke.service /etc/systemd/system/
+sudo cp agents/systemd/agent-telegram.service /etc/systemd/system/
 
 # Copy scripts to ~/scripts
 mkdir -p ~/scripts
@@ -212,8 +212,8 @@ For Sasuke, also add `telethon-channel` MCP (see `telethon-mcp/` README).
 │   ├── watchdog-check.sh        # Heartbeat watchdog (called by cron)
 │   ├── check-messages.sh        # Poll Telegram bot message queue
 │   ├── check-watchdogs.py       # Check agent statuses
-│   ├── claude-naruto-service.sh # Naruto tmux loop
-│   ├── claude-sasuke-service.sh # Sasuke tmux loop
+│   ├── agent-naruto-service.sh # Naruto tmux loop
+│   ├── agent-sasuke-service.sh # Sasuke tmux loop
 │   └── hooks/                   # Claude Code hooks
 ├── konoha/                      # Konoha bus source
 └── telethon-mcp/                # Telethon bridge

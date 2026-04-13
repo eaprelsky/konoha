@@ -4,7 +4,7 @@ Watchdog for Hinata (Claude Agent #6, QA Runner).
 Watches Konoha SSE stream /messages/hinata/stream.
 Delivers run commands from Shino to hinata tmux session when agent is idle.
 
-On-demand agent: starts claude-hinata.service if session is absent.
+On-demand agent: starts agent-hinata.service if session is absent.
 Trigger messages: hinata:run smoke, hinata:run regression plan=<path>, hinata:stop
 """
 import asyncio

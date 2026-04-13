@@ -99,9 +99,9 @@ def is_session_alive(session: str) -> bool:
 
 
 def try_wake_agent() -> bool:
-    """Start claude-{AGENT_ID}.service to wake the on-demand agent.
+    """Start agent-{AGENT_ID}.service to wake the on-demand agent.
     Returns True if start was attempted. Only used when WAKE_TIMEOUT_SEC > 0."""
-    service = f"claude-{AGENT_ID}.service"
+    service = f"agent-{AGENT_ID}.service"
     try:
         subprocess.run(
             ["sudo", "systemctl", "start", service],
@@ -510,7 +510,7 @@ async def _send_lifecycle(text: str, env: dict) -> None:
 async def heartbeat_loop() -> None:
     """Send heartbeat while the managed tmux session is alive.
 
-    Managed agents no longer map 1:1 to legacy claude-{agent}.service units, so
+    Managed agents no longer map 1:1 to legacy agent-{agent}.service units, so
     liveness must follow the named tmux session used by Konoha lifecycle.
     """
     url = f"{KONOHA_URL}/agents/{AGENT_ID}/heartbeat"

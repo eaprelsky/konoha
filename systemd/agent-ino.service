@@ -1,13 +1,13 @@
 [Unit]
 Description=Claude Agent Ino (Nocturna Marketing) — on-demand
 After=network.target redis.service
-Wants=claude-watchdog-ino.service
-After=claude-watchdog-ino.service
+Wants=agent-watchdog-ino.service
+After=agent-watchdog-ino.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-ino-service.sh
+ExecStart=/home/ubuntu/scripts/agent-ino-service.sh
 ExecStop=/usr/bin/tmux kill-session -t ino
 Restart=on-failure
 MemoryMax=800M

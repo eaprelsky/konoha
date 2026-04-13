@@ -54,7 +54,7 @@ Trusted users (Level 2) can ask Sasuke to manage reminders:
 - **List**: "show my reminders"
 - **Delete**: "cancel reminder #N"
 
-The reminder-service.py (claude-reminder.service) handles scheduling. Sasuke's role is CRUD:
+The reminder-service.py (agent-reminder.service) handles scheduling. Sasuke's role is CRUD:
 - **Create**: parse the request, call reminder-service via Redis stream `reminder:commands`:
   ```
   reminder:add user_id=<id> chat_id=<chat_id> text=<text> schedule=<+Xm|ISO|cron> [repeat=daily|weekly]

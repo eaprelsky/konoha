@@ -1,5 +1,5 @@
 [Unit]
-Description=Watchdog for Sasuke agent — Telegram Redis stream + Konoha SSE -> tmux
+Description=Watchdog for Sasuke (Claude Agent #2) — Telegram Redis stream + Konoha SSE → tmux
 After=network.target redis-server.service konoha.service
 
 [Service]

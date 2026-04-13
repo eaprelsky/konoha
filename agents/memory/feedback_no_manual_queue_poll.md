@@ -6,7 +6,7 @@ type: feedback
 
 Do NOT read `~/.claude/channels/telegram/message-queue.jsonl` manually on startup or at any other time to find "new" messages.
 
-**Why:** The watchdog (`claude-watchdog-naruto.service`) tracks the last delivered message_id in `/tmp/watchdog-naruto-last-tg-id`. It updates this file BEFORE putting messages in the delivery queue. If you manually tail/read message-queue.jsonl without checking watchdog's last_id, you'll re-process already-handled messages and send duplicate replies to Yegor.
+**Why:** The watchdog (`agent-watchdog-naruto.service`) tracks the last delivered message_id in `/tmp/watchdog-naruto-last-tg-id`. It updates this file BEFORE putting messages in the delivery queue. If you manually tail/read message-queue.jsonl without checking watchdog's last_id, you'll re-process already-handled messages and send duplicate replies to Yegor.
 
 This caused a duplicate-processing incident on 2026-03-29 where session startup triggered re-processing of 4 messages (IDs 1795, 1797, 1802, 1804).
 

@@ -1,13 +1,13 @@
 [Unit]
-Description=Claude Agent Kakashi (Bug Fixer)
+Description=Claude Agent Kiba (System Guardian)
 After=network.target redis.service
-Wants=claude-watchdog-kakashi.service
-After=claude-watchdog-kakashi.service
+Wants=agent-watchdog-kiba.service
+After=agent-watchdog-kiba.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/claude-kakashi-service.sh
+ExecStart=/home/ubuntu/scripts/agent-kiba-service.sh
 Restart=always
 MemoryMax=800M
 RestartSec=10

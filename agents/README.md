@@ -54,8 +54,8 @@ Akamaru alerts ──► Konoha ──► watchdog-kiba ──► tmux kiba
 ## Systemd Services
 
 Each permanent agent has two services:
-- `claude-{agent}.service` — starts Claude Code in tmux
-- `claude-watchdog-{agent}.service` — delivers events to the agent
+- `agent-{agent}.service` — starts Claude Code in tmux
+- `agent-watchdog-{agent}.service` — delivers events to the agent
 
 Additionally: `akamaru.service` — autonomous system health monitoring.
 
@@ -69,7 +69,7 @@ Additionally: `akamaru.service` — autonomous system health monitoring.
 
 1. Create `agents/{name}/AGENTS.md` with the agent's role description
 2. Create `agents/{name}/.mcp-{name}.json` using `agents/.mcp-template.json` as template
-3. Create `scripts/claude-{name}-service.sh` and `scripts/watchdog-{name}.py`
+3. Create `scripts/agent-{name}-service.sh` and `scripts/watchdog-{name}.py`
 4. Create systemd unit files and enable them
 5. Add the agent to the table above
 6. Add the session to `WATCHED_SESSIONS` in `scripts/akamaru.py`

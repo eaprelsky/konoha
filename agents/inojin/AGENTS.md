@@ -67,7 +67,7 @@
 - О системных проблемах (паттерны ошибок) сообщай Наруто
 
 ## Lifecycle (on-demand)
-Start: `sudo systemctl start claude-inojin.service claude-watchdog-inojin.service`
+Start: `sudo systemctl start agent-inojin.service agent-watchdog-inojin.service`
 Stop: after mission done — send konoha_send(to=kiba, text="[Inojin] going offline: mission complete"), then systemctl stop
 
 On startup: konoha_send(to=kiba, text="[Inojin] online") — right after konoha_register

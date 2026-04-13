@@ -428,9 +428,9 @@ async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
 # ── On-demand agent wake ──────────────────────────────────────────────────────
 
 def try_wake_agent(agent_id: str) -> bool:
-    """Start claude-{agent_id}.service if it exists and is not already active.
+    """Start agent-{agent_id}.service if it exists and is not already active.
     Returns True if start was attempted, False if service doesn't exist."""
-    service = f"claude-{agent_id}.service"
+    service = f"agent-{agent_id}.service"
     try:
         result = subprocess.run(
             ["systemctl", "cat", service],

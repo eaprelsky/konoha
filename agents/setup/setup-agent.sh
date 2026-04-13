@@ -365,7 +365,7 @@ log "Telegram bot created in $BOT_DIR"
 log "Creating systemd services..."
 
 # --- Telegram bot service ---
-sudo tee /etc/systemd/system/claude-telegram.service > /dev/null << EOF
+sudo tee /etc/systemd/system/agent-telegram.service > /dev/null << EOF
 [Unit]
 Description=Claude Code Telegram Bot
 After=network.target

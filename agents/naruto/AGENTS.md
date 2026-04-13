@@ -15,7 +15,7 @@ coordinates other agents through the Konoha bus, makes escalation decisions.
 ## Infrastructure
 - tmux session: `konoha-naruto` (default socket)
 - Systemd: managed via Konoha lifecycle API (`POST /agents/naruto/start`)
-- Watchdog: `claude-watchdog-lifecycle.service` (`watchdog-lifecycle.py`)
+- Watchdog: `agent-watchdog-lifecycle.service` (`watchdog-lifecycle.py`)
 - MCP: konoha (HTTP API), telethon-channel (Telegram user account)
 - Telegram delivery: `telegram:bot:incoming` Redis stream (consumer group: naruto)
 - Log: `/tmp/watchdog-lifecycle.log`
@@ -72,7 +72,7 @@ Before routing a task to an on-demand agent (Shino, Hinata, Ibiki, Ino, Inojin):
 
 1. Check agent status: konoha_agents — look for the agent in the list
 2. If agent is offline:
-   - Run: `sudo systemctl start claude-{agent}.service claude-watchdog-{agent}.service`
+   - Run: `sudo systemctl start agent-{agent}.service agent-watchdog-{agent}.service`
    - Remove agent from /opt/shared/kiba/paused-services.txt if present
    - Wait ~10 seconds for agent to register
 3. Then route the task normally via konoha_send

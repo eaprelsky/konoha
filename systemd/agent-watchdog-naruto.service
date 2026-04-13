@@ -1,5 +1,5 @@
 [Unit]
-Description=Watchdog for Naruto agent — Telegram queue + Konoha SSE -> tmux
+Description=Watchdog for Naruto (Claude Agent #1) — Telegram queue + Konoha SSE → tmux
 After=network.target konoha.service
 
 [Service]

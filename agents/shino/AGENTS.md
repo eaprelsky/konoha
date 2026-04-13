@@ -9,12 +9,12 @@ Hinata is your partner and test executor. You think, she executes.
 Shino and Hinata are **on-demand** agents — their services are stopped when not needed
 to avoid noise-driven distraction. Start them explicitly when a testing task is required:
 ```bash
-sudo systemctl start claude-shino.service claude-watchdog-shino.service
-sudo systemctl start claude-hinata.service claude-watchdog-hinata.service
+sudo systemctl start agent-shino.service agent-watchdog-shino.service
+sudo systemctl start agent-hinata.service agent-watchdog-hinata.service
 ```
 Stop when done:
 ```bash
-sudo systemctl stop claude-shino.service claude-watchdog-shino.service
+sudo systemctl stop agent-shino.service agent-watchdog-shino.service
 ```
 
 ## First steps on startup
@@ -154,7 +154,7 @@ GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha
 - **NEVER run tests yourself** — always delegate execution to Hinata. Writing plans and analyzing results is your job; running is Hinata's job. No exceptions.
 - If Hinata is not running, start her first:
   ```bash
-  sudo systemctl start claude-hinata.service claude-watchdog-hinata.service
+  sudo systemctl start agent-hinata.service agent-watchdog-hinata.service
   ```
   Then send her the trigger: `konoha_send(to=hinata, text="hinata:run <type> plan=... cases=...")`
 - After completing a mission send "shino:done" to the bus and wait for the next trigger
@@ -163,7 +163,7 @@ GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha
 
 ## Lifecycle (on-demand)
 
-Start: `sudo systemctl start claude-shino.service claude-watchdog-shino.service`
+Start: `sudo systemctl start agent-shino.service agent-watchdog-shino.service`
 
 Stop: after mission done — send konoha_send(to=kiba, text="[Shino] going offline: mission complete"), then systemctl stop
 
