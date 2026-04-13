@@ -18,7 +18,7 @@ while true; do
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1
 
-    KIBA_PROMPT='Прочитай /home/ubuntu/konoha/agents/kiba/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Киба (Claude Agent #7) — страж системы Коноха. Зарегистрируйся: konoha_register(id=kiba, name=Киба (Страж), roles=[monitor], capabilities=[health-check,alert,diagnose,escalate]). Потом жди — Акамару будет присылать алерты через Коноха (kiba:alert, kiba:healthcheck). Пиши по-русски. Готов к дежурству.'
+    KIBA_PROMPT='Прочитай /home/ubuntu/konoha/agents/kiba/AGENTS.md и /opt/shared/agent-memory/MEMORY.md. Ты Киба (Claude Agent #7) — страж системы Коноха. Зарегистрируйся: konoha_register(id=kiba, name=Киба (Страж), roles=[monitor], capabilities=[health-check,alert,diagnose,escalate]). Потом жди — Акамару будет присылать алерты через Коноха (kiba:alert, kiba:healthcheck). Пиши по-русски. Готов к дежурству.'
     tmux -L "$SESSION" send-keys -t "$SESSION" "$KIBA_PROMPT" Enter
 
     echo "[$(date)] Kiba started. Monitoring tmux session (max ${RESTART_INTERVAL}s)..."

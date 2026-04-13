@@ -10,5 +10,5 @@
     "labels": ["bug", "P0: critical", "P1: high"]
   },
   "message_prefix": "Задание для Какаши:",
-  "message_suffix": "Выполни задание согласно CLAUDE.md. Результат сообщи в Коноха."
+  "message_suffix": "Выполни задание согласно AGENTS.md. Результат сообщи в Коноха."
 }

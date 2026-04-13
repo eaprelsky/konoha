@@ -22,7 +22,7 @@ For each skill the following is displayed:
 2. Fill in the fields:
    - **Name** — human-readable name (e.g., "Yandex Tracker")
    - **Description** — what this skill can do
-   - **Instructions (prompt snippet)** — text that will be added to the agent's CLAUDE.md. For example: how to use the tools, what commands are available, when to use them
+   - **Instructions (prompt snippet)** — text that will be added to the agent's AGENTS.md. For example: how to use the tools, what commands are available, when to use them
    - **MCP servers** — description of additional tools (filled in JSON format; usually configured by an administrator)
 3. Click **Save**
 
@@ -32,7 +32,7 @@ For each skill the following is displayed:
 
 When an agent with an assigned skill is launched:
 
-1. **Instructions** from the skill are added to the agent's CLAUDE.md in the `## Skill: {name}` block
+1. **Instructions** from the skill are added to the agent's AGENTS.md in the `## Skill: {name}` block
 2. **MCP servers** from the skill are added to the `.mcp.json` configuration — the agent gains access to new tools
 
 The agent sees the instructions on startup and knows when and how to use the skill's tools.

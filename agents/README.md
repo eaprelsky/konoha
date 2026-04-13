@@ -7,20 +7,20 @@ receive tasks through watchdog services, and operate autonomously.
 
 | # | Agent | Model | Role | tmux | Status |
 |---|-------|-------|------|------|--------|
-| 1 | [Naruto](naruto/CLAUDE.md) | Sonnet | Main orchestrator, Telegram bot | `naruto` | Permanent |
-| 2 | [Sasuke](sasuke/CLAUDE.md) | Sonnet | Telegram user account monitor | `sasuke` | Permanent |
-| 3 | [Mirai](mirai/CLAUDE.md) | Haiku | Email and data processing | `mirai` | Permanent |
-| 4 | [Jiraiya](jiraiya/CLAUDE.md) | Sonnet | Chronicler — classifies and archives events | `jiraiya` | Permanent |
-| 5 | [Shino](shino/CLAUDE.md) | Sonnet | QA Lead — test plans, testing coordination | `shino` | On-demand |
-| 6 | [Hinata](hinata/CLAUDE.md) | Haiku | QA Runner — runs tests, writes reports | `hinata` | On-demand |
-| 7 | [Kiba](kiba/CLAUDE.md) | Sonnet | System guardian — monitoring, alerts | `kiba` | Permanent |
-| 8 | [Kakashi](kakashi/CLAUDE.md) | Sonnet | Bug fixer — reads GitHub Issues, fixes code | `kakashi` | Permanent |
-| 10 | [Guy](guy/CLAUDE.md) | Haiku | Kakashi's sub-agent — fast mechanical tasks (translate, scaffold, replace) | `guy` | Permanent |
-| 9 | [Shikadai](shikadai/CLAUDE.md) | Sonnet | Strategic advisor — architecture analysis, process design | `shikadai` | On-demand |
-| 11 | [Ibiki](ibiki/CLAUDE.md) | Sonnet | Security pentester — audits Konoha infrastructure | `ibiki` | On-demand |
-| 12 | [Ino](ino/CLAUDE.md) | Sonnet | Nocturna marketing strategist — content, SEO/AIO, copywriting | `ino` | On-demand |
-| 13 | [Inojin](inojin/CLAUDE.md) | Haiku | Ino's assistant — API calls, bulk generation, formatting | `inojin` | On-demand |
-| — | [Itachi](itachi/CLAUDE.md) | Sonnet+ | Local WSL agent (on owner's machine) | `itachi` | Optional |
+| 1 | [Naruto](naruto/AGENTS.md) | Sonnet | Main orchestrator, Telegram bot | `naruto` | Permanent |
+| 2 | [Sasuke](sasuke/AGENTS.md) | Sonnet | Telegram user account monitor | `sasuke` | Permanent |
+| 3 | [Mirai](mirai/AGENTS.md) | Haiku | Email and data processing | `mirai` | Permanent |
+| 4 | [Jiraiya](jiraiya/AGENTS.md) | Sonnet | Chronicler — classifies and archives events | `jiraiya` | Permanent |
+| 5 | [Shino](shino/AGENTS.md) | Sonnet | QA Lead — test plans, testing coordination | `shino` | On-demand |
+| 6 | [Hinata](hinata/AGENTS.md) | Haiku | QA Runner — runs tests, writes reports | `hinata` | On-demand |
+| 7 | [Kiba](kiba/AGENTS.md) | Sonnet | System guardian — monitoring, alerts | `kiba` | Permanent |
+| 8 | [Kakashi](kakashi/AGENTS.md) | Sonnet | Bug fixer — reads GitHub Issues, fixes code | `kakashi` | Permanent |
+| 10 | [Guy](guy/AGENTS.md) | Haiku | Kakashi's sub-agent — fast mechanical tasks (translate, scaffold, replace) | `guy` | Permanent |
+| 9 | [Shikadai](shikadai/AGENTS.md) | Sonnet | Strategic advisor — architecture analysis, process design | `shikadai` | On-demand |
+| 11 | [Ibiki](ibiki/AGENTS.md) | Sonnet | Security pentester — audits Konoha infrastructure | `ibiki` | On-demand |
+| 12 | [Ino](ino/AGENTS.md) | Sonnet | Nocturna marketing strategist — content, SEO/AIO, copywriting | `ino` | On-demand |
+| 13 | [Inojin](inojin/AGENTS.md) | Haiku | Ino's assistant — API calls, bulk generation, formatting | `inojin` | On-demand |
+| — | [Itachi](itachi/AGENTS.md) | Sonnet+ | Local WSL agent (on owner's machine) | `itachi` | Optional |
 | — | Shikamaru | Opus | Owner's advisor (Windows Claude Desktop, no tools) | — | External |
 | — | Akamaru | Python | Autonomous health monitoring (not Claude, a script) | — | Permanent |
 
@@ -67,7 +67,7 @@ Additionally: `akamaru.service` — autonomous system health monitoring.
 
 ## Adding a New Agent
 
-1. Create `agents/{name}/CLAUDE.md` with the agent's role description
+1. Create `agents/{name}/AGENTS.md` with the agent's role description
 2. Create `agents/{name}/.mcp-{name}.json` using `agents/.mcp-template.json` as template
 3. Create `scripts/claude-{name}-service.sh` and `scripts/watchdog-{name}.py`
 4. Create systemd unit files and enable them

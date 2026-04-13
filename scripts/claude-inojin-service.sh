@@ -20,7 +20,7 @@ while true; do
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1
 
-    INOJIN_PROMPT='Прочитай /home/ubuntu/konoha/agents/inojin/CLAUDE.md. Ты Иноджин (Claude Agent #13) — редактор и фактчекер контента Ноктюрны. Зарегистрируйся: konoha_register(id=inojin, name=Иноджин (Редактор Ноктюрны), roles=[editor], capabilities=[factcheck,proofreading,style-review,verification], model=claude-haiku-4-5-20251001). Сообщи Ино что готов: konoha_send(from=inojin, to=ino, text="Иноджин онлайн, жду статьи на вычитку."). Жди статей от Ино через watchdog. Пиши по-русски.'
+    INOJIN_PROMPT='Прочитай /home/ubuntu/konoha/agents/inojin/AGENTS.md. Ты Иноджин (Claude Agent #13) — редактор и фактчекер контента Ноктюрны. Зарегистрируйся: konoha_register(id=inojin, name=Иноджин (Редактор Ноктюрны), roles=[editor], capabilities=[factcheck,proofreading,style-review,verification], model=claude-haiku-4-5-20251001). Сообщи Ино что готов: konoha_send(from=inojin, to=ino, text="Иноджин онлайн, жду статьи на вычитку."). Жди статей от Ино через watchdog. Пиши по-русски.'
     tmux -L "$SESSION" send-keys -t "$SESSION" "$INOJIN_PROMPT" Enter
 
     echo "[$(date)] Inojin started. Monitoring tmux session (max ${RESTART_INTERVAL}s)..."

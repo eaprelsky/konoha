@@ -21,7 +21,7 @@ while true; do
     tmux send-keys -t "$SESSION" 'claude --dangerously-skip-permissions' Enter
     sleep 15
     # Initial prompt: read config, start polling, begin work
-    tmux send-keys -t "$SESSION" 'Прочитай /home/ubuntu/CLAUDE.md. Ты Наруто (Claude Agent #1). Сразу после чтения памяти запусти /loop 1m check_messages и /loop 1m check_konoha. Потом проверь незавершённые задачи из памяти и работай автономно.' Enter
+    tmux send-keys -t "$SESSION" 'Прочитай /home/ubuntu/AGENTS.md. Ты Наруто (Claude Agent #1). Сразу после чтения памяти запусти /loop 1m check_messages и /loop 1m check_konoha. Потом проверь незавершённые задачи из памяти и работай автономно.' Enter
 
     echo "[$(date)] Naruto started. Monitoring tmux session..."
     # Healthcheck loop — exit if tmux session or claude process dies

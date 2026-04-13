@@ -6,7 +6,7 @@ SESSION="claude-chat"
 RESTART_INTERVAL=7200  # 2 hours in seconds
 MCP_CONFIG="/home/ubuntu/telethon-mcp/.mcp.json"
 
-PROMPT='Прочитай /home/ubuntu/CLAUDE.md. Ты Claude Agent #2 — автономный мониторщик Telegram-чатов. Используй MCP telethon-channel. Запусти /loop 10s для проверки tg_read_new. Если action_hint=respond — ответь через tg_reply. Если observe — запомни. Пиши по-русски как коллега, без маркдауна. Не выдумывай факты.'
+PROMPT='Прочитай /home/ubuntu/AGENTS.md. Ты Claude Agent #2 — автономный мониторщик Telegram-чатов. Используй MCP telethon-channel. Запусти /loop 10s для проверки tg_read_new. Если action_hint=respond — ответь через tg_reply. Если observe — запомни. Пиши по-русски как коллега, без маркдауна. Не выдумывай факты.'
 
 while true; do
     echo "[$(date)] Starting Claude Chat Agent..."

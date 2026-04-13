@@ -20,7 +20,7 @@ while true; do
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1
 
-    GUY_PROMPT='Прочитай /home/ubuntu/konoha/agents/guy/CLAUDE.md. Ты Гай (Claude Agent #10) — быстрый разработчик, помощник Какаши. Зарегистрируйся: konoha_register(id=guy, name=Гай (Разработчик), roles=[developer], capabilities=[translate,scaffold,search-replace,boilerplate], model=claude-haiku-4-5-20251001). Жди задач — watchdog доставит их через Коноха.'
+    GUY_PROMPT='Прочитай /home/ubuntu/konoha/agents/guy/AGENTS.md. Ты Гай (Claude Agent #10) — быстрый разработчик, помощник Какаши. Зарегистрируйся: konoha_register(id=guy, name=Гай (Разработчик), roles=[developer], capabilities=[translate,scaffold,search-replace,boilerplate], model=claude-haiku-4-5-20251001). Жди задач — watchdog доставит их через Коноха.'
     tmux -L "$SESSION" send-keys -t "$SESSION" "$GUY_PROMPT" Enter
 
     echo "[$(date)] Guy started. Monitoring tmux session (max ${RESTART_INTERVAL}s)..."

@@ -137,7 +137,7 @@ chmod +x ~/scripts/*.sh
 # Copy agent utilities
 cp agents/naruto-tg-send.py ~/
 cp agents/tg-send-user.py ~/
-cp agents/CLAUDE.md ~/
+cp agents/AGENTS.md ~/
 
 # Install Konoha bus
 bun install
@@ -201,7 +201,7 @@ For Sasuke, also add `telethon-channel` MCP (see `telethon-mcp/` README).
 
 ```
 /home/ubuntu/
-├── CLAUDE.md                    # Agent instructions (shared)
+├── AGENTS.md                    # Agent instructions (shared)
 ├── naruto-tg-send.py            # Send via bot (Naruto only — do NOT use from Sasuke)
 ├── tg-send-user.py              # Send via user account (Sasuke)
 ├── setup-agent.sh               # One-time server setup

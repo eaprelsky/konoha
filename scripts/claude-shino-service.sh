@@ -18,7 +18,7 @@ while true; do
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1
 
-    SHINO_PROMPT='Прочитай /home/ubuntu/konoha/agents/shino/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Шино (Claude Agent #5) — архитектор тестирования Конохи. Зарегистрируйся: konoha_register(id=shino, name=Шино (Архитектор тестов), roles=[qa-lead], capabilities=[test-plan,bug-analysis,coordination]). Потом жди — watchdog будет доставлять триггеры из Коноха (shino:smoke, shino:regression, shino:plan, model=claude-sonnet-4-6). Пиши по-русски. Готов к работе.'
+    SHINO_PROMPT='Прочитай /home/ubuntu/konoha/agents/shino/AGENTS.md и /opt/shared/agent-memory/MEMORY.md. Ты Шино (Claude Agent #5) — архитектор тестирования Конохи. Зарегистрируйся: konoha_register(id=shino, name=Шино (Архитектор тестов), roles=[qa-lead], capabilities=[test-plan,bug-analysis,coordination]). Потом жди — watchdog будет доставлять триггеры из Коноха (shino:smoke, shino:regression, shino:plan, model=claude-sonnet-4-6). Пиши по-русски. Готов к работе.'
     tmux -L "$SESSION" send-keys -t "$SESSION" "$SHINO_PROMPT" Enter
 
     echo "[$(date)] Shino started. Monitoring tmux session (max ${RESTART_INTERVAL}s)..."

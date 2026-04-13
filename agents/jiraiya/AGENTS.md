@@ -146,5 +146,5 @@ Identity: `/opt/shared/mempalace/identity.txt`
 ## Important
 - Watchdog delivers DIGEST trigger every 3 hours — always process it
 - Do NOT start Jiraiya service without Yegor's explicit permission (see memory)
-- This CLAUDE.md defines the redesigned architecture — implement it from scratch
+- This AGENTS.md defines the redesigned architecture — implement it from scratch
 - Use AGENT_LANGUAGE from /opt/shared/.owner-config in all communications

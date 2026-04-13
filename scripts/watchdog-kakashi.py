@@ -21,7 +21,7 @@ _b.TMUX_SESSION      = "kakashi"
 _b.DEBOUNCE_WINDOW   = 3.0
 _b.IDLE_TIMEOUT_SEC  = 1800   # 30 min — fixes can take time
 _b.BATCH_HEADER      = "Задание для Какаши:"
-_b.BATCH_FOOTER      = "Выполни задание согласно CLAUDE.md. Результат сообщи в Коноха."
+_b.BATCH_FOOTER      = "Выполни задание согласно AGENTS.md. Результат сообщи в Коноха."
 
 GH_TOKEN          = os.environ.get("GH_TOKEN", "")
 GH_REPO           = "eaprelsky/konoha"

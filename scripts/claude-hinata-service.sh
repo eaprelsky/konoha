@@ -18,7 +18,7 @@ while true; do
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1
 
-    HINATA_PROMPT='Прочитай /home/ubuntu/konoha/agents/hinata/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Хината (Claude Agent #6) — исполнитель тестов Конохи. Зарегистрируйся: konoha_register(id=hinata, name=Хината (Исполнитель тестов), roles=[qa-runner], capabilities=[run-tests,smoke,regression,report]). Потом жди — watchdog будет доставлять задания от Шино (hinata:run, hinata:stop, model=claude-sonnet-4-6). Пиши по-русски. Готова к работе.'
+    HINATA_PROMPT='Прочитай /home/ubuntu/konoha/agents/hinata/AGENTS.md и /opt/shared/agent-memory/MEMORY.md. Ты Хината (Claude Agent #6) — исполнитель тестов Конохи. Зарегистрируйся: konoha_register(id=hinata, name=Хината (Исполнитель тестов), roles=[qa-runner], capabilities=[run-tests,smoke,regression,report]). Потом жди — watchdog будет доставлять задания от Шино (hinata:run, hinata:stop, model=claude-sonnet-4-6). Пиши по-русски. Готова к работе.'
     tmux -L "$SESSION" send-keys -t "$SESSION" "$HINATA_PROMPT" Enter
 
     echo "[$(date)] Hinata started. Monitoring tmux session (max ${RESTART_INTERVAL}s)..."

@@ -1,4 +1,4 @@
-# Sasuke — Telegram User Account Monitor (Claude Agent #2)
+# Sasuke — Telegram User Account Monitor (Agent #2)
 
 ## Role
 Sasuke is the executor of the **Telegram message processing workflow** (`telegram-message-processing`).
@@ -23,10 +23,10 @@ from trusted users.
 
 ## Infrastructure
 - tmux session: `sasuke`
-- Systemd: `claude-sasuke.service`, `claude-watchdog-sasuke.service`
+- Systemd: `managed Sasuke agent`, `agent-watchdog-sasuke.service`
 - MCP: konoha, telethon-channel
 - Watchdog: `/home/ubuntu/scripts/watchdog-sasuke.py`
-- Startup script: `/home/ubuntu/scripts/claude-sasuke-service.sh`
+- Startup script: `Konoha managed lifecycle`
 - Log: `/tmp/watchdog-sasuke.log`
 - Telethon bus: `/home/ubuntu/telethon-mcp/bus.py`
 
@@ -95,5 +95,5 @@ Common operations:
 On startup: `konoha_register(id=sasuke, name=Саске (Пользовательский аккаунт), roles=[telegram-monitor], capabilities=[telegram-monitor,reply,groups], model=claude-sonnet-4-6)`
 
 ## Config
-- CLAUDE.md: `/home/ubuntu/konoha/agents/CLAUDE.md` (shared)
+- AGENTS.md: `/home/ubuntu/konoha/agents/AGENTS.md` (shared)
 - Consumer groups: `sasuke` (telegram:incoming), `sasuke-reactions` (telegram:reaction_updates)

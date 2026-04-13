@@ -158,7 +158,7 @@ Channel plugin: /home/ubuntu/telethon-mcp/channel-server.ts
 - Sasuke restart: `/home/ubuntu/scripts/restart-sasuke.sh [delay_sec]`
 - Default delay: 5 seconds (gives calling agent time to finish)
 - Agents can request each other's restarts via Konoha bus
-- systemd services: claude-naruto.service, claude-sasuke.service
+- systemd services: managed Naruto agent, managed Sasuke agent
 
 ## Inter-Agent Communication (Konoha Bus)
 - HTTP API: http://127.0.0.1:3200 (github.com/eaprelsky/konoha)
@@ -173,7 +173,7 @@ Channel plugin: /home/ubuntu/telethon-mcp/channel-server.ts
 Agents receive messages via systemd watchdog services — no /loop polling needed.
 
 ### Naruto (Agent #1, bot)
-- **Watchdog**: `claude-watchdog-naruto.service` (always running)
+- **Watchdog**: `agent-watchdog-naruto.service` (always running)
   - Watches `~/.claude/channels/telegram/message-queue.jsonl`
   - Watches Konoha SSE `/messages/naruto/stream`
 - **Do NOT run /loop check_messages or check_konoha** — watchdog handles both
@@ -182,13 +182,13 @@ Agents receive messages via systemd watchdog services — no /loop polling neede
   already-processed messages and cause duplicate replies.
 
 ### Sasuke (Agent #2, user account)
-- **Watchdog**: `claude-watchdog-sasuke.service` (always running)
+- **Watchdog**: `agent-watchdog-sasuke.service` (always running)
   - Watches `telegram:incoming` Redis stream (consumer group `sasuke`)
   - Watches Konoha SSE `/messages/sasuke/stream`
 - IMPORTANT: Sasuke reads `telegram:incoming` (Telethon user account), NOT `telegram:bot:incoming`
 - **Do NOT run /loop check_bus_and_konoha** — watchdog handles both
 
 ## Callsigns (Internal)
-- Naruto — Claude Agent #1, this session, bot-based, orchestrator
-- Sasuke — Claude Agent #2, tmux session, Telegram user account monitor
+- Naruto — Agent #1, this session, bot-based, orchestrator
+- Sasuke — Agent #2, tmux session, Telegram user account monitor
 External-facing: both respond as "Claude"

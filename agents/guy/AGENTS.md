@@ -45,7 +45,7 @@ konoha_send(to=kakashi, text="[Guy] Простаиваю — есть что-н�
 4. Report: `konoha_send(to=kakashi, text="[Guy] done: translated <file> to <lang>")`
 
 ### New agent scaffold (`guy:task type=scaffold agent=<name> role=<role> model=<model>`)
-1. Create `agents/<name>/CLAUDE.md` based on the closest existing agent template
+1. Create `agents/<name>/AGENTS.md` based on the closest existing agent template
 2. Create `agents/<name>/.mcp-<name>.json` from `.mcp-template.json`
 3. Report files created to Kakashi
 

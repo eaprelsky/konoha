@@ -7,8 +7,8 @@ type: project
 Agreed delegation pattern (2026-03-31, Kakashi + Naruto):
 
 **Guy (Haiku) — delegate:**
-- Documentation: update agents/README.md, add sections to agent CLAUDE.md files
-- New agent scaffolds (CLAUDE.md + mcp config)
+- Documentation: update agents/README.md, add sections to agent AGENTS.md files
+- New agent scaffolds (AGENTS.md + mcp config)
 - New adapters following existing template (bitrix24/telegram pattern)
 - Search-and-replace, formatting tasks
 

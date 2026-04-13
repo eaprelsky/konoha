@@ -10,7 +10,7 @@ type: project
 - **Наруто**: читает `telegram:bot:incoming` (Grammy бот), отвечает через `tg-send.py` → `telegram:bot:outgoing`
 - **Саске**: читает `telegram:incoming` (Telethon user account), отвечает через `tg-send-user.py` → `telegram:outgoing`
 - Доставка сообщений — через watchdog-сервисы (systemd), /loop НЕ нужен и НЕ запускается
-- CLAUDE.md обновлён, содержит корректное описание транспортов
+- AGENTS.md обновлён, содержит корректное описание транспортов
 
 ### Konoha Bus
 - HTTP API: http://127.0.0.1:3200, внешний эндпойнт https://agent.eaprelsky.ru:8080/konoha/

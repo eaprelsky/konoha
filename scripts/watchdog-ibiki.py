@@ -17,7 +17,7 @@ _b.TMUX_SESSION     = "ibiki"
 _b.DEBOUNCE_WINDOW  = 5.0   # longer debounce — batch multiple triggers
 _b.IDLE_TIMEOUT_SEC = 600   # 10 min — security scans take longer
 _b.BATCH_HEADER     = "Задание для Ибики:"
-_b.BATCH_FOOTER     = "Выполни задание согласно CLAUDE.md."
+_b.BATCH_FOOTER     = "Выполни задание согласно AGENTS.md."
 _b.BATCH_SEPARATOR  = "\n"
 
 if __name__ == "__main__":

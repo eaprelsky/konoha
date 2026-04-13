@@ -79,7 +79,7 @@ After receiving Shino's test results, **verify that both mandatory artifacts exi
 ```bash
 ls -la /opt/shared/shino/test-plan.md /opt/shared/shino/test-cases.md
 ```
-- If either file is missing — send back: `konoha_send(to=shino, text="kakashi: test-plan.md or test-cases.md missing — testing not complete per CLAUDE.md")`
+- If either file is missing — send back: `konoha_send(to=shino, text="kakashi: test-plan.md or test-cases.md missing — testing not complete per AGENTS.md")`
 - If only a smoke report was sent without plan/cases — do NOT mark the fix as fully validated
 - A fix is fully validated only when: smoke passed AND test-plan.md AND test-cases.md are present
 
@@ -129,11 +129,11 @@ Guy is your sub-agent for mechanical, repetitive, and template-based tasks.
 
 When to delegate:
 - Translating files to another language → `guy:task type=translate file=<path> target_lang=English`
-- Creating a new agent scaffold (CLAUDE.md + mcp config) → `guy:task type=scaffold agent=<name> role=<role> model=<model>`
+- Creating a new agent scaffold (AGENTS.md + mcp config) → `guy:task type=scaffold agent=<name> role=<role> model=<model>`
 - Mass search-and-replace across multiple files → `guy:task type=replace pattern=<pat> replacement=<rep> path=<glob>`
 - Adding boilerplate sections to files → `guy:task type=boilerplate section=<name> file=<path>`
 - Formatting/whitespace cleanup → `guy:task type=format file=<path>`
-- Writing or updating documentation (README, API docs, CLAUDE.md sections) → `guy:task type=boilerplate section=<name> file=<path>`
+- Writing or updating documentation (README, API docs, AGENTS.md sections) → `guy:task type=boilerplate section=<name> file=<path>`
 - Adding entries or sections to any markdown file → `guy:task type=boilerplate section=<name> file=<path>`
 
 How to delegate:
@@ -165,12 +165,12 @@ When `kakashi:scan` fires and you pick up an issue:
 
 Watchdog sends `kakashi:doccheck` once a day (at night).
 When received:
-1. Check that each agent has a CLAUDE.md in `agents/{name}/`:
+1. Check that each agent has a AGENTS.md in `agents/{name}/`:
    ```bash
-   ls /home/ubuntu/konoha/agents/*/CLAUDE.md
+   ls /home/ubuntu/konoha/agents/*/AGENTS.md
    ```
 2. Check that `agents/README.md` has an up-to-date agent list
-3. Check that `agents/CLAUDE.md` has no sensitive data (IP, IDs, passwords):
+3. Check that `agents/AGENTS.md` has no sensitive data (IP, IDs, passwords):
    ```bash
    grep -rn "93791246\|146\.185\|agent2026\|375255037438" /home/ubuntu/konoha/agents/
    ```

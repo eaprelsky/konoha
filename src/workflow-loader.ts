@@ -463,7 +463,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
 
   await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(normalized));
   await updateRoleWorkflowIndex(normalized);
-  // Notify hot-reload listener: agents with roles in this workflow need CLAUDE.md refresh
+  // Notify hot-reload listener: agents with roles in this workflow need AGENTS.md refresh
   redis.xadd("konoha:agent-reload", "*", "type", "workflow.updated", "workflow_id", id, "timestamp", new Date().toISOString()).catch(() => {});
   pgUpsertWorkflow(normalized as any);
   syncSchemaToRegistry(normalized, current).catch(e => console.error("[schema-sync] update error:", e));

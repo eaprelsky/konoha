@@ -2,7 +2,7 @@
 
 Skills (capabilities) are reusable packages that extend an agent with new tools or behaviors. Each skill can contribute:
 
-- A **prompt snippet** — instructions injected into the agent's CLAUDE.md at startup
+- A **prompt snippet** — instructions injected into the agent's AGENTS.md at startup
 - **MCP server definitions** — additional tool servers added to the agent's `.mcp.json`
 
 ---
@@ -15,7 +15,7 @@ type SkillRecord = {
   name: string;             // display name (Russian)
   name_en?: string;         // English name (optional)
   description?: string;     // short description
-  prompt_snippet?: string;  // injected into CLAUDE.md under "## Skill: {name}"
+  prompt_snippet?: string;  // injected into AGENTS.md under "## Skill: {name}"
   tools?: string[];         // list of tool names this skill uses (informational)
   mcp_servers?: McpServerDef[];  // MCP servers to add to .mcp.json
   created_at: string;
@@ -38,9 +38,9 @@ Stored in Redis: `konoha:skill:{id}` (JSON), indexed in sorted set `konoha:skill
 
 When an agent is started, `startAgent()` reads all skills listed in `AgentDef.capabilities`:
 
-### 1. Prompt snippets → CLAUDE.md
+### 1. Prompt snippets → AGENTS.md
 
-For each skill with a non-empty `prompt_snippet`, the following block is appended to the agent's CLAUDE.md:
+For each skill with a non-empty `prompt_snippet`, the following block is appended to the agent's AGENTS.md:
 
 ```
 ## Skill: {skill.name}
@@ -88,7 +88,7 @@ Result in agent's `.mcp.json`:
 
 ### 3. Changes take effect on restart
 
-CLAUDE.md and .mcp.json are regenerated each time the agent starts. Editing a skill or adding/removing a skill from an agent's capabilities takes effect on the **next restart**.
+AGENTS.md and .mcp.json are regenerated each time the agent starts. Editing a skill or adding/removing a skill from an agent's capabilities takes effect on the **next restart**.
 
 ---
 

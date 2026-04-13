@@ -52,7 +52,7 @@ Click the **▶ Start** button on the agent card.
 
 The system:
 1. Creates the agent's working directory
-2. Generates CLAUDE.md (instructions + skills)
+2. Generates AGENTS.md (instructions + skills)
 3. Generates .mcp.json (MCP tools)
 4. Starts Claude Code in a tmux session
 5. Sends the startup message

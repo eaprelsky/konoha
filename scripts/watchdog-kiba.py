@@ -28,7 +28,7 @@ _b.WAKE_TIMEOUT_SEC          = 120    # on-demand: start if session absent
 _b.CIRCUIT_BREAKER_DURATION  = 600    # 10 min cooldown after freeze
 _b.FREEZE_ALERT_TARGET       = "naruto"  # avoid self-referential loop (#111)
 _b.BATCH_HEADER              = "Задание для Кибы:"
-_b.BATCH_FOOTER              = "Выполни задание согласно CLAUDE.md. Результат сообщи в Коноха."
+_b.BATCH_FOOTER              = "Выполни задание согласно AGENTS.md. Результат сообщи в Коноха."
 
 KONOHA_REPO      = os.path.expanduser("~/konoha")
 GIT_POLL_INTERVAL = 300  # 5 minutes — check for new pushes to main (#363)

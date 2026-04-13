@@ -155,7 +155,7 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
               onChange={e => setPromptSnippet(e.target.value)}
               rows={5}
               style={{ fontFamily: 'monospace', fontSize: 13 }}
-              placeholder="Текст, который будет добавлен в CLAUDE.md агентов с этим навыком"
+              placeholder="Текст, который будет добавлен в AGENTS.md агентов с этим навыком"
             />
             <span className="form-hint">Инжектируется в системный промпт агента при старте</span>
           </div>

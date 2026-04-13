@@ -233,9 +233,9 @@ async function startEventFiredListener(): Promise<void> {
 
 startEventFiredListener().catch(e => console.error("[workflow-engine] listener start error:", e.message));
 
-// ── Hot-reload: regenerate CLAUDE.md for affected agents when workflows change ──
+// ── Hot-reload: regenerate AGENTS.md for affected agents when workflows change ──
 // Listens to `konoha:agent-reload` stream (written by workflow-loader on updateWorkflow).
-// Does NOT restart agents — just rewrites their CLAUDE.md so the next /new picks it up.
+// Does NOT restart agents — just rewrites their AGENTS.md so the next /new picks it up.
 async function startAgentHotReload(): Promise<void> {
   const RELOAD_STREAM = "konoha:agent-reload";
   const RELOAD_GROUP = "konoha-server-hotreload";
@@ -266,20 +266,22 @@ async function startAgentHotReload(): Promise<void> {
             for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
 
             if (obj.type === "workflow.updated" || obj.type === "role.assigned") {
-              // Regenerate CLAUDE.md for all managed agents (role assignments may have changed)
+              // Regenerate AGENTS.md for all managed agents (role assignments may have changed)
               try {
                 const defs = await listAgentDefs();
                 for (const def of defs) {
                   const workdir = join(WORKDIR_ROOT, def.id);
-                  const claudeMdPath = join(workdir, "CLAUDE.md");
-                  if (existsSync(claudeMdPath)) {
-                    const claudeMd = await buildSystemPrompt(def.id, def);
-                    writeFileSync(claudeMdPath, claudeMd, "utf-8");
-                    console.log(`[hot-reload] Regenerated CLAUDE.md for agent "${def.id}" (${obj.type})`);
+                  const instructionsPath = join(workdir, "AGENTS.md");
+                  const legacyInstructionsPath = join(workdir, "CLAUDE.md");
+                  if (existsSync(instructionsPath) || existsSync(legacyInstructionsPath)) {
+                    const instructions = await buildSystemPrompt(def.id, def);
+                    writeFileSync(instructionsPath, instructions, "utf-8");
+                    writeFileSync(legacyInstructionsPath, instructions, "utf-8");
+                    console.log(`[hot-reload] Regenerated AGENTS.md for agent "${def.id}" (${obj.type})`);
                   }
                 }
               } catch (e: any) {
-                console.error("[hot-reload] Failed to regenerate CLAUDE.md:", e.message);
+                console.error("[hot-reload] Failed to regenerate AGENTS.md:", e.message);
               }
             }
 
@@ -296,7 +298,7 @@ async function startAgentHotReload(): Promise<void> {
   };
 
   poll().catch(e => console.error("[hot-reload] loop crashed:", e.message));
-  console.log("[hot-reload] agent CLAUDE.md reload listener started");
+  console.log("[hot-reload] agent AGENTS.md reload listener started");
 }
 
 startAgentHotReload().catch(e => console.error("[hot-reload] start error:", e.message));

@@ -20,7 +20,7 @@ while true; do
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1
 
-    INO_PROMPT='Прочитай /home/ubuntu/konoha/agents/ino/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Ино Яманака (Claude Agent #12) — маркетолог и контент-стратег Ноктюрны. Зарегистрируйся: konoha_register(id=ino, name=Ино (Маркетолог Ноктюрны), roles=[marketing], capabilities=[content-strategy,copywriting,seo,analytics], model=claude-sonnet-4-6). Жди задач — watchdog доставит их из Коноха. Пиши по-русски.'
+    INO_PROMPT='Прочитай /home/ubuntu/konoha/agents/ino/AGENTS.md и /opt/shared/agent-memory/MEMORY.md. Ты Ино Яманака (Claude Agent #12) — маркетолог и контент-стратег Ноктюрны. Зарегистрируйся: konoha_register(id=ino, name=Ино (Маркетолог Ноктюрны), roles=[marketing], capabilities=[content-strategy,copywriting,seo,analytics], model=claude-sonnet-4-6). Жди задач — watchdog доставит их из Коноха. Пиши по-русски.'
     tmux -L "$SESSION" send-keys -t "$SESSION" "$INO_PROMPT" Enter
 
     echo "[$(date)] Ino started. Monitoring tmux session (max ${RESTART_INTERVAL}s)..."

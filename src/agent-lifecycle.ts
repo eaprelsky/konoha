@@ -17,6 +17,8 @@ import { join } from "path";
 const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
 const CODEX_CONFIG_PATH = "/home/ubuntu/.codex/config.toml";
+const INSTRUCTIONS_FILE = "AGENTS.md";
+const LEGACY_INSTRUCTIONS_FILE = "CLAUDE.md";
 
 export type AgentProvider = "claude" | "codex" | "cursor";
 export type LaunchStrategy = "persistent_interactive" | "headless_task";
@@ -573,13 +575,13 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
   await saveState({ agent_id: id, status: "starting", tmux_session: session });
 
   try {
-    // Prepare per-agent working directory with two-level CLAUDE.md
+    // Prepare per-agent working directory with primary AGENTS.md plus legacy CLAUDE.md compatibility.
     const workdir = join(AGENT_WORKDIR_ROOT, id);
     mkdirSync(workdir, { recursive: true });
 
-    const claudeMd = await buildSystemPrompt(id, def);
-    writeFileSync(join(workdir, "CLAUDE.md"), claudeMd, "utf-8");
-    writeFileSync(join(workdir, "AGENTS.md"), claudeMd, "utf-8");
+    const instructions = await buildSystemPrompt(id, def);
+    writeFileSync(join(workdir, INSTRUCTIONS_FILE), instructions, "utf-8");
+    writeFileSync(join(workdir, LEGACY_INSTRUCTIONS_FILE), instructions, "utf-8");
 
     // Build MCP configs for supported runtimes.
     const mcpConfig = await buildMcpConfig(def.capabilities ?? [], def.env ?? {});
@@ -618,7 +620,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     }
 
     // Inject startup message so agent executes its startup sequence.
-    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Прочитай CLAUDE.md и выполни startup sequence."]);
+    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Прочитай AGENTS.md и выполни startup sequence."]);
     await new Promise(res => setTimeout(res, 350));
     await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Enter"]);
 

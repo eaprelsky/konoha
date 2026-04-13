@@ -66,11 +66,11 @@ Every lifecycle event (created, started, stopped, restarted, error) is appended 
 
 ```
 /opt/shared/agent-workdirs/{id}/
-  CLAUDE.md      ← system template + user instructions + skill snippets
+  AGENTS.md      ← system template + user instructions + skill snippets
   .mcp.json      ← MCP server config
 ```
 
-### 2. Generate CLAUDE.md — Composite prompt
+### 2. Generate AGENTS.md — Composite prompt
 
 `buildSystemPrompt(agentId, def)` assembles a 5-layer prompt:
 
@@ -153,10 +153,10 @@ The `while true` loop ensures Claude Code automatically restarts after processin
 After a 7-second wait (for Claude Code to initialize):
 
 ```bash
-tmux send-keys -t konoha-{id} "Прочитай CLAUDE.md и выполни startup sequence." Enter
+tmux send-keys -t konoha-{id} "Прочитай AGENTS.md и выполни startup sequence." Enter
 ```
 
-The agent reads its CLAUDE.md, registers on the Konoha bus, and waits for tasks from the watchdog.
+The agent reads its AGENTS.md, registers on the Konoha bus, and waits for tasks from the watchdog.
 
 ---
 
@@ -172,13 +172,13 @@ The agent reads its CLAUDE.md, registers on the Konoha bus, and waits for tasks 
 
 ## Restarting an agent
 
-`restartAgent(id, def)` = `stopAgent` → `startAgent`. CLAUDE.md and .mcp.json are regenerated on each start, so skill and role changes take effect on next restart.
+`restartAgent(id, def)` = `stopAgent` → `startAgent`. AGENTS.md and .mcp.json are regenerated on each start, so skill and role changes take effect on next restart.
 
 ---
 
-## Hot-reload — CLAUDE.md without agent restart
+## Hot-reload — AGENTS.md without agent restart
 
-When a workflow or role assignment changes, managed agents get their CLAUDE.md regenerated automatically — **without stopping the tmux session**.
+When a workflow or role assignment changes, managed agents get their AGENTS.md regenerated automatically — **without stopping the tmux session**.
 
 ### Trigger events
 
@@ -193,10 +193,10 @@ When a workflow or role assignment changes, managed agents get their CLAUDE.md r
 
 1. Receives a `workflow.updated` or `role.assigned` entry
 2. Lists all managed agents via `listAgentDefs()`
-3. For each agent whose working directory has a `CLAUDE.md`: calls `buildSystemPrompt()` and overwrites the file
-4. Logs: `[hot-reload] Regenerated CLAUDE.md for agent "{id}" ({event type})`
+3. For each agent whose working directory has a `AGENTS.md`: calls `buildSystemPrompt()` and overwrites the file
+4. Logs: `[hot-reload] Regenerated AGENTS.md for agent "{id}" ({event type})`
 
-**The agent's tmux session is not restarted.** The new CLAUDE.md takes effect on the agent's next session cycle (`/new` every 2 hours via `naruto:session-cleanup`).
+**The agent's tmux session is not restarted.** The new AGENTS.md takes effect on the agent's next session cycle (`/new` every 2 hours via `naruto:session-cleanup`).
 
 ---
 

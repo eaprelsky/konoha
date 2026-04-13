@@ -173,7 +173,7 @@ export function AgentSettingsTab({
               </label>
             ))}
           </div>
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>Prompt snippet навыков инжектируется в CLAUDE.md / AGENTS.md при старте агента</span>
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>Prompt snippet навыков инжектируется в AGENTS.md / AGENTS.md при старте агента</span>
         </div>
       )}
       <div className="form-actions">

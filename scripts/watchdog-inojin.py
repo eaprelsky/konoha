@@ -17,7 +17,7 @@ _b.TMUX_SESSION     = "inojin"
 _b.DEBOUNCE_WINDOW  = 3.0   # longer — test triggers shouldn't batch
 _b.IDLE_TIMEOUT_SEC = 600   # 10 min — tests take longer
 _b.BATCH_HEADER     = "Новые задания из Коноха:"
-_b.BATCH_FOOTER     = "Выполни задание согласно CLAUDE.md. Результат сообщи в Коноха."
+_b.BATCH_FOOTER     = "Выполни задание согласно AGENTS.md. Результат сообщи в Коноха."
 _b.BATCH_SEPARATOR  = "\n"
 
 if __name__ == "__main__":

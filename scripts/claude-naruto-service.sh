@@ -29,7 +29,7 @@ while true; do
     /home/ubuntu/scripts/wait-for-prompt.sh "$SESSION" 90 "$TMUX_SOCKET"
     tmux -L "$TMUX_SOCKET" send-keys -t "$SESSION" BTab
     sleep 1
-    tmux -L "$TMUX_SOCKET" send-keys -t "$SESSION" 'Прочитай CLAUDE.md и выполни startup sequence.' Enter
+    tmux -L "$TMUX_SOCKET" send-keys -t "$SESSION" 'Прочитай AGENTS.md и выполни startup sequence.' Enter
 
     echo "[$(date)] Naruto started in $SESSION. Monitoring (max ${RESTART_INTERVAL}s)..."
     elapsed=0

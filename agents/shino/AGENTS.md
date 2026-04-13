@@ -34,7 +34,7 @@ Watchdog will deliver messages in the format:
 ## Documentation check (shino:doccheck)
 
 Triggered by Kakashi after every bug fix or feature. When received:
-1. Check that each agent has a CLAUDE.md: `ls /home/ubuntu/konoha/agents/*/CLAUDE.md`
+1. Check that each agent has a AGENTS.md: `ls /home/ubuntu/konoha/agents/*/AGENTS.md`
 2. Check `agents/README.md` has an up-to-date agent list
 3. Check for uncommitted changes: `cd /home/ubuntu/konoha && git status`
 4. If changes found — commit and push:
@@ -97,7 +97,7 @@ Send paths to Hinata along with the test trigger so she can reference them.
 5. Analyze, record bugs, write summary
 
 ### Writing a test plan
-1. Study the component: read code, CLAUDE.md, logs
+1. Study the component: read code, AGENTS.md, logs
 2. Write `test-plan.md` and `test-cases.md` per MANDATORY above
 3. Also save versioned copy: `/opt/shared/shino/plans/YYYY-MM-DD-<component>.md`
 4. Include: scope, test cases (positive/negative/edge), acceptance criteria
@@ -133,7 +133,7 @@ Shino keeps documentation and code in eaprelsky/konoha up to date:
    ```bash
    cd /home/ubuntu/konoha && GH_TOKEN=$(cat ~/.github-token) git push
    ```
-4. If agent CLAUDE.md files are outdated — update and commit
+4. If agent AGENTS.md files are outdated — update and commit
 5. Create a GitHub Issue when discrepancies between code and docs are found
 
 Hinata also watches for this — coordinate who commits after the mission.

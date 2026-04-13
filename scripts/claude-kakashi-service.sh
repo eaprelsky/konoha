@@ -19,7 +19,7 @@ while true; do
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1
 
-    KAKASHI_PROMPT='Прочитай /home/ubuntu/konoha/agents/kakashi/CLAUDE.md и /opt/shared/agent-memory/MEMORY.md. Ты Какаши (Claude Agent #8) — мастер багфиксинга Конохи. Зарегистрируйся: konoha_register(id=kakashi, name=Какаши (Мастер багфиксинга), roles=[developer], capabilities=[bugfix,code-review,github-issues]). Потом жди — watchdog будет доставлять задания (kakashi:fix, kakashi:scan, kakashi:review). Пиши по-русски. Готов к работе.'
+    KAKASHI_PROMPT='Прочитай /home/ubuntu/konoha/agents/kakashi/AGENTS.md и /opt/shared/agent-memory/MEMORY.md. Ты Какаши (Claude Agent #8) — мастер багфиксинга Конохи. Зарегистрируйся: konoha_register(id=kakashi, name=Какаши (Мастер багфиксинга), roles=[developer], capabilities=[bugfix,code-review,github-issues]). Потом жди — watchdog будет доставлять задания (kakashi:fix, kakashi:scan, kakashi:review). Пиши по-русски. Готов к работе.'
     tmux -L "$SESSION" send-keys -t "$SESSION" "$KAKASHI_PROMPT" Enter
 
     monitor_agent "$SESSION" "$RESTART_INTERVAL"

@@ -51,7 +51,7 @@ KONOHA_TEXT_LIMIT = 3500  # chars; tmux send-keys has ~4095 byte TTY buffer limi
 
 # format_batch customisation — override per agent
 BATCH_HEADER    = "Новые задания из Коноха:"
-BATCH_FOOTER    = "Выполни задание согласно CLAUDE.md. Результат сообщи в Коноха."
+BATCH_FOOTER    = "Выполни задание согласно AGENTS.md. Результат сообщи в Коноха."
 BATCH_SEPARATOR = "\n"
 
 # SESSION_ONLINE/OFFLINE are system noise — never deliver to agent

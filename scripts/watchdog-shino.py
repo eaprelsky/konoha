@@ -19,7 +19,7 @@ _b.DEBOUNCE_WINDOW   = 3.0    # longer — test triggers shouldn't batch
 _b.IDLE_TIMEOUT_SEC  = 600    # 10 min — tests take longer
 _b.WAKE_TIMEOUT_SEC  = 120    # on-demand: start if session absent
 _b.BATCH_HEADER      = "Задание для Шино:"
-_b.BATCH_FOOTER      = "Выполни задание согласно CLAUDE.md. Результат сообщи в Коноха."
+_b.BATCH_FOOTER      = "Выполни задание согласно AGENTS.md. Результат сообщи в Коноха."
 
 if __name__ == "__main__":
     asyncio.run(_b.run_watchdog())

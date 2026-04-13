@@ -333,7 +333,7 @@ Stop a running agent (sends /exit, then force-kills if needed).
 
 ### POST /agents/:id/restart
 
-Stop + start in sequence. Regenerates CLAUDE.md and .mcp.json.
+Stop + start in sequence. Regenerates AGENTS.md and .mcp.json.
 
 ### GET /agents/:id/system-template
 
@@ -345,7 +345,7 @@ Return the fully assembled system prompt for this agent. The response now includ
 - Layer 4: user-defined `system_prompt` from agent definition
 - Layer 5: skill-specific `prompt_snippet` from assigned skills
 
-Response: `{ "template": "<full CLAUDE.md content>" }`
+Response: `{ "template": "<full AGENTS.md content>" }`
 
 ### GET /agents/tmux/:id
 
