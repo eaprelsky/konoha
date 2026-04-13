@@ -490,6 +490,17 @@ export async function createAgentDef(input: Omit<AgentDef, "created_at" | "updat
   return def;
 }
 
+export async function upsertAgentDef(input: Omit<AgentDef, "created_at" | "updated_at">): Promise<{ def: AgentDef; created: boolean }> {
+  const existing = await getAgentDef(input.id);
+  const now = new Date().toISOString();
+  const def: AgentDef = existing
+    ? { ...existing, ...input, id: input.id, created_at: existing.created_at, updated_at: now }
+    : { ...input, created_at: now, updated_at: now };
+  await redis.hset(AGENT_DEF_KEY, def.id, JSON.stringify(def));
+  await audit(def.id, existing ? "updated" : "created");
+  return { def, created: !existing };
+}
+
 export async function getAgentDef(id: string): Promise<AgentDef | null> {
   const raw = await redis.hget(AGENT_DEF_KEY, id);
   return raw ? JSON.parse(raw) : null;
