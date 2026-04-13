@@ -549,10 +549,13 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     // Wait for the interactive CLI to boot and become ready.
     await new Promise(res => setTimeout(res, 7000));
 
-    // Cursor requires an explicit one-key workspace trust on first launch.
+    // Cursor requires an explicit one-key workspace trust only on first launch.
     if (launch.provider === "cursor") {
-      await sh("tmux", ["-L", socket, "send-keys", "-t", session, "a"]);
-      await new Promise(res => setTimeout(res, 3500));
+      const pane = await sh("tmux", ["-L", socket, "capture-pane", "-p", "-t", session, "-S", "-80"]);
+      if (pane.ok && pane.stdout.includes("Workspace Trust Required")) {
+        await sh("tmux", ["-L", socket, "send-keys", "-t", session, "a"]);
+        await new Promise(res => setTimeout(res, 3500));
+      }
     }
 
     // Inject startup message so agent executes its startup sequence.
