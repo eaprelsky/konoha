@@ -393,12 +393,14 @@ function buildLaunchCommand(def: Pick<AgentDef, "model">, workdir: string, mcpCo
   if (runtime.provider === "cursor") {
     const args = [
       "cursor-agent",
-      "--model", runtime.runtimeModel,
       "--yolo",
       "--approve-mcps",
       "--sandbox", "disabled",
       "--workspace", workdir,
     ];
+    if (runtime.runtimeModel && runtime.runtimeModel !== "auto") {
+      args.splice(1, 0, "--model", runtime.runtimeModel);
+    }
     return { provider: runtime.provider, command: args.map(shellEscape).join(" ") };
   }
 

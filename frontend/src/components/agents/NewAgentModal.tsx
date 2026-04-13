@@ -50,9 +50,9 @@ export function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
               <option value="claude:claude-haiku-4-5-20251001">Claude: Haiku 4.5</option>
               <option value="codex:gpt-5">Codex: GPT-5</option>
               <option value="codex:o4-mini">Codex: o4-mini</option>
-              <option value="cursor:sonnet-4">Cursor: Sonnet 4</option>
-              <option value="cursor:sonnet-4-thinking">Cursor: Sonnet 4 Thinking</option>
-              <option value="cursor:gpt-5">Cursor: GPT-5</option>
+              <option value="cursor:auto">Cursor: Auto</option>
+              <option value="cursor:claude-4-sonnet">Cursor: Claude 4 Sonnet</option>
+              <option value="cursor:gpt-5.4-medium">Cursor: GPT-5.4</option>
             </select>
           </div>
           <div className="form-group">

@@ -127,9 +127,9 @@ export function AgentSettingsTab({
           <option value="claude:claude-opus-4-6">Claude: Opus 4.6</option>
           <option value="codex:gpt-5">Codex: GPT-5</option>
           <option value="codex:o4-mini">Codex: o4-mini</option>
-          <option value="cursor:sonnet-4">Cursor: Sonnet 4</option>
-          <option value="cursor:sonnet-4-thinking">Cursor: Sonnet 4 Thinking</option>
-          <option value="cursor:gpt-5">Cursor: GPT-5</option>
+          <option value="cursor:auto">Cursor: Auto</option>
+          <option value="cursor:claude-4-sonnet">Cursor: Claude 4 Sonnet</option>
+          <option value="cursor:gpt-5.4-medium">Cursor: GPT-5.4</option>
         </select>
       </div>
       <div className="form-group">
