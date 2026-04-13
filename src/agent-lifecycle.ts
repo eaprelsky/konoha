@@ -552,7 +552,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     // Cursor requires an explicit one-key workspace trust on first launch.
     if (launch.provider === "cursor") {
       await sh("tmux", ["-L", socket, "send-keys", "-t", session, "a"]);
-      await new Promise(res => setTimeout(res, 1200));
+      await new Promise(res => setTimeout(res, 3500));
     }
 
     // Inject startup message so agent executes its startup sequence.
