@@ -1,8 +1,10 @@
 import { Hono } from "hono";
+import { createLogger } from "../logger";
 import { requireAuth } from "../middleware/auth";
 import { publishEvent, type KonohaEvent } from "../redis";
 import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, type Case, type HistoryEntry } from "../runtime";
 import { getWorkflow, type WorkflowElement } from "../workflow-loader";
+const log = createLogger("routes:events");
 
 const router = new Hono();
 
@@ -29,7 +31,7 @@ router.post("/", async (c) => {
 
   // Trigger workflow runtime: find matching process definitions and create cases
   const cases = await processEvent(type, source, payload).catch((e) => {
-    console.error("[runtime] processEvent error:", e.message);
+    log.error("processEvent error", { error: e.message, event_type: type, source });
     return [];
   });
 

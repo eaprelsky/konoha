@@ -9,14 +9,14 @@ import { writeFileSync } from "fs";
 import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import Anthropic from "@anthropic-ai/sdk";
-import { redis } from "./redis";
+import { config } from "./config";
+import { loadInstructionText } from "./document-instructions";
+import { generateText } from "./llm";
+import { createLogger } from "./logger";
 import { createReminder, completeWorkItem } from "./runtime";
 
 const execFileAsync = promisify(execFile);
-
-const WORKSPACE_DIR = "/opt/shared/workspace";
-const DOC_KEY_PREFIX = "doc:";
+const log = createLogger("system-agent");
 
 /** Role names that map to the system agent. */
 const SYSTEM_ROLES = new Set(["Система", "System", "system", "система", "СИСТЕМА"]);
@@ -36,34 +36,16 @@ function parseWaitMinutes(label: string): number | null {
   return n; // минуты
 }
 
-/** Load instruction text from document IDs attached to the element. */
-async function loadDocTexts(docIds: string[]): Promise<string> {
-  if (!docIds.length) return "";
-  const parts: string[] = [];
-  for (const id of docIds) {
-    try {
-      const raw = await redis.get(DOC_KEY_PREFIX + id);
-      if (raw) {
-        const doc = JSON.parse(raw);
-        if (doc.content) parts.push(`[${doc.name || id}]\n${doc.content}`);
-      }
-    } catch { /* skip */ }
-  }
-  return parts.join("\n\n");
-}
-
 /** Generate document text via Haiku from instruction prompt. */
 async function generateDocContent(prompt: string, label: string): Promise<string> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const msg = await client.messages.create({
+  return generateText({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 2000,
+    maxTokens: 2000,
     messages: [{
       role: "user",
       content: `Ты — генератор документов. Создай документ по следующей инструкции.\n\nЗадача: ${label}\n\nИнструкция:\n${prompt}\n\nНапиши готовый текст документа. Без пояснений.`,
     }],
   });
-  return (msg.content[0] as any).text.trim();
 }
 
 export interface SystemExecParams {
@@ -98,9 +80,9 @@ export async function executeSystemFunction(params: SystemExecParams): Promise<v
         element_id,
         work_item_id,
       });
-      console.log(`[system-agent] timer set: ${waitMinutes} min → ${scheduledAt} for work_item ${work_item_id}`);
+      log.info("timer set", { wait_minutes: waitMinutes, scheduled_at: scheduledAt, work_item_id });
     } catch (e: any) {
-      console.error(`[system-agent] failed to create timer reminder:`, e.message);
+      log.error("failed to create timer reminder", { work_item_id, error: e.message });
       await completeWorkItem(work_item_id, { system: "timer-error", error: e.message }).catch(() => {});
     }
     return; // work item will be auto-completed by scheduler
@@ -109,17 +91,17 @@ export async function executeSystemFunction(params: SystemExecParams): Promise<v
   // 2. Document generation: label matches generation pattern AND docs attached
   const isGenTask = /генер|создат[ьь].*?(документ|текст|отчёт|report|doc)/i.test(label);
   if (isGenTask) {
-    const instruction = await loadDocTexts(docIds);
+    const instruction = await loadInstructionText(docIds);
     const prompt = instruction || label;
     try {
       const content = await generateDocContent(prompt, label);
       const slug = label.slice(0, 40).replace(/[^a-zA-Zа-яА-Я0-9]/g, "_").replace(/_+/g, "_");
       const filename = `${slug}_${Date.now()}.txt`;
-      writeFileSync(join(WORKSPACE_DIR, filename), content, "utf-8");
-      console.log(`[system-agent] generated doc: ${filename}`);
+      writeFileSync(join(config.paths.workspaceDir, filename), content, "utf-8");
+      log.info("generated document", { filename, work_item_id });
       await completeWorkItem(work_item_id, { generated_file: filename, content_preview: content.slice(0, 200) });
     } catch (e: any) {
-      console.error(`[system-agent] doc generation failed:`, e.message);
+      log.error("doc generation failed", { work_item_id, error: e.message });
       await completeWorkItem(work_item_id, { system: "gen-error", error: e.message }).catch(() => {});
     }
     return;
@@ -127,18 +109,18 @@ export async function executeSystemFunction(params: SystemExecParams): Promise<v
 
   // 3. Bitrix monitor: run bitrix-poller.py monitor
   if (/bitrix.*monitor|run.*bitrix.*monitor/i.test(label)) {
-    console.log(`[system-agent] running bitrix monitor for work_item ${work_item_id}`);
+    log.info("running bitrix monitor", { work_item_id });
     try {
       const { stdout, stderr } = await execFileAsync(
         "python3",
-        ["/home/ubuntu/scripts/bitrix-poller.py", "monitor"],
+        ["/home/ubuntu/konoha/scripts/bitrix-poller.py", "monitor"],
         { timeout: 120_000 },
       );
-      if (stdout) console.log(`[system-agent] bitrix-monitor stdout: ${stdout.slice(0, 500)}`);
-      if (stderr) console.warn(`[system-agent] bitrix-monitor stderr: ${stderr.slice(0, 200)}`);
+      if (stdout) log.info("bitrix monitor stdout", { work_item_id, stdout: stdout.slice(0, 500) });
+      if (stderr) log.warn("bitrix monitor stderr", { work_item_id, stderr: stderr.slice(0, 200) });
       await completeWorkItem(work_item_id, { system: "bitrix-monitor", exit_code: 0 });
     } catch (e: any) {
-      console.error(`[system-agent] bitrix-monitor failed: ${e.message}`);
+      log.error("bitrix monitor failed", { work_item_id, error: e.message });
       await completeWorkItem(work_item_id, { system: "bitrix-monitor-error", error: e.message }).catch(() => {});
     }
     return;
@@ -147,8 +129,8 @@ export async function executeSystemFunction(params: SystemExecParams): Promise<v
   // 4. Fallback: auto-complete (system acknowledges the step)
   try {
     await completeWorkItem(work_item_id, { system: "auto-executed", label });
-    console.log(`[system-agent] auto-completed work_item ${work_item_id} (label: "${label}")`);
+    log.info("auto-completed work item", { work_item_id, label });
   } catch (e: any) {
-    console.error(`[system-agent] auto-complete failed for ${work_item_id}:`, e.message);
+    log.error("auto-complete failed", { work_item_id, error: e.message });
   }
 }

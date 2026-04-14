@@ -11,10 +11,12 @@
  *   log.error('advance failed', { case_id, error: e.message });
  */
 
+import { config } from "./config";
+
 type Level = 'debug' | 'info' | 'warn' | 'error';
 
 const LEVEL_NUM: Record<Level, number> = { debug: 0, info: 1, warn: 2, error: 3 };
-const minLevel = (process.env.LOG_LEVEL ?? 'info') as Level;
+const minLevel = config.logging.level as Level;
 const minNum = LEVEL_NUM[minLevel] ?? 1;
 
 export function createLogger(module: string) {

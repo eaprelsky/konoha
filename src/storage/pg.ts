@@ -2,21 +2,21 @@
 // Strategy: write to BOTH Redis (primary) and PG (shadow).
 // All reads still come from Redis. PG errors are logged, never surfaced.
 //
-// Connection: DATABASE_URL env var or default konoha@localhost/konoha
+// Connection: DATABASE_URL env var or local DB without embedded credentials
 
 import postgres from "postgres";
 import type {
   WorkflowRecord, CaseRecord, WorkItemRecord,
   RoleRecord, DocRecord, ReminderRecord, SkillRecord,
 } from "./types";
+import { getDatabaseUrl } from "./database-url";
 
 // postgres's sql.json() requires JSONValue, but our domain types are structurally compatible
 // at runtime. This helper centralises the cast instead of spreading `as any` everywhere.
 type JSONValue = Parameters<ReturnType<typeof postgres>["json"]>[0];
 const asJson = (v: unknown): JSONValue => v as JSONValue;
 
-const DATABASE_URL = process.env.DATABASE_URL ||
-  "postgres://konoha:konoha2026@127.0.0.1:5432/konoha";
+const DATABASE_URL = getDatabaseUrl();
 
 let _sql: ReturnType<typeof postgres> | null = null;
 

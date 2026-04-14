@@ -176,7 +176,7 @@ class TestAkamaruIntegration:
 
     def test_akamaru_script_has_paused_check(self):
         """TC-10: akamaru.py contains load_paused and paused filtering logic"""
-        akamaru_file = Path('/home/ubuntu/scripts/akamaru.py')
+        akamaru_file = Path('/home/ubuntu/konoha/scripts/akamaru.py')
         content = akamaru_file.read_text()
 
         # Verify key functions exist

@@ -1,8 +1,9 @@
 import type { Context, Next } from "hono";
+import { config } from "../config";
 import type { CallerInfo, HonoEnv } from "../types";
 import { getAgentIdByToken } from "../redis";
 
-export const ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
+export const ADMIN_TOKEN = config.auth.adminToken;
 
 // Resolve caller identity from Bearer token.
 // Returns { isAdmin: true } for master token, or { isAdmin: false, agentId } for per-agent token.

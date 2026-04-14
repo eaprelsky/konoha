@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { writeFileSync } from "fs";
 import { join, extname } from "path";
+import { loadTrustedPeople } from "../people-directory";
 import { requireAuth } from "../middleware/auth";
 import { redis } from "../redis";
 import { generateAvatar, generateAvatarImg2Img } from "../adapters/image";
@@ -18,35 +19,15 @@ type PersonRecord = {
   avatar_url?: string;
 };
 
-function loadTrustedPeople(): PersonRecord[] {
-  const TRUSTED_PATH = "/opt/shared/.trusted-users.json";
-  try {
-    if (!existsSync(TRUSTED_PATH)) return [];
-    const raw = readFileSync(TRUSTED_PATH, "utf-8");
-    const data = JSON.parse(raw) as {
-      owner?: { name: string; telegram_id: number; username?: string };
-      trusted?: { name: string; telegram_id: number; username?: string | null; position?: string }[];
-    };
-    const toId = (name: string, username?: string | null) =>
-      username ? `@${username}` : name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    const people: PersonRecord[] = [];
-    if (data.owner) {
-      people.push({ id: toId(data.owner.name, data.owner.username), name: data.owner.name, tg_id: data.owner.telegram_id, position: "Owner", tg_username: data.owner.username || undefined, source: "file" });
-    }
-    for (const u of data.trusted || []) {
-      people.push({ id: toId(u.name, u.username), name: u.name, tg_id: u.telegram_id, position: u.position || "", tg_username: u.username || undefined, source: "file" });
-    }
-    return people;
-  } catch {
-    return [];
-  }
-}
-
 const router = new Hono();
 
 router.get("/", async (c) => {
   const trusted = loadTrustedPeople();
-  const map = new Map<string, PersonRecord>(trusted.map(p => [p.id, p]));
+  const map = new Map<string, PersonRecord>(
+    trusted
+      .filter((p): p is PersonRecord & { id: string } => typeof p.id === "string" && p.id.length > 0)
+      .map(p => [p.id, p]),
+  );
   try {
     const custom = await redis.hgetall(PEOPLE_CUSTOM_KEY);
     for (const val of Object.values(custom)) {

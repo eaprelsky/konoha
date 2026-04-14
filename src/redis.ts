@@ -1,4 +1,6 @@
 import Redis from "ioredis";
+import { config } from "./config";
+import { createLogger } from "./logger";
 import {
   pgRegisterAgent,
   pgGetAgentIdByToken,
@@ -11,6 +13,7 @@ import {
   pgReadHistory,
   pgListChannels,
 } from "./storage/pg-bus";
+const log = createLogger("redis");
 
 const BUS_STREAM = "konoha:bus";
 const AGENT_STREAM_PREFIX = "konoha:agent:";
@@ -61,12 +64,12 @@ export interface Message {
   village_id?: string; // originating village; defaults to DEFAULT_VILLAGE
 }
 
-const REDIS_DB = parseInt(process.env.REDIS_DB ?? "0", 10);
+const REDIS_DB = Number.isFinite(config.storage.redisDb) ? config.storage.redisDb : 0;
 
 export function createRedis(): Redis {
   const r = new Redis({ host: "127.0.0.1", port: 6379, db: REDIS_DB, maxRetriesPerRequest: 3, lazyConnect: false });
   r.on("error", (err) => {
-    console.error("[Redis error]", err.message);
+    log.error("redis error", { error: err.message });
   });
   return r;
 }

@@ -1,9 +1,9 @@
 import { randomUUID } from "crypto";
 import postgres from "postgres";
 import type { Agent, Attachment, Message } from "../redis";
+import { getDatabaseUrl } from "./database-url";
 
-const DATABASE_URL = process.env.DATABASE_URL ||
-  "postgres://konoha:konoha2026@127.0.0.1:5432/konoha";
+const DATABASE_URL = getDatabaseUrl();
 const HEARTBEAT_TTL_MS = 600_000; // 10 minutes
 const INVITE_TTL_SEC = 3600;
 

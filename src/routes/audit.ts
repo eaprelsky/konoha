@@ -8,6 +8,8 @@
  */
 
 import { Hono } from "hono";
+import { config } from "../config";
+import { createLogger } from "../logger";
 import { requireAuth } from "../middleware/auth";
 import { redis } from "../redis";
 import {
@@ -17,6 +19,7 @@ import {
   setAutonomyLevel,
   type AutonomyLevel,
 } from "../assistant-actions";
+const log = createLogger("routes:audit");
 
 const router = new Hono();
 
@@ -160,7 +163,7 @@ router.put("/branding", requireAuth, async (c) => {
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
-const SETUP_FILE = process.env.KONOHA_SETUP_FILE ?? "/opt/shared/.konoha-setup.json";
+const SETUP_FILE = config.paths.setupFile;
 
 interface SetupConfig {
   complete: boolean;
@@ -222,7 +225,7 @@ router.post("/setup", async (c) => {
       }
       writeFileSync(CREDS_FILE, creds.trim() + "\n", { mode: 0o600 });
     } catch (e: any) {
-      console.warn("[setup] could not write creds:", e.message);
+      log.warn("could not write creds", { error: e.message });
     }
   }
 

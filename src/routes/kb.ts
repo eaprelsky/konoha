@@ -3,10 +3,10 @@ import { randomUUID } from "crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join, extname } from "path";
 import { requireAuth } from "../middleware/auth";
+import { generateText } from "../llm";
+import { createLogger } from "../logger";
 import { redis } from "../redis";
-import Anthropic from "@anthropic-ai/sdk";
-
-const _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const log = createLogger("routes:kb");
 
 const KB_DIR = "/opt/shared/wiki";
 const KB_ALLOWED_EXT = new Set([".md", ".txt", ".json", ".yaml", ".yml"]);
@@ -156,6 +156,7 @@ router.get("/search", async (c) => {
     searchDir(KB_DIR, "");
     return c.json(results.slice(0, 20));
   } catch (e: any) {
+    log.error("kb search failed", { error: e.message, query: q });
     return c.json({ error: e.message }, 500);
   }
 });
@@ -188,14 +189,12 @@ kbChatRouter.post("/kb-chat", async (c) => {
   ];
 
   try {
-    const response = await _anthropic.messages.create({
+    const rawReply = await generateText({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1500,
+      maxTokens: 1500,
       system: JIRAIYA_SYSTEM,
       messages,
     });
-
-    const rawReply = (response.content[0] as any).text.trim();
     let reply = rawReply;
     let replySources: string[] = sources.slice(0, 5);
     try {
@@ -211,6 +210,7 @@ kbChatRouter.post("/kb-chat", async (c) => {
 
     return c.json({ reply, chat_id: chatId, sources: replySources });
   } catch (e: any) {
+    log.error("kb chat failed", { error: e.message, chat_id: chatId });
     return c.json({ error: e.message }, 500);
   }
 });

@@ -1,11 +1,15 @@
 import { Hono } from "hono";
 import { randomUUID } from "crypto";
 import { readFileSync, existsSync } from "fs";
+import { config } from "../config";
+import { generateText } from "../llm";
+import { createLogger } from "../logger";
 import { requireAuth } from "../middleware/auth";
 import { redis } from "../redis";
 import Anthropic from "@anthropic-ai/sdk";
 import { createWorkflow, listWorkflows } from "../workflow-loader";
 import { getAgentDef, listAgentDefs } from "../agent-lifecycle";
+const log = createLogger("routes:ai");
 
 /** Build content blocks from text + optional attachment paths (closes #321) */
 function buildContent(text: string, attachments?: AttachmentRef[]): Anthropic.MessageParam["content"] {
@@ -212,14 +216,12 @@ async function handleTsunadeChatRequest(
   ];
 
   const identityBlock = await buildAgentIdentityBlock(agentId);
-  const response = await _anthropic.messages.create({
+  const rawReply = await generateText({
     model: "claude-sonnet-4-6",
-    max_tokens: 2000,
+    maxTokens: 2000,
     system: identityBlock + TSUNADE_SYSTEM,
     messages,
   });
-
-  const rawReply = (response.content[0] as any).text.trim();
   let reply = rawReply;
   let schema_patch: unknown = undefined;
   let created_workflow: unknown = undefined;
@@ -349,15 +351,12 @@ router.post("/ai/admin-chat", async (c) => {
 
   try {
     const kibaIdentity = await buildAgentIdentityBlock("kiba");
-    const response = await _anthropic.messages.create({
+    const rawReply = await generateText({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
+      maxTokens: 1024,
       system: kibaIdentity + KIBA_SYSTEM,
       messages,
     });
-
-    const firstBlock = response.content[0];
-    const rawReply = (firstBlock.type === "text" ? firstBlock.text : "").trim();
     let reply = rawReply;
     let actions: unknown[] = [];
     try {
@@ -494,6 +493,9 @@ router.post("/ai/chat", async (c) => {
   ];
 
   if (useStream) {
+    if (config.llm.provider !== "anthropic") {
+      return c.json({ error: `Streaming chat is not supported for provider "${config.llm.provider}"` }, 400);
+    }
     const enc = new TextEncoder();
     const sse = (data: string) => enc.encode(`data: ${data}\n\n`);
 
@@ -558,6 +560,7 @@ router.post("/ai/chat", async (c) => {
             "mode", mode,
           ).catch(() => {});
         } catch (e: any) {
+          log.error("streaming ai chat failed", { error: e.message, mode, chat_id: chatId });
           ctrl.enqueue(sse(JSON.stringify({ type: "error", message: e.message })));
           ctrl.close();
         }
@@ -575,13 +578,12 @@ router.post("/ai/chat", async (c) => {
 
   // Non-streaming fallback
   try {
-    const response = await _anthropic.messages.create({
+    const rawReply = await generateText({
       model,
-      max_tokens: 2048,
+      maxTokens: 2048,
       system: systemPrompt,
       messages,
     });
-    const rawReply = (response.content[0] as any).text?.trim() ?? "";
     let finalReply = rawReply;
     try {
       const parsed = JSON.parse(stripMarkdownFences(rawReply));
@@ -594,6 +596,7 @@ router.post("/ai/chat", async (c) => {
     await redis.expire(histKey, 7 * 24 * 3600);
     return c.json({ reply: finalReply, chat_id: chatId });
   } catch (e: any) {
+    log.error("non-streaming ai chat failed", { error: e.message, mode, chat_id: chatId });
     return c.json({ error: e.message }, 500);
   }
 });

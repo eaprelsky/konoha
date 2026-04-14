@@ -1,6 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+import { generateText } from "./llm";
 
 export async function normalizeElementNames(
   elements: Array<{ id: string; type: string; label: string }>
@@ -17,12 +15,10 @@ ${toNormalize.map(e => `- id=${e.id} type=${e.type} label="${e.label}"`).join("\
 
 Ответь ТОЛЬКО JSON-объектом вида {"id": "нормализованное название", ...}. Без пояснений.`;
 
-  const msg = await client.messages.create({
+  const text = await generateText({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 500,
+    maxTokens: 500,
     messages: [{ role: "user", content: prompt }],
   });
-
-  const text = (msg.content[0] as any).text.trim();
   return JSON.parse(text);
 }

@@ -12,13 +12,12 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { dirname, isAbsolute, join, resolve } from "path";
 
 const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
 const CODEX_CONFIG_PATH = "/home/ubuntu/.codex/config.toml";
 const INSTRUCTIONS_FILE = "AGENTS.md";
-const LEGACY_INSTRUCTIONS_FILE = "CLAUDE.md";
 
 export type AgentProvider = "claude" | "codex" | "cursor";
 export type LaunchStrategy = "persistent_interactive" | "headless_task";
@@ -39,6 +38,13 @@ function toToml(value: string | string[] | Record<string, string>): string {
 
 function configPathSegment(value: string): string {
   return /^[A-Za-z0-9_]+$/.test(value) ? value : JSON.stringify(value);
+}
+
+function codexServerName(value: string): string {
+  // Codex CLI `-c mcp_servers.<name>...` does not accept quoted path segments.
+  // Normalize shared MCP names like `google-docs` -> `google_docs` for Codex only.
+  const normalized = value.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized || "mcp_server";
 }
 
 function ensureCodexProjectTrusted(workdir: string): void {
@@ -260,6 +266,8 @@ export interface AgentDef {
   env?: Record<string, string>;
   tags?: string[];
   capabilities?: string[];  // skill IDs assigned to this agent
+  shared_mcp_allowlist?: string[]; // optional subset of shared MCP servers to include
+  codex_disable_features?: string[]; // optional per-agent Codex feature disables
   memory?: string;           // path to agent memory file (e.g. /opt/shared/agent-memory/{id}/MEMORY.md)
   avatar_url?: string;
   gender?: 'male' | 'female' | 'neutral';
@@ -316,7 +324,17 @@ async function getTmuxPid(id: string): Promise<number | null> {
 // ── MCP config helpers ───────────────────────────────────────────────────────
 
 const GLOBAL_ENV_PATH = "/opt/konoha/.env.global";
-const SHARED_MCP_CONFIG_PATHS = ["/home/ubuntu/.mcp.json"];
+const CANONICAL_SHARED_MCP_CONFIG_PATH = "/opt/shared/comind-template/.mcp.json";
+const SHARED_MCP_CONFIG_PATHS = [
+  CANONICAL_SHARED_MCP_CONFIG_PATH,
+  "/home/ubuntu/.mcp.json",
+] as const;
+const MCP_BIN_OVERRIDES = {
+  bun: "/home/ubuntu/.bun/bin/bun",
+  uv: "/home/ubuntu/.local/bin/uv",
+  uvx: "/home/ubuntu/.local/bin/uvx",
+  "mcp-email-server": "/home/ubuntu/.local/bin/mcp-email-server",
+} as const;
 
 function loadGlobalEnv(): Record<string, string> {
   if (!existsSync(GLOBAL_ENV_PATH)) return {};
@@ -336,31 +354,106 @@ function loadGlobalEnv(): Record<string, string> {
   }
 }
 
+function loadProcessEnv(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
+
 function resolveVars(value: string, vars: Record<string, string>): string {
   return value.replace(/\$\{([^}]+)\}/g, (_, key) => vars[key] ?? `\${${key}}`);
 }
 
-type McpServerDef = { name: string; command: string; args?: string[]; env?: Record<string, string> };
-type ResolvedMcpServerDef = { command: string; args?: string[]; env?: Record<string, string> };
+type RawMcpServerDef = {
+  type?: "http";
+  url?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  timeout?: number;
+};
+type McpServerDef = { name: string; command: string; args?: string[]; env?: Record<string, string>; timeout?: number };
+type ResolvedStdioMcpServerDef = { command: string; args?: string[]; env?: Record<string, string>; timeout?: number };
+type ResolvedHttpMcpServerDef = { type: "http"; url: string; env?: Record<string, string>; timeout?: number };
+type ResolvedMcpServerDef = ResolvedStdioMcpServerDef | ResolvedHttpMcpServerDef;
 type McpConfig = { mcpServers: Record<string, ResolvedMcpServerDef> };
 
-function loadSharedMcpServers(agentEnv: Record<string, string>): Record<string, ResolvedMcpServerDef> {
+function getLiveBitrixWebhook(): string | undefined {
+  return process.env.BITRIX24_WEBHOOK_URL || process.env.CHATBOT_BITRIX_WEBHOOK || undefined;
+}
+
+function resolveMcpPathArg(value: string, baseDir: string): string {
+  if (isAbsolute(value)) return value;
+  if (value === ".") return baseDir;
+  if (value.startsWith("./") || value.startsWith("../") || value.startsWith("mcp/")) return resolve(baseDir, value);
+  return value;
+}
+
+function resolveMcpCommand(command: string, baseDir: string): string {
+  if (isAbsolute(command)) return command;
+  const override = MCP_BIN_OVERRIDES[command as keyof typeof MCP_BIN_OVERRIDES];
+  if (override && existsSync(override)) return override;
+  if (command.startsWith("./") || command.startsWith("../") || command.startsWith("mcp/")) return resolve(baseDir, command);
+  return command;
+}
+
+function resolveMcpArgs(args: string[] | undefined, baseDir: string): string[] | undefined {
+  if (!args?.length) return undefined;
+  return args.map((arg, index) => {
+    const prev = args[index - 1];
+    if (prev === "--directory" || prev === "--cwd") return resolveMcpPathArg(arg, baseDir);
+    if (arg === "." || arg.startsWith("./") || arg.startsWith("../") || arg.startsWith("mcp/")) return resolveMcpPathArg(arg, baseDir);
+    return arg;
+  });
+}
+
+function loadSharedMcpServers(
+  agentEnv: Record<string, string>,
+  allowlist?: string[],
+): Record<string, ResolvedMcpServerDef> {
   const globalEnv = loadGlobalEnv();
-  const vars = { ...globalEnv, ...agentEnv };
+  const vars = { ...loadProcessEnv(), ...globalEnv, ...agentEnv };
   const merged: Record<string, ResolvedMcpServerDef> = {};
+  const allowed = allowlist?.length ? new Set(allowlist) : null;
 
   for (const configPath of SHARED_MCP_CONFIG_PATHS) {
     if (!existsSync(configPath)) continue;
+    const configDir = dirname(configPath);
     try {
-      const raw = JSON.parse(readFileSync(configPath, "utf-8")) as { mcpServers?: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> };
+      const raw = JSON.parse(readFileSync(configPath, "utf-8")) as { mcpServers?: Record<string, RawMcpServerDef> };
       for (const [name, server] of Object.entries(raw.mcpServers ?? {})) {
+        if (allowed && !allowed.has(name)) continue;
+        if (merged[name]) continue;
+
+        let resolvedEnv = server.env && Object.keys(server.env).length
+          ? Object.fromEntries(Object.entries(server.env).map(([k, v]) => [k, resolveVars(v, vars)]))
+          : undefined;
+
+        if (name === "bitrix24") {
+          const liveWebhook = vars.BITRIX24_WEBHOOK_URL || vars.CHATBOT_BITRIX_WEBHOOK;
+          if (liveWebhook) {
+            (resolvedEnv ??= {}).BITRIX24_WEBHOOK_URL = liveWebhook;
+          }
+        }
+
+        if (server.type === "http" && server.url) {
+          merged[name] = {
+            type: "http",
+            url: resolveVars(server.url, vars),
+            ...(resolvedEnv ? { env: resolvedEnv } : {}),
+            ...(server.timeout !== undefined ? { timeout: server.timeout } : {}),
+          };
+          continue;
+        }
+
         if (!server.command) continue;
+
+        const resolvedArgs = resolveMcpArgs(server.args?.map(arg => resolveVars(arg, vars)), configDir);
         merged[name] = {
-          command: resolveVars(server.command, vars),
-          ...(server.args?.length ? { args: server.args.map(arg => resolveVars(arg, vars)) } : {}),
-          ...(server.env && Object.keys(server.env).length
-            ? { env: Object.fromEntries(Object.entries(server.env).map(([k, v]) => [k, resolveVars(v, vars)])) }
-            : {}),
+          command: resolveMcpCommand(resolveVars(server.command, vars), configDir),
+          ...(resolvedArgs?.length ? { args: resolvedArgs } : {}),
+          ...(resolvedEnv ? { env: resolvedEnv } : {}),
+          ...(server.timeout !== undefined ? { timeout: server.timeout } : {}),
         };
       }
     } catch (error) {
@@ -387,13 +480,14 @@ const KONOHA_MCP_SERVER: McpServerDef & { name: string } = {
 async function buildMcpConfig(
   capabilities: string[],
   agentEnv: Record<string, string>,
+  sharedMcpAllowlist?: string[],
 ): Promise<McpConfig> {
   const globalEnv = loadGlobalEnv();
-  const vars = { ...globalEnv, ...agentEnv };
+  const vars = { ...loadProcessEnv(), ...globalEnv, ...agentEnv };
 
   // Start with shared MCP servers mirrored from the Claude environment, then override with Konoha and skill-specific servers.
   const servers: Record<string, ResolvedMcpServerDef> = {
-    ...loadSharedMcpServers(agentEnv),
+    ...loadSharedMcpServers(agentEnv, sharedMcpAllowlist),
   };
 
   const kEnv = Object.fromEntries(
@@ -433,7 +527,13 @@ async function buildMcpConfig(
 function buildCodexMcpConfigArgs(mcpConfig: McpConfig): string[] {
   const args: string[] = [];
   for (const [name, server] of Object.entries(mcpConfig.mcpServers)) {
-    const path = `mcp_servers.${configPathSegment(name)}`;
+    const path = `mcp_servers.${codexServerName(name)}`;
+    if ("type" in server && server.type === "http") {
+      args.push("-c", `${path}.type=${toToml(server.type)}`);
+      args.push("-c", `${path}.url=${toToml(server.url)}`);
+      continue;
+    }
+    if (!("command" in server)) continue;
     args.push("-c", `${path}.command=${toToml(server.command)}`);
     if (server.args?.length) args.push("-c", `${path}.args=${toToml(server.args)}`);
     if (server.env && Object.keys(server.env).length) args.push("-c", `${path}.env=${toToml(server.env)}`);
@@ -441,15 +541,22 @@ function buildCodexMcpConfigArgs(mcpConfig: McpConfig): string[] {
   return args;
 }
 
-function buildLaunchCommand(def: Pick<AgentDef, "model" | "runtime">, workdir: string, mcpConfigPath: string, mcpConfig: McpConfig): { provider: AgentProvider; command: string } {
+function buildLaunchCommand(
+  def: Pick<AgentDef, "model" | "runtime" | "codex_disable_features">,
+  workdir: string,
+  mcpConfigPath: string,
+  mcpConfig: McpConfig,
+): { provider: AgentProvider; command: string } {
   const runtime = resolveAgentRuntime(def);
 
   if (runtime.provider === "codex") {
     const args = [
       "codex",
+      "--no-alt-screen",
       "--model", runtime.runtimeModel,
       "--dangerously-bypass-approvals-and-sandbox",
       "-C", workdir,
+      ...(def.codex_disable_features ?? []).flatMap(flag => ["--disable", flag]),
       ...buildCodexMcpConfigArgs(mcpConfig),
     ];
     return { provider: runtime.provider, command: args.map(shellEscape).join(" ") };
@@ -490,12 +597,14 @@ export async function getAgentState(id: string): Promise<AgentState> {
   const raw = await redis.hget(AGENT_STATE_KEY, id);
   const state: AgentState = raw ? JSON.parse(raw) : { agent_id: id, status: "stopped" };
   if (state.status === "running") {
-    // Verify PID is still alive via /proc — auto-reset if dead (issue #276).
-    // /proc/<pid> exists on Linux if and only if the process is alive.
-    if (state.pid && !existsSync(`/proc/${state.pid}`)) {
+    const tmuxAlive = await isTmuxRunning(id);
+    // A missing tmux session means the interactive agent is gone even if a stale
+    // pid was persisted or the pid field was never written.
+    if (!tmuxAlive || (state.pid && !existsSync(`/proc/${state.pid}`))) {
       state.status = "stopped";
       state.pid = undefined;
       state.uptime_seconds = undefined;
+      state.tmux_session = undefined;
       await saveState(state);
     } else if (state.started_at) {
       state.uptime_seconds = Math.floor((Date.now() - new Date(state.started_at).getTime()) / 1000);
@@ -575,16 +684,24 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
   await saveState({ agent_id: id, status: "starting", tmux_session: session });
 
   try {
-    // Prepare per-agent working directory with primary AGENTS.md plus legacy CLAUDE.md compatibility.
+    // Prepare per-agent working directory with AGENTS.md instructions only.
     const workdir = join(AGENT_WORKDIR_ROOT, id);
     mkdirSync(workdir, { recursive: true });
 
     const instructions = await buildSystemPrompt(id, def);
     writeFileSync(join(workdir, INSTRUCTIONS_FILE), instructions, "utf-8");
-    writeFileSync(join(workdir, LEGACY_INSTRUCTIONS_FILE), instructions, "utf-8");
 
     // Build MCP configs for supported runtimes.
-    const mcpConfig = await buildMcpConfig(def.capabilities ?? [], def.env ?? {});
+    const mcpConfig = await buildMcpConfig(
+      def.capabilities ?? [],
+      def.env ?? {},
+      def.shared_mcp_allowlist,
+    );
+    const liveBitrixWebhook = getLiveBitrixWebhook();
+    const bitrixServer = mcpConfig.mcpServers.bitrix24;
+    if (liveBitrixWebhook && bitrixServer && "command" in bitrixServer) {
+      bitrixServer.env = { ...(bitrixServer.env ?? {}), BITRIX24_WEBHOOK_URL: liveBitrixWebhook };
+    }
     const mcpConfigPath = join(workdir, ".mcp.json");
     writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
 
@@ -600,7 +717,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const runtimeCmd = envPrefix ? `env ${envPrefix}${launch.command}` : launch.command;
 
     // Wrap in restart loop — without it the interactive CLI may exit after startup or on crash.
-    const loopScript = `export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"; while true; do ${runtimeCmd}; echo "[$(date)] ${launch.provider} exited (code $?), restarting in 5s..."; sleep 5; done`;
+    const loopScript = `export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"; while true; do ${runtimeCmd}; echo "[$(date)] ${launch.provider} exited (code $?), restarting in 5s..."; sleep 5; done`;
 
     // Use named socket (-L) to isolate each agent on its own tmux server.
     // If one tmux server crashes, only that agent is affected — not all lifecycle agents.

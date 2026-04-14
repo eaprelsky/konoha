@@ -1,8 +1,11 @@
 import { Hono } from "hono";
+import { createLogger } from "../logger";
 import { requireAuth } from "../middleware/auth";
 import { createCase } from "../runtime";
-import { getAgentDef, upsertAgentDef } from "../agent-lifecycle";
+import { getAgentDef } from "../agent-lifecycle";
 import { listAdapters, getAdapter } from "../adapters/index";
+import { redis } from "../redis";
+const log = createLogger("routes:admin");
 
 const NARUTO_PROMPT = `# Naruto — Main Orchestrator
 
@@ -34,7 +37,7 @@ When Sasuke forwards a feature request:
 
 ## Operational Rules
 - Use Konoha as the primary inter-agent channel
-- Do not rely on legacy claude-* systemd services
+- Do not rely on legacy per-agent systemd services
 - If another managed agent is offline, recover it through Konoha-managed lifecycle, not old per-agent Claude services
 - Keep responses concise and operationally clear`;
 
@@ -72,20 +75,20 @@ When a trusted user or the owner proposes a feature:
 ## Operational Rules
 - Use Konoha as the primary inter-agent channel
 - Use the user-account send path for replies in groups and direct chats
-- Do not rely on legacy claude-* systemd services
+- Do not rely on legacy per-agent systemd services
 - Stay concise, practical, and action-oriented`;
 
 const SYSTEM_AGENTS = [
   {
     id: "naruto",
     name: "Наруто (Оркестратор)",
-    runtime: "cursor" as const,
+    runtime: "codex" as const,
     fallback_runtime: "codex" as const,
     launch_strategy: "persistent_interactive" as const,
     startup_timeout_sec: 180,
-    model: "gpt-5.4-medium",
+    model: "gpt-5.4",
     system_prompt: NARUTO_PROMPT,
-    tags: ["system"],
+    tags: ["system", "autostart"],
     capabilities: ["naruto-infra", "github-issues"],
     redis_streams: [{ stream: "telegram:bot:incoming", group: "naruto", consumer: "naruto-lifecycle-watchdog" }],
     tmux_session_override: "naruto",
@@ -94,14 +97,16 @@ const SYSTEM_AGENTS = [
   {
     id: "sasuke",
     name: "Саске",
-    runtime: "cursor" as const,
+    runtime: "codex" as const,
     fallback_runtime: "codex" as const,
     launch_strategy: "persistent_interactive" as const,
     startup_timeout_sec: 180,
-    model: "gpt-5.1",
+    model: "gpt-5.4",
+    codex_disable_features: ["apps"],
     system_prompt: SASUKE_PROMPT,
-    tags: ["system"],
+    tags: ["system", "autostart"],
     capabilities: ["telethon", "telegram-monitor", "telegram-escalator", "telegram-responder", "telegram-router"],
+    shared_mcp_allowlist: ["telethon-channel", "bitrix24"],
     redis_streams: [
       { stream: "telegram:incoming", group: "sasuke", consumer: "sasuke-lifecycle-watchdog" },
       { stream: "telegram:reaction_updates", group: "sasuke-reactions", consumer: "sasuke-reaction-lifecycle-watchdog" },
@@ -109,19 +114,27 @@ const SYSTEM_AGENTS = [
     tmux_session_override: "sasuke",
     gender: "male" as const,
   },
-  { id: "kakashi", name: "Какаши (Мастер багфиксинга)", runtime: "claude" as const, model: "claude-sonnet-4-6", tags: ["system"], tmux_session_override: "kakashi", gender: "male" as const },
-  { id: "mirai", name: "Мирай", runtime: "claude" as const, model: "claude-haiku-4-5-20251001", tags: ["system"], tmux_session_override: "mirai", gender: "female" as const },
+  { id: "kakashi", name: "Какаши (Мастер багфиксинга)", runtime: "codex" as const, fallback_runtime: "codex" as const, model: "gpt-5.4", tags: ["system", "autostart"], tmux_session_override: "kakashi", gender: "male" as const },
+  { id: "mirai", name: "Мирай", runtime: "cursor" as const, fallback_runtime: "codex" as const, model: "gpt-5.1", tags: ["system", "autostart"], tmux_session_override: "mirai", gender: "female" as const },
 ];
 
 async function syncSystemAgent(ag: (typeof SYSTEM_AGENTS)[number]): Promise<"created" | "updated"> {
-  const result = await upsertAgentDef({ ...ag, protected: true });
-  return result.created ? "created" : "updated";
+  const existing = await getAgentDef(ag.id);
+  const now = new Date().toISOString();
+  const def = {
+    ...ag,
+    protected: true,
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+  };
+  await redis.hset("konoha:agent-defs", ag.id, JSON.stringify(def));
+  return existing ? "updated" : "created";
 }
 
 export async function seedSystemAgents() {
   for (const ag of SYSTEM_AGENTS) {
     await syncSystemAgent(ag).catch((e: any) => {
-      console.error(`[seed] failed to sync agent def for ${ag.id}:`, e.message);
+      log.error("failed to sync system agent", { agent_id: ag.id, error: e.message });
     });
   }
 }

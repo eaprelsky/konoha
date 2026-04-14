@@ -7,6 +7,8 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
+import { hasDatabaseCredentials } from "../src/storage/database-url";
+import { getDatabaseUrl } from "../src/storage/database-url";
 
 // Import functions under test
 import {
@@ -28,6 +30,7 @@ import {
 const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
 const RUN = `r${Date.now()}`;
 function id(name: string) { return `rtest-${name}-${RUN}`; }
+const HAS_DATABASE_CREDENTIALS = hasDatabaseCredentials();
 
 // ── cleanup ───────────────────────────────────────────────────────────────────
 
@@ -49,6 +52,10 @@ afterAll(async () => {
   await cleanupTestData();
   redis.disconnect();
 });
+
+if (!HAS_DATABASE_CREDENTIALS) {
+  test.skip("redis.test.ts requires DATABASE_URL or PG* credentials from env/shared credential store", () => {});
+} else {
 
 // ── registerAgent ─────────────────────────────────────────────────────────────
 
@@ -216,7 +223,7 @@ describe("listAgents", () => {
     const agentId = id("stale");
     await registerAgent({ id: agentId, name: "Stale Agent", capabilities: [], roles: [] });
     const postgres = (await import("postgres")).default;
-    const sql = postgres(process.env.DATABASE_URL || "postgres://konoha:konoha2026@127.0.0.1:5432/konoha");
+    const sql = postgres(getDatabaseUrl());
     await sql`
       UPDATE konoha_agents
       SET last_heartbeat = ${Date.now() - 700_000}, status = 'online'
@@ -439,3 +446,4 @@ describe("listChannels", () => {
     expect(channels).toContain(channelName);
   });
 });
+}

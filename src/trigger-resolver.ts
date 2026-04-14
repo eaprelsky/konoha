@@ -9,11 +9,13 @@
  *   POST /api/trigger-resolver/resolve-batch
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import type { Hono, MiddlewareHandler } from "hono";
+import { ValidationError } from "./errors";
+import { generateText } from "./llm";
+import { createLogger } from "./logger";
 import type { HonoEnv } from "./types";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const log = createLogger("trigger-resolver");
 
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_TOKENS = 300;
@@ -157,34 +159,24 @@ ${fnList}
 async function resolveLabel(label: string, ctx?: ProcessContext): Promise<TriggerDescriptor> {
   const userMessage = buildUserMessage(label, ctx);
 
-  const response = await anthropic.messages.create({
+  const raw = await generateText({
     model: MODEL,
-    max_tokens: MAX_TOKENS,
+    maxTokens: MAX_TOKENS,
     temperature: 0,
-    system: [
-      {
-        type: "text",
-        text: SYSTEM_PROMPT,
-        cache_control: { type: "ephemeral" },
-      },
-    ] as any,
+    system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userMessage }],
   });
-
-  const raw = ((response.content[0] as any).text ?? "").trim();
 
   let parsed: unknown;
   try {
     const clean = raw.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
     parsed = JSON.parse(clean);
   } catch {
-    console.warn(`[trigger-resolver] JSON parse error label="${label}": ${raw}`);
-    return { ...AMBIGUOUS_FALLBACK };
+    throw new ValidationError("trigger resolver returned invalid JSON", { label, raw });
   }
 
   if (!validateTrigger(parsed)) {
-    console.warn(`[trigger-resolver] schema validation failed label="${label}": ${JSON.stringify(parsed)}`);
-    return { ...AMBIGUOUS_FALLBACK };
+    throw new ValidationError("trigger resolver schema validation failed", { label, parsed: parsed as Record<string, unknown> });
   }
 
   return parsed as TriggerDescriptor;
@@ -207,9 +199,8 @@ export async function resolveBatchProgrammatic(
       results.push({ id: evt.id, trigger: null });
       continue;
     }
-    // Let errors propagate — caller (deploy) should abort on Haiku unavailability
     const trigger = await resolveLabel(evt.label, processContext);
-    console.log(`[trigger-resolver] programmatic id=${evt.id} label="${evt.label}" kind=${trigger.kind} confidence=${trigger.confidence}`);
+    log.info("resolved trigger programmatically", { event_id: evt.id, label: evt.label, kind: trigger.kind, confidence: trigger.confidence });
     results.push({ id: evt.id, trigger });
   }
 
@@ -240,10 +231,10 @@ export function registerTriggerResolverRoutes(
 
     try {
       const trigger = await resolveLabel(body.label, body.process_context);
-      console.log(`[trigger-resolver] resolve label="${body.label}" process_id=${processId} kind=${trigger.kind} confidence=${trigger.confidence}`);
+      log.info("resolved trigger", { label: body.label, process_id: processId, kind: trigger.kind, confidence: trigger.confidence });
       return c.json({ trigger, raw_label: body.label });
     } catch (e: any) {
-      console.error(`[trigger-resolver] error label="${body.label}": ${e.message}`);
+      log.error("resolve error", { label: body.label, process_id: processId, error: e.message });
       return c.json({ trigger: { ...AMBIGUOUS_FALLBACK }, raw_label: body.label });
     }
   });
@@ -267,10 +258,10 @@ export function registerTriggerResolverRoutes(
       }
       try {
         const trigger = await resolveLabel(evt.label, body.process_context);
-        console.log(`[trigger-resolver] batch id=${evt.id} label="${evt.label}" process_id=${processId} kind=${trigger.kind} confidence=${trigger.confidence}`);
+        log.info("resolved trigger in batch", { event_id: evt.id, label: evt.label, process_id: processId, kind: trigger.kind, confidence: trigger.confidence });
         results.push({ id: evt.id, trigger });
       } catch (e: any) {
-        console.error(`[trigger-resolver] batch error id=${evt.id}: ${e.message}`);
+        log.error("batch resolve error", { event_id: evt.id, process_id: processId, error: e.message });
         results.push({ id: evt.id, trigger: { ...AMBIGUOUS_FALLBACK } });
       }
     }

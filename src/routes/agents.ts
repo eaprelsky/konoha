@@ -268,8 +268,19 @@ router.get("/:id", async (c) => {
   if (!busAgent && !def) return c.json({ error: "Agent not found" }, 404);
   const base = busAgent ?? { id, status: "offline" };
   if (!def) return c.json(base);
-  const state = await getAgentState(id);
-  return c.json({ ...base, ...def, lifecycle: { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds } });
+
+  let lifecycle: { status: string; pid?: number; uptime_seconds?: number };
+  if (def.tmux_session_override) {
+    const sess = def.tmux_session_override;
+    const runningNamedSocket = await execFileAsync("tmux", ["-L", sess, "has-session", "-t", sess]).then(() => true).catch(() => false);
+    const running = runningNamedSocket || await isTmuxRunning(sess);
+    lifecycle = { status: running ? "running" : "stopped" };
+  } else {
+    const state = await getAgentState(id);
+    lifecycle = { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds };
+  }
+
+  return c.json({ ...base, ...def, lifecycle });
 });
 
 // PUT /agents/:id — update agent definition fields (name, system_prompt, model)
