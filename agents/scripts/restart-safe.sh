@@ -18,7 +18,7 @@ if [[ -z "$AGENT" ]]; then
   exit 1
 fi
 
-if [[ ! -f "/home/ubuntu/scripts/restart-${AGENT}.sh" ]]; then
+if [[ ! -f "/home/ubuntu/konoha/scripts/restart-${AGENT}.sh" ]]; then
   echo "Error: unknown agent '$AGENT'"
   exit 1
 fi
@@ -40,4 +40,4 @@ curl -s -X POST "${KONOHA_HEADERS[@]}" \
 echo "[restart-safe] Restart intent broadcast. Triggering restart in 3s..."
 
 # Trigger restart (small delay for messages to propagate)
-bash "/home/ubuntu/scripts/restart-${AGENT}.sh" 3
+bash "/home/ubuntu/konoha/scripts/restart-${AGENT}.sh" 3

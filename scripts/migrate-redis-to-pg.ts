@@ -346,7 +346,8 @@ async function migrateMessageHistory() {
 
 async function verify() {
   const { default: postgres } = await import("postgres");
-  const sql = postgres(process.env.DATABASE_URL || "postgres://konoha:konoha2026@127.0.0.1:5432/konoha");
+  const { getDatabaseUrl } = await import("../src/storage/database-url");
+  const sql = postgres(getDatabaseUrl());
   const [wf] = await sql`SELECT COUNT(*)::int AS n FROM workflows`;
   const [ca] = await sql`SELECT COUNT(*)::int AS n FROM cases`;
   const [wi] = await sql`SELECT COUNT(*)::int AS n FROM work_items`;

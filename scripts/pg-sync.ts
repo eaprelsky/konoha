@@ -23,9 +23,9 @@ import {
   pgUpsertRole, pgUpsertDoc, pgUpsertReminder,
   pgDeleteWorkflow,
 } from "../src/storage/pg";
+import { getDatabaseUrl } from "../src/storage/database-url";
 
-const DATABASE_URL = process.env.DATABASE_URL ||
-  "postgres://konoha:konoha2026@127.0.0.1:5432/konoha";
+const DATABASE_URL = getDatabaseUrl();
 
 const redis = new Redis({ host: "127.0.0.1", port: 6379, db: 0 });
 const sql = postgres(DATABASE_URL, { max: 5, idle_timeout: 10, connect_timeout: 5, onnotice: () => {} });

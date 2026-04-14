@@ -272,11 +272,9 @@ async function startAgentHotReload(): Promise<void> {
                 for (const def of defs) {
                   const workdir = join(WORKDIR_ROOT, def.id);
                   const instructionsPath = join(workdir, "AGENTS.md");
-                  const legacyInstructionsPath = join(workdir, "CLAUDE.md");
-                  if (existsSync(instructionsPath) || existsSync(legacyInstructionsPath)) {
+                  if (existsSync(instructionsPath)) {
                     const instructions = await buildSystemPrompt(def.id, def);
                     writeFileSync(instructionsPath, instructions, "utf-8");
-                    writeFileSync(legacyInstructionsPath, instructions, "utf-8");
                     console.log(`[hot-reload] Regenerated AGENTS.md for agent "${def.id}" (${obj.type})`);
                   }
                 }
