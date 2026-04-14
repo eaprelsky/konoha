@@ -385,7 +385,11 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
         const el = byId.get(current);
         if (el?.type === "event") {
           kase.status = "done";
-          kase.history.push({ element_id: current, element_type: "event", label: el.label, timestamp: new Date().toISOString() });
+          // Avoid duplicate history entry if already recorded during event auto-advance
+          const lastEntry = kase.history[kase.history.length - 1];
+          if (!lastEntry || lastEntry.element_id !== current) {
+            kase.history.push({ element_id: current, element_type: "event", label: el.label, timestamp: new Date().toISOString() });
+          }
           await saveCase(kase);
           cancelSubscriptionsByInstance(kase.case_id).catch(e =>
             log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
@@ -600,6 +604,22 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       }
 
       if (operator === "AND" || operator === "OR") {
+        // JOIN detection: gateways with multiple incoming edges are merge/join
+        // points, not splits. Pass through to outgoing edges.
+        const gwIns = inEdges.get(nextId) || [];
+        if (gwIns.length > 1) {
+          kase.position = nextId;
+          kase.history.push({ element_id: nextId, element_type: "gateway", label: nextEl.label, timestamp: new Date().toISOString() });
+          await saveCase(kase);
+          if (gwOuts.length === 0) {
+            kase.status = "error";
+            await saveCase(kase);
+            return kase;
+          }
+          current = nextId;
+          continue;
+        }
+
         let activeBranchIds: string[];
         if (operator === "AND") {
           activeBranchIds = gwOuts;
@@ -661,6 +681,23 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
         kase.active_branches = branches;
         kase.history.push({ element_id: nextId, element_type: "gateway", label: `${operator} split (${branches.length} branches)`, timestamp: new Date().toISOString() });
         await saveCase(kase);
+
+        if (branches.length === 0 && activeBranchIds.length > 0) {
+          // All branches resolved to non-function elements (terminal events).
+          // Find join and advance past it, or pass through if no join found.
+          const joinId = findJoinGateway(activeBranchIds, outEdges, byId);
+          if (joinId) {
+            return advancePastJoin(kase, def, activeBranchIds);
+          }
+          // No join found — treat as pass-through to first outgoing edge
+          if (gwOuts.length > 0) {
+            current = nextId;
+            continue;
+          }
+          kase.status = "error";
+          await saveCase(kase);
+          return kase;
+        }
 
         if (branches.every(b => b.done)) {
           return advancePastJoin(kase, def, branches.map(b => b.element_id));
