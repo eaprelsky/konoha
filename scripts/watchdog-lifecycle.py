@@ -428,24 +428,25 @@ async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
 # ── On-demand agent wake ──────────────────────────────────────────────────────
 
 def try_wake_agent(agent_id: str) -> bool:
-    """Start agent-{agent_id}.service if it exists and is not already active.
-    Returns True if start was attempted, False if service doesn't exist."""
-    service = f"agent-{agent_id}.service"
+    """Start a managed agent via the Konoha lifecycle API.
+    Returns True if the start request succeeded."""
     try:
+        env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
         result = subprocess.run(
-            ["systemctl", "cat", service],
-            capture_output=True, timeout=5,
+            [
+                "curl", "-sf", "-X", "POST",
+                "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                f"{KONOHA_URL}/agents/{agent_id}/start",
+            ],
+            capture_output=True, timeout=30, env=env,
         )
-        if result.returncode != 0:
-            return False  # service doesn't exist — not an on-demand agent
-        subprocess.run(
-            ["sudo", "systemctl", "start", service],
-            capture_output=True, timeout=30,
-        )
-        log.info(f"[{agent_id}] on-demand wake: started {service}")
-        return True
+        if result.returncode == 0:
+            log.info(f"[{agent_id}] on-demand wake: started via lifecycle API")
+            return True
+        log.warning(f"[{agent_id}] failed to wake via lifecycle API: {result.stderr.decode(errors='replace')[:200]}")
+        return False
     except Exception as e:
-        log.warning(f"[{agent_id}] failed to wake: {e}")
+        log.warning(f"[{agent_id}] failed to wake via lifecycle API: {e}")
         return False
 
 
@@ -543,14 +544,11 @@ async def main():
                 ) as resp:
                     data = await resp.json()
                     all_agents = data if isinstance(data, list) else data.get("agents", [])
-                    # Watch agents that have lifecycle and are not legacy system agents
-                    # mirai: has its own dedicated watchdog service.
-                    # All other agents use lifecycle with named tmux sockets (-L {id}),
-                    # so there's no conflict between watchdogs.
-                    legacy_ids = {"mirai"}
+                    # Dedicated watchdogs keep custom logic for a small set of agents.
+                    dedicated_ids = {"naruto", "sasuke", "kakashi", "kiba", "jiraiya"}
                     agents = [
                         a["id"] for a in all_agents
-                        if a.get("id") and a["id"] not in legacy_ids
+                        if a.get("id") and a["id"] not in dedicated_ids
                         and a.get("lifecycle", {}).get("status") == "running"
                     ]
         except Exception as e:

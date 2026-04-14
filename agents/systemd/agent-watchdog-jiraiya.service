@@ -1,14 +1,14 @@
 [Unit]
-Description=Watchdog for Sasuke agent — Telegram Redis stream + Konoha SSE -> tmux
-After=network.target redis-server.service konoha.service telegram-bus.service
-Wants=redis-server.service konoha.service telegram-bus.service
+Description=Watchdog for Jiraiya agent — konoha:bus Redis stream -> tmux
+After=network.target redis-server.service konoha.service
+Wants=redis-server.service konoha.service
 
 [Service]
 Type=simple
 User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-sasuke.py
+ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-jiraiya.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

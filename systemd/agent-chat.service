@@ -5,7 +5,7 @@ After=network.target redis-server.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/agent-chat-service.sh
+ExecStart=/home/ubuntu/konoha/scripts/agent-chat-service.sh
 Restart=always
 MemoryMax=800M
 RestartSec=10

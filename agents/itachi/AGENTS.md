@@ -15,7 +15,7 @@ Depends on local Claude Code installation (typically claude-sonnet-4-6 or claude
 ## Infrastructure
 - Runs on local machine (WSL), not on the server
 - **No systemd** — started manually or via `nohup`
-- Watchdog: `/home/ubuntu/scripts/watchdog-itachi.py` (to run on WSL machine)
+- Watchdog: `/home/ubuntu/konoha/scripts/watchdog-itachi.py` (to run on WSL machine)
 - Requires: `KONOHA_URL=https://agent.eaprelsky.ru`, `KONOHA_TOKEN=<token from .agent-env>`
 
 ## Starting on WSL

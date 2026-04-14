@@ -36,14 +36,11 @@ Private config (phone numbers, server IPs, VNC password) lives in `/opt/shared/.
 ## Scripts
 
 ```bash
-# Copy all scripts from repo to server
-cp /home/ubuntu/konoha/scripts/*.sh /home/ubuntu/scripts/
-cp /home/ubuntu/konoha/scripts/*.py /home/ubuntu/scripts/
-chmod +x /home/ubuntu/scripts/*.sh
+# Scripts run in place from repo checkout
+chmod +x /home/ubuntu/konoha/scripts/*.sh
 
-# Copy Claude Code hooks
-mkdir -p /home/ubuntu/scripts/hooks
-cp /home/ubuntu/konoha/scripts/hooks/* /home/ubuntu/scripts/hooks/
+# Claude Code hooks already live in repo checkout
+mkdir -p /home/ubuntu/konoha/scripts/hooks
 ```
 
 ## Systemd Units

@@ -4,7 +4,7 @@ Watchdog for Kiba (Claude Agent #7, System Guardian).
 Watches Konoha SSE stream /messages/kiba/stream.
 Delivers alerts from Akamaru to kiba tmux session when agent is idle.
 
-On-demand agent: starts agent-kiba.service if session is absent.
+On-demand agent: wakes via Konoha lifecycle API if session is absent.
 Circuit breaker: pauses delivery for 10 min after Kiba freezes (prevents alert storm).
 Freeze alerts go to Naruto (not Kiba — to break self-referential loop, see issue #111).
 Extra watcher: git_push_poller sends new pushes to Shikadai for code review.

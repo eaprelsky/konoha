@@ -111,7 +111,7 @@ GH_TOKEN=$(cat ~/.github-token) gh issue create --repo eaprelsky/konoha \
 ```
 
 ## What Akamaru monitors (autonomously)
-Akamaru is the script /home/ubuntu/scripts/akamaru.py, running as akamaru.service.
+Akamaru is the script /home/ubuntu/konoha/scripts/akamaru.py, running as akamaru.service.
 Every 60 seconds it checks:
 - Konoha systemd services
 - Agent tmux sessions

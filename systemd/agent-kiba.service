@@ -7,7 +7,7 @@ After=agent-watchdog-kiba.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/agent-kiba-service.sh
+ExecStart=/home/ubuntu/konoha/scripts/agent-kiba-service.sh
 Restart=always
 MemoryMax=800M
 RestartSec=10

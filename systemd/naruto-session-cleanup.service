@@ -4,4 +4,4 @@ Description=Send session-cleanup signal to Naruto
 [Service]
 Type=oneshot
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/naruto-session-cleanup.sh
+ExecStart=/home/ubuntu/konoha/scripts/naruto-session-cleanup.sh

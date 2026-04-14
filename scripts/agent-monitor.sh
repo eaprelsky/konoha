@@ -1,5 +1,5 @@
 #!/bin/bash
-# agent-monitor.sh — shared monitoring loop for claude-*-service.sh scripts.
+# agent-monitor.sh — shared monitoring loop for agent launcher scripts.
 #
 # Source this file and call monitor_agent() after starting the tmux session.
 #
@@ -9,7 +9,7 @@
 #
 # monitor_agent exits when:
 #   - the tmux session disappears (systemd restarts the service)
-#   - the claude process inside tmux exits
+#   - the agent process inside tmux exits
 #   - RESTART_INTERVAL seconds have elapsed (fresh-context restart)
 
 monitor_agent() {
@@ -25,8 +25,8 @@ monitor_agent() {
             echo "[$(date)] tmux session '$SESSION' is dead. Exiting for systemd restart."
             break
         fi
-        if ! tmux -L "$SESSION" list-panes -t "$SESSION" -F '#{pane_pid}' 2>/dev/null | xargs -I{} pgrep -P {} claude > /dev/null 2>&1; then
-            echo "[$(date)] claude process not found in tmux. Exiting for systemd restart."
+        if ! tmux -L "$SESSION" list-panes -t "$SESSION" -F '#{pane_pid}' 2>/dev/null | xargs -I{} pgrep -P {} -f "codex|claude|cursor-agent|node .*codex|opencode" > /dev/null 2>&1; then
+            echo "[$(date)] agent process not found in tmux. Exiting for systemd restart."
             break
         fi
         if [ "$elapsed" -ge "$RESTART_INTERVAL" ]; then

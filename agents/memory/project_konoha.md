@@ -18,7 +18,7 @@ Konoha is the internal agent communication bus at ~/konoha (github.com/eaprelsky
 **Status (2026-03-26):** Security patch deployed — per-agent tokens, admin-only registration, one-time invite tokens, inbox isolation. Registered agents: naruto, sasuke, mirai. Mirai token: cfd606b5-bc5f-431b-8db5-542b63fdc146.
 
 **Agent Mirai (sales-monitor):**
-- Script: `/home/ubuntu/scripts/bitrix-poller.py` (digest / monitor / pings modes)
+- Script: `/home/ubuntu/konoha/scripts/bitrix-poller.py` (digest / monitor / pings modes)
 - Data: `/opt/shared/mirai/snapshots/` (JSON snapshots for diff computation)
 - Cron: digest 9:00, pings 9:30, monitoring 9/11/13/15/17/19
 - Bitrix24 per-stage UF fields for next-touch dates mapped in script

@@ -14,7 +14,7 @@ while true; do
     sleep 20
     # Send Enter to confirm any MCP config change prompts
     tmux -L "$SESSION" send-keys -t "$SESSION" Enter
-    /home/ubuntu/scripts/wait-for-prompt.sh "$SESSION" 90 "$SESSION"
+    /home/ubuntu/konoha/scripts/wait-for-prompt.sh "$SESSION" 90 "$SESSION"
     # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab
     sleep 1

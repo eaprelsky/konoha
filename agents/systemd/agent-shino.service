@@ -5,7 +5,7 @@ After=network.target redis.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/agent-shino-service.sh
+ExecStart=/home/ubuntu/konoha/scripts/agent-shino-service.sh
 ExecStop=/usr/bin/tmux kill-session -t shino
 Restart=on-failure
 RestartSec=10

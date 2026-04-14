@@ -22,7 +22,7 @@ type: project
 - Скачивание файлов в /opt/shared/attachments/
 - Start: `cd /home/ubuntu/telegram-bot-service && bun run bot.ts`
 
-### Hooks (/home/ubuntu/scripts/hooks/)
+### Hooks (/home/ubuntu/konoha/scripts/hooks/)
 - suggest-compact.js, pre-compact.js, session-start.sh, session-end.sh
 - Настроены в ~/.claude/settings.json
 - TODO: проверить что работают корректно

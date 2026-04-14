@@ -29,7 +29,7 @@ curl -s -X POST \
 echo "[safe-restart] Konoha notified. Running restart in ${DELAY}s..."
 
 # Call the appropriate restart script
-RESTART_SCRIPT="/home/ubuntu/scripts/restart-${AGENT}.sh"
+RESTART_SCRIPT="/home/ubuntu/konoha/scripts/restart-${AGENT}.sh"
 if [[ -f "$RESTART_SCRIPT" ]]; then
   bash "$RESTART_SCRIPT" "$DELAY"
 else

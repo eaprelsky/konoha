@@ -5,7 +5,7 @@ After=network.target redis.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/agent-hinata-service.sh
+ExecStart=/home/ubuntu/konoha/scripts/agent-hinata-service.sh
 ExecStop=/usr/bin/tmux kill-session -t hinata
 Restart=on-failure
 RestartSec=10

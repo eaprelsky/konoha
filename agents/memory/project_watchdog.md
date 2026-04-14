@@ -12,13 +12,13 @@ type: project
 - Доставка: tmux send-keys в сессию `naruto`, только когда агент idle (❯ prompt)
 - Debounce: 2s — батчит несколько событий в один промпт
 - Log: `/tmp/watchdog-naruto.log`
-- Script: `/home/ubuntu/scripts/watchdog-naruto.py`
+- Script: `/home/ubuntu/konoha/scripts/watchdog-naruto.py`
 
 **Мирай (Agent #3):** `agent-watchdog-mirai.service`
 - Источник: Коноха SSE `/messages/mirai/stream`
 - Доставка: tmux send-keys в сессию `mirai`
 - Log: `/tmp/watchdog-mirai.log`
-- Script: `/home/ubuntu/scripts/watchdog-mirai.py`
+- Script: `/home/ubuntu/konoha/scripts/watchdog-mirai.py`
 
 **Саске (Agent #2):** `agent-watchdog-sasuke.service` — запущен (реализован 2026-03-26)
 - Источник 1: `telegram:incoming` Redis stream (consumer group `sasuke`, consumer `sasuke-worker`)

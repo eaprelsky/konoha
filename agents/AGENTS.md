@@ -154,8 +154,8 @@ Redis streams:
 Channel plugin: /home/ubuntu/telethon-mcp/channel-server.ts
 
 ## Agent Restart
-- Naruto restart: `/home/ubuntu/scripts/restart-naruto.sh [delay_sec]`
-- Sasuke restart: `/home/ubuntu/scripts/restart-sasuke.sh [delay_sec]`
+- Naruto restart: `/home/ubuntu/konoha/scripts/restart-naruto.sh [delay_sec]`
+- Sasuke restart: `/home/ubuntu/konoha/scripts/restart-sasuke.sh [delay_sec]`
 - Default delay: 5 seconds (gives calling agent time to finish)
 - Agents can request each other's restarts via Konoha bus
 - systemd services: managed Naruto agent, managed Sasuke agent

@@ -7,7 +7,7 @@ After=agent-watchdog-ino.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/scripts/agent-ino-service.sh
+ExecStart=/home/ubuntu/konoha/scripts/agent-ino-service.sh
 ExecStop=/usr/bin/tmux kill-session -t ino
 Restart=on-failure
 MemoryMax=800M

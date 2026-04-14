@@ -1,12 +1,14 @@
 ---
-name: Akamaru deploy path vs git repo
-description: systemd запускает /home/ubuntu/scripts/akamaru.py, git-репо в /home/ubuntu/konoha/scripts/akamaru.py — это разные файлы
+name: Akamaru deploy path
+description: akamaru.service runs directly from /home/ubuntu/konoha/scripts/akamaru.py
 type: project
 ---
 
-Akamaru запускается systemd из /home/ubuntu/scripts/akamaru.py (деплой-копия).
-Git-репо находится в /home/ubuntu/konoha/scripts/akamaru.py.
+Akamaru runs from `/home/ubuntu/konoha/scripts/akamaru.py`.
 
-**Why:** В issue #76 оказалось, что фикс e117fe8 был применён в git-репо, но не в деплой-файле. systemd продолжал запускать старую версию.
+How to apply:
 
-**How to apply:** При любых фиксах akamaru.py — проверять и обновлять оба файла, затем перезапускать akamaru.service. В идеале настроить деплой из репо.
+- Patch `/home/ubuntu/konoha/scripts/akamaru.py`
+- Restart `akamaru.service`
+
+Historical note: older deployments used a duplicated copy under `/home/ubuntu/scripts/`, but that mirror was removed during the 2026-04-13 cleanup.

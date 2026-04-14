@@ -33,7 +33,7 @@ Agents communicate through the bus in real time. Here's Kakashi (bug fixer) rece
 ```
 ❯ Задание для Какаши: fix bug in check_konoha() — paused agents still alerting
 ● Bash(gh issue view 76 --repo eaprelsky/konoha)
-● Edit(/home/ubuntu/scripts/akamaru.py) — add paused param to check_konoha()
+● Edit(/home/ubuntu/konoha/scripts/akamaru.py) — add paused param to check_konoha()
 ● Bash(systemctl restart akamaru.service)
 ● konoha_send(from: "kakashi", to: "naruto", text: "Закрыл issue #76. Оба файла обновлены, akamaru.service перезапущен.")
   ⎿  Sent. ID: 1774630032388-0

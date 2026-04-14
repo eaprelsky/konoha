@@ -4,7 +4,7 @@ Watchdog for Shino (Claude Agent #5, QA Lead).
 Watches Konoha SSE stream /messages/shino/stream.
 Delivers trigger messages to shino tmux session when agent is idle.
 
-On-demand agent: starts agent-shino.service if session is absent.
+On-demand agent: wakes via Konoha lifecycle API if session is absent.
 Trigger messages: shino:smoke, shino:regression, shino:plan <component>, shino:analyze <file>
 """
 import asyncio

@@ -31,46 +31,50 @@ DISK_WARN_PCT   = 85
 DISK_CRIT_PCT   = 90
 
 WATCHED_SERVICES = [
-    "agent-naruto.service",
-    "agent-sasuke.service",
-    "agent-mirai.service",
-    "agent-jiraiya.service",
-    "agent-shino.service",
-    "agent-hinata.service",
-    "agent-kiba.service",
+    "konoha.service",
+    "telegram-bot.service",
+    "telegram-bus.service",
+    "agent-autostart.service",
+    "agent-watchdog-lifecycle.service",
     "agent-watchdog-naruto.service",
     "agent-watchdog-sasuke.service",
-    "agent-watchdog-mirai.service",
-    "agent-watchdog-jiraiya.service",
-    "agent-watchdog-shino.service",
-    "agent-watchdog-hinata.service",
+    "agent-watchdog-kakashi.service",
     "agent-watchdog-kiba.service",
-    "agent-ibiki.service",
-    "agent-watchdog-ibiki.service",
+    "agent-watchdog-jiraiya.service",
 ]
 
-WATCHED_SESSIONS = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki", "ino", "inojin"]
-WATCHED_AGENTS   = ["naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata", "kiba", "ibiki", "ino", "inojin"]
+WATCHED_SESSIONS = [
+    "naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata",
+    "kiba", "ibiki", "ino", "inojin", "guy", "kakashi",
+    "shikadai", "shikamaru", "tsunade",
+]
+WATCHED_AGENTS   = [
+    "naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata",
+    "kiba", "ibiki", "ino", "inojin", "guy", "kakashi",
+    "shikadai", "shikamaru", "tsunade",
+]
 
 # On-demand agents: stop after mission complete — inactive state is expected, not a failure.
-# Do NOT alert when their services are inactive or tmux sessions are missing.
-# Still alert on "failed" status.
-ON_DEMAND_AGENTS = {"shino", "hinata", "ibiki", "ino", "inojin", "shikadai"}
+# Do NOT alert when their sessions are missing. Still alert on failed watchdogs.
+ON_DEMAND_AGENTS = {"shino", "hinata", "ibiki", "ino", "inojin", "guy", "shikadai", "shikamaru", "tsunade"}
 
 # For each agent: watchdog service that MUST be running when the tmux session is alive (#98)
 AGENT_WATCHDOGS = {
-    "naruto":  "agent-watchdog-naruto.service",
-    "sasuke":  "agent-watchdog-sasuke.service",
-    "mirai":   "agent-watchdog-mirai.service",
-    "jiraiya": "agent-watchdog-jiraiya.service",
-    "shino":   "agent-watchdog-shino.service",
-    "hinata":  "agent-watchdog-hinata.service",
-    "kiba":    "agent-watchdog-kiba.service",
-    "ibiki":   "agent-watchdog-ibiki.service",
-    "ino":     "agent-watchdog-ino.service",
-    "inojin":  "agent-watchdog-inojin.service",
-    "guy":     "agent-watchdog-guy.service",
-    "kakashi": "agent-watchdog-kakashi.service",
+    "naruto":    "agent-watchdog-naruto.service",
+    "sasuke":    "agent-watchdog-sasuke.service",
+    "kakashi":   "agent-watchdog-kakashi.service",
+    "kiba":      "agent-watchdog-kiba.service",
+    "jiraiya":   "agent-watchdog-jiraiya.service",
+    "mirai":     "agent-watchdog-lifecycle.service",
+    "shino":     "agent-watchdog-lifecycle.service",
+    "hinata":    "agent-watchdog-lifecycle.service",
+    "ibiki":     "agent-watchdog-lifecycle.service",
+    "ino":       "agent-watchdog-lifecycle.service",
+    "inojin":    "agent-watchdog-lifecycle.service",
+    "guy":       "agent-watchdog-lifecycle.service",
+    "shikadai":  "agent-watchdog-lifecycle.service",
+    "shikamaru": "agent-watchdog-lifecycle.service",
+    "tsunade":   "agent-watchdog-lifecycle.service",
 }
 
 PAUSED_FILE = os.getenv("AKAMARU_PAUSED_FILE", "/opt/shared/kiba/paused-services.txt")
@@ -269,6 +273,8 @@ def is_alert_suppressed(alert: str, paused: set[str]) -> bool:
         if (
             f"agent={agent}" in alert or
             f"session={agent}" in alert or
+            f"service=agent-{agent}" in alert or
+            f"service=agent-watchdog-{agent}" in alert or
             f"service=claude-{agent}" in alert or
             f"service=claude-watchdog-{agent}" in alert
         ):
@@ -307,7 +313,7 @@ def is_service_active(service: str) -> bool:
 def check_services(paused: set[str] = frozenset()) -> list[str]:
     alerts = []
     for svc in WATCHED_SERVICES:
-        short = svc.removeprefix("claude-").removeprefix("watchdog-").removesuffix(".service")
+        short = svc.removeprefix("agent-").removeprefix("claude-").removeprefix("watchdog-").removesuffix(".service")
         if svc in paused or short in paused:
             log.debug(f"Skipping alert for paused service: {svc}")
             continue

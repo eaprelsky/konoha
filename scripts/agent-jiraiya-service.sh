@@ -12,7 +12,7 @@ while true; do
 
     tmux -L "$SESSION" new-session -d -s "$SESSION" -x 200 -y 50
     tmux -L "$SESSION" send-keys -t "$SESSION" "claude --dangerously-skip-permissions --model claude-haiku-4-5-20251001 --mcp-config $MCP_CONFIG" Enter
-    /home/ubuntu/scripts/wait-for-prompt.sh "$SESSION" 90 "$SESSION"
+    /home/ubuntu/konoha/scripts/wait-for-prompt.sh "$SESSION" 90 "$SESSION"
 
     # Enable bypass permissions mode (--dangerously-skip-permissions does not auto-enable in-session)
     tmux -L "$SESSION" send-keys -t "$SESSION" BTab

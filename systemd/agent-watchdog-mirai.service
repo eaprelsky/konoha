@@ -7,7 +7,7 @@ Type=simple
 User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /home/ubuntu/scripts/watchdog-mirai.py
+ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-mirai.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

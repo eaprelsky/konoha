@@ -89,15 +89,35 @@ def tmux_pane_content(session: str) -> str:
         return ""
 
 
+def is_session_alive(session: str) -> bool:
+    """Check if tmux session exists on its named socket."""
+    try:
+        result = subprocess.run(
+            ["tmux", "-L", session, "has-session", "-t", session],
+            capture_output=True, timeout=5,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def is_agent_idle(session: str, stable_checks: int = 2) -> bool:
-    """Return True if agent shows the ❯ prompt stably (not mid-processing)."""
+    """Return True if agent shows a stable ready-for-input prompt (Claude/Codex/Cursor)."""
     def has_prompt(content: str) -> bool:
-        lines = [l.strip() for l in content.strip().split("\n")]
-        return any(
+        lines = [l.strip() for l in content.strip().split("\n") if l.strip()]
+        last_lines = lines[-12:]
+        has_claude_prompt = any(
             (l == "❯" or l == "❯\xa0" or l.startswith("❯ ") or l.startswith("❯\xa0"))
             and "Pasted text" not in l
-            for l in lines[-6:]
+            for l in last_lines
         )
+        has_codex_prompt = any(l.startswith("› ") for l in last_lines)
+        has_cursor_ready = (
+            any("→ Add a follow-up" in l for l in last_lines)
+            or any("ctrl+c to stop" in l for l in last_lines)
+            or any("▶︎ Auto-run everything" in l for l in last_lines)
+        )
+        return has_claude_prompt or has_codex_prompt or has_cursor_ready
     for _ in range(stable_checks):
         if not has_prompt(tmux_pane_content(session)):
             return False
@@ -130,6 +150,8 @@ async def tmux_send(session: str, text: str) -> bool:
     # Wait for compacting to finish before sending — avoids [Pasted text] race (#147)
     compacting_waited = 0
     while compacting_waited < 120:
+        if is_agent_idle(session, stable_checks=1):
+            break
         last_lines = chr(10).join(tmux_pane_content(session).strip().split(chr(10))[-6:])
         if not any(kw in last_lines for kw in ("Compacting", "Churned for", "\u273b")):
             break
@@ -968,25 +990,21 @@ async def _send_lifecycle(text: str, env: dict, agent_id: str) -> None:
 
 
 async def heartbeat_loop(cfg: dict) -> None:
-    """Send heartbeat only when agent-{agent}.service is active (#106).
+    """Send heartbeat while the managed tmux session is alive.
 
-    Skips heartbeat and broadcasts SESSION_OFFLINE when service is inactive.
-    Broadcasts SESSION_ONLINE when service comes back up.
+    Skips heartbeat and broadcasts SESSION_OFFLINE when the session is inactive.
+    Broadcasts SESSION_ONLINE when the session comes back up.
     """
     agent_id = cfg["agent_id"]
+    session = cfg.get("tmux_session", agent_id)
     url = f"{KONOHA_URL}/agents/{agent_id}/heartbeat"
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
-    service = f"agent-{agent_id}.service"
-    was_active = True  # assume active on start — avoids spurious SESSION_OFFLINE at boot
+    was_active = is_session_alive(session)
     while True:
         try:
-            r = subprocess.run(
-                ["systemctl", "is-active", service],
-                capture_output=True, text=True, timeout=5
-            )
-            is_active = r.stdout.strip() in ("active", "activating")
+            is_active = is_session_alive(session)
         except Exception as e:
-            log.warning(f"Could not check {service}: {e}")
+            log.warning(f"Could not check tmux session {session}: {e}")
             is_active = True  # fail open — assume active
 
         if is_active:
@@ -1006,7 +1024,7 @@ async def heartbeat_loop(cfg: dict) -> None:
             except Exception as e:
                 log.warning(f"Heartbeat failed: {e}")
         else:
-            log.info(f"{service} inactive — skipping heartbeat")
+            log.info(f"tmux session {session} inactive — skipping heartbeat")
             if was_active:
                 await _send_lifecycle(f"SESSION_OFFLINE:{agent_id}", env, agent_id)
 

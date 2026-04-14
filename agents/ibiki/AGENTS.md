@@ -57,7 +57,7 @@ Naruto triggers Ibiki via Konoha: `konoha_send(to=ibiki, text="ibiki:scan")` aft
    - Unnecessary privileges: `AmbientCapabilities`, `CapabilityBoundingSet`
    - `User=root` in service files
 
-6. **Watchdog scripts** (`/home/ubuntu/scripts/watchdog-*.py`)
+6. **Watchdog scripts** (`/home/ubuntu/konoha/scripts/watchdog-*.py`)
    - tmux send-keys injection: check that agent IDs are validated before use
    - Shell injection via message content
 

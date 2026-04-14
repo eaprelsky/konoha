@@ -1,0 +1,18 @@
+[Unit]
+Description=Konoha Generic Lifecycle Watchdog
+After=network.target redis-server.service konoha.service
+Wants=redis-server.service konoha.service
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.agent-env
+Environment=WATCHDOG_AGENTS=mirai,shino,hinata,ibiki,ino,inojin,guy,shikadai,shikamaru,tsunade
+ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-lifecycle.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

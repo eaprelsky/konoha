@@ -59,8 +59,7 @@ async def tmux_send(session: str, text: str) -> bool:
     text = text.replace("\n", " ").replace("\r", " ")
     compacting_waited = 0
     while compacting_waited < 120:
-        last_lines = [l.strip() for l in _b.tmux_pane_content(session).strip().split(chr(10))[-6:]]
-        if any(l == "❯" or l == "❯ " or l.startswith("❯ ") or l.startswith("❯ ") for l in last_lines):
+        if _b.is_agent_idle(session, stable_checks=1):
             break
         _b.log.info(f"Agent {session} compacting — waiting (waited {compacting_waited}s)")
         await asyncio.sleep(2.0)

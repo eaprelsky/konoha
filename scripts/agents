@@ -1,5 +1,5 @@
 #!/bin/bash
-# Helper for managing Claude agents with per-socket tmux sessions
+# Helper for managing lifecycle-managed agents with per-socket tmux sessions
 
 AGENTS=(naruto sasuke kakashi guy hinata ino inojin kiba shino ibiki jiraiya mirai chat)
 
@@ -10,7 +10,7 @@ usage() {
     echo "  ls            List all running tmux sessions"
     echo "  attach <name> Attach to agent's tmux session"
     echo "  peek <name>   Show last 30 lines of agent's tmux output"
-    echo "  status        Show systemd status of all active agents"
+    echo "  status        Show tmux/lifecycle status of all active agents"
     echo ""
     echo "Agents: ${AGENTS[*]}"
 }
@@ -32,11 +32,9 @@ case "$1" in
         ;;
     status|st)
         for a in "${AGENTS[@]}"; do
-            st=$(systemctl is-active "claude-$a.service" 2>/dev/null)
-            if [ "$st" = "active" ]; then
-                mem=$(systemctl show "claude-$a.service" --property=MemoryCurrent --value 2>/dev/null)
-                mem_mb=$((mem / 1048576))
-                printf "%-10s active  %4dM\n" "$a" "$mem_mb"
+            if tmux -L "$a" has-session -t "$a" 2>/dev/null; then
+                pane_pid=$(tmux -L "$a" display-message -p -t "$a" "#{pane_pid}" 2>/dev/null || echo "")
+                printf "%-10s running pid=%s\n" "$a" "${pane_pid:-?}"
             fi
         done
         ;;

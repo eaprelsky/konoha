@@ -12,7 +12,7 @@ Environment=KONOHA_TOKEN=34947f6b-7ff5-4fa4-aa46-d8854db8fc87
 Environment=ITACHI_AGENT=itachi
 Environment=ITACHI_TMUX=itachi
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /home/ubuntu/scripts/watchdog-itachi.py
+ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-itachi.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

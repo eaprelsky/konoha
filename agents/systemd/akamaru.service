@@ -1,6 +1,7 @@
 [Unit]
 Description=Akamaru — Konoha System Health Monitor
-After=network.target redis.service
+After=network.target redis-server.service konoha.service
+Wants=redis-server.service konoha.service
 
 [Service]
 Type=simple

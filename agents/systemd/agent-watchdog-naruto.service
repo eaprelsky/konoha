@@ -1,12 +1,14 @@
 [Unit]
-Description=Watchdog for Naruto (Claude Agent #1) — Telegram queue + Konoha SSE → tmux
-After=network.target konoha.service
+Description=Watchdog for Naruto agent — Telegram queue + Konoha SSE -> tmux
+After=network.target konoha.service telegram-bot.service
+Wants=konoha.service telegram-bot.service
 
 [Service]
 Type=simple
 User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
-ExecStart=/usr/bin/python3 /home/ubuntu/scripts/watchdog-naruto.py
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-naruto.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

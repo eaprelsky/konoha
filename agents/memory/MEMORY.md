@@ -49,7 +49,7 @@
 - [project_telegram_proxy_fix.md](project_telegram_proxy_fix.md) — Patched grammy fetch shim to fix photo uploads through HTTP proxy in bun
 - [project_watchdog.md](project_watchdog.md) — Event-driven watchdog services (systemd) replacing cron loops for agents
 
-- [project_akamaru_deploy.md](project_akamaru_deploy.md) — systemd запускает /home/ubuntu/scripts/akamaru.py, git-репо в /home/ubuntu/konoha/scripts/ — разные файлы, оба нужно обновлять
+- [project_akamaru_deploy.md](project_akamaru_deploy.md) — systemd запускает /home/ubuntu/konoha/scripts/akamaru.py, git-репо в /home/ubuntu/konoha/scripts/ — разные файлы, оба нужно обновлять
 - [project_ino_status.md](project_ino_status.md) — Ино остановлена по запросу Егора. НЕ запускать без его разрешения.
 - [project_jiraiya_status.md](project_jiraiya_status.md) — Дзирайя остановлен по запросу Егора. НЕ запускать — требует перепроектирования перед следующим стартом.
 
@@ -66,4 +66,4 @@
 - [reference_nocturna_server.md](reference_nocturna_server.md) — SSH access to nocturna.ru for managing eaprelsky.ru Hugo site
 - [reference_phone_numbers.md](reference_phone_numbers.md) — Agent phone numbers: RU +79011477544 (Voximplant), US +13024008212 (Telnyx)
 - [project_agent_identities.md](project_agent_identities.md) — Пол, модель и роль каждого агента (Хината и Мирай — женского рода; единые кириллические имена)
-- [feedback_scripts_vs_konoha_deploy.md](feedback_scripts_vs_konoha_deploy.md) — Fix both /home/ubuntu/scripts/ (deployed, systemd) AND /home/ubuntu/konoha/scripts/ (git repo) when patching agent scripts
+- [feedback_scripts_vs_konoha_deploy.md](feedback_scripts_vs_konoha_deploy.md) — Canonical runtime path for deployed scripts is /home/ubuntu/konoha/scripts/

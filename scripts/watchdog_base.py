@@ -99,18 +99,25 @@ def is_session_alive(session: str) -> bool:
 
 
 def try_wake_agent() -> bool:
-    """Start agent-{AGENT_ID}.service to wake the on-demand agent.
-    Returns True if start was attempted. Only used when WAKE_TIMEOUT_SEC > 0."""
-    service = f"agent-{AGENT_ID}.service"
+    """Start the managed agent via Konoha lifecycle API.
+    Returns True if the start request succeeded. Only used when WAKE_TIMEOUT_SEC > 0."""
     try:
-        subprocess.run(
-            ["sudo", "systemctl", "start", service],
-            capture_output=True, timeout=30,
+        env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+        result = subprocess.run(
+            [
+                "curl", "-sf", "-X", "POST",
+                "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                f"{KONOHA_URL}/agents/{AGENT_ID}/start",
+            ],
+            capture_output=True, timeout=30, env=env,
         )
-        log.info(f"on-demand wake: started {service}")
-        return True
+        if result.returncode == 0:
+            log.info(f"on-demand wake: started managed agent {AGENT_ID} via lifecycle API")
+            return True
+        log.warning(f"failed to wake managed agent {AGENT_ID}: {result.stderr.decode(errors='replace')[:200]}")
+        return False
     except Exception as e:
-        log.warning(f"failed to wake {service}: {e}")
+        log.warning(f"failed to wake managed agent {AGENT_ID}: {e}")
         return False
 
 
@@ -163,12 +170,17 @@ def is_agent_idle(session: str, stable_checks: int = 2) -> bool:
             and "Pasted text" not in l
             for l in last_lines
         )
+        has_codex_prompt = any(l.startswith("› ") for l in last_lines)
         has_cursor_ready = (
             any("→ Add a follow-up" in l for l in last_lines)
             or any("ctrl+c to stop" in l for l in last_lines)
             or any("▶︎ Auto-run everything" in l for l in last_lines)
         )
-        return has_claude_prompt or has_cursor_ready
+        has_opencode_idle = (
+            any("ctrl+p commands" in l for l in last_lines)
+            or any("tab agents" in l for l in last_lines)
+        )
+        return has_claude_prompt or has_codex_prompt or has_cursor_ready or has_opencode_idle
     for _ in range(stable_checks):
         if not has_prompt(tmux_pane_content(session)):
             return False
@@ -201,12 +213,8 @@ async def tmux_send(session: str, text: str) -> bool:
     # Wait for compacting to finish before sending — avoids [Pasted text] race (#147)
     compacting_waited = 0
     while compacting_waited < 120:
-        pane = tmux_pane_content(session)
-        last_lines = [l.strip() for l in pane.strip().split(chr(10))[-12:] if l.strip()]
-        has_claude_prompt = any(l == "❯" or l == "❯ " or l.startswith("❯ ") or l.startswith("❯ ") for l in last_lines)
-        has_cursor_ready = any("→ Add a follow-up" in l for l in last_lines) or any("▶︎ Auto-run everything" in l for l in last_lines)
-        # Prompt visible → session idle, not compacting.
-        if has_claude_prompt or has_cursor_ready:
+        # Use the shared prompt detector so Codex/Cursor/Claude are handled consistently.
+        if is_agent_idle(session, stable_checks=1):
             break
         log.info(f"Agent {session} compacting — waiting (waited {compacting_waited}s)")
         await asyncio.sleep(2.0)

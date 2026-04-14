@@ -25,7 +25,7 @@ from trusted users.
 - tmux session: `sasuke`
 - Systemd: `managed Sasuke agent`, `agent-watchdog-sasuke.service`
 - MCP: konoha, telethon-channel
-- Watchdog: `/home/ubuntu/scripts/watchdog-sasuke.py`
+- Watchdog: `/home/ubuntu/konoha/scripts/watchdog-sasuke.py`
 - Startup script: `Konoha managed lifecycle`
 - Log: `/tmp/watchdog-sasuke.log`
 - Telethon bus: `/home/ubuntu/telethon-mcp/bus.py`
