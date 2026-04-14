@@ -47,6 +47,11 @@ CIRCUIT_BREAKER_DURATION = 0  # seconds circuit stays open after freeze event
 # Who receives freeze alerts (empty string → "kiba"; override for Kiba's own watchdog)
 FREEZE_ALERT_TARGET = ""
 
+# ── Desync detection and auto-recovery (#505) ──────────────────────────────────
+DESYNC_RECOVERY_ENABLED = True   # enable auto-restart + redispatch on stuck agent
+TASK_ACK_TIMEOUT_SEC    = 120    # seconds to wait for agent progress after dispatch
+DESYNC_MAX_RETRIES      = 1      # max recovery attempts before giving up (per batch)
+
 KONOHA_TEXT_LIMIT = 3500  # chars; tmux send-keys has ~4095 byte TTY buffer limit (#299)
 
 # format_batch customisation — override per agent
@@ -147,6 +152,26 @@ def is_session_noise(data: dict) -> bool:
         any(text.startswith(p) for p in NOISE_TEXT_PREFIXES) or
         any(s in text for s in NOISE_TEXT_CONTAINS)
     )
+
+
+# ── Text sanitization (#505) ───────────────────────────────────────────────────
+
+def sanitize_message_text(text: str) -> str:
+    """Fix common text encoding issues before delivery:
+    1. Convert literal \\n (two chars) to real newlines — prevents double-escaping
+       in Telegram/JSON pipelines.
+    2. Remove MarkdownV2 escape artifacts like \\! → ! — plain-text safe.
+    """
+    if not text:
+        return text
+    # Literal \n (backslash + n, not actual newline) → real newline.
+    # Only replace the two-char sequence, not actual newlines.
+    text = text.replace("\\n", "\n")
+    # MarkdownV2 escape artifacts: \! → !, \. → ., \- → -, etc.
+    # These appear when MarkdownV2-formatted text is sent as plain text.
+    import re
+    text = re.sub(r"\\([!./\-_{}()#>+*=|~`])", r"\1", text)
+    return text
 
 
 # ── Idle detection ───────────────────────────────────────────────────────────
@@ -271,6 +296,8 @@ def format_batch(events: list[dict]) -> str:
         sender = d.get("from", "?")
         text   = d.get("text", "")
         ts     = d.get("timestamp", "")
+        # Sanitize text to fix literal \n and \! artifacts (#505)
+        text = sanitize_message_text(text)
         if len(text) > KONOHA_TEXT_LIMIT:
             log.warning(f"Konoha message from {sender} truncated: {len(text)} chars → {KONOHA_TEXT_LIMIT}")
             text = text[:KONOHA_TEXT_LIMIT] + f"... [сообщение обрезано: {len(d.get('text',''))} символов — вызови konoha_read для полного текста]"
@@ -319,7 +346,13 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                     continue
             timeout_limit = max(IDLE_TIMEOUT_SEC, WAKE_TIMEOUT_SEC if wake_attempted else IDLE_TIMEOUT_SEC)
             if waited >= timeout_limit:
-                log.warning(f"Agent {TMUX_SESSION} busy >{waited:.0f}s — dropping {len(pending)} msgs")
+                log.warning(f"Agent {TMUX_SESSION} busy >{waited:.0f}s — attempting desync recovery (#505)")
+                await _send_desync_audit("agent unresponsive", f"waited={waited:.0f}s msgs={len(pending)}")
+                recovered = await try_desync_recovery()
+                if recovered:
+                    log.info(f"Desync recovery succeeded — retrying delivery of {len(pending)} msg(s)")
+                    continue
+                log.warning(f"Desync recovery failed — dropping {len(pending)} msgs")
                 if CIRCUIT_BREAKER_DURATION > 0:
                     open_circuit(f"agent={TMUX_SESSION} unresponsive >{waited:.0f}s")
                 await send_freeze_alert(TMUX_SESSION, waited, len(pending))
@@ -331,7 +364,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
         if pending:
             try:
                 prompt = format_batch(pending)
-                delivered = await tmux_send(TMUX_SESSION, prompt)
+                prompt = sanitize_message_text(prompt)
                 if delivered is not False:
                     pending.clear()
                 else:
@@ -554,6 +587,89 @@ async def heartbeat_loop() -> None:
 
         was_active = is_active
         await asyncio.sleep(300)  # every 5 min
+
+
+# ── Desync detection and auto-recovery (#505) ─────────────────────────────────
+
+_desync_retry_count: int = 0  # track recovery attempts per batch
+
+
+async def _send_desync_audit(reason: str, detail: str = "") -> None:
+    """Log a desync event to Konoha bus for observability."""
+    env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+    text = f"watchdog:{AGENT_ID} desync detected: {reason}"
+    if detail:
+        text += f" — {detail}"
+    payload = json.dumps({
+        "from": f"watchdog-{AGENT_ID}",
+        "to": "all",
+        "type": "event",
+        "text": text,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-s", "-X", "POST",
+            "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+            "-H", "Content-Type: application/json",
+            "-d", payload,
+            f"{KONOHA_URL}/messages",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=env,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=10)
+        log.warning(f"Desync audit sent: {text}")
+    except Exception as e:
+        log.error(f"Failed to send desync audit: {e}")
+
+
+async def try_desync_recovery() -> bool:
+    """Attempt to recover from desync by restarting the agent via Konoha lifecycle API.
+    Returns True if restart request succeeded."""
+    global _desync_retry_count
+
+    if not DESYNC_RECOVERY_ENABLED:
+        log.info("Desync recovery disabled — skipping")
+        return False
+
+    if _desync_retry_count >= DESYNC_MAX_RETRIES:
+        log.warning(f"Desync recovery: max retries ({DESYNC_MAX_RETRIES}) reached — not retrying")
+        return False
+
+    _desync_retry_count += 1
+    await _send_desync_audit("restarting agent", f"attempt {_desync_retry_count}/{DESYNC_MAX_RETRIES}")
+
+    try:
+        env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+        # Use lifecycle API to restart the managed agent
+        result = await asyncio.create_subprocess_exec(
+            "curl", "-sf", "-X", "POST",
+            "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+            f"{KONOHA_URL}/agents/{AGENT_ID}/restart",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=60)
+        if result.returncode == 0:
+            log.info(f"Desync recovery: agent {AGENT_ID} restart initiated via lifecycle API")
+            # Wait for agent to come back up
+            for _ in range(30):
+                await asyncio.sleep(5)
+                if is_session_alive(TMUX_SESSION) and is_agent_idle(TMUX_SESSION):
+                    log.info(f"Desync recovery: agent {AGENT_ID} is idle after restart")
+                    _desync_retry_count = 0  # reset on success
+                    return True
+            log.warning(f"Desync recovery: agent {AGENT_ID} not idle after 150s")
+            return True  # restart succeeded even if not idle yet
+        else:
+            err = stderr.decode(errors="replace")[:200]
+            log.error(f"Desync recovery: restart failed: {err}")
+            return False
+    except Exception as e:
+        log.error(f"Desync recovery error: {e}")
+        return False
 
 
 # ── Standard entry point ──────────────────────────────────────────────────────

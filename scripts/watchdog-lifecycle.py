@@ -192,6 +192,7 @@ def format_telegram_event(fields: dict) -> str:
         meta += f" sender_id={sender_id}"
     if msg_id:
         meta += f" msg_id={msg_id}"
+    text = _sanitize_text(text)
     line = f"[{ts}] {sender} ({meta}): {text}"
     attachment_path = fields.get("attachment_path", "")
     attachment_kind = fields.get("attachment_kind", "")
@@ -208,6 +209,16 @@ def format_reaction_event(fields: dict) -> str:
     msg_id = fields.get("message_id", "")
     chat_id = fields.get("chat_id", "")
     return f"  {user} поставил {new_r} (было: {old_r}) на сообщение {msg_id} в чате {chat_id}"
+
+
+def _sanitize_text(text: str) -> str:
+    """Fix literal \\n → real newlines and MarkdownV2 escape artifacts (#505)."""
+    if not text:
+        return text
+    import re
+    text = text.replace("\\n", "\n")
+    text = re.sub(r"\\([!./\-_{}()#>+*=|~`])", r"\1", text)
+    return text
 
 
 def build_prompt(events: list[dict]) -> str:
@@ -235,7 +246,7 @@ def build_prompt(events: list[dict]) -> str:
         for ev in sse_events:
             d = ev.get("data", {})
             sender = d.get("from", "?")
-            text = d.get("text", "")
+            text = _sanitize_text(d.get("text", ""))
             ts = (d.get("timestamp", "") or "")[:19]
             parts.append(f"[{ts}] {sender}: {text}")
         for ev in other_redis:
@@ -411,12 +422,24 @@ async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
             await asyncio.sleep(IDLE_POLL_SEC)
             waited += IDLE_POLL_SEC
             if waited > max(IDLE_TIMEOUT_SEC, WAKE_TIMEOUT_SEC):
-                log.warning(f"[{agent_id}] busy/not-started >{waited:.0f}s, dropping {len(pending)} msgs")
+                log.warning(f"[{agent_id}] desync: busy >{waited:.0f}s — attempting lifecycle restart (#505)")
+                restarted = try_wake_agent(agent_id)  # lifecycle /restart
+                if restarted:
+                    log.info(f"[{agent_id}] desync recovery: restart requested, waiting 30s")
+                    await asyncio.sleep(30)
+                    for _ in range(20):
+                        if is_session_alive(agent_id) and is_agent_idle(agent_id):
+                            log.info(f"[{agent_id}] desync recovery: agent idle, re-dispatching {len(pending)} msg(s)")
+                            break
+                        await asyncio.sleep(5)
+                    continue
+                log.warning(f"[{agent_id}] desync recovery failed, dropping {len(pending)} msgs")
                 pending.clear()
                 break
 
         if pending:
             prompt = build_prompt(pending)
+            prompt = _sanitize_text(prompt)
             ok = await tmux_send(agent_id, prompt)
             if ok:
                 log.info(f"[{agent_id}] delivered {len(pending)} event(s)")
