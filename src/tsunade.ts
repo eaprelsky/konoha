@@ -10,6 +10,7 @@
 import Redis from "ioredis";
 import { registerAgent, sendMessage, REDIS_CONNECTION_OPTS } from "./redis";
 import { getBranding } from "./routes/audit";
+import { recoverStuckWorkItems } from "./runtime/work-items";
 
 const TSUNADE_ID = "tsunade";
 const TSUNADE_STREAM = `konoha:agent:${TSUNADE_ID}`;
@@ -125,6 +126,40 @@ async function startStreamPoller(pollRedis: Redis): Promise<void> {
   console.log("[Tsunade] stream event listener started");
 }
 
+// ── Work item healthcheck ────────────────────────────────────────────────────
+
+const HEALTHCHECK_INTERVAL_MS = 30_000; // 30 seconds
+
+function startWorkItemHealthcheck(): void {
+  const check = async () => {
+    try {
+      const result = await recoverStuckWorkItems();
+      if (result.recovered > 0) {
+        console.warn(`[Tsunade] healthcheck: recovered ${result.recovered}/${result.scanned} stuck work items, agents offline: ${result.agentsOffline.join(", ")}`);
+        // Notify naruto about recovery
+        await sendMessage({
+          from: TSUNADE_ID,
+          to: "naruto",
+          type: "message",
+          text: `[Tsunade] Recovered ${result.recovered} stuck work items. Agents offline: ${result.agentsOffline.join(", ") || "none"}`,
+          timestamp: new Date().toISOString(),
+          village_id: "comind.konoha",
+        }).catch(() => {});
+      }
+    } catch (e: any) {
+      console.error(`[Tsunade] healthcheck error: ${e.message}`);
+    }
+  };
+
+  // Run first check after 10s, then every 30s
+  setTimeout(() => {
+    check();
+    setInterval(check, HEALTHCHECK_INTERVAL_MS);
+  }, 10_000);
+
+  console.log("[Tsunade] work item healthcheck timer started (30s interval)");
+}
+
 export async function initTsunade(): Promise<void> {
   // Dedicated Redis connection for blocking XREADGROUP — must not share with
   // the main redis instance to avoid blocking non-blocking commands.
@@ -169,6 +204,10 @@ export async function initTsunade(): Promise<void> {
   // Start stream-based event poller (DB-scoped, unlike pub/sub).
   // Events written to konoha:agent:tsunade by publishEvent() are picked up here.
   startStreamPoller(pollRedis);
+
+  // Periodic work-item healthcheck (closes #508)
+  // Scans for stuck work items every 30s and recovers those whose assignee is offline.
+  startWorkItemHealthcheck();
 
   console.log("[Tsunade] registered on bus, listening for process/workitem events");
 }

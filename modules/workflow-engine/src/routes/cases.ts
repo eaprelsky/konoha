@@ -16,6 +16,7 @@ import {
   updateReminderStatus,
   deleteReminder,
   purgeAllWorkItems,
+  recoverStuckWorkItems,
   type WorkItemStatus,
   type CaseStatus,
   type ReminderStatus,
@@ -203,6 +204,13 @@ workitemsRouter.delete("/:id", async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 404);
   }
+});
+
+// POST /workitems/healthcheck — manual trigger for stuck work item recovery (#508)
+workitemsRouter.post("/healthcheck", requireAuth, async (c) => {
+  const thresholdMs = parseInt(c.req.query("threshold_ms") || "60000");
+  const result = await recoverStuckWorkItems(thresholdMs);
+  return c.json(result);
 });
 
 // Reminders router — mounted at /reminders

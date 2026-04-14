@@ -3,7 +3,7 @@
  * Extracted from runtime.ts (issue #338).
  */
 import { randomUUID } from "crypto";
-import { redis } from "../redis";
+import { redis, listAgents } from "../redis";
 import { pgPurgeAllWorkItems, pgGetWorkItem, pgListWorkItems } from "../storage/pg";
 import { emitEvent } from "./event-log";
 import {
@@ -13,6 +13,11 @@ import {
   WORKITEM_KEY_PREFIX, WORKITEMS_IDX_ALL, WORKITEMS_IDX_STATUS, WORKITEMS_IDX_ASSIGNEE, WORKITEMS_IDX_PROCESS,
   type Case, type WorkItem, type WorkItemStatus, type ActiveBranch,
 } from "./cases";
+import { publishEvent } from "../redis";
+import { createLogger } from "../logger";
+import { dispatchWorkItem } from "../dispatcher";
+
+const log = createLogger("runtime:work-items");
 
 const PG_READ = process.env.PG_READ === "true";
 
@@ -194,4 +199,131 @@ export async function purgeAllWorkItems(): Promise<number> {
   if (extraKeys.length > 0) await redis.del(...extraKeys);
   pgPurgeAllWorkItems();
   return ids.length;
+}
+
+// ── Crash recovery ──────────────────────────────────────────────────────────
+
+const STUCK_THRESHOLD_MS = 60_000; // 60 seconds — matches AC in #508
+
+interface RecoveryResult {
+  scanned: number;
+  recovered: number;
+  agentsOffline: string[];
+}
+
+/**
+ * Scan for work items stuck in non-terminal states and recover them.
+ * - Items in "running" or "pending" older than STUCK_THRESHOLD_MS are checked.
+ * - If the assignee agent is offline, reset the work item to "pending" and
+ *   emit a workitem.stuck event.
+ * - Items whose assignee agent is back online are re-dispatched.
+ *
+ * Called periodically by Tsunade's healthcheck timer.
+ */
+export async function recoverStuckWorkItems(
+  thresholdMs: number = STUCK_THRESHOLD_MS,
+): Promise<RecoveryResult> {
+  const now = Date.now();
+  const cutoff = new Date(now - thresholdMs).toISOString();
+
+  // Find work items in "running" or "pending" that haven't been updated recently
+  const [runningIds, pendingIds] = await Promise.all([
+    redis.smembers(WORKITEMS_IDX_STATUS + "running"),
+    redis.smembers(WORKITEMS_IDX_STATUS + "pending"),
+  ]);
+  const candidateIds = new Set([...runningIds, ...pendingIds]);
+  if (candidateIds.size === 0) {
+    return { scanned: 0, recovered: 0, agentsOffline: [] };
+  }
+
+  // Load all work items and filter by age
+  const items = await Promise.all(
+    [...candidateIds].map(id => loadWorkItem(id)),
+  );
+  const stuck = items.filter((wi): wi is WorkItem =>
+    wi !== null && wi.updated_at < cutoff,
+  );
+
+  if (stuck.length === 0) {
+    return { scanned: candidateIds.size, recovered: 0, agentsOffline: [] };
+  }
+
+  // Build online agent set for quick lookup
+  const onlineAgents = await listAgents(true);
+  const onlineIds = new Set(onlineAgents.map(a => a.id));
+
+  const recovered: string[] = [];
+  const agentsOffline: string[] = [];
+
+  for (const wi of stuck) {
+    const assigneeOnline = onlineIds.has(wi.assignee);
+
+    if (!assigneeOnline) {
+      // Agent is offline — reset work item to "pending" and emit stuck event
+      const prevStatus = wi.status;
+      if (prevStatus === "running") {
+        wi.status = "pending";
+        wi.updated_at = new Date().toISOString();
+        await saveWorkItem(wi, prevStatus);
+
+        await publishEvent({
+          type: "workitem.stuck",
+          source: "runtime@comind.konoha",
+          village_id: "comind.konoha",
+          timestamp: new Date().toISOString(),
+          payload: {
+            work_item_id: wi.work_item_id,
+            assignee: wi.assignee,
+            label: wi.label,
+            case_id: wi.case_id,
+            previous_status: prevStatus,
+            stuck_since: wi.updated_at,
+          },
+        }).catch(() => {});
+
+        log.info("recovered stuck work item (agent offline)", {
+          work_item_id: wi.work_item_id,
+          assignee: wi.assignee,
+          previous_status: prevStatus,
+        });
+        recovered.push(wi.work_item_id);
+        if (!agentsOffline.includes(wi.assignee)) {
+          agentsOffline.push(wi.assignee);
+        }
+      }
+    } else if (wi.status === "pending" && wi.case_id && wi.assignee !== "unassigned") {
+      // Agent is online but item is still pending — try re-dispatching
+      try {
+        const { getWorkflow } = await import("../workflow-loader");
+        const kase = await loadCase(wi.case_id);
+        if (kase && kase.status === "running") {
+          const def = await getWorkflow(kase.process_id);
+          if (def && wi.element_id) {
+            const el = def.elements.find(e => e.id === wi.element_id);
+            if (el?.role) {
+              await dispatchWorkItem({
+                role: el.role,
+                label: wi.label,
+                work_item_id: wi.work_item_id,
+                case_id: kase.case_id,
+                process_id: kase.process_id,
+                element_id: wi.element_id,
+                docIds: el.documents || [],
+                def,
+                payload: kase.payload,
+              });
+              log.info("re-dispatched pending work item", {
+                work_item_id: wi.work_item_id,
+                assignee: wi.assignee,
+              });
+            }
+          }
+        }
+      } catch (e: any) {
+        log.warn("re-dispatch failed", { work_item_id: wi.work_item_id, error: e.message });
+      }
+    }
+  }
+
+  return { scanned: candidateIds.size, recovered: recovered.length, agentsOffline };
 }

@@ -4,7 +4,7 @@
  *
  *  runtime/event-log.ts  — event log (Redis Streams)
  *  runtime/cases.ts      — case lifecycle + work item advancement helpers
- *  runtime/work-items.ts — work item CRUD + completeWorkItem
+ *  runtime/work-items.ts — work item CRUD + completeWorkItem + crash recovery (#508)
  *  runtime/reminders.ts  — reminder CRUD + BullMQ scheduler
  *  runtime/roles.ts      — role directory CRUD
  *  runtime/documents.ts  — document template CRUD
