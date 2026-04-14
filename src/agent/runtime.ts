@@ -58,7 +58,7 @@ ${block}` : block;
 
 export function resolveAgentRuntime(def: Pick<AgentDef, "model" | "runtime">): { provider: AgentProvider; runtimeModel: string } {
   const raw = (def.model || DEFAULT_AGENT_MODEL).trim();
-  const namespaced = raw.match(/^(claude|codex|cursor):(.*)$/);
+  const namespaced = raw.match(/^(claude|codex|cursor|glm):(.*)$/);
   if (def.runtime) {
     return {
       provider: def.runtime,
@@ -72,6 +72,7 @@ export function resolveAgentRuntime(def: Pick<AgentDef, "model" | "runtime">): {
     };
   }
   if (raw.startsWith("claude-")) return { provider: "claude", runtimeModel: raw };
+  if (raw.startsWith("glm-")) return { provider: "glm", runtimeModel: raw };
   if (raw.startsWith("cursor-")) return { provider: "cursor", runtimeModel: raw.slice("cursor-".length) || "sonnet-4" };
   if (raw.startsWith("codex-") && raw !== "codex") return { provider: "codex", runtimeModel: raw.slice("codex-".length) || "gpt-5" };
   if (raw.startsWith("gpt-") || raw.startsWith("o1") || raw.startsWith("o3") || raw.startsWith("o4")) {
@@ -85,7 +86,7 @@ export function resolveAgentRuntime(def: Pick<AgentDef, "model" | "runtime">): {
 
 export function formatAgentModel(def: Pick<AgentDef, "model" | "runtime">): string {
   const raw = (def.model || DEFAULT_AGENT_MODEL).trim();
-  if (/^(claude|codex|cursor):/.test(raw)) return raw;
+  if (/^(claude|codex|cursor|glm):/.test(raw)) return raw;
   if (def.runtime) return `${def.runtime}:${raw}`;
   return raw;
 }

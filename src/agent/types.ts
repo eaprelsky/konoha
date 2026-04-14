@@ -3,7 +3,7 @@
  * Extracted from agent-lifecycle.ts (#509).
  */
 
-export type AgentProvider = "claude" | "codex" | "cursor";
+export type AgentProvider = "claude" | "codex" | "cursor" | "glm";
 export type LaunchStrategy = "persistent_interactive" | "headless_task";
 
 export type LifecycleStatus = "stopped" | "starting" | "running" | "stopping" | "error";
