@@ -1,6 +1,6 @@
 /**
- * agent-lifecycle.ts — Re-export barrel.
- * All implementation moved to src/agent/ directory (#509).
+ * agent/index.ts — Barrel re-export for the agent module.
+ * Decomposed from monolith agent-lifecycle.ts (#509).
  *
  *  agent/types.ts    — shared type definitions
  *  agent/runtime.ts  — provider resolution, MCP config, launch commands
@@ -8,4 +8,8 @@
  *  agent/process.ts  — tmux management, state persistence, start/stop
  *  agent/crud.ts     — agent definition CRUD
  */
-export * from "./agent/index";
+export * from "./types";
+export * from "./runtime";
+export * from "./prompt";
+export * from "./process";
+export * from "./crud";
