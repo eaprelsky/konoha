@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth";
 import { publishEvent, type KonohaEvent } from "../redis";
 import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, type Case, type HistoryEntry } from "../runtime";
 import { getWorkflow, type WorkflowElement } from "../workflow-loader";
+import { loadActiveWaitsForCase } from "../runtime/event-waits";
 const log = createLogger("routes:events");
 
 const router = new Hono();
@@ -173,13 +174,27 @@ miningRouter.get("/case/:id", async (c) => {
     return { ...entry, duration_ms };
   }));
 
+  // Include active EventWait records
+  const active_waits = await loadActiveWaitsForCase(case_id);
+
   return c.json({
     case_id,
     process_id: kase.process_id,
     status: kase.status,
     created_at: kase.created_at,
     history: enriched,
+    active_waits,
   });
+});
+
+// Dedicated endpoint for active waits per case
+miningRouter.get("/case/:id/waits", async (c) => {
+  const case_id = c.req.param("id");
+  const kase = await getCase(case_id);
+  if (!kase) return c.json({ error: "Case not found" }, 404);
+
+  const waits = await loadActiveWaitsForCase(case_id);
+  return c.json({ case_id, waits });
 });
 
 export default router;
