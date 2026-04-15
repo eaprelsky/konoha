@@ -56,7 +56,7 @@ WATCHED_AGENTS   = [
 
 # On-demand agents: stop after mission complete — inactive state is expected, not a failure.
 # Do NOT alert when their sessions are missing. Still alert on failed watchdogs.
-ON_DEMAND_AGENTS = {"shino", "hinata", "ibiki", "ino", "inojin", "guy", "shikadai", "shikamaru", "tsunade"}
+ON_DEMAND_AGENTS = {"mirai", "shino", "hinata", "ibiki", "ino", "inojin", "guy", "shikadai", "shikamaru", "tsunade"}
 
 # For each agent: watchdog service that MUST be running when the tmux session is alive (#98)
 AGENT_WATCHDOGS = {
@@ -413,13 +413,19 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                                 )
 
                     # Detect token/context exhaustion (#111)
-                    pane_lower = pane.lower()
-                    if any(p.lower() in pane_lower for p in TOKEN_EXHAUSTION_PATTERNS):
-                        key = f"tmux:{session}:token_exhausted"
-                        if should_alert(key):
-                            alerts.append(
-                                f"kiba:alert agent={session} token_exhausted=true action=restart"
-                            )
+                    # Only check the last 30 lines (not full scrollback) to avoid false positives
+                    # when the agent has already recovered but the error text lingers in history.
+                    recent_lower = "\n".join(lines[-30:]).lower()
+                    if any(p.lower() in recent_lower for p in TOKEN_EXHAUSTION_PATTERNS):
+                        # Suppress if agent is idle (at prompt) — likely already recovered (#523)
+                        if is_idle:
+                            log.debug(f"Skipping token_exhausted for {session}: agent is idle (recovered)")
+                        else:
+                            key = f"tmux:{session}:token_exhausted"
+                            if should_alert(key):
+                                alerts.append(
+                                    f"kiba:alert agent={session} token_exhausted=true action=restart"
+                                )
 
                     # Detect permission prompt freeze (#69)
                     # Filter out status-bar lines (e.g. "bypass permissions on (shift+tab to cycle)")
