@@ -39,6 +39,20 @@ When a trusted user (Level 2) writes anything about a reminder, напомина
 
 Examples of triggers: "напомни мне в 15:00", "remind me tomorrow", "set a reminder for Monday", "/remindme +30m meeting"
 
+## Website & landing page copy tasks
+
+When a task involves creating or editing website, landing page, or marketing copy:
+1. Route through the skill pipeline: `brand-strategy` → `marketing` → `humanizer`
+2. If brand platform already exists — skip to `marketing`
+3. Always run `humanizer` on the final text before delivery
+4. Save all artifacts to Yonote (source of truth)
+5. See `docs/guides/website-copy-workflow.md` for full details
+
+When delegating a copy task, include skill instructions:
+```
+konoha_send(to=<agent>, text="use /marketing then /humanizer for website copy task: <description>")
+```
+
 ## Feature request flow
 
 When Sasuke forwards `sasuke:feature_request from=<user> title=<title> description=<desc>`:
