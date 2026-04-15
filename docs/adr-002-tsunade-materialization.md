@@ -320,7 +320,57 @@ Tsunade's actions are visible in:
 - `user asks "create process" → malformed LLM output → graceful fallback, no raw JSON`
 - `user asks destructive action → confirmation shown → user confirms → action executed`
 
-## 6. Recommended First Step
+## 6. Architectural Direction — Agent-Friendly Application Framework
+
+> "Приложение должно быть AI-agent-friendly: не raw DOM как объект парсинга, а agent-readable/actionable surface с состоянием, affordances, permissions, confirmations и observable result." — Egor
+
+This issue is not just a Tsunade fix — it reveals a **framework-level gap**. The application needs a first-class concept of "agent surface" — a structured, machine-readable interface that AI agents (Tsunade, future agents) can interact with.
+
+### Target Model: Agent Action Surface
+
+```
+Current:
+  User → Chat → LLM → raw text/JSON → frontend parses → maybe works
+
+Target:
+  User → Chat → LLM → Intent → Action Registry → structured result → UI reacts
+                                         ↑
+                              Agent Action Surface (new)
+                              ├── State: what the agent sees (Inspector snapshot, workflow state)
+                              ├── Affordances: what the agent can do (action registry)
+                              ├── Permissions: what the agent is allowed (autonomy levels)
+                              ├── Confirmations: what requires human approval
+                              └── Observable Result: audit trail + state change notification
+```
+
+### Five Pillars of Agent-Friendly Architecture
+
+| Pillar | Current State | Target |
+|--------|---------------|--------|
+| **State** | Inspector snapshot (ad-hoc, string-based) | Structured application state API with agent-scoped views |
+| **Affordances** | Implicit in system prompt ("you can do X") | Explicit action registry with contracts (#503 act-envelope) |
+| **Permissions** | None — agent can do anything the user can | Autonomy levels: disabled / confirm / autonomous per action |
+| **Confirmations** | None — fire-and-forget | Confirmation UX with preview, undo window, audit log |
+| **Observable Result** | Chat reply only | Action result objects + state change events + audit trail |
+
+### Why This Matters Beyond Tsunade
+
+1. **Any agent** (Tsunade, Kiba, future custom agents) needs the same surface
+2. **Tool use / function calling** from LLMs maps directly to the action registry
+3. **MCP servers** expose the same actions — one registry, multiple interfaces
+4. **Autonomous mode** requires permissions + confirmations as guardrails
+5. **Debugging** requires observable results — "what did the agent do and why?"
+
+### Implementation Trajectory
+
+This framework emerges naturally from the phased plan:
+- Phase 2 (server-side normalization) → creates the **Affordances** pillar
+- Phase 3 (unify entry points) → creates the **State** pillar (Inspector as agent view)
+- Phase 4 (first-class operator) → creates **Permissions**, **Confirmations**, **Observable Result**
+
+The action registry from #503 is already the foundation. The intent-decomposer translates LLM text into registry actions. What's missing is the permission/confirmation/observability layer on top.
+
+## 7. Recommended First Step
 
 **Phase 1, Item 1** — Fix TsunadeChatPanel to handle `created_workflow`. This is the smallest change that directly fixes the reported symptom. After that, Phase 1 Item 2 fixes the streaming flash.
 
