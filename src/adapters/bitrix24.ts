@@ -1,10 +1,14 @@
 // Bitrix24 adapter for Konoha workflow runtime (KWE-007)
 // Uses CHATBOT_BITRIX_WEBHOOK from /opt/shared/.shared-credentials
 
+import { createLogger } from "../logger";
+
+const log = createLogger("bitrix24-adapter");
+
 const WEBHOOK_URL = process.env.CHATBOT_BITRIX_WEBHOOK || "";
 
 if (!WEBHOOK_URL) {
-  console.warn("[bitrix24] CHATBOT_BITRIX_WEBHOOK not set — adapter will fail at runtime");
+  log.warn("CHATBOT_BITRIX_WEBHOOK not set — adapter will fail at runtime");
 }
 
 export interface Adapter {

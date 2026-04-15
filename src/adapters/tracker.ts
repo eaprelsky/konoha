@@ -13,6 +13,9 @@ import { randomUUID } from "crypto";
 import type { DataAdapter, ListenerHandle, QueryParams } from "./data-adapter";
 import { listenerRegistry } from "./data-adapter";
 import { TrackerClient } from "../clients/tracker";
+import { createLogger } from "../logger";
+
+const log = createLogger("tracker");
 
 // Default poll interval for event listeners (ms)
 const DEFAULT_POLL_MS = 30_000;
@@ -64,18 +67,18 @@ export class TrackerAdapter implements DataAdapter {
           if (cb) {
             for (const issue of issues) {
               try { cb(issue); } catch (e: any) {
-                console.error(`[tracker] callback error handle=${handleId}: ${e.message}`);
+                log.error("callback error", { handle: handleId, error: e.message });
               }
             }
           }
         }
       } catch (e: any) {
-        console.error(`[tracker] poll error handle=${handleId}: ${e.message}`);
+        log.error("poll error", { handle: handleId, error: e.message });
       }
     }, pollMs);
 
     this.pollingTimers.set(handleId, timer);
-    console.log(`[tracker] listener registered handle=${handleId} pollMs=${pollMs} filter=${JSON.stringify(queryFilter)}`);
+    log.info("listener registered", { handle: handleId, pollMs, filter: JSON.stringify(queryFilter) });
     return { id: handleId, adapter: this.name };
   }
 
@@ -87,7 +90,7 @@ export class TrackerAdapter implements DataAdapter {
     }
     listenerRegistry.delete(handle.id);
     this.lastSeen.delete(handle.id);
-    console.log(`[tracker] listener removed handle=${handle.id}`);
+    log.info("listener removed", { handle: handle.id });
   }
 
   /**

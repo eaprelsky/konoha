@@ -19,6 +19,9 @@ import { redis } from "../redis";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { join } from "path";
+import { createLogger } from "../logger";
+
+const log = createLogger("routes:deploy");
 
 const execAsync = promisify(exec);
 const app = new Hono();
@@ -148,7 +151,7 @@ app.post("/deploy", requireAuth, async (c) => {
       stderr: stderr.slice(-500),
     };
     await redis.set(DEPLOY_STATUS_KEY, JSON.stringify(result));
-    console.log(`[deploy] Build succeeded in ${elapsedMs}ms`);
+    log.info("Build succeeded", { elapsed_ms: elapsedMs });
     return c.json(result);
   } catch (e: any) {
     const elapsedMs = Date.now() - startedAt;
@@ -159,7 +162,7 @@ app.post("/deploy", requireAuth, async (c) => {
       error: e.message.slice(-1000),
     };
     await redis.set(DEPLOY_STATUS_KEY, JSON.stringify(result));
-    console.error("[deploy] Build failed:", e.message.slice(0, 200));
+    log.error("Build failed", { error: e.message.slice(0, 200) });
     return c.json(result, 500);
   }
 });

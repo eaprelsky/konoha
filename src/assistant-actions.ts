@@ -8,7 +8,9 @@
  */
 
 import { redis, sendMessage } from "./redis";
-import { silentCatch } from "./logger";
+import { silentCatch, createLogger } from "./logger";
+
+const log = createLogger("assistant-actions");
 import { randomUUID } from "crypto";
 import { execSync } from "child_process";
 
@@ -83,7 +85,7 @@ export async function auditLog(entry: AuditEntry): Promise<void> {
     if (v !== undefined) fields.push(k, String(v));
   }
   await redis.xadd(AUDIT_STREAM, "MAXLEN", "~", AUDIT_MAX_LEN, "*", ...fields).catch(e => {
-    console.error("[audit] write error:", e.message);
+    log.error("audit write error", { error: e.message });
   });
 }
 

@@ -3,6 +3,9 @@
 
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { createLogger } from "../logger";
+
+const log = createLogger("telegram-adapter");
 
 const execFileAsync = promisify(execFile);
 
@@ -27,7 +30,7 @@ async function sendMessage(input: Record<string, unknown>): Promise<Record<strin
     String(text),
   ]);
 
-  if (stderr) console.warn("[telegram-adapter] naruto-tg-send.py stderr:", stderr);
+  if (stderr) log.warn("naruto-tg-send.py stderr", { stderr });
 
   // naruto-tg-send.py outputs the message_id on success, or an error string
   const output = stdout.trim();

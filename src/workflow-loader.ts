@@ -3,7 +3,9 @@ import { join } from "path";
 import { redis } from "./redis";
 import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw, pgUpsertRole } from "./storage/pg";
 import { syncSchemaToRegistry, cleanupWorkflowRefs } from "./sync/schema-registry-sync";
-import { silentCatch } from "./logger";
+import { silentCatch, createLogger } from "./logger";
+
+const log = createLogger("workflow-loader");
 
 const PG_READ = process.env.PG_READ === "true";
 
@@ -210,7 +212,7 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   }
 
   if (warnings.length > 0) {
-    for (const w of warnings) console.warn(`[workflow-loader] ${w}`);
+    for (const w of warnings) log.warn(w);
   }
 
   return errors;
@@ -237,7 +239,7 @@ function loadWorkflowsFromDir(dir: string): WorkflowDefinition[] {
         const def: WorkflowDefinition = JSON.parse(raw);
         results.push(def);
       } catch (e: any) {
-        console.error(`[workflow-loader] Failed to parse ${fullPath}: ${e.message}`);
+        log.error("Failed to parse workflow file", { path: fullPath, error: e.message });
       }
     }
   }
@@ -331,13 +333,13 @@ export async function updateRoleWorkflowIndex(def: WorkflowDefinition): Promise<
       await redis.set(`role:${roleId}`, JSON.stringify(skeleton));
       await redis.zadd("konoha:roles:all", Date.now(), roleId);
       pgUpsertRole({ id: roleId, name: roleId, description: '', assignees: [], strategy: 'manual', updated_at: skeleton.updated_at });
-      console.log(`[workflow-loader] Auto-created skeleton role "${roleId}" (workflow "${def.id}")`);
+      log.info("Auto-created skeleton role", { role: roleId, workflow: def.id });
     } else {
       // Role key exists — ensure it's in the sorted set (fix orphaned roles, #316)
       const inSortedSet = await redis.zscore("konoha:roles:all", roleId);
       if (inSortedSet === null) {
         await redis.zadd("konoha:roles:all", Date.now(), roleId);
-        console.log(`[workflow-loader] Re-added orphaned role "${roleId}" to konoha:roles:all`);
+        log.info("Re-added orphaned role to konoha:roles:all", { role: roleId });
       }
     }
   }
@@ -362,9 +364,9 @@ export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: num
     def = normalizeSystems(def);
     const validationErrors = validateWorkflow(def);
     if (validationErrors.length > 0) {
-      console.error(`[workflow-loader] Workflow "${def.id}" failed eEPC validation (${validationErrors.length} error(s)):`);
+      log.error("Workflow failed eEPC validation", { workflow: def.id, error_count: validationErrors.length });
       for (const err of validationErrors) {
-        console.error(`  [Rule ${err.rule}] ${err.message}`);
+        log.error("Validation rule violated", { rule: err.rule, message: err.message });
       }
       errorCount++;
       continue;
@@ -373,7 +375,7 @@ export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: num
     await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
     await updateRoleWorkflowIndex(def);
     pgUpsertWorkflow(def as any);
-    console.log(`[workflow-loader] Loaded workflow "${def.id}" v${def.version} → Redis key ${WORKFLOW_KEY_PREFIX}${def.id}`);
+    log.info("Loaded workflow", { id: def.id, version: def.version, redis_key: WORKFLOW_KEY_PREFIX + def.id });
     loaded++;
   }
 
@@ -422,7 +424,7 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
     await redis.sadd(WORKFLOW_INDEX_KEY, saved.id);
     await updateRoleWorkflowIndex(saved as WorkflowDefinition);
     pgUpsertWorkflow(saved as any);
-    syncSchemaToRegistry(saved as WorkflowDefinition, null).catch(e => console.error("[schema-sync] create error:", e));
+    syncSchemaToRegistry(saved as WorkflowDefinition, null).catch(e => log.error("schema-sync create error", { error: e instanceof Error ? e.message : String(e) }));
     return { workflow: saved, errors: [] };
   }
   const errors = validateWorkflow(def);
@@ -431,7 +433,7 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
   await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
   await updateRoleWorkflowIndex(def);
   pgUpsertWorkflow(def as any);
-  syncSchemaToRegistry(def, null).catch(e => console.error("[schema-sync] create error:", e));
+  syncSchemaToRegistry(def, null).catch(e => log.error("schema-sync create error", { error: e instanceof Error ? e.message : String(e) }));
   return { workflow: def, errors: [] };
 }
 
@@ -455,7 +457,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
     await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
     await updateRoleWorkflowIndex(saved as WorkflowDefinition);
     pgUpsertWorkflow(saved as any);
-    syncSchemaToRegistry(saved as WorkflowDefinition, current).catch(e => console.error("[schema-sync] update error:", e));
+    syncSchemaToRegistry(saved as WorkflowDefinition, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
     return { workflow: saved, errors: [] };
   }
 
@@ -467,7 +469,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   // Notify hot-reload listener: agents with roles in this workflow need AGENTS.md refresh
   redis.xadd("konoha:agent-reload", "*", "type", "workflow.updated", "workflow_id", id, "timestamp", new Date().toISOString()).catch(silentCatch("workflow updated notification"));
   pgUpsertWorkflow(normalized as any);
-  syncSchemaToRegistry(normalized, current).catch(e => console.error("[schema-sync] update error:", e));
+  syncSchemaToRegistry(normalized, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
   return { workflow: normalized, errors: [] };
 }
 
@@ -478,7 +480,7 @@ export async function archiveWorkflow(id: string): Promise<boolean> {
   await redis.srem(WORKFLOW_INDEX_KEY, id);
   await removeFromRoleWorkflowIndex(def);
   // Emit orphan warnings for roles/docs that were exclusive to this workflow
-  cleanupWorkflowRefs(def).catch(e => console.error("[schema-sync] archiveWorkflow cleanup error:", e));
+  cleanupWorkflowRefs(def).catch(e => log.error("schema-sync archiveWorkflow cleanup error", { error: e instanceof Error ? e.message : String(e) }));
   pgDeleteWorkflow(id);
   // Keep the key in Redis (archived, not deleted) — remove from active index only
   return true;

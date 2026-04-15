@@ -8,6 +8,9 @@ import { Hono } from "hono";
 import { createHmac, timingSafeEqual } from "crypto";
 import { redis } from "../redis";
 import { sendMessage } from "../redis";
+import { createLogger } from "../logger";
+
+const log = createLogger("routes:github");
 
 const router = new Hono();
 
@@ -69,7 +72,7 @@ router.post("/webhooks/github", async (c) => {
   if (secret) {
     const sig = c.req.header("x-hub-signature-256") || "";
     if (!verifySignature(rawBody, sig, secret)) {
-      console.warn("[github-webhook] invalid signature");
+      log.warn("invalid webhook signature");
       return c.json({ error: "Invalid signature" }, 401);
     }
   }
@@ -94,9 +97,9 @@ router.post("/webhooks/github", async (c) => {
   // Publish to Redis stream
   const streamId = await publishGithubEvent(
     eventType, action, repo, sender, number, title, htmlUrl, rawBody,
-  ).catch(e => { console.error("[github-webhook] stream error:", e.message); return ""; });
+  ).catch(e => { log.error("stream publish error", { error: e.message }); return ""; });
 
-  console.log(`[github-webhook] ${eventType}/${action} repo=${repo} #${number} stream=${streamId}`);
+  log.info("webhook received", { event: eventType, action, repo, number, stream: streamId });
 
   // Route to agents
   try {
@@ -109,7 +112,7 @@ router.post("/webhooks/github", async (c) => {
         htmlUrl ? `URL: ${htmlUrl}` : "",
       ].filter(Boolean).join("\n");
       await sendMessage({ from: "github", to: ISSUE_ROUTE_AGENT, type: "event", text });
-      console.log(`[github-webhook] routed issue #${number} to ${ISSUE_ROUTE_AGENT}`);
+      log.info("routed issue to agent", { number, agent: ISSUE_ROUTE_AGENT });
     } else if (eventType === "issues" && action === "labeled") {
       const label = (payload.label as any)?.name || "";
       // Only route priority labels (skip noise)
@@ -123,7 +126,7 @@ router.post("/webhooks/github", async (c) => {
     }
     // pull_request events: log only — no automatic routing to avoid loops
   } catch (e: any) {
-    console.error("[github-webhook] routing error:", e.message);
+    log.error("routing error", { error: e.message });
   }
 
   return c.json({ ok: true, event: eventType, action, stream_id: streamId });

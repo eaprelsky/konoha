@@ -6,7 +6,9 @@
  * information systems referenced in the schema exist in the registry.
  */
 import { redis } from "../redis";
-import { silentCatch } from "../logger";
+import { silentCatch, createLogger } from "../logger";
+
+const log = createLogger("schema-sync");
 import { loadRole, createRole } from "../runtime/roles";
 import type { WorkflowDefinition } from "../workflow-loader";
 
@@ -53,7 +55,7 @@ export async function syncSchemaToRegistry(
           strategy: "manual",
         });
         result.roles_created.push(roleId);
-        console.log(`[schema-sync] Auto-created role "${roleId}" for workflow "${def.id}"`);
+        log.info("Auto-created role for workflow", { role: roleId, workflow: def.id });
       }
       // Track which workflows reference this role (used for orphan detection)
       await redis.sadd(`konoha:role:${roleId}:workflows`, def.id).catch(silentCatch("schema registry sync"));
@@ -97,7 +99,7 @@ export async function syncSchemaToRegistry(
       if (remaining === 0) {
         const msg = `Role "${roleId}" no longer used by any workflow — consider removing it via DELETE /roles/${roleId}`;
         result.warnings.push(msg);
-        console.warn(`[schema-sync] ${msg}`);
+        log.warn(msg);
       }
     }
   }
@@ -122,7 +124,7 @@ export async function cleanupWorkflowRefs(def: WorkflowDefinition): Promise<stri
     if (remaining === 0) {
       const msg = `Role "${roleId}" is now orphaned (workflow "${def.id}" deleted)`;
       warnings.push(msg);
-      console.warn(`[schema-sync] ${msg}`);
+      log.warn(msg);
     }
   }
 

@@ -6,6 +6,9 @@
 import { existsSync, readFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import type { AgentProvider, AgentDef } from "./types";
+import { createLogger } from "../logger";
+
+const log = createLogger("agent:runtime");
 
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
 const CODEX_CONFIG_PATH = "/home/ubuntu/.codex/config.toml";
@@ -226,7 +229,7 @@ function loadSharedMcpServers(
         };
       }
     } catch (error) {
-      console.warn(`[agent-runtime] failed to load shared MCP config ${configPath}:`, (error as Error).message);
+      log.warn("failed to load shared MCP config", { path: configPath, error: (error as Error).message });
     }
   }
 

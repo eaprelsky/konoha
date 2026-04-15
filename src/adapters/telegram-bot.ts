@@ -19,7 +19,9 @@ import { listenerRegistry } from "./data-adapter";
 import { TelegramClient } from "../clients/telegram";
 import type { TgMessage, TgUpdate } from "../clients/telegram";
 import { redis as sharedRedis, REDIS_CONNECTION_OPTS } from "../redis";
-import { silentCatch } from "../logger";
+import { silentCatch, createLogger } from "../logger";
+
+const log = createLogger("telegram-bot");
 
 const STREAM_KEY = "telegram:bot:incoming";
 const CONSUMER_GROUP = "event-manager";
@@ -114,12 +116,12 @@ export class TelegramBotAdapter implements DataAdapter {
     try {
       // "$" = only new messages after this group was created
       await sharedRedis.xgroup("CREATE", STREAM_KEY, CONSUMER_GROUP, "$", "MKSTREAM");
-      console.log(`[telegram-bot] consumer group "${CONSUMER_GROUP}" created on ${STREAM_KEY}`);
+      log.info("consumer group created", { group: CONSUMER_GROUP, stream: STREAM_KEY });
     } catch (e: any) {
       if (e.message?.includes("BUSYGROUP")) {
         // Group already exists — expected on restart
       } else {
-        console.error(`[telegram-bot] xgroup CREATE error: ${e.message}`);
+        log.error("xgroup CREATE error", { error: e.message });
       }
     }
   }
@@ -159,26 +161,26 @@ export class TelegramBotAdapter implements DataAdapter {
                   if (cb) {
                     try { cb(update); }
                     catch (cbErr: any) {
-                      console.error(`[telegram-bot] callback error handle=${handleId}: ${cbErr.message}`);
+                      log.error("callback error", { handle: handleId, error: cbErr.message });
                     }
                   }
                 }
               }
             } catch (parseErr: any) {
-              console.error(`[telegram-bot] parse error entry=${entryId}: ${parseErr.message}`);
+              log.error("parse error", { entry: entryId, error: parseErr.message });
             }
 
             // Always ACK — no retry on callback errors to avoid infinite loops
             await sharedRedis.xack(STREAM_KEY, CONSUMER_GROUP, entryId).catch(silentCatch("telegram xack"));
 
             if (matched) {
-              console.log(`[telegram-bot] dispatched entry=${entryId} chat=${fields.chat_id}`);
+              log.info("dispatched entry", { entry: entryId, chat: fields.chat_id });
             }
           }
         }
       } catch (e: any) {
         if (!this.loopActive) break;
-        console.error(`[telegram-bot] redis loop error: ${e.message}`);
+        log.error("redis loop error", { error: e.message });
         await new Promise(res => setTimeout(res, 3000));
       }
     }
@@ -191,14 +193,14 @@ export class TelegramBotAdapter implements DataAdapter {
     if (this.loopActive) return;
     await this.ensureConsumerGroup();
     this.loopActive = true;
-    this.redisLoop().catch(e => console.error(`[telegram-bot] redis loop crashed: ${e.message}`));
-    console.log("[telegram-bot] redis stream listener started");
+    this.redisLoop().catch(e => log.error("redis loop crashed", { error: e.message }));
+    log.info("redis stream listener started");
   }
 
   private stopLoopIfIdle(): void {
     if (this.listenerFilters.size === 0) {
       this.loopActive = false;
-      console.log("[telegram-bot] redis stream listener stopped (no listeners)");
+      log.info("redis stream listener stopped (no listeners)");
     }
   }
 
@@ -212,7 +214,7 @@ export class TelegramBotAdapter implements DataAdapter {
     listenerRegistry.set(handleId, callback);
     this.listenerFilters.set(handleId, filter);
     await this.ensureLoop();
-    console.log(`[telegram-bot] listener registered handle=${handleId} filter=${JSON.stringify(filter)}`);
+    log.info("listener registered", { handle: handleId, filter: JSON.stringify(filter) });
     return { id: handleId, adapter: this.name };
   }
 
@@ -220,7 +222,7 @@ export class TelegramBotAdapter implements DataAdapter {
     listenerRegistry.delete(handle.id);
     this.listenerFilters.delete(handle.id);
     this.stopLoopIfIdle();
-    console.log(`[telegram-bot] listener removed handle=${handle.id}`);
+    log.info("listener removed", { handle: handle.id });
   }
 
   async executeQuery(query: QueryParams): Promise<number> {

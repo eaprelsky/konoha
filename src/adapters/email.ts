@@ -5,6 +5,9 @@
 // @ts-expect-error — nodemailer has no bundled types; runtime import is correct
 import nodemailer from "nodemailer";
 import type { Adapter } from "./bitrix24";
+import { createLogger } from "../logger";
+
+const log = createLogger("email-adapter");
 
 const SMTP_HOST = process.env.CHATBOT_SMTP_HOST || "mail.eaprelsky.ru";
 const SMTP_PORT = parseInt(process.env.CHATBOT_SMTP_PORT || "587");
@@ -12,7 +15,7 @@ const SMTP_USER = process.env.CHATBOT_SMTP_USER || "";
 const SMTP_PASSWORD = process.env.CHATBOT_SMTP_PASSWORD || "";
 
 if (!SMTP_USER || !SMTP_PASSWORD) {
-  console.warn("[email-adapter] CHATBOT_SMTP_USER / CHATBOT_SMTP_PASSWORD not set — adapter will fail at runtime");
+  log.warn("CHATBOT_SMTP_USER / CHATBOT_SMTP_PASSWORD not set — adapter will fail at runtime");
 }
 
 function createTransport() {

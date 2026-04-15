@@ -10,6 +10,9 @@ import type {
   RoleRecord, DocRecord, ReminderRecord, SkillRecord,
 } from "./types";
 import { getDatabaseUrl } from "./database-url";
+import { createLogger } from "../logger";
+
+const log = createLogger("storage:pg");
 
 // postgres's sql.json() requires JSONValue, but our domain types are structurally compatible
 // at runtime. This helper centralises the cast instead of spreading `as any` everywhere.
@@ -37,7 +40,7 @@ async function pgWrite(fn: () => Promise<unknown>): Promise<void> {
   try {
     await fn();
   } catch (e: any) {
-    console.error("[pg:shadow] write error:", e.message);
+    log.error("shadow write error", { error: e.message });
   }
 }
 
@@ -286,7 +289,7 @@ async function pgRead<T>(fn: () => Promise<T>): Promise<T | null> {
   try {
     return await fn();
   } catch (e: any) {
-    console.error("[pg:read] error:", e.message);
+    log.error("read error", { error: e.message });
     return null;
   }
 }

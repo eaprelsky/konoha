@@ -9,7 +9,9 @@
 
 import Redis from "ioredis";
 import { registerAgent, sendMessage, REDIS_CONNECTION_OPTS } from "./redis";
-import { silentCatch } from "./logger";
+import { silentCatch, createLogger } from "./logger";
+
+const log = createLogger("tsunade");
 import { getBranding } from "./routes/audit";
 import { recoverStuckWorkItems } from "./runtime/work-items";
 
@@ -33,7 +35,7 @@ async function handleEvent(event: KonohaEvent): Promise<void> {
     case "process.exception": {
       const caseId = payload.case_id ?? "unknown";
       const error = payload.error ?? "unknown error";
-      console.error(`[Tsunade] process.exception case=${caseId}: ${error}`);
+      log.error("process.exception", { case_id: String(caseId), error: String(error) });
       await sendMessage({
         from: TSUNADE_ID,
         to: "naruto",
@@ -49,7 +51,7 @@ async function handleEvent(event: KonohaEvent): Promise<void> {
       const itemId = payload.work_item_id ?? "unknown";
       const assignee = typeof payload.assignee === "string" && payload.assignee ? payload.assignee : "naruto";
       const label = payload.label ?? "Work item";
-      console.warn(`[Tsunade] workitem.stuck id=${itemId} assignee=${assignee}`);
+      log.warn("workitem.stuck", { work_item_id: String(itemId), assignee });
       await sendMessage({
         from: TSUNADE_ID,
         to: assignee,
@@ -66,7 +68,7 @@ async function handleEvent(event: KonohaEvent): Promise<void> {
       const assignee = typeof payload.assignee === "string" && payload.assignee ? payload.assignee : "naruto";
       const label = payload.label ?? "Work item";
       const deadline = payload.deadline ?? "unknown";
-      console.warn(`[Tsunade] workitem.overdue id=${itemId} assignee=${assignee} deadline=${deadline}`);
+      log.warn("workitem.overdue", { work_item_id: String(itemId), assignee, deadline: String(deadline) });
       await sendMessage({
         from: TSUNADE_ID,
         to: assignee,
@@ -79,7 +81,7 @@ async function handleEvent(event: KonohaEvent): Promise<void> {
     }
 
     default:
-      console.warn(`[Tsunade] received unknown event type: ${type}`);
+      log.warn("received unknown event type", { type });
   }
 }
 
@@ -107,7 +109,7 @@ async function startStreamPoller(pollRedis: Redis): Promise<void> {
                 const event: KonohaEvent = JSON.parse(obj.text ?? "{}");
                 await handleEvent(event);
               } catch (e: any) {
-                console.error("[Tsunade] handleEvent error:", e.message);
+                log.error("handleEvent error", { error: e.message });
               }
             }
 
@@ -116,15 +118,15 @@ async function startStreamPoller(pollRedis: Redis): Promise<void> {
         }
       } catch (e: any) {
         if (!e.message?.includes("Connection")) {
-          console.error("[Tsunade] stream poll error:", e.message);
+          log.error("stream poll error", { error: e.message });
         }
         await new Promise(res => setTimeout(res, 2000));
       }
     }
   };
 
-  poll().catch(e => console.error("[Tsunade] poll loop crashed:", e.message));
-  console.log("[Tsunade] stream event listener started");
+  poll().catch(e => log.error("poll loop crashed", { error: e.message }));
+  log.info("stream event listener started");
 }
 
 // ── Work item healthcheck ────────────────────────────────────────────────────
@@ -136,7 +138,7 @@ function startWorkItemHealthcheck(): void {
     try {
       const result = await recoverStuckWorkItems();
       if (result.recovered > 0) {
-        console.warn(`[Tsunade] healthcheck: recovered ${result.recovered}/${result.scanned} stuck work items, agents offline: ${result.agentsOffline.join(", ")}`);
+        log.warn("healthcheck: recovered stuck work items", { recovered: result.recovered, scanned: result.scanned, agents_offline: result.agentsOffline.join(", ") });
         // Notify naruto about recovery
         await sendMessage({
           from: TSUNADE_ID,
@@ -148,7 +150,7 @@ function startWorkItemHealthcheck(): void {
         }).catch(silentCatch("tsunade fire-and-forget"));
       }
     } catch (e: any) {
-      console.error(`[Tsunade] healthcheck error: ${e.message}`);
+      log.error("healthcheck error", { error: e.message });
     }
   };
 
@@ -158,7 +160,7 @@ function startWorkItemHealthcheck(): void {
     setInterval(check, HEALTHCHECK_INTERVAL_MS);
   }, 10_000);
 
-  console.log("[Tsunade] work item healthcheck timer started (30s interval)");
+  log.info("work item healthcheck timer started", { interval_ms: 30000 });
 }
 
 export async function initTsunade(): Promise<void> {
@@ -195,10 +197,10 @@ export async function initTsunade(): Promise<void> {
   // initTsunade() resolves are not missed (avoids race condition in tests).
   try {
     await pollRedis.xgroup("CREATE", TSUNADE_STREAM, TSUNADE_GROUP, "$", "MKSTREAM");
-    console.log("[Tsunade] stream consumer group created");
+    log.info("stream consumer group created");
   } catch (e: any) {
     if (!e.message?.includes("BUSYGROUP")) {
-      console.error("[Tsunade] consumer group error:", e.message);
+      log.error("consumer group error", { error: e.message });
     }
   }
 
@@ -210,5 +212,5 @@ export async function initTsunade(): Promise<void> {
   // Scans for stuck work items every 30s and recovers those whose assignee is offline.
   startWorkItemHealthcheck();
 
-  console.log("[Tsunade] registered on bus, listening for process/workitem events");
+  log.info("registered on bus, listening for process/workitem events");
 }

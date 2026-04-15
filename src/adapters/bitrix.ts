@@ -12,6 +12,9 @@ import { randomUUID } from "crypto";
 import type { DataAdapter, ListenerHandle, QueryParams } from "./data-adapter";
 import { listenerRegistry } from "./data-adapter";
 import { BitrixClient } from "../clients/bitrix";
+import { createLogger } from "../logger";
+
+const log = createLogger("bitrix");
 
 // External URL where Konoha receives Bitrix24 event pushes
 const KONOHA_PUBLIC_URL = (process.env.KONOHA_PUBLIC_URL ?? "http://localhost:3200").replace(/\/$/, "");
@@ -50,7 +53,7 @@ export class BitrixAdapter implements DataAdapter {
     bindedEvents.set(handleId, event.toUpperCase());
     bindedHandlers.set(handleId, handlerUrl);
 
-    console.log(`[bitrix] listener registered handle=${handleId} event=${event}`);
+    log.info("listener registered", { handle: handleId, event });
     return { id: handleId, adapter: this.name };
   }
 
@@ -60,12 +63,12 @@ export class BitrixAdapter implements DataAdapter {
     if (!event || !handlerUrl) return;
 
     await this.client.unregisterWebhook(event, handlerUrl)
-      .catch(e => console.warn(`[bitrix] unbind error handle=${handle.id}: ${e.message}`));
+      .catch(e => log.warn("unbind error", { handle: handle.id, error: e.message }));
 
     listenerRegistry.delete(handle.id);
     bindedEvents.delete(handle.id);
     bindedHandlers.delete(handle.id);
-    console.log(`[bitrix] listener removed handle=${handle.id}`);
+    log.info("listener removed", { handle: handle.id });
   }
 
   /**
