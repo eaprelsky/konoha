@@ -2,11 +2,14 @@
  * ProcessEditor — interactive visual eEPC process editor
  * Drag elements from palette, connect with arrows, save to API.
  *
+ * Assistant integration: uses global AssistantWidget + Inspector context (#529).
+ * Schema patches arrive via `konoha:schema_patch` window events.
+ * Workflow creation arrives via `konoha:workflow_created` window events.
+ *
  * Modules extracted (issue #289):
  *  - ArrowRouter.ts        — pure routing functions + canvas constants
  *  - ElementShape.tsx      — ElShape component, PALETTE, DEFAULT_LABELS
  *  - MiningOverlay.tsx     — per-element SVG mining badges
- *  - TsunadeChatPanel.tsx  — AI assistant chat panel
  * Modules extracted (issue #330):
  *  - useProcessEditor.ts   — all state and logic
  *  - ProcessTree.tsx       — sidebar process library
@@ -16,11 +19,12 @@
  *  - ProcessEditor.css     — all styles
  */
 import type React from 'react';
+import { useEffect } from 'react';
+import { Inspector } from '@core/components/Inspector';
 import './ProcessEditor.css';
 import { EW, EH, GR, CW, CH, orthogonalPath, snap, type Pos } from './ArrowRouter';
 import { ElShape, PALETTE } from './ElementShape';
 import { MiningOverlay, formatDuration } from './MiningOverlay';
-import { TsunadeChatPanel } from './TsunadeChatPanel';
 import { useProcessEditor } from './useProcessEditor';
 import { ProcessTree } from './ProcessTree';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -29,6 +33,40 @@ import { RegistryPicker } from './RegistryPicker';
 
 export function ProcessEditor() {
   const s = useProcessEditor();
+
+  // Sync current process schema to Inspector so AssistantWidget (Tsunade) has context (#529)
+  useEffect(() => {
+    if (!s.wfId) {
+      Inspector.setProcessName(null);
+      Inspector.setProcessSchema(null);
+      return;
+    }
+    Inspector.setProcessName(`${s.wfName} (${s.wfId})`);
+    const lines: string[] = [
+      `Current process schema — "${s.wfName}" (id: ${s.wfId}):`,
+      `Elements (${s.elements.length}):`,
+    ];
+    for (const el of s.elements) {
+      const pos = s.positions[el.id];
+      const posStr = pos ? ` at (${Math.round(pos.x)},${Math.round(pos.y)})` : '';
+      const parts = [`  [${el.type}] id="${el.id}" label="${el.label || el.id}"${posStr}`];
+      if (el.role)   parts.push(`role: ${el.role}`);
+      if (el.system) parts.push(`system: ${el.system}`);
+      if (el.operator) parts.push(`op: ${el.operator}`);
+      lines.push(parts.join(' · '));
+    }
+    if (s.flow.length > 0) {
+      lines.push(`Flow (${s.flow.length} edges):`);
+      s.flow.slice(0, 40).forEach(([f, t]: [string, string, string?]) => lines.push(`  ${f} → ${t}`));
+    }
+    Inspector.setProcessSchema(lines.join('\n'));
+  }, [s.wfId, s.wfName, s.elements, s.flow, s.positions]);
+
+  // Sync selected element to Inspector
+  useEffect(() => {
+    if (!s.selEl) { Inspector.setSelectedElement(null); return; }
+    Inspector.setSelectedElement(`[${s.selEl.type}] "${s.selEl.label || s.selEl.id}"`);
+  }, [s.selEl]);
 
   return (
     <>
@@ -66,9 +104,6 @@ export function ProcessEditor() {
             {s.saving ? 'Сохранение…' : '💾 Сохранить'}
           </button>
           <div className="sep" />
-          <button className={`btn-tsunade${s.showChat ? ' active' : ''}`} onClick={() => s.setShowChat(v => !v)}>
-            💬 Цунаде
-          </button>
           <button
             className={s.showMining ? 'active' : ''}
             onClick={s.wfId.trim() ? s.toggleMining : undefined}
@@ -449,19 +484,6 @@ export function ProcessEditor() {
             </svg>
           </div>
 
-          {/* Tsunade chat panel */}
-          <TsunadeChatPanel
-            show={s.showChat}
-            onClose={() => s.setShowChat(false)}
-            wfId={s.wfId}
-            wfName={s.wfName}
-            elements={s.elements}
-            flow={s.flow}
-            positions={s.positions}
-            showMining={s.showMining}
-            miningData={s.miningData}
-            onApplyPatch={s.applyTsunadePatch}
-          />
         </div>
       </div>
 

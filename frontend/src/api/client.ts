@@ -276,23 +276,6 @@ export const api = {
     search: (q: string) => apiFetch<{ path: string }[]>(`${BASE}/kb/search?q=${encodeURIComponent(q)}`),
   },
 
-  tsunade: {
-    chat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
-      apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null; created_workflow: { id: string; name: string } | null; actions?: HighlightAction[] }>(`${BASE}/tsunade/chat`, {
-        method: 'POST',
-        body: JSON.stringify(params),
-      }),
-    clearChat: (chat_id: string) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/tsunade/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
-    processChat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
-      apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null; created_workflow: { id: string; name: string } | null; actions?: HighlightAction[] }>(`${BASE}/ai/process-chat`, {
-        method: 'POST',
-        body: JSON.stringify(params),
-      }),
-    clearProcessChat: (chat_id: string) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/ai/process-chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
-  },
-
   kiba: {
     chat: (params: { message: string; context?: { page: string; data: unknown[] }; chat_id?: string }) =>
       apiFetch<{ reply: string; chat_id: string; actions: KibaAction[] }>(`${BASE}/ai/admin-chat`, {

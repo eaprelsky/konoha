@@ -247,46 +247,9 @@ async function handleTsunadeChatRequest(
 
 const router = new Hono();
 
-router.use("/tsunade/chat", requireAuth);
-router.post("/tsunade/chat", async (c) => {
-  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }>().catch(() => null);
-  if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
-  const chatId = body.chat_id || randomUUID();
-  const histKey = TSUNADE_CHAT_PREFIX + chatId;
-  try {
-    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
-    return c.json(result);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500);
-  }
-});
-
-router.delete("/tsunade/chat/:chat_id", requireAuth, async (c) => {
-  const chatId = c.req.param("chat_id");
-  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
-  return c.json({ ok: true });
-});
-
-// Alias: /ai/process-chat → same Tsunade logic
-router.use("/ai/process-chat", requireAuth);
-router.post("/ai/process-chat", async (c) => {
-  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }>().catch(() => null);
-  if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
-  const chatId = body.chat_id || randomUUID();
-  const histKey = TSUNADE_CHAT_PREFIX + chatId;
-  try {
-    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
-    return c.json(result);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500);
-  }
-});
-
-router.delete("/ai/process-chat/:chat_id", requireAuth, async (c) => {
-  const chatId = c.req.param("chat_id");
-  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
-  return c.json({ ok: true });
-});
+// ── Canonical assistant endpoint: /ai/chat (#529 unified) ──────────────────────
+// Legacy /tsunade/chat and /ai/process-chat retired — single entrypoint for all
+// assistant modes (process=Tsunade, admin=Kiba) with optional SSE streaming.
 
 // --- Kiba Admin Chat API ---
 

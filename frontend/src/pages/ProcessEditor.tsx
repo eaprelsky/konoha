@@ -6,7 +6,6 @@
  *  - ArrowRouter.ts        — pure routing functions + canvas constants
  *  - ElementShape.tsx      — ElShape component, PALETTE, DEFAULT_LABELS
  *  - MiningOverlay.tsx     — per-element SVG mining badges
- *  - TsunadeChatPanel.tsx  — AI assistant chat panel
  * Modules extracted (issue #330):
  *  - useProcessEditor.ts   — all state and logic
  *  - ProcessTree.tsx       — sidebar process library
