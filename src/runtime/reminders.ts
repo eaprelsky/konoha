@@ -7,7 +7,6 @@ import { readFileSync } from "fs";
 import { Queue, Worker } from "bullmq";
 import { redis, REDIS_CONNECTION_OPTS } from "../redis";
 import { pgUpsertReminder, pgDeleteReminder, pgGetReminder, pgListReminders } from "../storage/pg";
-import { completeWorkItem } from "./work-items";
 import { createLogger } from "../logger";
 
 const log = createLogger("runtime:reminders");
@@ -88,14 +87,16 @@ async function fireReminder(reminder_id: string): Promise<void> {
   const r = await loadReminder(reminder_id);
   if (!r || r.status !== "pending") return;
 
-  if (r.type === "process-bound" && r.work_item_id) {
-    try {
-      await completeWorkItem(r.work_item_id, { system: "timer-expired", label: r.message });
-      log.info("timer expired — completed work_item", { work_item_id: r.work_item_id });
-    } catch (e: any) {
-      log.error("auto-complete failed", { work_item_id: r.work_item_id, error: e.message });
-    }
-  }
+  // Reminder is a notification layer only — it does NOT advance the process.
+  // Process-time waits (timer-based advancement) are handled by TimerWait + tickTimerWaits().
+  // This separation ensures reminders never auto-complete work items by themselves.
+  log.info("reminder fired (notification only, no process advancement)", {
+    reminder_id,
+    type: r.type,
+    recipient: r.recipient,
+    case_id: r.case_id,
+    work_item_id: r.work_item_id,
+  });
 
   await updateReminderStatus(reminder_id, "sent");
 

@@ -14,6 +14,7 @@ import { loadInstructionText } from "./document-instructions";
 import { generateText } from "./llm";
 import { createLogger } from "./logger";
 import { createReminder, completeWorkItem } from "./runtime";
+import { createTimerWait } from "./runtime/event-waits";
 
 const execFileAsync = promisify(execFile);
 const log = createLogger("system-agent");
@@ -67,25 +68,46 @@ export async function executeSystemFunction(params: SystemExecParams): Promise<v
   // 1. Timer: "Подождать N минут"
   const waitMinutes = parseWaitMinutes(label);
   if (waitMinutes !== null) {
-    const scheduledAt = new Date(Date.now() + waitMinutes * 60 * 1000).toISOString();
+    const wakeAt = new Date(Date.now() + waitMinutes * 60 * 1000).toISOString();
     try {
+      // TimerWait handles process-time advancement (deterministic state machine).
+      // When wake_at is reached, tickTimerWaits() fires it and the case auto-advances.
+      await createTimerWait({
+        case_id,
+        process_id,
+        element_id,
+        element_label: label,
+        timer_type: "delay",
+        wake_at: wakeAt,
+        duration: `PT${waitMinutes}M`,
+        auto_advance: true,
+      });
+
+      // Standalone reminder is purely a notification — does NOT advance the process.
       await createReminder({
-        type: "process-bound",
+        type: "standalone",
         recipient: "system",
         message: `Таймер: ${label} (work_item=${work_item_id})`,
-        scheduled_at: scheduledAt,
+        scheduled_at: wakeAt,
         channel: "gui",
         case_id,
         process_id,
         element_id,
         work_item_id,
       });
-      log.info("timer set", { wait_minutes: waitMinutes, scheduled_at: scheduledAt, work_item_id });
+
+      log.info("timer set via TimerWait + notification reminder", {
+        wait_minutes: waitMinutes,
+        wake_at: wakeAt,
+        work_item_id,
+        process_advancement: "TimerWait (auto)",
+        notification: "Reminder (standalone)",
+      });
     } catch (e: any) {
-      log.error("failed to create timer reminder", { work_item_id, error: e.message });
+      log.error("failed to create timer wait", { work_item_id, error: e.message });
       await completeWorkItem(work_item_id, { system: "timer-error", error: e.message }).catch(e2 => log.error("completeWorkItem failed for timer error", { work_item_id, error: e2?.message }));
     }
-    return; // work item will be auto-completed by scheduler
+    return; // work item will be auto-completed by TimerWait when wake_at fires
   }
 
   // 2. Document generation: label matches generation pattern AND docs attached
