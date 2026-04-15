@@ -23,6 +23,15 @@ export {
   escalateTimerWait,
   tickTimerWaits,
 } from "./timer-wait";
+export {
+  type PingPolicy,
+  type EscalationAction,
+  scheduleWaitReminders,
+  pingManualWait,
+  sweepOverdueWaits,
+  escalateWait,
+  abortEscalatedWait,
+} from "./wait-notifier";
 
 const log = createLogger("runtime:event-waits");
 
