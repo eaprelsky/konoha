@@ -6,6 +6,7 @@
 
 set -a; source /home/ubuntu/.agent-env; set +a
 unset OPENAI_API_KEY OPENROUTER_API_KEY CHATBOT_OPENROUTER_KEY OPENROUTER_MODEL CHATBOT_OPENROUTER_MODEL
+BASE_PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 SESSION="naruto"
 TMUX_SOCKET="naruto"
@@ -21,8 +22,8 @@ while true; do
     mkdir -p "$WORKDIR"
     tmux -L "$TMUX_SOCKET" new-session -d -s "$SESSION" -c "$WORKDIR" -x 200 -y 50
 
-    export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"
-    tmux -L "$TMUX_SOCKET" send-keys -t "$SESSION" "export PATH=\"$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH\"; codex --no-alt-screen -m gpt-5.4 --dangerously-bypass-approvals-and-sandbox -C $WORKDIR" Enter
+    export PATH="$BASE_PATH"
+    tmux -L "$TMUX_SOCKET" send-keys -t "$SESSION" "export PATH=\"$BASE_PATH\"; codex --no-alt-screen -m gpt-5.4 --dangerously-bypass-approvals-and-sandbox -C $WORKDIR" Enter
 
     /home/ubuntu/konoha/scripts/wait-for-prompt.sh "$SESSION" 120 "$TMUX_SOCKET"
     tmux -L "$TMUX_SOCKET" send-keys -t "$SESSION" 'Прочитай AGENTS.md и выполни startup sequence.'

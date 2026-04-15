@@ -2,6 +2,7 @@
 set -a; source /home/ubuntu/.agent-env; set +a
 unset OPENAI_API_KEY OPENROUTER_API_KEY CHATBOT_OPENROUTER_KEY OPENROUTER_MODEL CHATBOT_OPENROUTER_MODEL
 source /home/ubuntu/konoha/scripts/agent-monitor.sh
+BASE_PATH="/usr/local/bin:$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.bun/bin:/usr/local/sbin:/usr/bin:/sbin:/bin"
 
 SESSION="kakashi"
 RESTART_INTERVAL=7200
@@ -12,7 +13,7 @@ while true; do
     sleep 2
 
     tmux -L "$SESSION" new-session -d -s "$SESSION" -c /opt/shared/agent-workdirs/kakashi -x 200 -y 50
-    export PATH="/usr/local/bin:$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+    export PATH="$BASE_PATH"
     tmux -L "$SESSION" send-keys -t "$SESSION" "cd /opt/shared/agent-workdirs/kakashi && claude --dangerously-skip-permissions" Enter
 
     # Wait for bypass permissions menu, then accept
