@@ -129,6 +129,7 @@ See [docs/architecture.md](docs/architecture.md) for details.
 - [Attachments](docs/attachments.md) — file exchange between agents
 - [Architecture](docs/architecture.md) — system design, message flow, deployment
 - [MCP Integration](docs/mcp.md) — Claude Code / Codex / Cursor tool setup
+- [AI-Native Operator Constitution](docs/governance/ai-native-operator-constitution.md) — governing document for Tsunade/operator architecture work
 
 ## API Quick Reference
 

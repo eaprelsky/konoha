@@ -36,6 +36,22 @@ See `docs/testing.md` for running tests.
 4. PR title: short imperative sentence (≤70 chars)
 5. Reference the GitHub issue: `closes #N` in commit message
 
+## Governance for Tsunade / operator work
+
+If your change touches any of the following:
+
+- Tsunade or assistant runtime
+- action contracts or envelopes
+- confirmations, permissions, or operator-visible results
+- agent-readable state or operator flows
+
+then you must read:
+
+- `docs/governance/ai-native-operator-constitution.md`
+- `docs/adr-002-tsunade-materialization.md`
+
+For these changes, "it works" is not sufficient. Reviewers may reject a PR if it introduces a parallel contract, preserves legacy divergence as a target state, or weakens the canonical action/state/confirmation model.
+
 ## Issue labels
 
 | Label | Meaning |
@@ -54,3 +70,4 @@ See `docs/testing.md` for running tests.
 - See `docs/ports.md` for service port assignments
 - See `docs/adapters.md` for external service integrations
 - See `docs/testing.md` for test architecture and E2E auth
+- See `docs/governance/ai-native-operator-constitution.md` for the governing document on the Tsunade operator line
