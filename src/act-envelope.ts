@@ -303,6 +303,33 @@ actRouter.post("/", requireAuth, async (c) => {
 });
 
 /**
+ * POST /act/intent — Decompose a high-level intent into an action sequence.
+ *
+ * Body: { intent: string, params: Record<string, unknown> }
+ * Returns: DecomposedPlan with ordered actions and side_effects.
+ */
+actRouter.post("/intent", requireAuth, async (c) => {
+  const { intent, params } = await c.req.json<{ intent: string; params: Record<string, unknown> }>();
+  if (!intent) {
+    return c.json(fail("intent", "Missing required field: intent"), 400);
+  }
+  const { decomposeIntent, listIntents } = await import("./intent-decomposer");
+  const plan = decomposeIntent(intent, params ?? {});
+  if (!plan) {
+    return c.json(fail(intent, `Unknown intent: ${intent}. Available: ${listIntents().map(i => i.id).join(", ")}`), 404);
+  }
+  return c.json({ ok: true, action: `intent.${intent}`, data: plan, action_version: 1 });
+});
+
+/**
+ * GET /act/intent — List available intents.
+ */
+actRouter.get("/intent", requireAuth, async (c) => {
+  const { listIntents } = await import("./intent-decomposer");
+  return c.json(listIntents());
+});
+
+/**
  * GET /act — List available actions.
  */
 actRouter.get("/", requireAuth, async (c) => {

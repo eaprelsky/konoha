@@ -592,6 +592,34 @@ const ACTIONS: ActionDef[] = [
     audited: false,
   },
 
+  // ── Event (manual confirmation) ───────────────────────────────────────────
+  {
+    id: "event.confirm",
+    description: "Confirm a manual event wait, advancing the case past the current event node.",
+    scope: "case",
+    args: [
+      { name: "case_id",      type: "string", required: true,  description: "Case ID to confirm event for." },
+      { name: "element_id",   type: "string", required: false, description: "Event element ID (defaults to current position)." },
+      { name: "comment",      type: "string", required: false, description: "Optional confirmation comment." },
+      { name: "confirmed_by", type: "string", required: true,  description: "User ID of the confirmer." },
+      { name: "outcome",      type: "string", required: false, description: "Outcome for approval gates: approved | rejected." },
+    ],
+    currentEndpoint: "POST /events/mining/case/:id/confirm-event",
+    autonomy: "auto",
+    audited: true,
+  },
+  {
+    id: "event.wait_list",
+    description: "List active manual event waits (inbox), optionally filtered by assignee.",
+    scope: "case",
+    args: [
+      { name: "assignee", type: "string", required: false, description: "Filter by assignee role or user ID." },
+      { name: "status",   type: "string", required: false, description: "Filter by wait status: active | overdue | escalated." },
+    ],
+    autonomy: "auto",
+    audited: false,
+  },
+
   // ── Knowledge ─────────────────────────────────────────────────────────────
   {
     id: "knowledge.tree",
