@@ -17,7 +17,7 @@ import { normalizeElementNames } from "../../../../src/normalizer";
 import { deleteCasesByProcess } from "../../../../src/runtime";
 import { join } from "path";
 import { resolveBatchProgrammatic, type ProcessContext } from "../../../../src/trigger-resolver";
-import { createSubscriptionProgrammatic, type TriggerDef } from "../../../../src/event-manager";
+import { createSubscriptionProgrammatic, cancelSubscriptionsByProcessAndInstance, type TriggerDef } from "../../../../src/event-manager";
 
 /**
  * Run Trigger Resolver batch for all event nodes that lack a `trigger` field.
@@ -74,9 +74,21 @@ async function resolveTriggers(
 /**
  * Subscribe all start event nodes (no incoming edges) of a process to Event Manager.
  * Called after a successful non-draft deploy.
+ *
+ * On republish (update): cancels ALL stale subs with instance_id="new" for this
+ * process_id first, then creates fresh ones. This prevents:
+ *  - zombie subs from removed/changed start events
+ *  - duplicate active subscriptions for the same start node
  */
 async function subscribeStartEvents(def: WorkflowDefinition): Promise<void> {
-  // Build inEdge count
+  // Step 1: Cancel all existing "new-instance" subs for this process.
+  // This handles republish semantics — old start events are cleaned up.
+  const cancelledCount = await cancelSubscriptionsByProcessAndInstance(def.id, "new");
+  if (cancelledCount > 0) {
+    console.log(`[workflow-deploy] cancelled ${cancelledCount} stale start-event sub(s) for process ${def.id}`);
+  }
+
+  // Step 2: Build inEdge count to identify start events
   const inCount = new Map<string, number>();
   for (const el of def.elements) inCount.set(el.id, 0);
   for (const [, to] of def.flow ?? []) inCount.set(to, (inCount.get(to) ?? 0) + 1);
@@ -85,6 +97,7 @@ async function subscribeStartEvents(def: WorkflowDefinition): Promise<void> {
     el.type === "event" && (inCount.get(el.id) ?? 0) === 0 && el.trigger?.kind && !el.trigger?.manual_override,
   );
 
+  // Step 3: Subscribe each start event node
   for (const el of startEvents) {
     try {
       await createSubscriptionProgrammatic({

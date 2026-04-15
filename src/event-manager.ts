@@ -5,6 +5,6 @@
  */
 
 export type { TimerTrigger, MessageTrigger, ConditionTrigger, DelayAfterTrigger, TriggerDef, Subscription, UiStatus } from "./events/types";
-export { restoreSubscriptions, createSubscriptionProgrammatic, cancelSubscriptionsByInstance } from "./events/subscriptions";
+export { restoreSubscriptions, createSubscriptionProgrammatic, cancelSubscriptionsByInstance, cancelSubscriptionsByProcessAndInstance } from "./events/subscriptions";
 export { startDelayWorker } from "./events/delay-worker";
 export { registerEventManagerRoutes } from "./events/routes";

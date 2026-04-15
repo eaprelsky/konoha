@@ -548,3 +548,33 @@ export async function cancelSubscriptionsByInstance(instance_id: string): Promis
 
   return matching.length;
 }
+
+/**
+ * Cancel all active subscriptions matching both process_id AND instance_id.
+ * Used during workflow republish to clean up stale start-event subs
+ * before creating fresh ones (issue #490).
+ * Returns the number of subscriptions cancelled.
+ */
+export async function cancelSubscriptionsByProcessAndInstance(
+  process_id: string,
+  instance_id: string,
+): Promise<number> {
+  const all = await redis.hgetall(SUBSCRIPTIONS_KEY).catch(() => ({} as Record<string, string>));
+  const subs = Object.values(all).map(v => JSON.parse(v) as Subscription);
+  const matching = subs.filter(
+    s => s.process_id === process_id && s.instance_id === instance_id && s.status === "active",
+  );
+
+  for (const sub of matching) {
+    sub.status = "cancelled";
+    await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
+    await cancelSubscriptionResources(sub).catch(e =>
+      log.warn(`[event-manager] cancel resources error sub=${sub.id}: ${e.message}`),
+    );
+    log.info(
+      `[event-manager] cancelled stale start-event sub=${sub.id} process_id=${process_id} event_id=${sub.event_id}`,
+    );
+  }
+
+  return matching.length;
+}

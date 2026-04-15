@@ -12,6 +12,7 @@ import { randomUUID } from "crypto";
 import { redis } from "../src/redis";
 import {
   cancelSubscriptionsByInstance,
+  cancelSubscriptionsByProcessAndInstance,
   createSubscriptionProgrammatic,
 } from "../src/event-manager";
 
@@ -189,5 +190,88 @@ describe("migrateTriggerKind (via getWorkflow)", () => {
 
     await redis.del(`workflow:${workflowId}`);
     await redis.srem("konoha:workflow:index", workflowId);
+  });
+});
+
+// ── Tests for cancelSubscriptionsByProcessAndInstance (issue #490) ─────────────
+
+describe("cancelSubscriptionsByProcessAndInstance", () => {
+  const processId = `test-proc-pi-${randomUUID()}`;
+  const newInstance = `new`;
+
+  beforeEach(async () => {
+    const all = await redis.hgetall(SUBSCRIPTIONS_KEY).catch(() => ({}));
+    for (const [k, v] of Object.entries(all)) {
+      const sub = JSON.parse(v) as { process_id: string };
+      if (sub.process_id === processId) {
+        await redis.hdel(SUBSCRIPTIONS_KEY, k);
+      }
+    }
+  });
+
+  it("should cancel all active subs matching process_id + instance_id='new'", async () => {
+    // Create 2 subs with instance_id="new" (deploy-time start event subs)
+    await createSubscriptionProgrammatic({
+      event_id: "start_evt_1",
+      process_id: processId,
+      instance_id: "new",
+      trigger: { kind: "manual", action: "complete", role: "user" } as any,
+    });
+    await createSubscriptionProgrammatic({
+      event_id: "start_evt_2",
+      process_id: processId,
+      instance_id: "new",
+      trigger: { kind: "manual", action: "submit", role: "manager" } as any,
+    });
+
+    // Verify both are active
+    const before = await redis.hgetall(SUBSCRIPTIONS_KEY);
+    const activeBefore = Object.values(before)
+      .map(v => JSON.parse(v))
+      .filter(s => s.process_id === processId && s.instance_id === "new" && s.status === "active");
+    expect(activeBefore.length).toBe(2);
+
+    // Act: cancel by process+instance
+    const count = await cancelSubscriptionsByProcessAndInstance(processId, "new");
+    expect(count).toBe(2);
+
+    // Assert: 0 active subs for this process+instance
+    const after = await redis.hgetall(SUBSCRIPTIONS_KEY);
+    const activeAfter = Object.values(after)
+      .map(v => JSON.parse(v))
+      .filter(s => s.process_id === processId && s.instance_id === "new" && s.status === "active");
+    expect(activeAfter.length).toBe(0);
+  });
+
+  it("should not cancel subs with a different instance_id (running case)", async () => {
+    // Create a "new" sub (deploy-time) and a running case sub
+    await createSubscriptionProgrammatic({
+      event_id: "start_evt",
+      process_id: processId,
+      instance_id: "new",
+      trigger: { kind: "manual", action: "complete", role: "user" } as any,
+    });
+    await createSubscriptionProgrammatic({
+      event_id: "intermediate_evt",
+      process_id: processId,
+      instance_id: "case-abc-123",
+      trigger: { kind: "manual", action: "approve", role: "manager" } as any,
+    });
+
+    // Cancel only "new" subs
+    const count = await cancelSubscriptionsByProcessAndInstance(processId, "new");
+    expect(count).toBe(1);
+
+    // The running case sub should still be active
+    const after = await redis.hgetall(SUBSCRIPTIONS_KEY);
+    const caseSub = Object.values(after)
+      .map(v => JSON.parse(v))
+      .find(s => s.instance_id === "case-abc-123");
+    expect(caseSub?.status).toBe("active");
+  });
+
+  it("should return 0 when no matching subs exist", async () => {
+    const count = await cancelSubscriptionsByProcessAndInstance("nonexistent-proc", "new");
+    expect(count).toBe(0);
   });
 });
