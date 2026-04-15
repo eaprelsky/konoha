@@ -31,6 +31,7 @@ import deployRouter from "../../src/routes/deploy";
 import testbenchProxyRouter from "../../src/routes/testbench-proxy";
 import { seedSystemAgents } from "../../src/routes/admin";
 import staticRouter, { DIST_UI_DIR } from "../../src/middleware/static";
+import { actRouter } from "../../src/act-envelope";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
@@ -140,6 +141,9 @@ registerWorkCalendarRoutes(app, requireAuth);
 
 // Mount workflow-engine module (cases, workitems, reminders, workflows)
 app.route("/", workflowEngineModule);
+
+// Unified action envelope (#500) — POST /act, GET /act, GET /act/:actionId
+app.route("/act", actRouter);
 
 // ── /api/* compatibility shim (closes #464) ──────────────────────────────────
 // The frontend JS uses BASE = '/api' for all API calls.
