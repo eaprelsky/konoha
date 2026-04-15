@@ -222,31 +222,27 @@ async function handleTsunadeChatRequest(
     system: identityBlock + TSUNADE_SYSTEM,
     messages,
   });
-  let reply = rawReply;
-  let schema_patch: unknown = undefined;
-  let created_workflow: unknown = undefined;
-  let actions: unknown[] = [];
-  try {
-    const parsed = JSON.parse(stripMarkdownFences(rawReply));
-    reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message || rawReply;
-    if (parsed.schema_patch) schema_patch = parsed.schema_patch;
-    if (Array.isArray(parsed.actions)) actions = parsed.actions;
-    if (parsed.create_workflow) {
-      const result = await createWorkflow(parsed.create_workflow, { draft: true });
-      if (result.errors.length === 0) {
-        created_workflow = result.workflow;
-      } else {
-        reply = reply + ` (Ошибка создания процесса: ${result.errors.join(", ")})`;
-      }
-    }
-  } catch { /* not JSON, use raw text */ }
+
+  // Normalize LLM output through canonical response envelope (#528)
+  const { normalizeAssistantResponse } = await import("../assistant-response");
+  const normalized = await normalizeAssistantResponse(rawReply, {
+    chat_id: chatId,
+    agent_id: agentId,
+  });
 
   await redis.rpush(histKey, JSON.stringify({ role: "user", content: message }));
   await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));
   await redis.ltrim(histKey, -CHAT_MAX_HISTORY * 2, -1);
   await redis.expire(histKey, 7 * 24 * 3600); // 7 days TTL
 
-  return { reply, chat_id: chatId, schema_patch: schema_patch ?? null, created_workflow: created_workflow ?? null, actions };
+  return {
+    reply: normalized.reply,
+    chat_id: chatId,
+    schema_patch: normalized.schema_patch,
+    created_workflow: normalized.created_workflow,
+    actions: normalized.ui_actions,
+    actions_taken: normalized.actions_taken,
+  };
 }
 
 const router = new Hono();
@@ -526,22 +522,14 @@ router.post("/ai/chat", async (c) => {
 
           // Parse JSON reply and emit parsed event so the widget shows text, not raw JSON
           try {
-            const parsed = JSON.parse(stripMarkdownFences(fullText));
-            const reply = (typeof parsed.reply === "string" ? parsed.reply : null) || parsed.text || parsed.message;
-            let created_workflow = null;
-            if (parsed.create_workflow && mode === "process") {
-              try {
-                const result = await createWorkflow(parsed.create_workflow, { draft: true });
-                if (result.errors.length === 0) created_workflow = result.workflow;
-              } catch { /* ignore workflow creation errors in stream */ }
-            }
-            ctrl.enqueue(sse(JSON.stringify({
-              type: "parsed",
-              reply,
-              schema_patch: parsed.schema_patch ?? null,
-              created_workflow,
-              actions: Array.isArray(parsed.actions) ? parsed.actions : [],
-            })));
+            // Normalize through canonical response envelope (#528)
+            const { normalizeAssistantResponse, buildSseParsedEvent } = await import("../assistant-response");
+            const normalized = await normalizeAssistantResponse(fullText, {
+              chat_id: chatId,
+              execute_actions: mode === "process",
+              agent_id: mode === "admin" ? "kiba" : "tsunade",
+            });
+            ctrl.enqueue(sse(JSON.stringify(buildSseParsedEvent(normalized))));
           } catch { /* not JSON — delta stream is fine as-is */ }
 
           ctrl.enqueue(sse("[DONE]"));
