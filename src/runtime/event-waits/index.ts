@@ -101,6 +101,33 @@ export async function incrementReminderCount(wait_id: string): Promise<void> {
   await saveEventWait(wait);
 }
 
+// ── Bulk operations ────────────────────────────────────────────────────────
+
+/** Cancel all active waits for a case (on case complete/error). */
+export async function cancelEventWaitsForCase(case_id: string): Promise<void> {
+  const waits = await loadActiveWaitsForCase(case_id);
+  for (const w of waits) {
+    await updateEventWaitStatus(w.wait_id, "cancelled");
+  }
+  if (waits.length > 0) {
+    log.info("cancelled event waits for case", { case_id, count: waits.length });
+  }
+}
+
+/** Resolve the EventWait matching a case+node when an event fires. */
+export async function resolveEventWaitForNode(
+  case_id: string,
+  element_id: string,
+  event_data?: Record<string, unknown>,
+): Promise<void> {
+  const waits = await loadActiveWaitsForCase(case_id);
+  const match = waits.find(w => w.element_id === element_id);
+  if (match) {
+    await updateEventWaitStatus(match.wait_id, "fired", { event_data });
+    log.info("resolved event wait on fire", { wait_id: match.wait_id, case_id, element_id });
+  }
+}
+
 // ── Persistence ─────────────────────────────────────────────────────────────
 
 async function saveEventWait(wait: EventWait): Promise<void> {

@@ -14,6 +14,7 @@ import { dispatchWorkItem } from "../../dispatcher";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByInstance, type TriggerDef } from "../../event-manager";
 import { emitEvent } from "../event-log";
 import { createLogger } from "../../logger";
+import { createEventWait, loadActiveWaitsForCase, cancelEventWaitsForCase } from "../event-waits";
 import { saveCase, loadCase, saveWorkItem, loadWorkItem, CASES_IDX_PROCESS, WORKITEMS_IDX_CASE, WORKITEM_KEY_PREFIX } from "./persistence";
 import type { Case, WorkItem, ActiveBranch } from "./types";
 
@@ -369,7 +370,18 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
 
       const isIntermediate = (inEdges.get(nextId) || []).length > 0;
       const trigger = nextEl.trigger;
+      const triggerKind = trigger?.kind || "manual";
+
       if (isIntermediate) {
+        // Create an EventWait for this intermediate event node
+        createEventWait({
+          case_id: kase.case_id,
+          process_id: kase.process_id,
+          element_id: nextId,
+          element_label: nextEl.label,
+          trigger_kind: triggerKind as any,
+        }).catch(e => log.warn("failed to create event wait", { case_id: kase.case_id, element_id: nextId, error: e?.message }));
+
         if (trigger?.kind && trigger.kind !== "manual" && trigger.kind !== "ambiguous" && !trigger.manual_override) {
           await saveCase(kase);
           subscribeEventNode(kase, nextEl).catch(e =>

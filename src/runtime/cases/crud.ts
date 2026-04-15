@@ -9,6 +9,7 @@ import { pgDeleteCasesByProcess } from "../../storage/pg";
 import { emitEvent } from "../event-log";
 import { cancelSubscriptionsByInstance } from "../../event-manager";
 import { createLogger } from "../../logger";
+import { loadActiveWaitsForCase, cancelEventWaitsForCase, resolveEventWaitForNode } from "../event-waits";
 import { saveCase, loadCase, CASES_IDX_ALL, CASES_IDX_STATUS, CASES_IDX_PROCESS, CASE_KEY_PREFIX, WORKITEMS_IDX_CASE } from "./persistence";
 import { buildAdjacency, advanceCase } from "./advancement";
 import type { Case, CaseStatus } from "./types";
@@ -55,6 +56,7 @@ export async function forceCloseCase(case_id: string, _depth = 0): Promise<Case 
   kase.status = "done";
   await saveCase(kase);
   cancelSubscriptionsByInstance(case_id).catch(e => log.warn("subscription cleanup on case complete", { case_id, error: e?.message }));
+  cancelEventWaitsForCase(case_id).catch(e => log.warn("event wait cancel on case complete", { case_id, error: e?.message }));
   return kase;
 }
 
@@ -133,6 +135,11 @@ export async function handleEventFired(payload: {
   }
 
   try {
+    // Resolve matching EventWait
+    resolveEventWaitForNode(instance_id, event_id, source_data).catch(e =>
+      log.warn("event_fired: failed to resolve event wait", { instance_id, event_id, error: e?.message }),
+    );
+
     const updated = await advanceCase(kase, def);
     log.info("event_fired: case advanced", { instance_id, event_id, status: updated.status });
     return updated;
