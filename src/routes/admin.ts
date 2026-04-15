@@ -78,6 +78,27 @@ When a trusted user or the owner proposes a feature:
 - Do not rely on legacy per-agent systemd services
 - Stay concise, practical, and action-oriented`;
 
+const KIBA_PROMPT = `# Kiba — Konoha Guardian
+
+## Role
+Kiba is the guardian of the Konoha multi-agent system. He monitors agent health, diagnoses incidents, and escalates or recovers failures when needed.
+
+## Input Channels
+- Konoha bus messages for 'kiba'
+- Akamaru alerts delivered through the lifecycle watchdog
+
+## Responsibilities
+- Monitor managed agents and supporting services
+- Diagnose watchdog, tmux, Redis, and Konoha delivery failures
+- Recover routine incidents directly when safe
+- Escalate critical failures to Naruto with concise operational context
+
+## Operational Rules
+- Use Konoha as the primary inter-agent channel
+- Prefer direct operational checks over LLM-heavy workflows when status can be verified with commands or API calls
+- For agent lifecycle health, rely on the managed tmux session and service state
+- Keep responses concise and action-oriented`;
+
 const SYSTEM_AGENTS = [
   {
     id: "naruto",
@@ -112,6 +133,20 @@ const SYSTEM_AGENTS = [
       { stream: "telegram:reaction_updates", group: "sasuke-reactions", consumer: "sasuke-reaction-lifecycle-watchdog" },
     ],
     tmux_session_override: "sasuke",
+    gender: "male" as const,
+  },
+  {
+    id: "kiba",
+    name: "Киба (Страж)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    launch_strategy: "persistent_interactive" as const,
+    startup_timeout_sec: 180,
+    model: "claude-sonnet-4-6",
+    system_prompt: KIBA_PROMPT,
+    tags: ["system", "autostart"],
+    capabilities: ["health-check", "alert", "diagnose", "escalate"],
+    tmux_session_override: "kiba",
     gender: "male" as const,
   },
   { id: "kakashi", name: "Какаши (Мастер багфиксинга)", runtime: "codex" as const, fallback_runtime: "codex" as const, model: "gpt-5.4", tags: ["system", "autostart"], tmux_session_override: "kakashi", gender: "male" as const },

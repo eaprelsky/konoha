@@ -365,6 +365,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             try:
                 prompt = format_batch(pending)
                 prompt = sanitize_message_text(prompt)
+                delivered = await tmux_send(TMUX_SESSION, prompt)
                 if delivered is not False:
                     pending.clear()
                 else:
