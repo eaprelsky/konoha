@@ -35,6 +35,7 @@
 - [feedback_session_cleanup_silent.md](feedback_session_cleanup_silent.md) — Session cleanup полностью автономен, Егора не беспокоить
 - [feedback_guy_delegation_chain.md](feedback_guy_delegation_chain.md) — Гай получает задачи только от Какаши, не от Егора/Наруто напрямую
 - [feedback_show_to_descendants.md](feedback_show_to_descendants.md) — Линию AI-native operator framework делать на уровне, который не стыдно показать потомкам
+- [feedback_target_ebeyshaya_tema.md](feedback_target_ebeyshaya_tema.md) — Целеполагание по линии Tsunade/Konoha: дотянуть систему до по-настоящему выдающегося уровня
 
 ## Projects
 - [hinata_status.md](hinata_status.md) — Hinata (Agent #6) startup status: online, registered, ready for testing tasks
