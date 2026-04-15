@@ -80,6 +80,7 @@ AGENT_WATCHDOGS = {
 PAUSED_FILE = os.getenv("AKAMARU_PAUSED_FILE", "/opt/shared/kiba/paused-services.txt")
 OFFLINE_AGENTS_FILE = "/opt/shared/kiba/offline-agents.txt"
 LIFECYCLE_POLL_INTERVAL = 10  # seconds between lifecycle message polls
+LIFECYCLE_API_POLL_INTERVAL = 120  # seconds between /agents API lifecycle status checks (#523)
 
 # In-memory suppression list for agents that announced going offline.
 # Backed by OFFLINE_AGENTS_FILE for persistence across restarts.
@@ -166,9 +167,13 @@ async def watch_lifecycle() -> None:
 
     Uses a dedicated consumer group 'lifecycle' so messages are not consumed
     from the main watchdog consumer.  Runs as a background asyncio task.
+
+    Also periodically fetches /agents API to detect lifecycle.status=stopped agents,
+    suppressing false-positive alerts for intentionally stopped on-demand agents (#523).
     """
     global _offline_agents
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+    last_api_poll = 0.0
 
     while True:
         try:
@@ -210,6 +215,53 @@ async def watch_lifecycle() -> None:
             pass
         except Exception as e:
             log.warning(f"watch_lifecycle error: {e}")
+
+        # Periodically sync lifecycle.status from /agents API (#523)
+        # Agents with lifecycle.status=stopped are intentionally offline — suppress their alerts
+        now = time.monotonic()
+        if now - last_api_poll >= LIFECYCLE_API_POLL_INTERVAL:
+            last_api_poll = now
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "curl", "-s", "--max-time", "10",
+                    "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+                    f"{KONOHA_URL}/agents",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    env=env,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+                if proc.returncode == 0 and stdout:
+                    agents_data = json.loads(stdout)
+                    agents = agents_data if isinstance(agents_data, list) else agents_data.get("agents", [])
+                    stopped_agents = set()
+                    running_agents = set()
+                    for agent in agents:
+                        aid = agent.get("id", "")
+                        if not aid or aid not in WATCHED_AGENTS:
+                            continue
+                        lc = agent.get("lifecycle", {})
+                        if lc.get("status") == "stopped":
+                            stopped_agents.add(aid)
+                        elif lc.get("status") == "running":
+                            running_agents.add(aid)
+                    # Add stopped agents to suppression
+                    changed = False
+                    for aid in stopped_agents:
+                        if aid not in _offline_agents:
+                            _offline_agents.add(aid)
+                            log.info(f"Lifecycle API: {aid} is stopped — added to suppression (#523)")
+                            changed = True
+                    # Remove running agents from suppression (unless they sent SESSION_OFFLINE)
+                    for aid in running_agents:
+                        if aid in _offline_agents:
+                            _offline_agents.discard(aid)
+                            log.info(f"Lifecycle API: {aid} is running — removed from suppression (#523)")
+                            changed = True
+                    if changed:
+                        save_offline_agents(_offline_agents)
+            except Exception as e:
+                log.debug(f"Lifecycle API poll error: {e}")
 
         await asyncio.sleep(LIFECYCLE_POLL_INTERVAL)
 

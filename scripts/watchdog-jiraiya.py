@@ -287,7 +287,26 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 pending.clear()
 
 async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
-    """Alert Kiba when agent has been unresponsive past IDLE_TIMEOUT_SEC."""
+    """Alert Kiba when agent has been unresponsive past IDLE_TIMEOUT_SEC.
+    Skips alert if agent lifecycle.status=stopped (intentionally offline, #523)."""
+    # Check lifecycle status before alerting (#523)
+    try:
+        env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+        proc = subprocess.run(
+            ["curl", "-sf", "--max-time", "5",
+             "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
+             f"{KONOHA_URL}/agents/{session}"],
+            capture_output=True, timeout=8, env=env,
+        )
+        if proc.returncode == 0:
+            agent_data = json.loads(proc.stdout)
+            lc = agent_data.get("lifecycle", {})
+            if lc.get("status") == "stopped":
+                log.info(f"Skipping freeze alert for {session}: lifecycle.status=stopped (#523)")
+                return
+    except Exception as e:
+        log.debug(f"Lifecycle check failed for {session}: {e}")
+
     payload = json.dumps({
         "from": f"watchdog-{session}",
         "to": "kiba",
