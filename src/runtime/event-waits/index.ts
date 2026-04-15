@@ -8,6 +8,21 @@ import { createLogger } from "../../logger";
 import type { EventWait, EventWaitStatus } from "./types";
 
 export { type EventWait, type EventWaitStatus, type TriggerKind } from "./types";
+export {
+  type TimerWait,
+  type TimerType,
+  type EscalationPolicy,
+  type EscalationStep,
+  type TIMER_TRANSITIONS,
+  canTransitionTimer,
+  createTimerWait,
+  loadTimerWait,
+  loadDueTimerWaits,
+  fireTimerWait,
+  markTimerOverdue,
+  escalateTimerWait,
+  tickTimerWaits,
+} from "./timer-wait";
 
 const log = createLogger("runtime:event-waits");
 
