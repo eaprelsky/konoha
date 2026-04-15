@@ -37,6 +37,7 @@ DEBOUNCE_WINDOW  = 2.0
 IDLE_POLL_SEC    = 2.0
 IDLE_TIMEOUT_SEC = 600
 SSE_MAX_BACKOFF  = 60
+SSE_MAX_REPLAY_AGE = 600  # seconds — clear Last-Event-ID if older, to avoid massive replays (#521)
 
 # On-demand agent wake (0 = agent is always running, no wake needed)
 WAKE_TIMEOUT_SEC = 0
@@ -436,6 +437,7 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
     url = f"{KONOHA_URL}/messages/{AGENT_ID}/stream"
     backoff = 1
     last_event_id = ""
+    last_event_id_time = 0.0  # monotonic timestamp when last_event_id was set (#521)
     last_event_time = [0.0]  # mutable container for stale_checker closure
     SSE_STALE_TIMEOUT = 300  # seconds — force reconnect if no event received
 
@@ -444,9 +446,15 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
         try:
             extra_headers: list[str] = []
             if last_event_id:
-                extra_headers = ["-H", f"Last-Event-ID: {last_event_id}"]
-                log.info(f"SSE reconnecting with Last-Event-ID={last_event_id} to {url}")
-            else:
+                # Guard against stale Last-Event-ID causing massive replay (#521)
+                id_age = time.monotonic() - last_event_id_time if last_event_id_time else float("inf")
+                if id_age > SSE_MAX_REPLAY_AGE:
+                    log.warning(f"SSE Last-Event-ID is {int(id_age)}s old (max {SSE_MAX_REPLAY_AGE}s) — clearing to avoid massive replay (#521)")
+                    last_event_id = ""
+                else:
+                    extra_headers = ["-H", f"Last-Event-ID: {last_event_id}"]
+                    log.info(f"SSE reconnecting with Last-Event-ID={last_event_id} (age={int(id_age)}s) to {url}")
+            if not last_event_id:
                 log.info(f"SSE connecting via curl to {url}")
             env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
             proc = await asyncio.create_subprocess_exec(
@@ -482,10 +490,12 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
                         line = raw_line.decode("utf-8", errors="replace").strip()
                         if line.startswith("id:"):
                             last_event_id = line[3:].strip()
+                            last_event_id_time = time.monotonic()
                             last_event_time[0] = asyncio.get_running_loop().time()
                             continue
                         if not line.startswith("data:"):
                             continue
+                        last_event_time[0] = asyncio.get_running_loop().time()  # Reset on ANY data event, including pings (#521)
                         payload = line[5:].strip()
                         if not payload:
                             continue
@@ -495,7 +505,6 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
                             if is_session_noise(data):
                                 log.debug(f"Skipping SESSION noise: {data.get('text','')[:50]}")
                                 continue
-                            last_event_time[0] = asyncio.get_running_loop().time()
                             await raw_queue.put({"source": "konoha", "data": data})
                         except json.JSONDecodeError:
                             pass
