@@ -1,8 +1,9 @@
-"""Bus v4: async Redis to not block Telethon event loop."""
+"""Bus v5: async Redis to not block Telethon event loop. Includes action_hint routing (#484)."""
 from telethon import TelegramClient, events
 import asyncio
 import redis.asyncio as aioredis
 import redis as sync_redis
+import hashlib
 import re
 import os
 import json
@@ -21,9 +22,75 @@ for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:co
         pass
 sr.close()
 
+# ── Trusted users & routing config (#484) ─────────────────────────────────
+TRUSTED_USERS_FILE = '/opt/shared/.trusted-users.json'
+MY_USER_ID = None  # filled after login
+
+# Words that indicate a message is addressed to the user account (not the bot)
+USER_ACCOUNT_TRIGGERS = ['клод', 'claude', '@eaclaude']
+# Words that indicate a message is for the bot — defer to bot path
+BOT_TRIGGERS = ['@eaprelsky_agent_bot']
+
+def _load_trusted_ids() -> set[int]:
+    """Load trusted user IDs from shared config."""
+    try:
+        cfg = json.loads(open(TRUSTED_USERS_FILE).read())
+        ids = set()
+        if cfg.get('owner', {}).get('telegram_id'):
+            ids.add(int(cfg['owner']['telegram_id']))
+        for u in cfg.get('trusted', []):
+            if u.get('telegram_id'):
+                ids.add(int(u['telegram_id']))
+        return ids
+    except Exception:
+        return set()
+
+TRUSTED_IDS = _load_trusted_ids()
+
+def _classify_action_hint(
+    text: str,
+    is_group: bool,
+    sender_id: int,
+    reply_to_msg_id: str,
+    my_sent_msg_ids: dict,
+) -> str:
+    """Determine action_hint for a message (mirrors channel-server.ts logic).
+
+    Routing rules (#484):
+      - Private from trusted → respond
+      - Private from unknown → ignore
+      - Group mentioning user account → respond
+      - Group replying to user's message → respond
+      - Group mentioning bot name → observe (let bot/Naruto handle)
+      - Other group messages → observe
+    """
+    text_lower = text.lower()
+
+    # Bot-specific triggers → defer to bot path (Naruto)
+    if any(t in text_lower for t in BOT_TRIGGERS):
+        return 'observe'
+
+    if not is_group:
+        # Private message
+        return 'respond' if sender_id in TRUSTED_IDS else 'ignore'
+
+    # Group message
+    addressed_to_me = any(t in text_lower for t in USER_ACCOUNT_TRIGGERS)
+    is_reply_to_me = (
+        reply_to_msg_id
+        and str(reply_to_msg_id) in my_sent_msg_ids.get('ids', set())
+    )
+
+    if addressed_to_me or is_reply_to_me:
+        return 'respond'
+    return 'observe'
+
 api_id = int(os.environ.get("TG_API_ID", "2040"))
 api_hash = os.environ.get("TG_API_HASH", "")
 client = TelegramClient(SESSION, api_id, api_hash)
+
+# Track recent sent message IDs per chat for reply detection
+_last_sent_per_chat: dict[int, dict] = {}  # chat_id → {msgId, time, ids: set}
 
 
 @client.on(events.NewMessage)
@@ -73,16 +140,19 @@ async def on_message(event):
         except Exception as e:
             print(f'ATTACH ERR: {e}', flush=True)
 
+    sender_id = getattr(sender, 'id', 0)
+    reply_to_msg_id = str(event.reply_to.reply_to_msg_id) if event.reply_to else ''
+
     data = {
         'chat_id': str(event.chat_id),
         'chat_title': chat_title,
         'is_group': '1' if is_group else '0',
         'msg_id': str(event.id),
-        'sender_id': str(getattr(sender, 'id', 0)),
+        'sender_id': str(sender_id),
         'sender_name': f'{sender_name} {sender_last}'.strip(),
         'sender_username': getattr(sender, 'username', '') or '',
         'text': msg_text,
-        'reply_to': str(event.reply_to.reply_to_msg_id) if event.reply_to else '',
+        'reply_to': reply_to_msg_id,
         'timestamp': event.date.isoformat(),
     }
     if attachment_path:
@@ -91,8 +161,33 @@ async def on_message(event):
     if attachment_name:
         data['attachment_name'] = attachment_name
 
-    # Async Redis write
+    # Classify action_hint (#484) — prevents dual responses from Naruto + Sasuke
+    action_hint = _classify_action_hint(
+        text=msg_text,
+        is_group=is_group,
+        sender_id=sender_id,
+        reply_to_msg_id=reply_to_msg_id,
+        my_sent_msg_ids=_last_sent_per_chat.get(event.chat_id, {'ids': set()}),
+    )
+    data['action_hint'] = action_hint
+
+    # Dedup: set a routing key so other paths can check if Telethon already handled
+    # Key: telegram:routed:{chat_id}:{sender_id}:{first-50-chars-hash}, TTL 30s
     rd = aioredis.Redis(host='localhost', port=6379, decode_responses=True)
+    dedup_key = f"telegram:routed:{event.chat_id}:{sender_id}"
+    if msg_text:
+        dedup_key += f":{hashlib.md5(msg_text[:100].encode()).hexdigest()[:12]}"
+
+    # Check if bot path already claimed this message
+    already_routed = await rd.get(dedup_key)
+    if already_routed == 'bot':
+        print(f'DEDUP [{event.chat_id}] skipping — bot path already routed: {msg_text[:40]}', flush=True)
+        await rd.aclose()
+        return
+
+    # Claim this message for telethon path
+    await rd.set(dedup_key, 'telethon', ex=30)
+
     await rd.xadd('telegram:incoming', data, maxlen=1000)
     await rd.xadd('telegram:log', data, maxlen=5000)
     await rd.aclose()
@@ -128,6 +223,14 @@ async def outgoing_loop():
                         await rd.hset(sent_key, msg_id, str(sent.id))
                         await rd.hset(sent_key, 'last', str(sent.id))
                         await rd.expire(sent_key, 7 * 24 * 3600)
+                        # Track sent IDs for reply detection in action_hint (#484)
+                        entry = _last_sent_per_chat.get(chat_id, {'ids': set(), 'time': 0})
+                        entry['ids'].add(str(sent.id))
+                        entry['time'] = int(datetime.now().timestamp())
+                        # Keep only last 50 IDs per chat to avoid memory bloat
+                        if len(entry['ids']) > 50:
+                            entry['ids'] = set(list(entry['ids'])[-50:])
+                        _last_sent_per_chat[chat_id] = entry
                         await rd.xack('telegram:outgoing', 'claude-agents', msg_id)
                     except Exception as e:
                         print(f'SEND ERR: {e}', flush=True)
@@ -288,9 +391,11 @@ async def commands_loop():
             await asyncio.sleep(1)
 
 async def main():
+    global MY_USER_ID
     await client.connect()
     me = await client.get_me()
-    print(f'Bus v4 (async redis): {me.first_name} (ID: {me.id})', flush=True)
+    MY_USER_ID = me.id
+    print(f'Bus v5 (async redis, action_hint routing): {me.first_name} (ID: {me.id})', flush=True)
 
     out_task = asyncio.create_task(outgoing_loop())
     cmd_task = asyncio.create_task(commands_loop())
