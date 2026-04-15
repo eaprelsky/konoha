@@ -2,9 +2,10 @@ import { Hono } from "hono";
 import { createLogger } from "../logger";
 import { requireAuth } from "../middleware/auth";
 import { publishEvent, type KonohaEvent } from "../redis";
-import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, type Case, type HistoryEntry } from "../runtime";
+import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, handleEventFired, type Case, type HistoryEntry } from "../runtime";
 import { getWorkflow, type WorkflowElement } from "../workflow-loader";
-import { loadActiveWaitsForCase } from "../runtime/event-waits";
+import { loadActiveWaitsForCase, resolveEventWaitForNode } from "../runtime/event-waits";
+import { emitEvent } from "../runtime/event-log";
 const log = createLogger("routes:events");
 
 const router = new Hono();
@@ -195,6 +196,53 @@ miningRouter.get("/case/:id/waits", async (c) => {
 
   const waits = await loadActiveWaitsForCase(case_id);
   return c.json({ case_id, waits });
+});
+
+// Confirm a manual event — human confirms, case advances
+miningRouter.post("/case/:id/confirm-event", async (c) => {
+  const case_id = c.req.param("id");
+  const body = await c.req.json<{ element_id?: string; comment?: string; confirmed_by?: string }>().catch(() => ({}));
+  const kase = await getCase(case_id);
+  if (!kase) return c.json({ error: "Case not found" }, 404);
+  if (kase.status !== "running") return c.json({ error: "Case is not running" }, 409);
+
+  const element_id = body.element_id || kase.position;
+  if (kase.position !== element_id) {
+    return c.json({ error: "Case is not waiting at this element", position: kase.position }, 409);
+  }
+
+  // Verify there's an active EventWait for this node
+  const waits = await loadActiveWaitsForCase(case_id);
+  const wait = waits.find(w => w.element_id === element_id);
+  if (!wait) {
+    return c.json({ error: "No active wait found for this element" }, 404);
+  }
+  if (wait.trigger_kind !== "manual") {
+    return c.json({ error: "Only manual triggers can be confirmed", trigger_kind: wait.trigger_kind }, 400);
+  }
+
+  const def = await getWorkflow(kase.process_id);
+  if (!def) return c.json({ error: "Workflow not found" }, 404);
+
+  // Audit trail
+  await emitEvent({
+    type: "event.confirmed",
+    case_id,
+    process_id: kase.process_id,
+    element_id,
+    confirmed_by: body.confirmed_by || "api",
+    comment: body.comment || "",
+    timestamp: new Date().toISOString(),
+  });
+
+  // Resolve the EventWait and advance
+  await resolveEventWaitForNode(case_id, element_id, { confirmed_by: body.confirmed_by, comment: body.comment });
+
+  const { advanceCase } = await import("../runtime/cases/advancement");
+  const updated = await advanceCase(kase, def);
+  log.info("manual event confirmed, case advanced", { case_id, element_id, status: updated.status });
+
+  return c.json({ ok: true, case_id, status: updated.status });
 });
 
 export default router;
