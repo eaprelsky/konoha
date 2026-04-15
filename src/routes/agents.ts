@@ -27,6 +27,7 @@ import {
   buildSystemPrompt,
   isTmuxRunning,
 } from "../agent-lifecycle";
+import { silentCatch } from "../logger";
 
 const router = new Hono<HonoEnv>();
 
@@ -304,7 +305,7 @@ router.delete("/:id", async (c) => {
     // Stop if running
     const state = await getAgentState(id);
     if (state.status === "running" || state.status === "starting") {
-      await stopAgent(id).catch(() => {});
+      await stopAgent(id).catch(silentCatch("stop agent on cleanup"));
     }
     await deleteAgentDef(id);
   } else {

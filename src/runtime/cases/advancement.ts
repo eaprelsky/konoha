@@ -239,7 +239,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
                 }
               }
               log.error("completeParentWorkItem failed after max retries", { case_id: kase.case_id });
-              saveCase({ ...kase, needs_attention: true }).catch(() => {});
+              saveCase({ ...kase, needs_attention: true }).catch(e => log.error("saveCase needs_attention failed", { case_id: kase.case_id, error: e?.message }));
             })();
           }
           return kase;
@@ -249,7 +249,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
         cancelSubscriptionsByInstance(kase.case_id).catch(e =>
           log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
         );
-        publishEvent({ type: "process.exception", source: "runtime@comind.konoha", village_id: "comind.konoha", timestamp: new Date().toISOString(), payload: { case_id: kase.case_id, process_id: kase.process_id, error: `unexpected terminal element: ${current}` } }).catch(() => {});
+        publishEvent({ type: "process.exception", source: "runtime@comind.konoha", village_id: "comind.konoha", timestamp: new Date().toISOString(), payload: { case_id: kase.case_id, process_id: kase.process_id, error: `unexpected terminal element: ${current}` } }).catch(e => log.warn("publish process.exception failed", { error: e?.message }));
         return kase;
       }
 
@@ -260,7 +260,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
     if (!nextEl) {
       kase.status = "error";
       await saveCase(kase);
-      publishEvent({ type: "process.exception", source: "runtime@comind.konoha", village_id: "comind.konoha", timestamp: new Date().toISOString(), payload: { case_id: kase.case_id, process_id: kase.process_id, error: `element not found: ${nextId}` } }).catch(() => {});
+      publishEvent({ type: "process.exception", source: "runtime@comind.konoha", village_id: "comind.konoha", timestamp: new Date().toISOString(), payload: { case_id: kase.case_id, process_id: kase.process_id, error: `element not found: ${nextId}` } }).catch(e => log.warn("publish process.exception failed", { error: e?.message }));
       return kase;
     }
 

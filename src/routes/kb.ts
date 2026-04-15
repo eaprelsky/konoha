@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join, extname } from "path";
 import { requireAuth } from "../middleware/auth";
 import { generateText } from "../llm";
-import { createLogger } from "../logger";
+import { createLogger, silentCatch } from "../logger";
 import { redis } from "../redis";
 const log = createLogger("routes:kb");
 
@@ -217,7 +217,7 @@ kbChatRouter.post("/kb-chat", async (c) => {
 
 kbChatRouter.delete("/kb-chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
-  await redis.del(JIRAIYA_CHAT_PREFIX + chatId).catch(() => {});
+  await redis.del(JIRAIYA_CHAT_PREFIX + chatId).catch(silentCatch("clear kb chat history"));
   return c.json({ ok: true });
 });
 

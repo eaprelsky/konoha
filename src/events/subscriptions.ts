@@ -14,7 +14,7 @@ import { bitrixAdapter } from "../adapters/bitrix";
 import { telegramBotAdapter } from "../adapters/telegram-bot";
 import { trackerAdapter } from "../adapters/tracker";
 import { parseBdDuration } from "../work-calendar";
-import { createLogger } from "../logger";
+import { createLogger, silentCatch } from "../logger";
 import type { Subscription, TriggerDef, TimerTrigger, MessageTrigger, ConditionTrigger, DelayAfterTrigger } from "./types";
 import { delayQueue } from "./queue";
 import {
@@ -230,7 +230,7 @@ export async function activateMessageTrigger(sub: Subscription): Promise<void> {
 
   const existing = activeListeners.get(sub.id);
   if (existing) {
-    await adapter.removeListener(existing).catch(() => {});
+    await adapter.removeListener(existing).catch(silentCatch("remove subscription listener"));
     activeListeners.delete(sub.id);
   }
 
@@ -341,7 +341,7 @@ export async function cancelSubscriptionResources(sub: Subscription): Promise<vo
     const handle = activeListeners.get(id);
     if (handle) {
       const adapter = dataAdapters.get((trigger as MessageTrigger).source);
-      await adapter?.removeListener(handle).catch(() => {});
+      await adapter?.removeListener(handle).catch(silentCatch("remove listener on cancel"));
       activeListeners.delete(id);
     }
   } else if (trigger.kind === "condition") {
@@ -352,7 +352,7 @@ export async function cancelSubscriptionResources(sub: Subscription): Promise<vo
     }
   } else if (trigger.kind === "delay_after") {
     const job = await delayQueue.getJob(id).catch(() => null);
-    await job?.remove().catch(() => {});
+    await job?.remove().catch(silentCatch("remove delay job on cancel"));
     log.info(`[event-manager] delay_after job removed sub=${id}`);
   }
 }
@@ -478,7 +478,7 @@ export async function createSubscriptionProgrammatic(params: {
       ) {
         existing.status = "cancelled";
         await redis.hset(SUBSCRIPTIONS_KEY, existing.id, JSON.stringify(existing));
-        await cancelSubscriptionResources(existing).catch(() => {});
+        await cancelSubscriptionResources(existing).catch(silentCatch("cancel subscription resources"));
         log.info(`[event-manager] dedup: cancelled stale sub=${existing.id} for process_id=${params.process_id} event_id=${params.event_id}`);
       }
     }

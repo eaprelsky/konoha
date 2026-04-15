@@ -9,6 +9,7 @@
 
 import Redis from "ioredis";
 import { registerAgent, sendMessage, REDIS_CONNECTION_OPTS } from "./redis";
+import { silentCatch } from "./logger";
 import { getBranding } from "./routes/audit";
 import { recoverStuckWorkItems } from "./runtime/work-items";
 
@@ -110,7 +111,7 @@ async function startStreamPoller(pollRedis: Redis): Promise<void> {
               }
             }
 
-            await pollRedis.xack(TSUNADE_STREAM, TSUNADE_GROUP, entryId).catch(() => {});
+            await pollRedis.xack(TSUNADE_STREAM, TSUNADE_GROUP, entryId).catch(silentCatch("tsunade stream ack"));
           }
         }
       } catch (e: any) {
@@ -144,7 +145,7 @@ function startWorkItemHealthcheck(): void {
           text: `[Tsunade] Recovered ${result.recovered} stuck work items. Agents offline: ${result.agentsOffline.join(", ") || "none"}`,
           timestamp: new Date().toISOString(),
           village_id: "comind.konoha",
-        }).catch(() => {});
+        }).catch(silentCatch("tsunade fire-and-forget"));
       }
     } catch (e: any) {
       console.error(`[Tsunade] healthcheck error: ${e.message}`);

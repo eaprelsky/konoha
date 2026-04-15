@@ -8,6 +8,7 @@
  */
 
 import { redis, sendMessage } from "./redis";
+import { silentCatch } from "./logger";
 import { randomUUID } from "crypto";
 import { execSync } from "child_process";
 
@@ -192,7 +193,7 @@ export async function assistantCreateIssue(params: CreateIssueParams): Promise<C
         to: "naruto",
         type: "event",
         text: `[Assistant] Создан ${priority} issue #${number}: ${params.title}\n${url}`,
-      }).catch(() => {});
+      }).catch(silentCatch("assistant action fire-and-forget"));
     }
   } catch (e: any) {
     result = "error";

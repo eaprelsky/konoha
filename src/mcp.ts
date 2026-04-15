@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { silentCatch } from "./logger";
 
 const API_URL = process.env.KONOHA_URL || "http://127.0.0.1:3100";
 const ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
@@ -94,7 +95,7 @@ server.tool(
     }
     // auto-heartbeat every 5 minutes
     setInterval(() => {
-      agentApi("POST", `/agents/${id}/heartbeat`).catch(() => {});
+      agentApi("POST", `/agents/${id}/heartbeat`).catch(silentCatch("heartbeat"));
     }, 5 * 60 * 1000);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }

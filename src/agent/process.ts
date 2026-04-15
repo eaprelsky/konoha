@@ -8,6 +8,7 @@ import { promisify } from "util";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { redis } from "../redis";
+import { silentCatch } from "../logger";
 import { buildSystemPrompt } from "./prompt";
 import { buildMcpConfig, buildLaunchCommand, shellEscape, ensureCodexProjectTrusted, getLiveBitrixWebhook } from "./runtime";
 import { AGENT_WORKDIR_ROOT } from "./runtime";
@@ -220,7 +221,7 @@ export async function stopAgent(id: string): Promise<AgentState> {
 }
 
 export async function restartAgent(id: string, def: AgentDef): Promise<AgentState> {
-  await stopAgent(id).catch(() => {});
+  await stopAgent(id).catch(silentCatch("stop agent on delete"));
   await audit(id, "restarted");
   return startAgent(id, def);
 }

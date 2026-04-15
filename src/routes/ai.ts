@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { config } from "../config";
 import { generateText } from "../llm";
-import { createLogger } from "../logger";
+import { createLogger, silentCatch } from "../logger";
 import { requireAuth } from "../middleware/auth";
 import { redis } from "../redis";
 import Anthropic from "@anthropic-ai/sdk";
@@ -267,7 +267,7 @@ router.post("/tsunade/chat", async (c) => {
 
 router.delete("/tsunade/chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
-  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(() => {});
+  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
   return c.json({ ok: true });
 });
 
@@ -288,7 +288,7 @@ router.post("/ai/process-chat", async (c) => {
 
 router.delete("/ai/process-chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
-  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(() => {});
+  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
   return c.json({ ok: true });
 });
 
@@ -378,7 +378,7 @@ router.post("/ai/admin-chat", async (c) => {
 
 router.delete("/ai/admin-chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
-  await redis.del(KIBA_CHAT_PREFIX + chatId).catch(() => {});
+  await redis.del(KIBA_CHAT_PREFIX + chatId).catch(silentCatch("clear admin chat history"));
   return c.json({ ok: true });
 });
 
@@ -558,7 +558,7 @@ router.post("/ai/chat", async (c) => {
             "page", body.context?.split('\n')[0] ?? "",
             "chat_id", chatId,
             "mode", mode,
-          ).catch(() => {});
+          ).catch(silentCatch("stream ack"));
         } catch (e: any) {
           log.error("streaming ai chat failed", { error: e.message, mode, chat_id: chatId });
           ctrl.enqueue(sse(JSON.stringify({ type: "error", message: e.message })));
@@ -605,8 +605,8 @@ router.delete("/ai/chat/:chat_id", requireAuth, async (c) => {
   const id = c.req.param("chat_id");
   // Try both prefixes (mode unknown at delete time)
   await Promise.all([
-    redis.del(TSUNADE_CHAT_PREFIX + id).catch(() => {}),
-    redis.del(KIBA_CHAT_PREFIX + id).catch(() => {}),
+    redis.del(TSUNADE_CHAT_PREFIX + id).catch(silentCatch("clear chat history")),
+    redis.del(KIBA_CHAT_PREFIX + id).catch(silentCatch("clear admin chat history")),
   ]);
   return c.json({ ok: true });
 });

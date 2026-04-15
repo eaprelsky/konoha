@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 import { config } from "./config";
-import { createLogger } from "./logger";
+import { createLogger, silentCatch } from "./logger";
 import {
   pgRegisterAgent,
   pgGetAgentIdByToken,
@@ -340,7 +340,7 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
   const sub = new Redis({ host: "127.0.0.1", port: 6379, maxRetriesPerRequest: 3 });
   sub.on("error", () => {}); // swallow errors, subscriber is disposable
   const channel = NOTIFY_PREFIX + agentId;
-  sub.subscribe(channel).catch(() => {});
+  sub.subscribe(channel).catch(silentCatch("redis subscribe"));
   sub.on("message", (_ch: string, data: string) => {
     try {
       const obj = JSON.parse(data);
@@ -364,7 +364,7 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
   });
   return {
     close: () => {
-      try { sub.unsubscribe(channel).catch(() => {}); } catch {}
+      try { sub.unsubscribe(channel).catch(silentCatch("redis unsubscribe")); } catch {}
       try { sub.disconnect(); } catch {}
     },
   };

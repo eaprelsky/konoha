@@ -19,6 +19,7 @@ import { listenerRegistry } from "./data-adapter";
 import { TelegramClient } from "../clients/telegram";
 import type { TgMessage, TgUpdate } from "../clients/telegram";
 import { redis as sharedRedis, REDIS_CONNECTION_OPTS } from "../redis";
+import { silentCatch } from "../logger";
 
 const STREAM_KEY = "telegram:bot:incoming";
 const CONSUMER_GROUP = "event-manager";
@@ -168,7 +169,7 @@ export class TelegramBotAdapter implements DataAdapter {
             }
 
             // Always ACK — no retry on callback errors to avoid infinite loops
-            await sharedRedis.xack(STREAM_KEY, CONSUMER_GROUP, entryId).catch(() => {});
+            await sharedRedis.xack(STREAM_KEY, CONSUMER_GROUP, entryId).catch(silentCatch("telegram xack"));
 
             if (matched) {
               console.log(`[telegram-bot] dispatched entry=${entryId} chat=${fields.chat_id}`);

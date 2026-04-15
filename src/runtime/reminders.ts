@@ -117,9 +117,11 @@ async function fireReminder(reminder_id: string): Promise<void> {
           String(user.telegram_id),
           "text",
           `[Напоминание] ${r.message}`,
-        ).catch(() => {});
+        ).catch(e => log.warn("failed to send reminder notification", { reminder_id: r.reminder_id, error: e?.message }));
       }
-    } catch (_) {}
+    } catch (e: any) {
+      log.warn("reminder poll error", { error: e?.message });
+    }
   }
 }
 
@@ -215,7 +217,7 @@ export async function deleteReminder(reminder_id: string): Promise<void> {
   await redis.zrem(REMINDERS_IDX_ALL, reminder_id);
   pgDeleteReminder(reminder_id);
   const job = await reminderQueue.getJob(reminder_id).catch(() => null);
-  if (job) await job.remove().catch(() => {});
+  if (job) await job.remove().catch(e => log.warn("failed to remove reminder job", { reminder_id, error: e?.message }));
 }
 
 export function startReminderScheduler(): void {
@@ -242,10 +244,12 @@ export function startReminderScheduler(): void {
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       for (const r of sent) {
         if (new Date(r.scheduled_at) < oneDayAgo) {
-          await updateReminderStatus(r.reminder_id, "overdue").catch(() => {});
+          await updateReminderStatus(r.reminder_id, "overdue").catch(e => log.warn("failed to mark reminder overdue", { reminder_id: r.reminder_id, error: e?.message }));
         }
       }
-    } catch (_) {}
+    } catch (e: any) {
+      log.warn("overdue sweep error", { error: e?.message });
+    }
   }, 60_000);
 }
 

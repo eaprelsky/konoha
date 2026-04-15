@@ -6,6 +6,7 @@
  * information systems referenced in the schema exist in the registry.
  */
 import { redis } from "../redis";
+import { silentCatch } from "../logger";
 import { loadRole, createRole } from "../runtime/roles";
 import type { WorkflowDefinition } from "../workflow-loader";
 
@@ -55,7 +56,7 @@ export async function syncSchemaToRegistry(
         console.log(`[schema-sync] Auto-created role "${roleId}" for workflow "${def.id}"`);
       }
       // Track which workflows reference this role (used for orphan detection)
-      await redis.sadd(`konoha:role:${roleId}:workflows`, def.id).catch(() => {});
+      await redis.sadd(`konoha:role:${roleId}:workflows`, def.id).catch(silentCatch("schema registry sync"));
     } catch (e: any) {
       result.warnings.push(`Failed to sync role "${roleId}": ${e.message}`);
     }
@@ -89,7 +90,7 @@ export async function syncSchemaToRegistry(
     const removedRoles = [...prevRoles].filter(r => !schemaRoles.has(r));
     for (const roleId of removedRoles) {
       // Remove this workflow from the role's workflow index
-      await redis.srem(`konoha:role:${roleId}:workflows`, def.id).catch(() => {});
+      await redis.srem(`konoha:role:${roleId}:workflows`, def.id).catch(silentCatch("schema registry sync"));
 
       // Check if any other workflow still references this role
       const remaining = await redis.scard(`konoha:role:${roleId}:workflows`).catch(() => 1);
@@ -116,7 +117,7 @@ export async function cleanupWorkflowRefs(def: WorkflowDefinition): Promise<stri
   }
 
   for (const roleId of schemaRoles) {
-    await redis.srem(`konoha:role:${roleId}:workflows`, def.id).catch(() => {});
+    await redis.srem(`konoha:role:${roleId}:workflows`, def.id).catch(silentCatch("schema registry sync"));
     const remaining = await redis.scard(`konoha:role:${roleId}:workflows`).catch(() => 1);
     if (remaining === 0) {
       const msg = `Role "${roleId}" is now orphaned (workflow "${def.id}" deleted)`;

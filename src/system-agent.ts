@@ -83,7 +83,7 @@ export async function executeSystemFunction(params: SystemExecParams): Promise<v
       log.info("timer set", { wait_minutes: waitMinutes, scheduled_at: scheduledAt, work_item_id });
     } catch (e: any) {
       log.error("failed to create timer reminder", { work_item_id, error: e.message });
-      await completeWorkItem(work_item_id, { system: "timer-error", error: e.message }).catch(() => {});
+      await completeWorkItem(work_item_id, { system: "timer-error", error: e.message }).catch(e2 => log.error("completeWorkItem failed for timer error", { work_item_id, error: e2?.message }));
     }
     return; // work item will be auto-completed by scheduler
   }
@@ -102,7 +102,7 @@ export async function executeSystemFunction(params: SystemExecParams): Promise<v
       await completeWorkItem(work_item_id, { generated_file: filename, content_preview: content.slice(0, 200) });
     } catch (e: any) {
       log.error("doc generation failed", { work_item_id, error: e.message });
-      await completeWorkItem(work_item_id, { system: "gen-error", error: e.message }).catch(() => {});
+      await completeWorkItem(work_item_id, { system: "gen-error", error: e.message }).catch(e2 => log.error("completeWorkItem failed for gen error", { work_item_id, error: e2?.message }));
     }
     return;
   }
@@ -121,7 +121,7 @@ export async function executeSystemFunction(params: SystemExecParams): Promise<v
       await completeWorkItem(work_item_id, { system: "bitrix-monitor", exit_code: 0 });
     } catch (e: any) {
       log.error("bitrix monitor failed", { work_item_id, error: e.message });
-      await completeWorkItem(work_item_id, { system: "bitrix-monitor-error", error: e.message }).catch(() => {});
+      await completeWorkItem(work_item_id, { system: "bitrix-monitor-error", error: e.message }).catch(e2 => log.error("completeWorkItem failed for bitrix-monitor error", { work_item_id, error: e2?.message }));
     }
     return;
   }

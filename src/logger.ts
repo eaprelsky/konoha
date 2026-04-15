@@ -44,3 +44,26 @@ export function createLogger(module: string) {
     error: (msg: string, extra?: Record<string, unknown>) => log('error', msg, extra),
   };
 }
+
+/**
+ * Execute an async operation safely — logs errors instead of swallowing silently.
+ * Use to replace `catch(() => {})` and `catch (_ => {})` patterns.
+ */
+export async function safeExec(fn: () => Promise<unknown>, context?: string): Promise<void> {
+  try {
+    await fn();
+  } catch (e: any) {
+    const fallback = createLogger("safe-exec");
+    fallback.warn(context ?? "suppressed error", { error: e?.message ?? String(e) });
+  }
+}
+
+/**
+ * Error handler for fire-and-forget async operations.
+ * Logs at debug level instead of silently swallowing.
+ * Usage: `someAsyncOp().catch(silentCatch("operation context"))`
+ */
+export function silentCatch(context: string) {
+  const log = createLogger("fire-and-forget");
+  return (e: any) => { log.debug(context, { error: e?.message ?? String(e) }); };
+}

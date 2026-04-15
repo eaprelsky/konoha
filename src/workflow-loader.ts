@@ -3,6 +3,7 @@ import { join } from "path";
 import { redis } from "./redis";
 import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw, pgUpsertRole } from "./storage/pg";
 import { syncSchemaToRegistry, cleanupWorkflowRefs } from "./sync/schema-registry-sync";
+import { silentCatch } from "./logger";
 
 const PG_READ = process.env.PG_READ === "true";
 
@@ -464,7 +465,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(normalized));
   await updateRoleWorkflowIndex(normalized);
   // Notify hot-reload listener: agents with roles in this workflow need AGENTS.md refresh
-  redis.xadd("konoha:agent-reload", "*", "type", "workflow.updated", "workflow_id", id, "timestamp", new Date().toISOString()).catch(() => {});
+  redis.xadd("konoha:agent-reload", "*", "type", "workflow.updated", "workflow_id", id, "timestamp", new Date().toISOString()).catch(silentCatch("workflow updated notification"));
   pgUpsertWorkflow(normalized as any);
   syncSchemaToRegistry(normalized, current).catch(e => console.error("[schema-sync] update error:", e));
   return { workflow: normalized, errors: [] };

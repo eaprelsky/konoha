@@ -3,6 +3,7 @@
  * Extracted from runtime.ts (issue #338).
  */
 import { randomUUID } from "crypto";
+import { silentCatch } from "../logger";
 import { redis, listAgents } from "../redis";
 import { pgPurgeAllWorkItems, pgGetWorkItem, pgListWorkItems } from "../storage/pg";
 import { emitEvent } from "./event-log";
@@ -279,7 +280,7 @@ export async function recoverStuckWorkItems(
             previous_status: prevStatus,
             stuck_since: wi.updated_at,
           },
-        }).catch(() => {});
+        }).catch(silentCatch("publish workitem.recovered event"));
 
         log.info("recovered stuck work item (agent offline)", {
           work_item_id: wi.work_item_id,

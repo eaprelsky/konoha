@@ -3,6 +3,7 @@
  * Extracted from runtime.ts (issue #338).
  */
 import { redis } from "../redis";
+import { silentCatch } from "../logger";
 import { pgUpsertRole, pgDeleteRole, pgGetRole, pgListRoles as pgListRolesRaw } from "../storage/pg";
 
 const PG_READ = process.env.PG_READ === "true";
@@ -83,7 +84,7 @@ export async function updateRole(role_id: string, patch: Partial<Pick<RoleDef, "
   r.updated_at = new Date().toISOString();
   await saveRole(r);
   if (patch.assignees !== undefined) {
-    redis.xadd("konoha:agent-reload", "*", "type", "role.assigned", "role_id", role_id, "timestamp", new Date().toISOString()).catch(() => {});
+    redis.xadd("konoha:agent-reload", "*", "type", "role.assigned", "role_id", role_id, "timestamp", new Date().toISOString()).catch(silentCatch("role reload notification"));
   }
   return r;
 }
