@@ -22,15 +22,24 @@ export interface AttachmentImg {
   dataUrl: string;
 }
 
-/** Parse partial/in-progress JSON reply from SSE delta stream. */
+/** Parse partial/in-progress JSON reply from SSE delta stream.
+ *  If the accumulated text looks like raw JSON (no reply field extracted),
+ *  return a placeholder to avoid flashing machine-readable content to the user.
+ *  The final `parsed` SSE event will replace this with the clean reply text. */
 function extractStreamingText(raw: string): string {
   const m = raw.match(/"reply"\s*:\s*"([\s\S]*)/);
-  if (!m) return raw;
-  return m[1]
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, '\\');
+  if (m) {
+    return m[1]
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+  }
+  // Text looks like raw JSON or other machine format — suppress it
+  if (raw.trimStart().startsWith('{') || raw.trimStart().startsWith('```')) {
+    return '';
+  }
+  return raw;
 }
 
 export interface UseAssistantChatResult {

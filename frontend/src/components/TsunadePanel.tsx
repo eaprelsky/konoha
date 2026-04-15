@@ -2,6 +2,9 @@
  * TsunadePanel — AI process-editor assistant chat panel
  * Collapsible sidebar for the ProcessEditor page.
  * Receives the current workflow schema as a prop and sends it with each message.
+ *
+ * @deprecated Dead code — not imported anywhere. Replaced by TsunadeChatPanel + AssistantWidget.
+ * See ADR-002 (#525) for context. Remove in next cleanup sweep.
  */
 import { useState, useRef, useEffect } from 'react';
 import { api, uploadAttachment, type AttachmentRef } from '../api/client';

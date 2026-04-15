@@ -3,6 +3,7 @@
  * Extracted from ProcessEditor.tsx (issue #289).
  */
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { WorkflowElement, ProcessMiningData } from '../api/types';
 import { api } from '../api/client';
 import type { Pos } from './ArrowRouter';
@@ -34,6 +35,7 @@ export function TsunadeChatPanel({
   show, onClose, wfId, wfName, elements, flow, positions,
   showMining, miningData, onApplyPatch,
 }: TsunadeChatPanelProps) {
+  const navigate = useNavigate();
   const [chatId, setChatId] = useState<string | null>(null);
   const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -77,6 +79,10 @@ export function TsunadeChatPanel({
         if (hasChanges) {
           setChatMsgs(prev => [...prev, { role: 'system', text: 'Схема обновлена. Нажмите 💾 для сохранения.' }]);
         }
+      }
+      if (res.created_workflow) {
+        window.dispatchEvent(new CustomEvent('konoha:workflow_created', { detail: res.created_workflow }));
+        navigate(`/editor/${res.created_workflow.id}`);
       }
       if (res.actions && res.actions.length > 0) {
         const act = res.actions[0];
