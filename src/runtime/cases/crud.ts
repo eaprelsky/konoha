@@ -92,8 +92,24 @@ export async function handleEventFired(payload: {
   instance_id?: string;
   trigger_kind?: string;
   source_data?: Record<string, unknown>;
+  idempotency_key?: string;
 }): Promise<Case | null> {
-  const { event_id, process_id, instance_id, source_data } = payload;
+  const { event_id, process_id, instance_id, source_data, idempotency_key } = payload;
+
+  // Idempotency check: reject duplicate event delivery
+  const dedupKey = idempotency_key
+    ? `konoha:event-dedup:${idempotency_key}`
+    : instance_id
+      ? `konoha:event-dedup:${instance_id}:${event_id}:${Date.now().toString(36)}`
+      : null;
+
+  if (dedupKey && idempotency_key) {
+    const set = await redis.set(dedupKey, "1", "EX", 300, "NX"); // 5 min TTL
+    if (set !== "OK") {
+      log.info("event_fired: duplicate suppressed", { idempotency_key, instance_id, event_id });
+      return null;
+    }
+  }
 
   if (!instance_id || instance_id === "new") {
     const wfDef = await getWorkflow(process_id).catch(() => null);
