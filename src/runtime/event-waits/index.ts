@@ -39,6 +39,7 @@ const WAIT_KEY_PREFIX = "event-wait:";
 const WAITS_IDX_CASE = "konoha:event-waits:case:";
 const WAITS_IDX_STATUS = "konoha:event-waits:status:";
 const WAITS_IDX_ACTIVE = "konoha:event-waits:active";
+const ALL_WAIT_STATUSES: EventWaitStatus[] = ["active", "fired", "cancelled", "overdue", "escalated"];
 
 // ── Create ──────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,50 @@ export async function loadActiveWaits(): Promise<EventWait[]> {
   const ids = await redis.smembers(WAITS_IDX_ACTIVE);
   const waits = await Promise.all(ids.map(id => loadEventWait(id)));
   return waits.filter((w): w is EventWait => w !== null && w.status === "active");
+}
+
+export async function listEventWaits(filters: {
+  case_id?: string;
+  process_id?: string;
+  assignee?: string;
+  status?: EventWaitStatus;
+} = {}): Promise<EventWait[]> {
+  const statuses: EventWaitStatus[] = filters.status
+    ? [filters.status]
+    : ["active", "overdue", "escalated"];
+
+  const statusIds = new Set<string>();
+  for (const status of statuses) {
+    const ids = await redis.smembers(WAITS_IDX_STATUS + status);
+    for (const id of ids) statusIds.add(id);
+  }
+
+  let candidateIds = statusIds;
+  if (filters.case_id) {
+    const caseIds = new Set(await redis.smembers(WAITS_IDX_CASE + filters.case_id));
+    candidateIds = new Set([...candidateIds].filter((id) => caseIds.has(id)));
+  }
+
+  const ids = [...candidateIds];
+  if (ids.length === 0) return [];
+
+  const waits = await Promise.all(ids.map(id => loadEventWait(id)));
+  const filtered = waits.filter((wait): wait is EventWait => {
+    if (!wait) return false;
+    if (filters.status && wait.status !== filters.status) return false;
+    if (!filters.status && !statuses.includes(wait.status)) return false;
+    if (filters.case_id && wait.case_id !== filters.case_id) return false;
+    if (filters.process_id && wait.process_id !== filters.process_id) return false;
+    if (filters.assignee && wait.assignee !== filters.assignee) return false;
+    return true;
+  });
+
+  return filtered.sort((a, b) => {
+    const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+    const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Number.MAX_SAFE_INTEGER;
+    if (aDeadline !== bDeadline) return aDeadline - bDeadline;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 }
 
 // ── Update ──────────────────────────────────────────────────────────────────
@@ -163,6 +208,11 @@ async function saveEventWait(wait: EventWait): Promise<void> {
   await redis.sadd(WAITS_IDX_CASE + wait.case_id, wait.wait_id);
 
   // Index by status
+  for (const status of ALL_WAIT_STATUSES) {
+    if (status !== wait.status) {
+      await redis.srem(WAITS_IDX_STATUS + status, wait.wait_id);
+    }
+  }
   await redis.sadd(WAITS_IDX_STATUS + wait.status, wait.wait_id);
 
   // Active index (for restart recovery)

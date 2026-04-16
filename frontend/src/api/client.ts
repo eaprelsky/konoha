@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus } from './types';
 export type { KibaAction, HighlightAction };
 
 export interface AttachmentRef { path: string; name: string; mime?: string; }
@@ -110,12 +110,29 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ output: output || {} }),
       }),
-    create: (params: { label: string; assignee: string; deadline?: string; input?: Record<string, unknown> }) =>
+    create: (params: { label: string; assignee: string; deadline?: string; input?: Record<string, unknown>; process_id?: string }) =>
       apiFetch<WorkItem>(`${BASE}/workitems`, {
         method: 'POST',
         body: JSON.stringify(params),
       }),
     deleteAll: () => apiFetch<{ deleted: number }>(`${BASE}/workitems/all`, { method: 'DELETE' }),
+  },
+
+  waits: {
+    list: (filters?: { assignee?: string; process_id?: string; case_id?: string; status?: EventWaitStatus | '' }) => {
+      const p = new URLSearchParams();
+      if (filters?.assignee) p.set('assignee', filters.assignee);
+      if (filters?.process_id) p.set('process_id', filters.process_id);
+      if (filters?.case_id) p.set('case_id', filters.case_id);
+      if (filters?.status) p.set('status', filters.status);
+      const qs = p.toString();
+      return apiFetch<{ waits: EventWait[]; summary: { total: number; active: number; overdue: number; escalated: number; manual: number } }>(`${BASE}/waits${qs ? '?' + qs : ''}`);
+    },
+    confirm: (id: string, params?: { comment?: string; confirmed_by?: string }) =>
+      apiFetch<{ ok: boolean; wait_id: string; case_id: string; status: string }>(`${BASE}/waits/${id}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify(params || {}),
+      }),
   },
 
   cases: {

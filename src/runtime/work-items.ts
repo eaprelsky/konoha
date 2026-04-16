@@ -36,12 +36,13 @@ export async function createStandaloneWorkItem(params: {
   assignee: string;
   input?: Record<string, unknown>;
   deadline?: string;
+  process_id?: string;
 }): Promise<WorkItem> {
   const now = new Date().toISOString();
   const wi: WorkItem = {
     work_item_id: randomUUID(),
     case_id: null,
-    process_id: null,
+    process_id: params.process_id ?? null,
     element_id: null,
     label: params.label,
     assignee: params.assignee,

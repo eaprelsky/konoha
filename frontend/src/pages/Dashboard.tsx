@@ -4,7 +4,7 @@ import { useToken } from '../context/TokenContext';
 import { useSetSubtitle } from '../context/SubtitleContext';
 import { useI18n } from '../context/I18nContext';
 import { api } from '../api/client';
-import type { Run, Agent } from '../api/types';
+import type { Run, Agent, EventWait } from '../api/types';
 
 const styles = `
   .container { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
@@ -16,6 +16,13 @@ const styles = `
   .dash-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
   .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; }
   .panel h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #0f172a; }
+  .runtime-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .runtime-metric { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
+  .runtime-metric .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #64748b; margin-bottom: 4px; }
+  .runtime-metric .value { font-size: 22px; font-weight: 700; color: #0f172a; }
+  .runtime-metric.warn .value { color: #d97706; }
+  .runtime-metric.err .value { color: #dc2626; }
+  .runtime-metric.info .value { color: #2563eb; }
   .panel-footer { font-size: 12px; color: #6366f1; text-decoration: none; margin-top: 12px; display: inline-block; }
   .panel-footer:hover { text-decoration: underline; }
   .links { display: flex; flex-direction: column; gap: 8px; }
@@ -56,6 +63,17 @@ export function Dashboard() {
   const [recentRuns, setRecentRuns] = useState<Run[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runCount, setRunCount] = useState<number | null>(null);
+  const [runtimeHealth, setRuntimeHealth] = useState({
+    runningCases: 0,
+    errorCases: 0,
+    attentionCases: 0,
+    activeWaits: 0,
+    overdueWaits: 0,
+    escalatedWaits: 0,
+    pendingTasks: 0,
+    eventErrors: 0,
+    manualFallback: 0,
+  });
   useSetSubtitle('AI Factory — coMind');
 
   useEffect(() => {
@@ -63,14 +81,29 @@ export function Dashboard() {
     Promise.all([
       api.workflows.list().catch(() => []),
       api.workitems.list().catch(() => []),
-      api.runs.list({ limit: 5 }).catch(() => ({ cases: [], total: 0 })),
+      api.runs.list({ limit: 1000 }).catch(() => ({ cases: [], total: 0 })),
       api.agents.list().catch(() => []),
-    ]).then(([wfs, all, runsRes, agentsList]) => {
+      api.waits.list().catch(() => ({ waits: [], summary: { total: 0, active: 0, overdue: 0, escalated: 0, manual: 0 } })),
+      api.eventMonitor.subscriptions().catch(() => ({ subscriptions: [], summary: { total: 0, waiting: 0, fired_today: 0, errors: 0, manual_fallback: 0 } })),
+    ]).then(([wfs, all, runsRes, agentsList, waitsRes, eventRes]) => {
       setWfCount(Array.isArray(wfs) ? wfs.length : 0);
       setWiCount(Array.isArray(all) ? all.filter((i: any) => i.status === 'pending' || i.status === 'assigned').length : 0);
-      setRecentRuns(runsRes.cases || []);
+      setRecentRuns((runsRes.cases || []).slice(0, 5));
       setRunCount(runsRes.total ?? null);
       setAgents(Array.isArray(agentsList) ? agentsList : []);
+      const runCases = Array.isArray(runsRes.cases) ? runsRes.cases : [];
+      const waits = waitsRes.waits || [];
+      setRuntimeHealth({
+        runningCases: runCases.filter((run: any) => run.status === 'running').length,
+        errorCases: runCases.filter((run: any) => run.status === 'error').length,
+        attentionCases: runCases.filter((run: any) => run.needs_attention === true).length,
+        activeWaits: waits.length,
+        overdueWaits: waits.filter((wait: EventWait) => wait.status === 'overdue').length,
+        escalatedWaits: waits.filter((wait: EventWait) => wait.status === 'escalated').length,
+        pendingTasks: Array.isArray(all) ? all.filter((item: any) => item.status === 'pending' || item.status === 'running').length : 0,
+        eventErrors: eventRes.summary.errors ?? 0,
+        manualFallback: eventRes.summary.manual_fallback ?? 0,
+      });
     });
   }, [token]);
 
@@ -99,6 +132,37 @@ export function Dashboard() {
         </div>
 
         <div className="dash-panels">
+          <div className="panel">
+            <h2>{lang === 'ru' ? 'Runtime Health' : 'Runtime Health'}</h2>
+            <div className="runtime-metrics">
+              <div className="runtime-metric info">
+                <div className="label">{lang === 'ru' ? 'Активные кейсы' : 'Running cases'}</div>
+                <div className="value">{runtimeHealth.runningCases}</div>
+              </div>
+              <div className={`runtime-metric${runtimeHealth.errorCases > 0 ? ' err' : ''}`}>
+                <div className="label">{lang === 'ru' ? 'Ошибки кейсов' : 'Case errors'}</div>
+                <div className="value">{runtimeHealth.errorCases}</div>
+              </div>
+              <div className="runtime-metric info">
+                <div className="label">{lang === 'ru' ? 'Активные waits' : 'Active waits'}</div>
+                <div className="value">{runtimeHealth.activeWaits}</div>
+              </div>
+              <div className={`runtime-metric${runtimeHealth.overdueWaits + runtimeHealth.escalatedWaits > 0 ? ' warn' : ''}`}>
+                <div className="label">{lang === 'ru' ? 'Проблемные waits' : 'Attention waits'}</div>
+                <div className="value">{runtimeHealth.overdueWaits + runtimeHealth.escalatedWaits}</div>
+              </div>
+              <div className="runtime-metric info">
+                <div className="label">{lang === 'ru' ? 'Активные шаги' : 'Active work items'}</div>
+                <div className="value">{runtimeHealth.pendingTasks}</div>
+              </div>
+              <div className={`runtime-metric${runtimeHealth.eventErrors + runtimeHealth.manualFallback > 0 ? ' err' : ''}`}>
+                <div className="label">{lang === 'ru' ? 'Event pipeline' : 'Event pipeline'}</div>
+                <div className="value">{runtimeHealth.eventErrors + runtimeHealth.manualFallback}</div>
+              </div>
+            </div>
+            <Link to="/event-monitor" className="panel-footer">{lang === 'ru' ? 'Мониторинг событий и waits →' : 'Event and wait health →'}</Link>
+          </div>
+
           {/* Recent runs */}
           <div className="panel">
             <h2>{lang === 'ru' ? 'Последние прогоны' : 'Recent Runs'}</h2>
@@ -140,7 +204,8 @@ export function Dashboard() {
           <h2>{lang === 'ru' ? 'Навигация' : 'Navigation'}</h2>
           <div className="links">
             <a href="/ui/editor"><span className="icon">🗂</span> {lang === 'ru' ? 'Редактор процессов — eEPC-процессы и активные кейсы' : 'Process Editor — eEPC processes and cases'}</a>
-            <a href="/ui/workitems"><span className="icon">✅</span> {lang === 'ru' ? 'Задачи — очередь задач с фильтрами и действиями' : 'Tasks — task queue with filters and actions'}</a>
+            <a href="/ui/workitems"><span className="icon">✅</span> {lang === 'ru' ? 'Executor Workbench — задачи, waits, дедлайны и действия' : 'Executor Workbench — tasks, waits, deadlines and actions'}</a>
+            <a href="/ui/event-monitor"><span className="icon">📡</span> {lang === 'ru' ? 'Ops Dashboard — health event/wait/case pipeline' : 'Ops Dashboard — event/wait/case health'}</a>
           </div>
         </div>
       </div>

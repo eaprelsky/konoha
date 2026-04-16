@@ -110,6 +110,27 @@ export interface WorkItem {
   updated_at: string;
 }
 
+export type EventWaitStatus = 'active' | 'fired' | 'cancelled' | 'overdue' | 'escalated';
+
+export interface EventWait {
+  wait_id: string;
+  case_id: string;
+  process_id: string;
+  element_id: string;
+  element_label?: string;
+  trigger_kind: 'timer' | 'message' | 'condition' | 'delay_after' | 'manual';
+  status: EventWaitStatus;
+  created_at: string;
+  resolved_at?: string;
+  deadline?: string;
+  assignee?: string;
+  subscription_id?: string;
+  reminder_count?: number;
+  last_reminder_at?: string;
+  escalation_target?: string;
+  event_data?: Record<string, unknown>;
+}
+
 export interface WorkItemFilters {
   assignee?: string;
   process_id?: string;
