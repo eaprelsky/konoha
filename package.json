@@ -6,7 +6,8 @@
     "dev": "bun run --watch core/src/server.ts",
     "start": "bun run core/src/server.ts",
     "mcp": "bun run src/mcp.ts",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "test:operator-evals": "bun test tests/operator-evals.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",

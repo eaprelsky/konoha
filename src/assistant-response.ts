@@ -14,6 +14,7 @@
 import { createWorkflow } from "./workflow-loader";
 import type { WorkflowDefinition } from "./workflow-loader";
 import { auditLog, checkAutonomy } from "./assistant-actions";
+import type { AutonomyLevel } from "./assistant-actions";
 import { randomUUID } from "crypto";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -114,6 +115,8 @@ export interface NormalizeOptions {
   agent_id?: string;
   /** Session ID for audit trail */
   session_id?: string;
+  /** Deterministic autonomy overrides used by operator eval harnesses and tests */
+  autonomy_overrides?: Partial<Record<string, AutonomyLevel>>;
 }
 
 // ── Normalization ─────────────────────────────────────────────────────────────
@@ -204,7 +207,7 @@ async function executeWorkflowCreation(
   const params = def as Record<string, unknown>;
   const sessionId = opts.session_id ?? "assistant";
   const agentChain = opts.agent_id ?? "tsunade";
-  const autonomy = await checkAutonomy("workflow.create");
+  const autonomy = opts.autonomy_overrides?.["workflow.create"] ?? await checkAutonomy("workflow.create");
 
   if (autonomy === "disabled") {
     await auditLog({
