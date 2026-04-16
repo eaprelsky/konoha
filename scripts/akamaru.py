@@ -482,7 +482,7 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                     # Detect permission prompt freeze (#69)
                     # Filter out status-bar lines (e.g. "bypass permissions on (shift+tab to cycle)")
                     # and MemPalace write-progress lines (e.g. "Doodling…").
-                    STATUS_BAR_NOISE = ["bypass permissions", "shift+tab", "bypassPermissions", "Doodling"]
+                    STATUS_BAR_NOISE = ["bypass permissions", "shift+tab", "bypassPermissions", "Doodling", "? for shortcuts"]
                     prompt_lines = [l for l in lines[-15:] if not any(n in l for n in STATUS_BAR_NOISE)]
                     pane_text = "\n".join(prompt_lines)
                     PERMISSION_PATTERNS = [
@@ -529,7 +529,10 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                         any(p in pane_text for p in PERMISSION_PATTERNS) and
                         any(m in pane_text for m in PERMISSION_UI_MARKERS)
                     )
-                    if not is_actively_working and is_permission_prompt:
+                    # Skip when agent is at idle prompt (❯ or ? for shortcuts) —
+                    # no permission UI is rendered at idle. Prevents false positives
+                    # when scrollback contains prompt-like text from earlier output (#537).
+                    if not is_actively_working and is_permission_prompt and not is_idle:
                         key = f"tmux:{session}:permission_prompt"
                         if should_alert(key):
                             alerts.append(
