@@ -168,7 +168,16 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             if _b.is_agent_idle(_b.TMUX_SESSION):
                 break
             if waited >= _b.IDLE_TIMEOUT_SEC:
-                _b.log.warning(f"Agent {_b.TMUX_SESSION} busy >{_b.IDLE_TIMEOUT_SEC}s — dropping {len(pending)} msgs")
+                _b.log.warning(
+                    f"Agent {_b.TMUX_SESSION} busy >{_b.IDLE_TIMEOUT_SEC}s — attempting desync recovery (#505)"
+                )
+                await _b._send_desync_audit("agent unresponsive", f"waited={waited:.0f}s msgs={len(pending)}")
+                recovered = await _b.try_desync_recovery()
+                if recovered:
+                    _b.log.info(f"Desync recovery succeeded — retrying delivery of {len(pending)} msg(s)")
+                    waited = 0.0
+                    continue
+                _b.log.warning(f"Desync recovery failed — dropping {len(pending)} msgs")
                 await _b.send_freeze_alert(_b.TMUX_SESSION, waited, len(pending))
                 pending.clear()
                 break
