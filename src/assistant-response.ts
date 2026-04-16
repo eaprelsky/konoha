@@ -11,8 +11,8 @@
  *  - Only clean results reach the frontend
  */
 
-import { executeAction, classifyAction } from "./act-envelope";
-import type { ActEnvelope } from "./act-envelope";
+import { executeAction } from "./act-envelope";
+import { registerAllHandlers } from "./action-handlers";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -134,52 +134,71 @@ async function executeWorkflowCreation(
   opts: NormalizeOptions,
 ): Promise<AssistantAction> {
   const params = def as Record<string, unknown>;
-  const actionId = "workflow.create";
-
-  const envelope: ActEnvelope = {
-    action: actionId,
-    category: classifyAction(actionId),
-    args: {
+  try {
+    registerAllHandlers();
+    const actionId = "workflow.create";
+    const actionArgs = {
+      ...(typeof params === "object" ? params : {}),
       id: (params?.id as string) || `proc_${Date.now().toString(36)}`,
+      version: typeof params?.version === "string" ? params.version : "1.0",
       name: (params?.name as string) || "Новый процесс",
       elements: Array.isArray(params?.elements) ? params.elements : [],
       flow: Array.isArray(params?.flow) ? params.flow : [],
       draft: true,
-    },
-    meta: {
-      session_id: opts.session_id ?? "assistant",
-      agent_chain: opts.agent_id ?? "tsunade",
-    },
-  };
-
-  const result = await executeAction(envelope, { agentChain: opts.agent_id ?? "tsunade" });
-
-  if (result.requires_confirm) {
-    return {
-      action: actionId,
-      params: envelope.args,
-      status: "needs_confirm",
-      description: "Create draft workflow (requires confirmation)",
     };
-  }
+    const result = await executeAction({
+      action: actionId,
+      category: "act",
+      args: actionArgs,
+      meta: {
+        session_id: opts.session_id ?? opts.chat_id,
+        agent_chain: opts.agent_id ?? "tsunade",
+      },
+    }, {
+      skipAutonomy: true,
+      session_id: opts.session_id ?? opts.chat_id,
+      agent_chain: opts.agent_id ?? "tsunade",
+    });
 
-  if (!result.ok) {
+    if (result.requires_confirm) {
+      return {
+        action: actionId,
+        params: actionArgs,
+        status: "needs_confirm",
+        description: "Create draft workflow (requires confirmation)",
+      };
+    }
+
+    if (!result.ok || !result.data || typeof result.data !== "object") {
+      return {
+        action: actionId,
+        params: actionArgs,
+        status: "failed",
+        description: "Create draft workflow",
+        error: result.error ?? "Unknown action execution error",
+      };
+    }
+    const data = result.data as Record<string, unknown>;
     return {
       action: actionId,
-      params: envelope.args,
+      params: actionArgs,
+      status: "executed",
+      description: `Created draft workflow "${String(data.name ?? "Новый процесс")}"`,
+      result: {
+        id: data.id as string,
+        name: data.name as string,
+        status: (data.status as string | undefined) ?? "draft",
+      },
+    };
+  } catch (e: any) {
+    return {
+      action: "workflow.create",
+      params: params as Record<string, unknown>,
       status: "failed",
       description: "Create draft workflow",
-      error: result.error ?? "Unknown error",
+      error: e.message,
     };
   }
-
-  return {
-    action: actionId,
-    params: envelope.args,
-    status: "executed",
-    description: `Created draft workflow "${(result.data as any)?.name ?? envelope.args.name}"`,
-    result: result.data as Record<string, unknown>,
-  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

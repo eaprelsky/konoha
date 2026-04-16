@@ -192,6 +192,25 @@ console.log(action.autonomy);   // "auto" | "confirm" | "disabled"
 const workActions = listActions("workitem");
 ```
 
+## Canonical operator spine
+
+The registry vocabulary is not documentation-only anymore; it is the naming contract shared across:
+
+- `act-envelope` requests via `ActEnvelope.action`
+- autonomy matrix keys in `assistant-actions.ts`
+- audit log `action_type` values
+- assistant-side `actions_taken[].action`
+- direct server-side handlers registered in `src/action-handlers.ts`
+
+Canonical IDs use dotted registry names such as `workflow.create` and `issue.create`.
+Legacy snake_case aliases may still be accepted during migration, but new code must emit and persist the dotted IDs.
+
+At least one assistant flow already uses this spine as its primary mutation path:
+
+- `normalizeAssistantResponse()` executes `workflow.create` through `executeAction()`
+- `executeAction()` resolves the registered direct handler from `src/action-handlers.ts`
+- the resulting `actions_taken[]` and audit entries keep the same canonical action ID end-to-end
+
 ## Adding new actions
 
 1. Add an entry to the `ACTIONS` array in `src/action-registry.ts`

@@ -82,6 +82,8 @@ process.on("unhandledRejection", (reason) => {
 const PORT = parseInt(process.env.KONOHA_PORT || "3100");
 const app = new Hono<HonoEnv>();
 
+registerAllHandlers();
+
 // Static UI files (no auth required)
 // Handle /ui/ (trailing slash) — Hono sub-router doesn't match this
 app.get("/ui/", (c) => {

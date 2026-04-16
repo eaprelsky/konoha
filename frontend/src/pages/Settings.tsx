@@ -29,6 +29,12 @@ interface AuditEntry {
 const HARDCODED_ACTIONS = new Set(['data_delete']);
 
 const ACTION_LABELS: Record<string, string> = {
+  'issue.create': 'Создание GitHub issue',
+  'issue.label': 'Добавление меток к issue',
+  'workflow.create': 'Создание workflow',
+  'workflow.delete': 'Удаление workflow',
+  'agent.restart': 'Перезапуск агента',
+  'agent.deploy': 'Деплой агента',
   issue_create: 'Создание GitHub issue',
   issue_label: 'Добавление меток к issue',
   workflow_create: 'Создание workflow',
@@ -84,7 +90,7 @@ function AuditLog() {
           <span className="audit-filter-label">Тип действия</span>
           <input className="audit-filter-input" style={{ width: 160 }} value={filters.action_type}
             onChange={e => setFilters(f => ({ ...f, action_type: e.target.value }))}
-            placeholder="issue_create, search…" />
+            placeholder="issue.create, search…" />
         </div>
         <div className="audit-filter-group">
           <span className="audit-filter-label">Агент</span>
