@@ -163,6 +163,12 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
                 if (ev.schema_patch || ev.created_workflow) {
                   updated.push({ role: 'system' as const, text: 'Схема обновлена. Нажмите 💾 для сохранения.' });
                 }
+                if (Array.isArray(ev.pending_confirmations) && ev.pending_confirmations.length > 0) {
+                  const labels = ev.pending_confirmations
+                    .map((item: any) => typeof item?.action === 'string' ? item.action : 'unknown')
+                    .join(', ');
+                  updated.push({ role: 'system' as const, text: `Требуется подтверждение: ${labels}` });
+                }
                 return updated;
               });
               if (ev.schema_patch) {

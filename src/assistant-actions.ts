@@ -20,15 +20,29 @@ export type AutonomyLevel = "auto" | "confirm" | "disabled";
 
 export const AUTONOMY_KEY = "konoha:config:autonomy";
 
+const LEGACY_TO_CANONICAL_ACTION: Record<string, string> = {
+  issue_create: "issue.create",
+  issue_label: "issue.label",
+  workflow_create: "workflow.create",
+  workflow_delete: "workflow.delete",
+  data_delete: "data.delete",
+  agent_restart: "agent.restart",
+  agent_deploy: "agent.deploy",
+};
+
+function canonicalActionType(actionType: string): string {
+  return LEGACY_TO_CANONICAL_ACTION[actionType] ?? actionType;
+}
+
 /** Default autonomy levels per action type */
 const AUTONOMY_DEFAULTS: Record<string, AutonomyLevel> = {
-  issue_create:      "auto",
-  issue_label:       "auto",
-  workflow_create:   "confirm",
-  workflow_delete:   "confirm",
-  data_delete:       "confirm",  // HARDCODED — never overridable
-  agent_restart:     "confirm",
-  agent_deploy:      "confirm",
+  "issue.create":    "auto",
+  "issue.label":     "auto",
+  "workflow.create": "confirm",
+  "workflow.delete": "confirm",
+  "data.delete":     "confirm",  // HARDCODED — never overridable
+  "agent.restart":   "confirm",
+  "agent.deploy":    "confirm",
   highlight:         "auto",
   navigate:          "auto",
   search:            "auto",
@@ -36,7 +50,7 @@ const AUTONOMY_DEFAULTS: Record<string, AutonomyLevel> = {
 
 /** Permanently enforced levels — cannot be changed via UI */
 const HARDCODED: Record<string, AutonomyLevel> = {
-  data_delete: "confirm",
+  "data.delete": "confirm",
 };
 
 export async function getAutonomyMatrix(): Promise<Record<string, AutonomyLevel>> {
@@ -44,7 +58,7 @@ export async function getAutonomyMatrix(): Promise<Record<string, AutonomyLevel>
   const result: Record<string, AutonomyLevel> = { ...AUTONOMY_DEFAULTS };
   for (const [k, v] of Object.entries(stored || {})) {
     if (v === "auto" || v === "confirm" || v === "disabled") {
-      result[k] = v as AutonomyLevel;
+      result[canonicalActionType(k)] = v as AutonomyLevel;
     }
   }
   // Re-apply hardcoded overrides
@@ -53,15 +67,16 @@ export async function getAutonomyMatrix(): Promise<Record<string, AutonomyLevel>
 }
 
 export async function setAutonomyLevel(actionType: string, level: AutonomyLevel): Promise<void> {
-  if (HARDCODED[actionType] !== undefined) {
+  const canonical = canonicalActionType(actionType);
+  if (HARDCODED[canonical] !== undefined) {
     throw new Error(`Action "${actionType}" autonomy level is hardcoded and cannot be changed`);
   }
-  await redis.hset(AUTONOMY_KEY, actionType, level);
+  await redis.hset(AUTONOMY_KEY, canonical, level);
 }
 
 export async function checkAutonomy(actionType: string): Promise<AutonomyLevel> {
   const matrix = await getAutonomyMatrix();
-  return matrix[actionType] ?? "confirm";
+  return matrix[canonicalActionType(actionType)] ?? "confirm";
 }
 
 // ── Audit Log ──────────────────────────────────────────────────────────────────
@@ -134,25 +149,25 @@ export interface CreateIssueResult {
 export async function assistantCreateIssue(params: CreateIssueParams): Promise<CreateIssueResult> {
   const sessionId = params.session_id ?? randomUUID();
   const agentChain = params.agent_chain ?? "assistant";
-  const autonomy = await checkAutonomy("issue_create");
+  const autonomy = await checkAutonomy("issue.create");
 
   if (autonomy === "disabled") {
     await auditLog({
       timestamp: new Date().toISOString(),
       session_id: sessionId,
-      action_type: "issue_create",
+        action_type: "issue.create",
       parameters: JSON.stringify({ title: params.title, priority: params.priority }),
       result: "blocked",
       agent_chain: agentChain,
     });
-    throw new Error("issue_create is disabled in autonomy matrix");
+    throw new Error("issue.create is disabled in autonomy matrix");
   }
 
   if (autonomy === "confirm") {
     await auditLog({
       timestamp: new Date().toISOString(),
       session_id: sessionId,
-      action_type: "issue_create",
+        action_type: "issue.create",
       parameters: JSON.stringify({ title: params.title, priority: params.priority }),
       result: "requires_confirm",
       agent_chain: agentChain,
@@ -205,7 +220,7 @@ export async function assistantCreateIssue(params: CreateIssueParams): Promise<C
     await auditLog({
       timestamp: new Date().toISOString(),
       session_id: sessionId,
-      action_type: "issue_create",
+      action_type: "issue.create",
       parameters: JSON.stringify({ title: params.title, priority: params.priority }),
       result,
       agent_chain: agentChain,

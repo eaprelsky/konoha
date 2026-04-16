@@ -26,16 +26,16 @@ interface AuditEntry {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 
-const HARDCODED_ACTIONS = new Set(['data_delete']);
+const HARDCODED_ACTIONS = new Set(['data.delete']);
 
 const ACTION_LABELS: Record<string, string> = {
-  issue_create: 'Создание GitHub issue',
-  issue_label: 'Добавление меток к issue',
-  workflow_create: 'Создание workflow',
-  workflow_delete: 'Удаление workflow',
-  data_delete: 'Удаление данных',
-  agent_restart: 'Перезапуск агента',
-  agent_deploy: 'Деплой агента',
+  'issue.create': 'Создание GitHub issue',
+  'issue.label': 'Добавление меток к issue',
+  'workflow.create': 'Создание workflow',
+  'workflow.delete': 'Удаление workflow',
+  'data.delete': 'Удаление данных',
+  'agent.restart': 'Перезапуск агента',
+  'agent.deploy': 'Деплой агента',
   highlight: 'Highlight элемента на странице',
   navigate: 'Навигация по страницам',
   search: 'Поиск в системе',
@@ -84,7 +84,7 @@ function AuditLog() {
           <span className="audit-filter-label">Тип действия</span>
           <input className="audit-filter-input" style={{ width: 160 }} value={filters.action_type}
             onChange={e => setFilters(f => ({ ...f, action_type: e.target.value }))}
-            placeholder="issue_create, search…" />
+            placeholder="issue.create, search…" />
         </div>
         <div className="audit-filter-group">
           <span className="audit-filter-label">Агент</span>

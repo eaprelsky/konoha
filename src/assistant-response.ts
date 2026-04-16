@@ -13,7 +13,8 @@
 
 import { createWorkflow } from "./workflow-loader";
 import type { WorkflowDefinition } from "./workflow-loader";
-import { auditLog } from "./assistant-actions";
+import { auditLog, checkAutonomy } from "./assistant-actions";
+import { randomUUID } from "crypto";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,8 @@ export interface AssistantResponse {
   created_workflow: { id: string; name: string; [key: string]: unknown } | null;
   /** Actions executed during this response */
   actions_taken: AssistantAction[];
+  /** Explicit confirmations required before risky assistant actions may proceed */
+  pending_confirmations: PendingConfirmation[];
   /** UI actions (highlights, etc.) */
   ui_actions: UiAction[];
 }
@@ -50,6 +53,20 @@ export interface AssistantResponse {
 export interface UiAction {
   type: "highlight" | "navigate" | "notify";
   [key: string]: unknown;
+}
+
+export interface PendingConfirmation {
+  id: string;
+  action: string;
+  title: string;
+  summary: string;
+  status: "required";
+  permission: {
+    actor_scope: "assistant_on_behalf_of_user";
+    autonomy: "confirm";
+    confirmation_required: true;
+  };
+  params: Record<string, unknown>;
 }
 
 export interface NormalizeOptions {
@@ -77,6 +94,7 @@ export async function normalizeAssistantResponse(
 ): Promise<AssistantResponse> {
   const executeActions = opts.execute_actions !== false;
   const actionsTaken: AssistantAction[] = [];
+  const pendingConfirmations: PendingConfirmation[] = [];
   let reply = rawText;
   let schemaPatch: unknown = null;
   let createdWorkflow: AssistantResponse["created_workflow"] = null;
@@ -109,6 +127,9 @@ export async function normalizeAssistantResponse(
       actionsTaken.push(action);
       if (action.status === "executed" && action.result) {
         createdWorkflow = { id: action.result.id as string, name: action.result.name as string, ...action.result };
+      } else if (action.status === "needs_confirm") {
+        pendingConfirmations.push(buildPendingConfirmation("workflow.create", action.params));
+        reply = reply + `\n\nТребуется подтверждение перед выполнением действия: workflow.create.`;
       } else if (action.status === "failed") {
         reply = reply + `\n\n⚠️ Ошибка создания процесса: ${action.error}`;
       }
@@ -124,6 +145,7 @@ export async function normalizeAssistantResponse(
     schema_patch: schemaPatch,
     created_workflow: createdWorkflow,
     actions_taken: actionsTaken,
+    pending_confirmations: pendingConfirmations,
     ui_actions: uiActions,
   };
 }
@@ -135,6 +157,45 @@ async function executeWorkflowCreation(
   opts: NormalizeOptions,
 ): Promise<AssistantAction> {
   const params = def as Record<string, unknown>;
+  const sessionId = opts.session_id ?? "assistant";
+  const agentChain = opts.agent_id ?? "tsunade";
+  const autonomy = await checkAutonomy("workflow.create");
+
+  if (autonomy === "disabled") {
+    await auditLog({
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      action_type: "workflow.create",
+      parameters: JSON.stringify(params),
+      result: "blocked",
+      agent_chain: agentChain,
+    }).catch(() => {});
+    return {
+      action: "workflow.create",
+      params,
+      status: "failed",
+      description: "Create draft workflow",
+      error: "workflow.create is disabled by assistant permissions",
+    };
+  }
+
+  if (autonomy === "confirm") {
+    await auditLog({
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      action_type: "workflow.create",
+      parameters: JSON.stringify(params),
+      result: "requires_confirm",
+      agent_chain: agentChain,
+    }).catch(() => {});
+    return {
+      action: "workflow.create",
+      params,
+      status: "needs_confirm",
+      description: "Create draft workflow requires confirmation",
+    };
+  }
+
   try {
     const wfDef = {
       id: (params?.id as string) || `proc_${Date.now().toString(36)}`,
@@ -159,11 +220,11 @@ async function executeWorkflowCreation(
     // Audit log
     await auditLog({
       timestamp: new Date().toISOString(),
-      session_id: opts.session_id ?? "assistant",
+      session_id: sessionId,
       action_type: "workflow.create",
       parameters: JSON.stringify({ id: result.workflow.id, name: result.workflow.name }),
       result: "ok",
-      agent_chain: opts.agent_id ?? "tsunade",
+      agent_chain: agentChain,
     }).catch(() => {});
 
     return {
@@ -182,6 +243,22 @@ async function executeWorkflowCreation(
       error: e.message,
     };
   }
+}
+
+function buildPendingConfirmation(action: string, params: Record<string, unknown>): PendingConfirmation {
+  return {
+    id: randomUUID(),
+    action,
+    title: `Confirmation required: ${action}`,
+    summary: `Assistant requested ${action} and this action is configured as confirm-required.`,
+    status: "required",
+    permission: {
+      actor_scope: "assistant_on_behalf_of_user",
+      autonomy: "confirm",
+      confirmation_required: true,
+    },
+    params,
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -265,5 +342,6 @@ export function buildSseParsedEvent(resp: AssistantResponse): Record<string, unk
     created_workflow: resp.created_workflow,
     actions: resp.ui_actions,
     actions_taken: resp.actions_taken,
+    pending_confirmations: resp.pending_confirmations,
   };
 }
