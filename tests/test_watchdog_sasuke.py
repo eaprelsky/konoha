@@ -71,3 +71,46 @@ def test_sasuke_send_loop_honors_recovery_grace(monkeypatch):
         assert recovery_calls["count"] == 1
 
     asyncio.run(scenario())
+
+
+def test_sasuke_send_loop_does_not_mark_read_on_tmux_timeout(monkeypatch):
+    module = _load_watchdog_sasuke()
+
+    async def scenario():
+        mark_read_calls = {"count": 0}
+        delivered_attempts = {"count": 0}
+
+        monkeypatch.setattr(module.aioredis, "Redis", lambda *args, **kwargs: _DummyRedis())
+        monkeypatch.setattr(module._b, "TMUX_SESSION", "sasuke-test")
+        monkeypatch.setattr(module._b, "IDLE_POLL_SEC", 0.01)
+        monkeypatch.setattr(module._b, "is_agent_idle", lambda _session, stable_checks=2: True)
+
+        async def fake_tmux_send(_session, _prompt):
+            delivered_attempts["count"] += 1
+            if delivered_attempts["count"] == 1:
+                return False
+            return True
+
+        async def fake_mark_read(_events, _rd):
+            mark_read_calls["count"] += 1
+
+        monkeypatch.setattr(module._b, "tmux_send", fake_tmux_send)
+        monkeypatch.setattr(module, "_mark_read_telegram", fake_mark_read)
+
+        q = asyncio.Queue()
+        await q.put([{"source": "telegram", "data": {"text": "ping", "chat_id": "1", "msg_id": "2"}}])
+
+        task = asyncio.create_task(module.send_loop(q))
+        try:
+            deadline = asyncio.get_running_loop().time() + 1.5
+            while delivered_attempts["count"] < 2 and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0.01)
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        assert delivered_attempts["count"] >= 2
+        assert mark_read_calls["count"] == 1
+
+    asyncio.run(scenario())

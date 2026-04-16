@@ -200,12 +200,16 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
         if pending:
             try:
                 prompt = format_batch(pending)
-                await _b.tmux_send(_b.TMUX_SESSION, prompt)
-                _health["last_delivered_at"] = asyncio.get_running_loop().time()
-                await _mark_read_telegram(pending, rd)
+                delivered = await _b.tmux_send(_b.TMUX_SESSION, prompt)
+                if delivered is not False:
+                    _health["last_delivered_at"] = asyncio.get_running_loop().time()
+                    await _mark_read_telegram(pending, rd)
+                    pending.clear()
+                else:
+                    _b.log.warning(f"tmux_send timed out — retrying delivery of {len(pending)} msg(s) on next idle")
             except Exception as e:
                 _b.log.error(f"tmux send failed: {e}")
-            pending.clear()
+                pending.clear()
 
 
 # ── Redis stream watchers ─────────────────────────────────────────────────────
