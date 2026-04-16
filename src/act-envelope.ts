@@ -1,5 +1,5 @@
 /**
- * act-envelope.ts — Unified action envelope for system operations (#500)
+ * act-envelope.ts — Unified action envelope for system operations (#500, #527)
  *
  * A single external action shape that maps to current handlers/endpoints.
  * Used by API, MCP, assistant, and UI layers.
@@ -12,6 +12,10 @@
  * Migration path:
  *   Phase 1: envelope wraps current endpoints — no behavior change
  *   Phase 2: envelope becomes the primary API, old endpoints deprecated
+ *
+ * #527 adds programmatic executeAction() so server-side callers (assistant,
+ * event handlers) route through the same validate → autonomy → audit pipeline
+ * as the HTTP /act endpoint. No parallel mutation contracts.
  */
 
 import { Hono } from "hono";
@@ -24,6 +28,26 @@ import {
   type AutonomyLevel,
 } from "./action-registry";
 import { auditLog, checkAutonomy } from "./assistant-actions";
+
+// ── Direct action handlers (Phase 2 of #527) ────────────────────────────────
+// Maps action IDs to direct function implementations, bypassing HTTP roundtrip.
+// Registered via registerHandler() at startup.
+
+type ActionHandler = (args: Record<string, unknown>) => Promise<unknown>;
+
+const ACTION_HANDLERS = new Map<string, ActionHandler>();
+
+/**
+ * Register a direct handler for an action ID.
+ * When executeAction() is called for this action, the handler runs directly
+ * instead of routing through HTTP. Validates that the action exists in the registry.
+ */
+export function registerHandler(actionId: string, handler: ActionHandler): void {
+  if (!isValidAction(actionId)) {
+    throw new Error(`Cannot register handler for unknown action: ${actionId}`);
+  }
+  ACTION_HANDLERS.set(actionId, handler);
+}
 
 // ── Envelope types ───────────────────────────────────────────────────────────
 
@@ -139,10 +163,136 @@ function needConfirm(action: string): ActResult {
   return { ok: false, action, requires_confirm: true, action_version: 1 };
 }
 
-// ── Action handlers ──────────────────────────────────────────────────────────
-// Maps action IDs to their implementation.
-// Phase 1: delegates to existing routes via internal fetch.
-// Phase 2: direct function calls.
+// ── Programmatic action execution (#527) ─────────────────────────────────────
+// Server-side callers (assistant, event handlers) use executeAction() instead
+// of calling handler functions directly. This ensures every action passes
+// through validate → autonomy → audit, same as the HTTP /act endpoint.
+
+/**
+ * Execute an action programmatically through the canonical spine.
+ *
+ * Flow: validate → autonomy check → direct handler (if registered) or
+ * HTTP fallback → audit log → ActResult.
+ *
+ * This is the single entry point for ALL server-side action execution.
+ * Assistant flows, event handlers, and internal code should call this
+ * instead of invoking handler functions directly.
+ */
+export async function executeAction(
+  envelope: ActEnvelope,
+  opts?: { agentChain?: string },
+): Promise<ActResult> {
+  const agentChain = opts?.agentChain ?? envelope.meta?.agent_chain ?? "internal";
+
+  // 1. Validate against registry
+  const errors = validateEnvelope(envelope);
+  if (errors.length > 0) {
+    return fail(envelope.action, `Validation: ${errors.map(e => e.message).join("; ")}`);
+  }
+
+  const action = getAction(envelope.action)!;
+  const category = classifyAction(envelope.action);
+  const sessionId = envelope.meta?.session_id ?? crypto.randomUUID();
+
+  // 2. Autonomy check (for act/mutation actions)
+  if (category === "act") {
+    const autonomy = await checkAutonomy(envelope.action);
+    if (autonomy === "disabled") {
+      await auditLog({
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+        action_type: envelope.action,
+        parameters: JSON.stringify(envelope.args),
+        result: "blocked",
+        agent_chain: agentChain,
+      });
+      return fail(envelope.action, `Action ${envelope.action} is disabled`);
+    }
+    if (autonomy === "confirm") {
+      await auditLog({
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+        action_type: envelope.action,
+        parameters: JSON.stringify(envelope.args),
+        result: "requires_confirm",
+        agent_chain: agentChain,
+      });
+      return needConfirm(envelope.action);
+    }
+  }
+
+  // 3. Try direct handler first (Phase 2 of #527)
+  const handler = ACTION_HANDLERS.get(envelope.action);
+  if (handler) {
+    try {
+      const data = await handler(envelope.args);
+      if (category === "act" && action.audited) {
+        await auditLog({
+          timestamp: new Date().toISOString(),
+          session_id: sessionId,
+          action_type: envelope.action,
+          parameters: JSON.stringify(envelope.args),
+          result: "ok",
+          agent_chain: agentChain,
+        });
+      }
+      return ok(envelope.action, data);
+    } catch (e: any) {
+      if (category === "act" && action.audited) {
+        await auditLog({
+          timestamp: new Date().toISOString(),
+          session_id: sessionId,
+          action_type: envelope.action,
+          parameters: JSON.stringify(envelope.args),
+          result: "error",
+          agent_chain: agentChain,
+          error: e.message,
+        });
+      }
+      return fail(envelope.action, e.message);
+    }
+  }
+
+  // 4. Fallback: try HTTP endpoint (Phase 1 legacy)
+  const endpoint = resolveEndpoint(action, envelope.args);
+  if (!endpoint) {
+    return fail(envelope.action, `No handler or endpoint for action ${envelope.action}`);
+  }
+
+  try {
+    const baseUrl = `http://127.0.0.1:${process.env.KONOHA_PORT || 3200}`;
+    const url = `${baseUrl}${endpoint.path}`;
+    const fetchOpts: RequestInit = {
+      method: endpoint.method,
+      headers: { "Content-Type": "application/json" },
+    };
+    if (endpoint.body && ["POST", "PUT", "PATCH"].includes(endpoint.method)) {
+      fetchOpts.body = JSON.stringify(endpoint.body);
+    }
+
+    const response = await fetch(url, fetchOpts);
+    const data = await response.json();
+
+    if (category === "act" && action.audited) {
+      await auditLog({
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+        action_type: envelope.action,
+        parameters: JSON.stringify(envelope.args),
+        result: response.ok ? "ok" : "error",
+        agent_chain: agentChain,
+        error: response.ok ? undefined : JSON.stringify(data),
+      });
+    }
+
+    return ok(envelope.action, data);
+  } catch (e: any) {
+    return fail(envelope.action, `Internal routing error: ${e.message}`);
+  }
+}
+
+// ── Internal HTTP routing (Phase 1 legacy) ───────────────────────────────────
+// Used by the HTTP /act endpoint when no direct handler is registered.
 
 import { redis } from "./redis";
 
@@ -208,98 +358,19 @@ export const actRouter = new Hono<HonoEnv>();
  */
 actRouter.post("/", requireAuth, async (c) => {
   const envelope = await c.req.json<ActEnvelope>();
-
-  // 1. Validate
-  const errors = validateEnvelope(envelope);
-  if (errors.length > 0) {
-    return c.json(fail(envelope.action ?? "unknown", `Validation: ${errors.map(e => e.message).join("; ")}`), 400);
-  }
-
-  const action = getAction(envelope.action)!;
-  const category = classifyAction(envelope.action);
-  const sessionId = envelope.meta?.session_id ?? crypto.randomUUID();
   const agentChain = envelope.meta?.agent_chain ?? "api";
 
-  // 2. Autonomy check (for act/mutation actions)
-  if (category === "act") {
-    const autonomy = await checkAutonomy(envelope.action);
-    if (autonomy === "disabled") {
-      await auditLog({
-        timestamp: new Date().toISOString(),
-        session_id: sessionId,
-        action_type: envelope.action,
-        parameters: JSON.stringify(envelope.args),
-        result: "blocked",
-        agent_chain: agentChain,
-      });
-      return c.json(fail(envelope.action, `Action ${envelope.action} is disabled`), 403);
-    }
-    if (autonomy === "confirm") {
-      await auditLog({
-        timestamp: new Date().toISOString(),
-        session_id: sessionId,
-        action_type: envelope.action,
-        parameters: JSON.stringify(envelope.args),
-        result: "requires_confirm",
-        agent_chain: agentChain,
-      });
-      return c.json(needConfirm(envelope.action), 202);
-    }
+  // Delegate to canonical executeAction() — single code path (#527)
+  const result = await executeAction(envelope, { agentChain });
+
+  // Map ActResult to HTTP response
+  if (!result.ok && result.requires_confirm) {
+    return c.json(result, 202);
   }
-
-  // 3. Route to handler
-  const endpoint = resolveEndpoint(action, envelope.args);
-  if (!endpoint) {
-    // No current endpoint mapping — return action definition for reference
-    return c.json(ok(envelope.action, {
-      note: "Action registered but not yet wired to an endpoint",
-      definition: action,
-    }));
+  if (!result.ok) {
+    return c.json(result, result.error?.startsWith("Validation") ? 400 : 500);
   }
-
-  // 4. Execute via internal sub-request
-  try {
-    const baseUrl = `http://127.0.0.1:${process.env.KONOHA_PORT || 3200}`;
-    const url = `${baseUrl}${endpoint.path}`;
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    // Forward auth
-    const authHeader = c.req.header("Authorization");
-    if (authHeader) headers["Authorization"] = authHeader;
-
-    const fetchOpts: RequestInit = {
-      method: endpoint.method,
-      headers,
-    };
-    if (endpoint.body && ["POST", "PUT", "PATCH"].includes(endpoint.method)) {
-      fetchOpts.body = JSON.stringify(endpoint.body);
-    }
-
-    const response = await fetch(url, fetchOpts);
-    const data = await response.json();
-
-    // 5. Audit log (for act/mutation actions)
-    if (category === "act" && action.audited) {
-      await auditLog({
-        timestamp: new Date().toISOString(),
-        session_id: sessionId,
-        action_type: envelope.action,
-        parameters: JSON.stringify(envelope.args),
-        result: response.ok ? "ok" : "error",
-        agent_chain: agentChain,
-        error: response.ok ? undefined : JSON.stringify(data),
-      });
-    }
-
-    return c.json(
-      ok(envelope.action, data),
-      response.status as 200,
-    );
-  } catch (e: any) {
-    return c.json(fail(envelope.action, `Internal routing error: ${e.message}`), 500);
-  }
+  return c.json(result, 200);
 });
 
 /**

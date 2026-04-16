@@ -1,5 +1,5 @@
 /**
- * assistant-response.ts — Canonical server-side response normalization (#528)
+ * assistant-response.ts — Canonical server-side response normalization (#528, #527)
  *
  * Transforms raw LLM output into a structured AssistantResponse envelope.
  * The frontend never receives raw LLM text — only normalized responses
@@ -7,13 +7,12 @@
  *
  * This eliminates the root cause of raw JSON leaking to users (ADR-002 #525):
  *  - LLM output is parsed server-side
- *  - Actions are executed server-side
+ *  - Actions are executed server-side via act-envelope spine (#527)
  *  - Only clean results reach the frontend
  */
 
-import { createWorkflow } from "./workflow-loader";
-import type { WorkflowDefinition } from "./workflow-loader";
-import { auditLog } from "./assistant-actions";
+import { executeAction, classifyAction } from "./act-envelope";
+import type { ActEnvelope } from "./act-envelope";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -128,60 +127,59 @@ export async function normalizeAssistantResponse(
   };
 }
 
-// ── Action Executors ──────────────────────────────────────────────────────────
+// ── Action Executors (#527: route through act-envelope spine) ─────────────────
 
 async function executeWorkflowCreation(
   def: unknown,
   opts: NormalizeOptions,
 ): Promise<AssistantAction> {
   const params = def as Record<string, unknown>;
-  try {
-    const wfDef = {
+  const actionId = "workflow.create";
+
+  const envelope: ActEnvelope = {
+    action: actionId,
+    category: classifyAction(actionId),
+    args: {
       id: (params?.id as string) || `proc_${Date.now().toString(36)}`,
-      version: "1.0",
       name: (params?.name as string) || "Новый процесс",
       elements: Array.isArray(params?.elements) ? params.elements : [],
       flow: Array.isArray(params?.flow) ? params.flow : [],
-      ...(typeof params === "object" ? params : {}),
-    } as WorkflowDefinition;
-    const result = await createWorkflow(wfDef, { draft: true });
-
-    if (result.errors.length > 0) {
-      return {
-        action: "workflow.create",
-        params: params as Record<string, unknown>,
-        status: "failed",
-        description: "Create draft workflow",
-        error: result.errors.join(", "),
-      };
-    }
-
-    // Audit log
-    await auditLog({
-      timestamp: new Date().toISOString(),
+      draft: true,
+    },
+    meta: {
       session_id: opts.session_id ?? "assistant",
-      action_type: "workflow.create",
-      parameters: JSON.stringify({ id: result.workflow.id, name: result.workflow.name }),
-      result: "ok",
       agent_chain: opts.agent_id ?? "tsunade",
-    }).catch(() => {});
+    },
+  };
 
+  const result = await executeAction(envelope, { agentChain: opts.agent_id ?? "tsunade" });
+
+  if (result.requires_confirm) {
     return {
-      action: "workflow.create",
-      params: params as Record<string, unknown>,
-      status: "executed",
-      description: `Created draft workflow "${result.workflow.name}"`,
-      result: { id: result.workflow.id, name: result.workflow.name, status: "draft" },
-    };
-  } catch (e: any) {
-    return {
-      action: "workflow.create",
-      params: params as Record<string, unknown>,
-      status: "failed",
-      description: "Create draft workflow",
-      error: e.message,
+      action: actionId,
+      params: envelope.args,
+      status: "needs_confirm",
+      description: "Create draft workflow (requires confirmation)",
     };
   }
+
+  if (!result.ok) {
+    return {
+      action: actionId,
+      params: envelope.args,
+      status: "failed",
+      description: "Create draft workflow",
+      error: result.error ?? "Unknown error",
+    };
+  }
+
+  return {
+    action: actionId,
+    params: envelope.args,
+    status: "executed",
+    description: `Created draft workflow "${(result.data as any)?.name ?? envelope.args.name}"`,
+    result: result.data as Record<string, unknown>,
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

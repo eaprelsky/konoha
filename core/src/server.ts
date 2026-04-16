@@ -32,6 +32,7 @@ import testbenchProxyRouter from "../../src/routes/testbench-proxy";
 import { seedSystemAgents } from "../../src/routes/admin";
 import staticRouter, { DIST_UI_DIR } from "../../src/middleware/static";
 import { actRouter } from "../../src/act-envelope";
+import { registerAllHandlers } from "../../src/action-handlers";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
@@ -40,6 +41,9 @@ import workflowEngineModule from "../../modules/workflow-engine/src";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
 mkdirSync(ATTACHMENTS_DIR, { recursive: true });
+
+// Register direct action handlers for act-envelope spine (#527)
+registerAllHandlers();
 
 // ── Env validation ────────────────────────────────────────────────────────────
 // Required vars. Missing any = server refuses to start with a clear message.
