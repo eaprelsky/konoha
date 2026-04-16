@@ -164,9 +164,18 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             continue
 
         waited = 0.0
+        grace_deadline = 0.0
         while True:
             if _b.is_agent_idle(_b.TMUX_SESSION):
                 break
+            now = asyncio.get_running_loop().time()
+            if grace_deadline > now:
+                await asyncio.sleep(min(_b.IDLE_POLL_SEC, max(0.2, grace_deadline - now)))
+                continue
+            if grace_deadline > 0.0:
+                _b.log.info(f"Startup grace elapsed for {_b.TMUX_SESSION} — resuming desync timer")
+                grace_deadline = 0.0
+                waited = 0.0
             if waited >= _b.IDLE_TIMEOUT_SEC:
                 _b.log.warning(
                     f"Agent {_b.TMUX_SESSION} busy >{_b.IDLE_TIMEOUT_SEC}s — attempting desync recovery (#505)"
@@ -176,6 +185,10 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 if recovered:
                     _b.log.info(f"Desync recovery succeeded — retrying delivery of {len(pending)} msg(s)")
                     waited = 0.0
+                    grace_deadline = max(
+                        grace_deadline,
+                        asyncio.get_running_loop().time() + _b.DESYNC_RECOVERY_GRACE_SEC,
+                    )
                     continue
                 _b.log.warning(f"Desync recovery failed — dropping {len(pending)} msgs")
                 await _b.send_freeze_alert(_b.TMUX_SESSION, waited, len(pending))
