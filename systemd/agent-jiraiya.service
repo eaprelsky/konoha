@@ -7,7 +7,7 @@ After=agent-watchdog-jiraiya.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/konoha/scripts/agent-jiraiya-service.sh
+ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh jiraiya
 Restart=always
 MemoryMax=800M
 RestartSec=15

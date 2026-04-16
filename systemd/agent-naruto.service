@@ -7,7 +7,7 @@ After=agent-watchdog-naruto.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/konoha/scripts/agent-naruto-service.sh
+ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh naruto
 Restart=always
 MemoryMax=800M
 RestartSec=10

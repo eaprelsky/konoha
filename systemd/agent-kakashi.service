@@ -7,7 +7,7 @@ After=agent-watchdog-kakashi.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/konoha/scripts/agent-kakashi-service.sh
+ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh kakashi
 Restart=always
 MemoryMax=800M
 RestartSec=10

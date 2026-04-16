@@ -1,0 +1,1 @@
+konoha_register(id=jiraiya, name=Дзирайя (Корпоративная память), roles=[chronicler,memory], capabilities=[digest,search,kb-authoring,classify], model=claude-haiku-4-5-20251001)

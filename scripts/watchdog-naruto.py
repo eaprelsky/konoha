@@ -30,6 +30,7 @@ _b.AGENT_ID          = "naruto"
 _b.TMUX_SESSION      = "naruto"
 _b.DEBOUNCE_WINDOW   = 2.0
 _b.IDLE_TIMEOUT_SEC  = 600
+_b.STARTUP_GRACE_SEC = 90     # give startup sequence time to read memory before backlog delivery
 # No circuit breaker / wake-up — naruto is always running
 
 MESSAGE_QUEUE   = Path(os.path.expanduser("~/.claude/channels/telegram/message-queue.jsonl"))

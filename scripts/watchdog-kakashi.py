@@ -20,6 +20,8 @@ _b.AGENT_ID          = "kakashi"
 _b.TMUX_SESSION      = "kakashi"
 _b.DEBOUNCE_WINDOW   = 3.0
 _b.IDLE_TIMEOUT_SEC  = 1800   # 30 min — fixes can take time
+_b.STARTUP_GRACE_SEC = 120    # give startup sequence time to read memory before backlog delivery
+_b.REASONING_STALL_SEC = 240  # recover if Codex stops making pane progress with no tool subprocesses
 _b.BATCH_HEADER      = "Задание для Какаши:"
 _b.BATCH_FOOTER      = "Выполни задание согласно AGENTS.md. Результат сообщи в Коноха."
 
@@ -40,6 +42,7 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
 
     env = {**os.environ, "GH_TOKEN": GH_TOKEN}
     last_seen_ids: set[int] = set()
+    bootstrapped = False
 
     while True:
         try:
@@ -56,6 +59,13 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
             issues = json.loads(stdout) if stdout else []
 
+            if not bootstrapped:
+                last_seen_ids = {i["number"] for i in issues}
+                bootstrapped = True
+                _b.log.info(f"GitHub scanner bootstrap: learned {len(last_seen_ids)} existing open issue(s) without dispatch")
+                await asyncio.sleep(SCAN_INTERVAL)
+                continue
+
             new_issues = [i for i in issues if i["number"] not in last_seen_ids]
             if new_issues:
                 for issue in new_issues:
@@ -69,6 +79,8 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
                         }
                     })
                     last_seen_ids.add(issue["number"])
+            current_ids = {i["number"] for i in issues}
+            last_seen_ids.intersection_update(current_ids)
             # No periodic kakashi:scan — tasks come from Naruto directly
 
         except Exception as e:

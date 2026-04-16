@@ -7,7 +7,7 @@ After=agent-watchdog-sasuke.service
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/konoha/scripts/agent-sasuke-service.sh
+ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh sasuke
 Restart=always
 MemoryMax=800M
 RestartSec=10

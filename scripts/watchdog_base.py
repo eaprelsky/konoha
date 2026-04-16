@@ -38,6 +38,7 @@ IDLE_POLL_SEC    = 2.0
 IDLE_TIMEOUT_SEC = 600
 SSE_MAX_BACKOFF  = 60
 SSE_MAX_REPLAY_AGE = 600  # seconds — clear Last-Event-ID if older, to avoid massive replays (#521)
+STARTUP_GRACE_SEC = 0  # seconds to suppress delivery right after session startup/restart
 
 # On-demand agent wake (0 = agent is always running, no wake needed)
 WAKE_TIMEOUT_SEC = 0
@@ -52,6 +53,7 @@ FREEZE_ALERT_TARGET = ""
 DESYNC_RECOVERY_ENABLED = True   # enable auto-restart + redispatch on stuck agent
 TASK_ACK_TIMEOUT_SEC    = 120    # seconds to wait for agent progress after dispatch
 DESYNC_MAX_RETRIES      = 1      # max recovery attempts before giving up (per batch)
+REASONING_STALL_SEC     = 0      # 0 = disabled; restart if pane shows no progress and no tool subprocesses
 
 KONOHA_TEXT_LIMIT = 3500  # chars; tmux send-keys has ~4095 byte TTY buffer limit (#299)
 
@@ -68,6 +70,9 @@ NOISE_TEXT_CONTAINS = ("going offline (session end)",)
 # ── Logging — call setup_logging() once AGENT_ID is set ──────────────────────
 
 log: logging.Logger = logging.getLogger("watchdog")
+_last_dispatch_at: float = 0.0
+_last_pane_progress_at: float = 0.0
+_last_pane_snapshot: str = ""
 
 
 class _FlushFileHandler(logging.FileHandler):
@@ -215,6 +220,99 @@ def is_agent_idle(session: str, stable_checks: int = 2) -> bool:
     return True
 
 
+def pane_pid(session: str) -> int | None:
+    try:
+        out = subprocess.check_output(
+            ["tmux", "-L", session, "list-panes", "-t", session, "-F", "#{pane_pid}"],
+            timeout=3,
+        ).decode("utf-8", errors="replace").strip()
+        return int(out) if out else None
+    except Exception:
+        return None
+
+
+def _descendant_commands(root_pid: int) -> list[tuple[int, int, str]]:
+    try:
+        out = subprocess.check_output(
+            ["ps", "-eo", "pid=,ppid=,args="],
+            timeout=5,
+        ).decode("utf-8", errors="replace")
+    except Exception:
+        return []
+
+    children_by_parent: dict[int, list[tuple[int, int, str]]] = {}
+    for line in out.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) < 3:
+            continue
+        try:
+            pid = int(parts[0])
+            ppid = int(parts[1])
+        except ValueError:
+            continue
+        children_by_parent.setdefault(ppid, []).append((pid, ppid, parts[2]))
+
+    result: list[tuple[int, int, str]] = []
+    stack = [root_pid]
+    seen: set[int] = set()
+    while stack:
+        current = stack.pop()
+        for child in children_by_parent.get(current, []):
+            pid = child[0]
+            if pid in seen:
+                continue
+            seen.add(pid)
+            result.append(child)
+            stack.append(pid)
+    return result
+
+
+def has_active_tool_process(session: str) -> bool:
+    """Return True if the agent currently has non-runtime subprocesses running."""
+    root_pid = pane_pid(session)
+    if not root_pid:
+        return False
+
+    descendants = _descendant_commands(root_pid)
+    for _pid, _ppid, cmd in descendants:
+        normalized = cmd.strip()
+        if not normalized:
+            continue
+        if "/home/ubuntu/.npm-global/bin/codex" in normalized:
+            continue
+        if "/codex-linux-x64/" in normalized and "/codex/codex" in normalized:
+            continue
+        if normalized.startswith("/home/ubuntu/.bun/bin/bun run /home/ubuntu/konoha/src/mcp.ts"):
+            continue
+        if normalized.startswith("bash -c export PATH=") and "while true; do 'codex'" in normalized:
+            continue
+        return True
+    return False
+
+
+def note_dispatch_progress(session: str) -> None:
+    global _last_dispatch_at, _last_pane_progress_at, _last_pane_snapshot
+    now = time.monotonic()
+    _last_dispatch_at = now
+    _last_pane_progress_at = now
+    _last_pane_snapshot = tmux_pane_content(session)
+
+
+def update_pane_progress(session: str) -> None:
+    global _last_pane_progress_at, _last_pane_snapshot
+    current = tmux_pane_content(session)
+    if current != _last_pane_snapshot:
+        _last_pane_snapshot = current
+        _last_pane_progress_at = time.monotonic()
+
+
+def clear_dispatch_progress() -> None:
+    global _last_dispatch_at, _last_pane_progress_at, _last_pane_snapshot
+    _last_dispatch_at = 0.0
+    _last_pane_progress_at = 0.0
+    _last_pane_snapshot = ""
+
+
 # ── tmux send ────────────────────────────────────────────────────────────────
 
 async def tmux_run(*args: str, timeout: float = 10.0) -> bool:
@@ -267,11 +365,13 @@ async def tmux_send(session: str, text: str) -> bool:
     # Always send submit Enter after optional dialog dismissal (#145)
     await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
     log.info(f"Sent prompt to {session} ({len(text)} chars)")
+    note_dispatch_progress(session)
     await asyncio.sleep(1.2)  # give agent time to start processing
     for attempt in range(3):
         content_after = tmux_pane_content(session)
         if content_after != content_before:
             log.info(f"Delivery confirmed: pane content changed after send")
+            update_pane_progress(session)
             break  # pane changed — agent received the message (#50)
         if not is_agent_idle(session, stable_checks=2):
             break  # agent is processing — good
@@ -311,6 +411,8 @@ def format_batch(events: list[dict]) -> str:
 
 async def send_loop(batched_queue: asyncio.Queue) -> None:
     pending: list[dict] = []
+    session_alive = is_session_alive(TMUX_SESSION)
+    session_alive_since = time.monotonic() if session_alive else 0.0
 
     while True:
         # ── Circuit breaker: drain and discard while circuit is open ──────────
@@ -335,6 +437,24 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
         waited = 0.0
         wake_attempted = False
         while True:
+            alive_now = is_session_alive(TMUX_SESSION)
+            if alive_now and not session_alive:
+                session_alive_since = time.monotonic()
+                if STARTUP_GRACE_SEC > 0:
+                    log.info(f"Session {TMUX_SESSION} came online — startup grace {STARTUP_GRACE_SEC}s")
+            elif not alive_now:
+                session_alive_since = 0.0
+            session_alive = alive_now
+
+            if alive_now and STARTUP_GRACE_SEC > 0 and session_alive_since > 0.0:
+                grace_left = STARTUP_GRACE_SEC - (time.monotonic() - session_alive_since)
+                if grace_left > 0:
+                    sleep_for = min(IDLE_POLL_SEC, max(0.5, grace_left))
+                    log.info(f"Agent {TMUX_SESSION} in startup grace for {grace_left:.0f}s — delaying delivery")
+                    await asyncio.sleep(sleep_for)
+                    waited += sleep_for
+                    continue
+
             if is_agent_idle(TMUX_SESSION):
                 break
             # On-demand wake: start the agent service if session doesn't exist
@@ -599,6 +719,48 @@ async def heartbeat_loop() -> None:
         await asyncio.sleep(300)  # every 5 min
 
 
+async def active_stall_monitor() -> None:
+    """Detect silent reasoning stalls after task delivery even without new inbound events."""
+    while True:
+        await asyncio.sleep(15)
+        if REASONING_STALL_SEC <= 0:
+            continue
+        if _last_dispatch_at <= 0.0:
+            continue
+        if not is_session_alive(TMUX_SESSION):
+            clear_dispatch_progress()
+            continue
+
+        update_pane_progress(TMUX_SESSION)
+
+        if is_agent_idle(TMUX_SESSION, stable_checks=1):
+            clear_dispatch_progress()
+            continue
+
+        since_dispatch = time.monotonic() - _last_dispatch_at
+        since_progress = time.monotonic() - (_last_pane_progress_at or _last_dispatch_at)
+        if since_dispatch < REASONING_STALL_SEC or since_progress < REASONING_STALL_SEC:
+            continue
+        if has_active_tool_process(TMUX_SESSION):
+            log.info(
+                f"Agent {TMUX_SESSION} has active tool subprocesses — skip reasoning-stall recovery "
+                f"(dispatch={since_dispatch:.0f}s progress={since_progress:.0f}s)"
+            )
+            continue
+
+        log.warning(
+            f"Reasoning stall detected for {TMUX_SESSION}: no pane progress for {since_progress:.0f}s "
+            f"after dispatch and no tool subprocesses"
+        )
+        await _send_desync_audit(
+            "reasoning stall",
+            f"dispatch={since_dispatch:.0f}s progress={since_progress:.0f}s no_tool_subprocesses=1",
+        )
+        recovered = await try_desync_recovery()
+        if recovered:
+            clear_dispatch_progress()
+
+
 # ── Desync detection and auto-recovery (#505) ─────────────────────────────────
 
 _desync_retry_count: int = 0  # track recovery attempts per batch
@@ -710,6 +872,7 @@ async def run_watchdog(
         debouncer(raw_queue, batched_queue),
         send_loop(batched_queue),
         heartbeat_loop(),
+        active_stall_monitor(),
     ]
     if extra_watchers:
         for fn in extra_watchers:
