@@ -38,6 +38,7 @@ router.use("/:id/heartbeat", requireAuth);
 router.use("/:id/start", requireAuth);
 router.use("/:id/stop", requireAuth);
 router.use("/:id/restart", requireAuth);
+router.use("/:id/switch-runtime", requireAuth);
 router.use("/:id/status", requireAuth);
 router.use("/:id", (c, next) => {
   // /agents/register has its own auth — skip middleware for it
@@ -79,14 +80,20 @@ router.post("/", async (c) => {
     id,
     name,
     system_prompt,
+    startup_sequence,
     runtime,
     fallback_runtime,
+    runtime_profiles,
+    active_runtime_profile,
+    fallback_runtime_profile,
+    auto_runtime_fallback,
     launch_strategy,
     startup_timeout_sec,
     model = "claude:claude-sonnet-4-6",
     env,
     tags,
     capabilities,
+    codex_disable_features,
     memory,
   } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
@@ -94,14 +101,20 @@ router.post("/", async (c) => {
     id,
     name,
     system_prompt,
+    startup_sequence,
     runtime,
     fallback_runtime,
+    runtime_profiles,
+    active_runtime_profile,
+    fallback_runtime_profile,
+    auto_runtime_fallback,
     launch_strategy,
     startup_timeout_sec,
     model,
     env,
     tags,
     capabilities,
+    codex_disable_features,
     memory,
   });
   // Prepare personal memory directory
@@ -155,6 +168,51 @@ router.post("/:id/restart", async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
+});
+
+// POST /agents/:id/switch-runtime
+router.post("/:id/switch-runtime", async (c) => {
+  const id = c.req.param("id")!;
+  const def = await getAgentDef(id);
+  if (!def) return c.json({ error: "Agent not found" }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const profile = typeof body.profile === "string" ? body.profile.trim() : "";
+  const restart = body.restart !== false;
+  if (!profile) return c.json({ error: "profile is required" }, 400);
+
+  const preset = def.runtime_profiles?.[profile];
+  if (!preset) {
+    return c.json({ error: `Runtime profile not found: ${profile}` }, 404);
+  }
+
+  const updated = {
+    ...def,
+    runtime: preset.runtime,
+    model: preset.model,
+    codex_disable_features: preset.codex_disable_features ?? def.codex_disable_features,
+    active_runtime_profile: profile,
+    updated_at: new Date().toISOString(),
+  };
+  await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+
+  let lifecycle = await getAgentState(id);
+  if (restart) {
+    try {
+      lifecycle = await restartAgent(id, updated);
+    } catch (e: any) {
+      return c.json({ error: e.message, updated }, 500);
+    }
+  }
+
+  return c.json({
+    ok: true,
+    agent_id: id,
+    active_runtime_profile: profile,
+    runtime: updated.runtime,
+    model: updated.model,
+    lifecycle,
+  });
 });
 
 // GET /agents/tmux/:id — capture tmux pane output (last 200 lines)

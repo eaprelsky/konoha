@@ -186,7 +186,7 @@ function loadSharedMcpServers(
   const globalEnv = loadGlobalEnv();
   const vars = { ...loadProcessEnv(), ...globalEnv, ...agentEnv };
   const merged: Record<string, ResolvedMcpServerDef> = {};
-  const allowed = allowlist?.length ? new Set(allowlist) : null;
+  const allowed = allowlist ? new Set(allowlist) : null;
 
   for (const configPath of SHARED_MCP_CONFIG_PATHS) {
     if (!existsSync(configPath)) continue;

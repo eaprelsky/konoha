@@ -14,10 +14,17 @@ export interface AgentRedisStream {
   consumer?: string; // Consumer name (defaults to "{id}-lifecycle-watchdog")
 }
 
+export interface AgentRuntimeProfile {
+  runtime: AgentProvider;
+  model: string;
+  codex_disable_features?: string[];
+}
+
 export interface AgentDef {
   id: string;
   name: string;
   system_prompt?: string;
+  startup_sequence?: string[];
   runtime?: AgentProvider;
   fallback_runtime?: AgentProvider;
   launch_strategy?: LaunchStrategy;
@@ -28,6 +35,10 @@ export interface AgentDef {
   capabilities?: string[];  // skill IDs assigned to this agent
   shared_mcp_allowlist?: string[]; // optional subset of shared MCP servers to include
   codex_disable_features?: string[]; // optional per-agent Codex feature disables
+  runtime_profiles?: Record<string, AgentRuntimeProfile>;
+  active_runtime_profile?: string;
+  fallback_runtime_profile?: string;
+  auto_runtime_fallback?: boolean;
   memory?: string;           // path to agent memory file (e.g. /opt/shared/agent-memory/{id}/MEMORY.md)
   avatar_url?: string;
   gender?: 'male' | 'female' | 'neutral';

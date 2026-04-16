@@ -21,11 +21,7 @@ const SYSTEM_TEMPLATE = `\
 - Language: Russian (communicate in Russian unless overridden in user instructions)
 
 ## Startup sequence
-1. source /home/ubuntu/.agent-env
-2. Read /opt/shared/agent-memory/MEMORY.md and all referenced files
-3. Register on Konoha bus: konoha_register(id={{id}}, name={{name}}, model={{model}})
-4. Read your personal memory if it exists: /opt/shared/agent-memory/{{id}}/MEMORY.md
-5. Wait for tasks — watchdog delivers them via Konoha bus
+{{startup_sequence}}
 
 ## Konoha Bus
 - HTTP API: http://127.0.0.1:3200
@@ -40,11 +36,26 @@ Session cleanup fires every 2h — save work-state and do /new when requested.
 ---
 # User Instructions`;
 
-export function renderSystemTemplate(def: Pick<AgentDef, "id" | "name" | "model" | "runtime">): string {
+function defaultStartupSequence(def: Pick<AgentDef, "id" | "name" | "model" | "runtime">): string[] {
+  const model = formatAgentModel(def);
+  return [
+    "source /home/ubuntu/.agent-env",
+    "Read /opt/shared/agent-memory/MEMORY.md and all referenced files",
+    `Register on Konoha bus: konoha_register(id=${def.id}, name=${def.name}, model=${model})`,
+    `Read your personal memory if it exists: /opt/shared/agent-memory/${def.id}/MEMORY.md`,
+    "Wait for tasks — watchdog delivers them via Konoha bus",
+  ];
+}
+
+export function renderSystemTemplate(def: Pick<AgentDef, "id" | "name" | "model" | "runtime" | "startup_sequence">): string {
+  const startupSequence = (def.startup_sequence?.length ? def.startup_sequence : defaultStartupSequence(def))
+    .map((step, index) => `${index + 1}. ${step}`)
+    .join("\n");
   return SYSTEM_TEMPLATE
     .replace(/{{id}}/g, def.id)
     .replace(/{{name}}/g, def.name)
-    .replace(/{{model}}/g, formatAgentModel(def));
+    .replace(/{{model}}/g, formatAgentModel(def))
+    .replace(/{{startup_sequence}}/g, startupSequence);
 }
 
 /**
@@ -123,7 +134,7 @@ export async function buildRoleBlocks(agentId: string): Promise<string> {
  * Builds the complete agent system prompt: system template + user instructions + role blocks + skill snippets.
  * Used by startAgent() and GET /agents/:id/system-template.
  */
-export async function buildSystemPrompt(agentId: string, def: Pick<AgentDef, "id" | "name" | "model" | "runtime" | "system_prompt" | "capabilities">): Promise<string> {
+export async function buildSystemPrompt(agentId: string, def: Pick<AgentDef, "id" | "name" | "model" | "runtime" | "system_prompt" | "capabilities" | "startup_sequence">): Promise<string> {
   // Substitute {display_name} from branding config (closes #298)
   const branding = await getBranding().catch(() => null);
   const displayName = branding?.agent_display_names?.[agentId] ?? def.name;

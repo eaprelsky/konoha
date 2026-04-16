@@ -99,6 +99,69 @@ Kiba is the guardian of the Konoha multi-agent system. He monitors agent health,
 - For agent lifecycle health, rely on the managed tmux session and service state
 - Keep responses concise and action-oriented`;
 
+const KAKASHI_PROMPT = `# Kakashi — Master Bug Fixer
+
+## Role
+Kakashi is the main bug-fixing and backlog-burning developer in Konoha. He works GitHub issues autonomously, makes targeted fixes, and keeps the queue moving without waiting for manual orchestration.
+
+## Input Channels
+- Konoha bus messages for 'kakashi'
+- Watchdog-delivered GitHub issue triggers such as \`kakashi:fix issue=N\`
+
+## Startup and Backlog Rule
+Immediately after startup, Kakashi must check the open GitHub backlog in \`eaprelsky/konoha\`.
+- First resume issues he was already working on
+- If there are any open actionable issues, take the highest-priority one immediately
+- Do not wait for a fresh watchdog event or an explicit Naruto command if backlog already exists
+- If the queue is empty, stay idle and wait for tasks
+
+## Priority Rule
+Always take the highest-priority actionable issue first:
+- \`P0: critical\`
+- \`P1: high\`
+- \`P2: medium\`
+- \`P3: low\`
+
+Issues without a priority label are treated as \`P2\`.
+Skip issues labeled \`frozen\`, \`blocked\`, \`needs-info\`, or \`awaiting-test\`.
+
+## Architectural Issue Preflight
+Before taking an architectural, enhancement, refactor, or cross-cutting issue, first clean the tails from adjacent work:
+- Check \`git status --short\` and \`git branch --show-current\`
+- Check linked or nearby PRs/issues mentioned in the task
+- If the current branch or dirty worktree belongs to another issue, do not start free-form reasoning on top of that tail
+- First make the tail explicit: what belongs to the previous issue, what is still open, and what must be isolated before this issue
+- Then either switch to a clean issue branch or explicitly scope the new work around the unrelated dirty files
+
+Do not sit in a long reasoning loop while branch ownership, PR overlap, or dirty-tree boundaries are still ambiguous.
+
+## Tail Cleanup Rule
+Preflight is not a stopping point. It is an action step.
+
+If backlog is open, Kakashi must do one of these and then continue:
+- If dirty files are clearly unrelated to the next issue, mark them as unrelated and proceed with the next issue immediately
+- If dirty files are the tail of the current or previous Kakashi issue, finish the tail cleanup first: inspect the changed paths, determine ownership, and either commit the coherent tail or isolate it from the next issue
+- If there is a real blocker, report a concrete blocker through Konoha with file paths and the exact overlap, not a generic status update
+
+Kakashi must not end the turn with only “need to isolate tail” or similar wording while there is still an open actionable backlog item.
+Unrelated dirty files alone are not a blocker.
+
+## Workflow
+1. Read the full issue and comments
+2. Find the relevant code and confirm the root cause from the code, not by guess
+3. Make the smallest correct fix
+4. Verify the changed path
+5. Commit one fix per issue
+6. Close the issue and notify the team through Konoha
+
+## Operational Rules
+- Use \`gh\` against \`eaprelsky/konoha\` to inspect and close issues
+- Use \`git\` in \`/home/ubuntu/konoha\`
+- One commit = one fix = one issue
+- Do not wait for Naruto if there is open backlog you can take autonomously
+- Ignore watchdog noise events and skip \`kakashi:scan\` silently
+- Keep communication concise and operational`;
+
 const SYSTEM_AGENTS = [
   {
     id: "naruto",
@@ -108,6 +171,12 @@ const SYSTEM_AGENTS = [
     launch_strategy: "persistent_interactive" as const,
     startup_timeout_sec: 180,
     model: "gpt-5.4",
+    runtime_profiles: {
+      codex: { runtime: "codex" as const, model: "gpt-5.4" },
+    },
+    active_runtime_profile: "codex",
+    fallback_runtime_profile: "codex",
+    auto_runtime_fallback: false,
     system_prompt: NARUTO_PROMPT,
     tags: ["system", "autostart"],
     capabilities: ["naruto-infra", "github-issues"],
@@ -123,6 +192,12 @@ const SYSTEM_AGENTS = [
     launch_strategy: "persistent_interactive" as const,
     startup_timeout_sec: 180,
     model: "gpt-5.4",
+    runtime_profiles: {
+      codex: { runtime: "codex" as const, model: "gpt-5.4", codex_disable_features: ["apps"] },
+    },
+    active_runtime_profile: "codex",
+    fallback_runtime_profile: "codex",
+    auto_runtime_fallback: false,
     codex_disable_features: ["apps"],
     system_prompt: SASUKE_PROMPT,
     tags: ["system", "autostart"],
@@ -143,14 +218,64 @@ const SYSTEM_AGENTS = [
     launch_strategy: "persistent_interactive" as const,
     startup_timeout_sec: 180,
     model: "claude-sonnet-4-6",
+    runtime_profiles: {
+      claude: { runtime: "claude" as const, model: "claude-sonnet-4-6" },
+      codex: { runtime: "codex" as const, model: "gpt-5.4" },
+    },
+    active_runtime_profile: "claude",
+    fallback_runtime_profile: "codex",
+    auto_runtime_fallback: true,
     system_prompt: KIBA_PROMPT,
     tags: ["system", "autostart"],
     capabilities: ["health-check", "alert", "diagnose", "escalate"],
     tmux_session_override: "kiba",
     gender: "male" as const,
   },
-  { id: "kakashi", name: "Какаши (Мастер багфиксинга)", runtime: "codex" as const, fallback_runtime: "codex" as const, model: "gpt-5.4", tags: ["system", "autostart"], tmux_session_override: "kakashi", gender: "male" as const },
-  { id: "mirai", name: "Мирай", runtime: "cursor" as const, fallback_runtime: "codex" as const, model: "gpt-5.1", tags: ["system", "autostart"], tmux_session_override: "mirai", gender: "female" as const },
+  {
+    id: "kakashi",
+    name: "Какаши (Мастер багфиксинга)",
+    startup_sequence: [
+      "source /home/ubuntu/.agent-env",
+      "Read /opt/shared/agent-memory/kakashi/startup_memory.md",
+      "Register on Konoha bus: konoha_register(id=kakashi, name=Какаши (Мастер багфиксинга), model=codex:gpt-5.4)",
+      "Read your personal memory if it exists: /opt/shared/agent-memory/kakashi/MEMORY.md",
+      "Wait for tasks — watchdog delivers them via Konoha bus",
+    ],
+    runtime: "codex" as const,
+    fallback_runtime: "glm" as const,
+    model: "gpt-5.4",
+    runtime_profiles: {
+      codex: { runtime: "codex" as const, model: "gpt-5.4" },
+      glm: { runtime: "glm" as const, model: "glm-5.1" },
+    },
+    active_runtime_profile: "codex",
+    fallback_runtime_profile: "glm",
+    auto_runtime_fallback: false,
+    system_prompt: KAKASHI_PROMPT,
+    shared_mcp_allowlist: [],
+    tags: ["system", "autostart"],
+    roles: ["developer"],
+    capabilities: ["bugfix", "code-review", "github-issues"],
+    tmux_session_override: "kakashi",
+    gender: "male" as const,
+  },
+  {
+    id: "mirai",
+    name: "Мирай",
+    runtime: "cursor" as const,
+    fallback_runtime: "codex" as const,
+    model: "gpt-5.1",
+    runtime_profiles: {
+      cursor: { runtime: "cursor" as const, model: "gpt-5.1" },
+      codex: { runtime: "codex" as const, model: "gpt-5.4-mini" },
+    },
+    active_runtime_profile: "cursor",
+    fallback_runtime_profile: "codex",
+    auto_runtime_fallback: true,
+    tags: ["system", "autostart"],
+    tmux_session_override: "mirai",
+    gender: "female" as const,
+  },
 ];
 
 async function syncSystemAgent(ag: (typeof SYSTEM_AGENTS)[number]): Promise<"created" | "updated"> {

@@ -194,6 +194,63 @@ describe("GET /agents", () => {
   });
 });
 
+// ── POST /agents/:id/switch-runtime ─────────────────────────────────────────
+
+describe("POST /agents/:id/switch-runtime", () => {
+  test("switches managed agent to a named runtime profile", async () => {
+    const agentId = id("switch-runtime");
+    await req("POST", "/agents", {
+      body: {
+        id: agentId,
+        name: "Runtime Switch Agent",
+        runtime: "codex",
+        model: "gpt-5.4",
+        runtime_profiles: {
+          codex: { runtime: "codex", model: "gpt-5.4" },
+          glm: { runtime: "glm", model: "glm-5.1" },
+        },
+        active_runtime_profile: "codex",
+      },
+    });
+
+    const { status, body } = await req("POST", `/agents/${agentId}/switch-runtime`, {
+      body: { profile: "glm", restart: false },
+    });
+    expect(status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.active_runtime_profile).toBe("glm");
+    expect(body.runtime).toBe("glm");
+    expect(body.model).toBe("glm-5.1");
+
+    const updated = await req("GET", `/agents/${agentId}`);
+    expect(updated.body.active_runtime_profile).toBe("glm");
+    expect(updated.body.runtime).toBe("glm");
+    expect(updated.body.model).toBe("glm-5.1");
+  });
+
+  test("returns 404 for unknown runtime profile", async () => {
+    const agentId = id("switch-runtime-missing");
+    await req("POST", "/agents", {
+      body: {
+        id: agentId,
+        name: "Runtime Switch Missing Profile Agent",
+        runtime: "codex",
+        model: "gpt-5.4",
+        runtime_profiles: {
+          codex: { runtime: "codex", model: "gpt-5.4" },
+        },
+        active_runtime_profile: "codex",
+      },
+    });
+
+    const { status, body } = await req("POST", `/agents/${agentId}/switch-runtime`, {
+      body: { profile: "glm", restart: false },
+    });
+    expect(status).toBe(404);
+    expect(body.error).toContain("Runtime profile not found");
+  });
+});
+
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
 
 describe("POST /agents/:id/heartbeat", () => {
