@@ -9,6 +9,7 @@ import { redis } from "../redis";
 import Anthropic from "@anthropic-ai/sdk";
 import { createWorkflow, listWorkflows } from "../workflow-loader";
 import { getAgentDef, listAgentDefs } from "../agent-lifecycle";
+import { buildOperatorStatePromptBlock, getOperatorStateLabel } from "../operator-state";
 const log = createLogger("routes:ai");
 
 /** Build content blocks from text + optional attachment paths (closes #321) */
@@ -438,6 +439,7 @@ router.post("/ai/chat", async (c) => {
   const body = await c.req.json<{
     message: string;
     context?: string;
+    operator_state?: unknown;
     chat_id?: string;
     mode?: "process" | "admin";
     stream?: boolean;
@@ -464,7 +466,11 @@ router.post("/ai/chat", async (c) => {
     .map(r => { try { return JSON.parse(r); } catch { return null; } })
     .filter(Boolean);
 
-  const contextBlock = body.context ? `\n\n[Inspector context]\n${body.context}` : "";
+  const operatorStateBlock = buildOperatorStatePromptBlock(body.operator_state);
+  const contextBlock = [
+    operatorStateBlock,
+    body.context ? `\n\n[Inspector telemetry]\n${body.context}` : "",
+  ].filter(Boolean).join("");
 
   // Inject compact workflow list for process mode so Tsunade can answer questions about existing processes
   let processListContext = "";
@@ -543,7 +549,7 @@ router.post("/ai/chat", async (c) => {
 
           // Emit inspector event to Konoha bus (separate channel, non-blocking)
           redis.xadd("inspector", "*",
-            "page", body.context?.split('\n')[0] ?? "",
+            "page", getOperatorStateLabel(body.operator_state) || body.context?.split('\n')[0] || "",
             "chat_id", chatId,
             "mode", mode,
           ).catch(silentCatch("stream ack"));

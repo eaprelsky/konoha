@@ -32,6 +32,7 @@ import { Minimap } from './Minimap';
 import { TriggerBadge } from './TriggerBadge';
 import { TriggerPopup } from './TriggerPopup';
 import { EditorToolbar } from './EditorToolbar';
+import { buildProcessEditorOperatorState, summarizeOperatorState } from '../operatorState';
 
 function isMobile() { return window.innerWidth <= 767; }
 
@@ -57,38 +58,54 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
 
   // Sync current process schema to Inspector so AssistantWidget (Tsunade) has context (#413)
   useEffect(() => {
+    const operatorState = buildProcessEditorOperatorState({
+      readOnly,
+      wfId: s.wfId,
+      wfName: s.wfName,
+      isKnown: s.isKnown,
+      elements: s.elements,
+      positions: s.positions,
+      flow: s.flow,
+      selected: s.selected,
+      multiSelected: s.multiSelected,
+      hoveredEl: s.hoveredEl,
+      connectFrom: s.connectFrom,
+      editingId: s.editingId,
+      gatewayPickerId: s.gatewayPickerId,
+      mode: s.mode,
+      breadcrumb: s.breadcrumb,
+      viewingVersion: s.viewingVersion,
+      panX: s.panX,
+      panY: s.panY,
+      zoom: s.zoom,
+      saving: s.saving,
+      autosavePending: s.autosavePending,
+      draftWarning: s.draftWarning,
+      triggerResolving: s.triggerResolving,
+      undoDepth: s.undoStack.length,
+      redoDepth: s.redoStack.length,
+      roles: s.roles,
+      docs: s.docs,
+      adapters: s.adapters,
+    });
+
+    Inspector.setOperatorState(operatorState);
+
     if (!s.wfId) {
       Inspector.setProcessName(null);
       Inspector.setProcessSchema(null);
-      return;
+      return () => Inspector.setOperatorState(null);
     }
-    Inspector.setProcessName(`${s.wfName} (${s.wfId})`);
 
-    // Build compact schema summary (includes element IDs and positions so LLM can generate valid schema_patch)
-    const lines: string[] = [
-      `Current process schema — "${s.wfName}" (id: ${s.wfId}):`,
-      `Elements (${s.elements.length}):`,
-    ];
-    for (const el of s.elements) {
-      const pos = s.positions[el.id];
-      const posStr = pos ? ` at (${Math.round(pos.x)},${Math.round(pos.y)})` : '';
-      const parts = [`  [${el.type}] id="${el.id}" label="${el.label || el.id}"${posStr}`];
-      if (el.role)   parts.push(`role: ${el.role}`);
-      if (el.system) parts.push(`system: ${el.system}`);
-      if (el.trigger?.kind) parts.push(`trigger: ${el.trigger.kind}${el.trigger.confidence != null ? ` (${Math.round(el.trigger.confidence * 100)}%)` : ''}`);
-      if (el.intent) parts.push(`intent: ${el.intent}`);
-      if (el.operator) parts.push(`op: ${el.operator}`);
-      lines.push(parts.join(' · '));
-    }
-    if (s.flow.length > 0) {
-      lines.push(`Flow (${s.flow.length} edges, format: from_id → to_id):`);
-      const edgeMap: Record<string, string> = {};
-      s.elements.forEach(e => { edgeMap[e.id] = e.label || e.id; });
-      s.flow.slice(0, 40).forEach(([f, t]) => lines.push(`  ${f} → ${t}  (${edgeMap[f] ?? f} → ${edgeMap[t] ?? t})`));
-      if (s.flow.length > 40) lines.push(`  … (${s.flow.length - 40} more)`);
-    }
-    Inspector.setProcessSchema(lines.join('\n'));
-  }, [s.wfId, s.wfName, s.elements, s.flow, s.positions]);
+    Inspector.setProcessName(`${s.wfName} (${s.wfId})`);
+    Inspector.setProcessSchema(summarizeOperatorState(operatorState));
+    return () => Inspector.setOperatorState(null);
+  }, [
+    readOnly, s.wfId, s.wfName, s.isKnown, s.elements, s.positions, s.flow, s.selected,
+    s.multiSelected, s.hoveredEl, s.connectFrom, s.editingId, s.gatewayPickerId, s.mode,
+    s.breadcrumb, s.viewingVersion, s.panX, s.panY, s.zoom, s.saving, s.autosavePending,
+    s.draftWarning, s.triggerResolving, s.undoStack, s.redoStack, s.roles, s.docs, s.adapters,
+  ]);
 
   // Sync selected element to Inspector
   useEffect(() => {
@@ -505,7 +522,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                 renamingVal={s.renamingVal}
                 collapsedTree={s.collapsedTree}
                 onSideSearch={s.setSideSearch}
-                onLoadWorkflow={(id, bc) => { s.loadWorkflow(id, bc); setShowMobSide(false); }}
+                onLoadWorkflow={(id) => { s.loadWorkflow(id); setShowMobSide(false); }}
                 onStartCreatingNew={s.startCreatingNew}
                 onCommitNewProc={() => { s.commitNewProc(); setShowMobSide(false); }}
                 onNewProcNameChange={s.setNewProcName}

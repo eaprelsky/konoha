@@ -95,6 +95,7 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
     setBusy(true);
 
     const context = Inspector.snapshot();
+    const operatorState = Inspector.operatorState();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
@@ -108,6 +109,7 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
         body: JSON.stringify({
           message: msg || '(см. вложения)',
           context,
+          operator_state: operatorState || undefined,
           chat_id: chatId || undefined,
           mode: 'process',
           stream: true,
