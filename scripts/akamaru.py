@@ -479,35 +479,6 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                                     f"kiba:alert agent={session} token_exhausted=true action=restart"
                                 )
 
-                    # Detect permission prompt freeze (#69)
-                    # Filter out status-bar lines (e.g. "bypass permissions on (shift+tab to cycle)")
-                    # and MemPalace write-progress lines (e.g. "Doodling…").
-                    STATUS_BAR_NOISE = ["bypass permissions", "shift+tab", "bypassPermissions", "Doodling"]
-                    prompt_lines = [l for l in lines[-15:] if not any(n in l for n in STATUS_BAR_NOISE)]
-                    pane_text = "\n".join(prompt_lines)
-                    PERMISSION_PATTERNS = [
-                        "Do you want to proceed",
-                        "(Y/n)",
-                        "(y/N)",
-                    ]
-                    # Require at least one of these to confirm the Claude Code permission UI is
-                    # actually rendered — prevents false positives when jiraiya writes/displays
-                    # documents that happen to contain "(Y/n)" or "Do you want to proceed" in their
-                    # text content (repeating false alerts for jiraiya MemPalace operations, issue #XXX).
-                    #
-                    # MAINTENANCE NOTE: these strings are sourced from Claude Code's permission
-                    # prompt UI (verified 2026-04-11, claude-sonnet-4-6). If Claude Code is
-                    # upgraded and the prompt wording changes (e.g. "❯ 1. Yes" → different format),
-                    # these markers may silently stop matching — real frozen prompts will go
-                    # undetected. After any Claude Code update, run:
-                    #   tmux -L <agent> capture-pane -pt <agent>
-                    # while an agent is at a permission prompt, and verify the markers below
-                    # still appear verbatim in the pane output. Update if needed.
-                    PERMISSION_UI_MARKERS = [
-                        "don't ask again",
-                        "Esc to cancel",
-                        "\u276f 1. Yes",   # ❯ 1. Yes  — Claude Code choice cursor
-                    ]
                     # Skip check when the agent is visibly doing active work (MCP calls, MemPalace
                     # writes, etc.). False positives occur when tool output happens to contain
                     # prompt-like strings ("(Y/n)" in a document being written, for example).
@@ -525,10 +496,7 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                         any(ind in l for ind in ACTIVE_WORK_INDICATORS)
                         for l in lines[-20:]
                     )
-                    is_permission_prompt = (
-                        any(p in pane_text for p in PERMISSION_PATTERNS) and
-                        any(m in pane_text for m in PERMISSION_UI_MARKERS)
-                    )
+                    is_permission_prompt = is_permission_prompt_state(lines[-15:])
                     if not is_actively_working and is_permission_prompt:
                         key = f"tmux:{session}:permission_prompt"
                         if should_alert(key):
@@ -540,6 +508,47 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
     except Exception as e:
         log.warning(f"Error checking tmux: {e}")
     return alerts
+
+
+def is_permission_prompt_state(lines: list[str]) -> bool:
+    """Return True only for real Claude Code permission prompts, not idle shortcut hints."""
+    status_bar_noise = ["bypass permissions", "shift+tab", "bypasspermissions", "doodling"]
+    prompt_lines = [l for l in lines if not any(noise in l.lower() for noise in status_bar_noise)]
+    pane_text = "\n".join(prompt_lines)
+    pane_text_lower = pane_text.lower()
+
+    permission_patterns = [
+        "do you want to proceed",
+        "(y/n)",
+    ]
+    # Require UI markers from the Claude Code prompt rather than matching bare "(Y/n)"
+    # anywhere in the scrollback.
+    permission_ui_markers = [
+        "don't ask again",
+        "esc to cancel",
+        "\u276f 1. yes",
+    ]
+    # Idle prompt "❯ ? for shortcuts" may coexist with stale "(Y/n)" scrollback and
+    # "Esc to cancel", causing a false-positive frozen=permission_prompt alert. Exclude
+    # that state unless an explicit permission choice UI is also visible.
+    idle_shortcut_markers = [
+        "? for shortcuts",
+    ]
+    explicit_choice_markers = [
+        "\u276f 1. yes",
+        "1. yes",
+        "2. no",
+    ]
+
+    has_permission_pattern = any(pattern in pane_text_lower for pattern in permission_patterns)
+    has_permission_ui = any(marker in pane_text_lower for marker in permission_ui_markers)
+    has_explicit_choice_ui = any(marker in pane_text_lower for marker in explicit_choice_markers)
+    is_idle_shortcuts_only = (
+        any(marker in pane_text_lower for marker in idle_shortcut_markers)
+        and not has_explicit_choice_ui
+    )
+
+    return has_permission_pattern and has_permission_ui and not is_idle_shortcuts_only
 
 
 def check_orphaned_sessions(paused: set[str] = frozenset()) -> list[str]:
