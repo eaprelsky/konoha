@@ -53,6 +53,12 @@ describe('operatorState', () => {
     expect(state.current_process?.pending.trigger_resolving_ids).toEqual(['e1']);
     expect(state.current_process?.changes.has_local_changes).toBe(true);
     expect(state.current_process?.affordances.can_save).toBe(true);
+    expect(state.current_process?.affordances.actions.some((action) => action.action_id === 'workflow.update' && action.availability === 'available')).toBe(true);
+    expect(state.current_process?.affordances.actions.some((action) => action.action_id === 'trigger.set' && action.availability === 'unavailable')).toBe(true);
+    expect(state.current_process?.affordances.actions.find((action) => action.action_id === 'element.update')?.suggested_args).toEqual({
+      workflow_id: 'order-flow',
+      id: 'f1',
+    });
     expect(state.current_process?.workflow.elements[1]?.position).toEqual({ x: 40, y: 180 });
   });
 });

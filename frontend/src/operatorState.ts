@@ -80,11 +80,26 @@ export interface OperatorStateChanges {
   redo_depth: number;
 }
 
+export type OperatorAffordanceAvailability = 'available' | 'unavailable';
+export type OperatorAffordanceScope = 'view' | 'workflow' | 'selection' | 'canvas';
+
+export interface OperatorAffordanceDescriptor {
+  id: string;
+  action_id: string;
+  scope: OperatorAffordanceScope;
+  label: string;
+  description: string;
+  availability: OperatorAffordanceAvailability;
+  reason?: string;
+  suggested_args?: Record<string, unknown>;
+}
+
 export interface OperatorStateAffordances {
   can_edit: boolean;
   can_save: boolean;
   can_delete_selection: boolean;
   can_connect: boolean;
+  actions: OperatorAffordanceDescriptor[];
 }
 
 export interface ProcessEditorOperatorState {
@@ -143,11 +158,123 @@ function uniqueSelectedIds(selected: string | null, multiSelected: string[]): st
   return [...new Set(ordered.filter(Boolean))];
 }
 
+function buildAffordanceActions(input: BuildProcessEditorOperatorStateInput, selectedIds: string[]): OperatorAffordanceDescriptor[] {
+  const primarySelected = input.selected ? input.elements.find((el) => el.id === input.selected) ?? null : null;
+  const selectedElements = selectedIds
+    .map((id) => input.elements.find((el) => el.id === id) ?? null)
+    .filter(Boolean) as WorkflowElement[];
+  const hasLockedSelection = selectedElements.some((el) => el.locked);
+  const selectedEvent = primarySelected?.type === 'event' ? primarySelected : null;
+
+  const actions: OperatorAffordanceDescriptor[] = [
+    {
+      id: 'workflow.get.current',
+      action_id: 'workflow.get',
+      scope: 'workflow',
+      label: 'Inspect current workflow',
+      description: 'Read the current workflow definition and versioned state.',
+      availability: input.wfId ? 'available' : 'unavailable',
+      ...(input.wfId ? { suggested_args: { id: input.wfId, snapshot: input.viewingVersion ?? undefined } } : { reason: 'No workflow is loaded.' }),
+    },
+    {
+      id: 'workflow.update.current',
+      action_id: 'workflow.update',
+      scope: 'workflow',
+      label: 'Save workflow changes',
+      description: 'Persist current workflow structure and metadata.',
+      availability: !input.readOnly && Boolean(input.wfId && input.wfName.trim()) ? 'available' : 'unavailable',
+      ...(!input.readOnly && Boolean(input.wfId && input.wfName.trim())
+        ? { suggested_args: { id: input.wfId } }
+        : { reason: input.readOnly ? 'Editor is in read-only mode.' : 'Workflow must have an id and name before update.' }),
+    },
+    {
+      id: 'workflow.delete.current',
+      action_id: 'workflow.delete',
+      scope: 'workflow',
+      label: 'Delete current workflow',
+      description: 'Archive the current workflow and cascade-delete dependent cases.',
+      availability: !input.readOnly && input.isKnown ? 'available' : 'unavailable',
+      ...(!input.readOnly && input.isKnown
+        ? { suggested_args: { id: input.wfId } }
+        : { reason: input.readOnly ? 'Editor is in read-only mode.' : 'Only persisted workflows can be deleted.' }),
+    },
+    {
+      id: 'element.add.canvas',
+      action_id: 'element.add',
+      scope: 'canvas',
+      label: 'Add workflow element',
+      description: 'Add an event, function, gateway, or support element to the current workflow.',
+      availability: !input.readOnly && Boolean(input.wfId) ? 'available' : 'unavailable',
+      ...(!input.readOnly && Boolean(input.wfId)
+        ? { suggested_args: { workflow_id: input.wfId } }
+        : { reason: input.readOnly ? 'Editor is in read-only mode.' : 'Load or create a workflow first.' }),
+    },
+    {
+      id: 'flow.add.canvas',
+      action_id: 'flow.add',
+      scope: 'canvas',
+      label: 'Connect elements',
+      description: 'Add a flow edge between workflow elements.',
+      availability: !input.readOnly && input.elements.length >= 2 ? 'available' : 'unavailable',
+      ...(!input.readOnly && input.elements.length >= 2
+        ? { suggested_args: { workflow_id: input.wfId } }
+        : { reason: input.readOnly ? 'Editor is in read-only mode.' : 'At least two elements are required to connect flow.' }),
+    },
+    {
+      id: 'element.update.selection',
+      action_id: 'element.update',
+      scope: 'selection',
+      label: 'Edit selected element',
+      description: 'Change label, role, trigger, or other editable properties of the selected element.',
+      availability: !input.readOnly && Boolean(primarySelected) ? 'available' : 'unavailable',
+      ...(!input.readOnly && primarySelected
+        ? { suggested_args: { workflow_id: input.wfId, id: primarySelected.id } }
+        : { reason: input.readOnly ? 'Editor is in read-only mode.' : 'Select a primary element first.' }),
+    },
+    {
+      id: 'element.remove.selection',
+      action_id: 'element.remove',
+      scope: 'selection',
+      label: 'Delete selected element',
+      description: 'Remove the selected element and its connected edges.',
+      availability: !input.readOnly && Boolean(primarySelected) && !hasLockedSelection ? 'available' : 'unavailable',
+      ...(!input.readOnly && primarySelected && !hasLockedSelection
+        ? { suggested_args: { workflow_id: input.wfId, id: primarySelected.id } }
+        : { reason: input.readOnly ? 'Editor is in read-only mode.' : hasLockedSelection ? 'Locked subprocess boundary elements cannot be removed.' : 'Select an element before removing it.' }),
+    },
+    {
+      id: 'trigger.set.selection',
+      action_id: 'trigger.set',
+      scope: 'selection',
+      label: 'Set trigger for selected event',
+      description: 'Configure a timer, message, condition, or manual trigger on the selected event.',
+      availability: !input.readOnly && Boolean(selectedEvent) ? 'available' : 'unavailable',
+      ...(!input.readOnly && selectedEvent
+        ? { suggested_args: { workflow_id: input.wfId, element_id: selectedEvent.id } }
+        : { reason: input.readOnly ? 'Editor is in read-only mode.' : 'Select an event element to configure its trigger.' }),
+    },
+    {
+      id: 'trigger.resolve.selection',
+      action_id: 'trigger.resolve',
+      scope: 'selection',
+      label: 'Resolve trigger for selected event',
+      description: 'Ask the trigger resolver to infer the selected event trigger kind from context.',
+      availability: !input.readOnly && Boolean(selectedEvent) ? 'available' : 'unavailable',
+      ...(!input.readOnly && selectedEvent
+        ? { suggested_args: { workflow_id: input.wfId, element_id: selectedEvent.id } }
+        : { reason: input.readOnly ? 'Editor is in read-only mode.' : 'Select an event element to resolve a trigger.' }),
+    },
+  ];
+
+  return actions;
+}
+
 export function buildProcessEditorOperatorState(
   input: BuildProcessEditorOperatorStateInput,
 ): OperatorStateEnvelope {
   const selectedIds = uniqueSelectedIds(input.selected, input.multiSelected);
   const hasLocalChanges = input.undoDepth > 0 || input.autosavePending || input.saving;
+  const affordanceActions = buildAffordanceActions(input, selectedIds);
 
   return {
     version: OPERATOR_STATE_VERSION,
@@ -225,6 +352,7 @@ export function buildProcessEditorOperatorState(
             can_save: !input.readOnly && Boolean(input.wfName.trim()),
             can_delete_selection: !input.readOnly && selectedIds.length > 0,
             can_connect: !input.readOnly,
+            actions: affordanceActions,
           },
           registries: {
             roles: input.roles.map((role) => role.name),
@@ -259,6 +387,18 @@ export function summarizeOperatorState(state: OperatorStateEnvelope): string {
   }
   if (process.selection.selected_ids.length > 0) {
     lines.push(`Selected IDs: ${process.selection.selected_ids.join(', ')}`);
+  }
+  const availableActions = process.affordances.actions
+    .filter((action) => action.availability === 'available')
+    .map((action) => action.action_id);
+  const blockedActions = process.affordances.actions
+    .filter((action) => action.availability === 'unavailable')
+    .map((action) => `${action.action_id}${action.reason ? ` (${action.reason})` : ''}`);
+  if (availableActions.length > 0) {
+    lines.push(`Available actions: ${availableActions.join(', ')}`);
+  }
+  if (blockedActions.length > 0) {
+    lines.push(`Blocked actions: ${blockedActions.join('; ')}`);
   }
   if (process.pending.autosave_pending || process.pending.saving) {
     lines.push(

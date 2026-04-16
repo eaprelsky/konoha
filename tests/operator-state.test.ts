@@ -19,12 +19,37 @@ describe("operator-state", () => {
       },
       current_process: {
         workflow: { id: "order-flow", name: "Order Flow" },
+        affordances: {
+          actions: [
+            {
+              id: "workflow.update.current",
+              action_id: "workflow.update",
+              scope: "workflow",
+              label: "Save workflow changes",
+              description: "Persist workflow updates.",
+              availability: "available",
+              suggested_args: { id: "order-flow" },
+            },
+            {
+              id: "element.remove.selection",
+              action_id: "element.remove",
+              scope: "selection",
+              label: "Delete selected element",
+              description: "Remove current element.",
+              availability: "unavailable",
+              reason: "Locked element.",
+            },
+          ],
+        },
       },
     };
 
     expect(isOperatorStateEnvelope(state)).toBe(true);
     expect(buildOperatorStatePromptBlock(state)).toContain("[Canonical operator state]");
     expect(buildOperatorStatePromptBlock(state)).toContain("\"order-flow\"");
+    expect(buildOperatorStatePromptBlock(state)).toContain("\"autonomy\": \"confirm\"");
+    expect(buildOperatorStatePromptBlock(state)).toContain("\"risk_level\": \"confirm_required\"");
+    expect(buildOperatorStatePromptBlock(state)).toContain("\"risk_level\": \"blocked\"");
     expect(getOperatorStateLabel(state)).toBe("Order Flow (order-flow)");
   });
 

@@ -50,7 +50,27 @@ Top-level shape:
 - `current_process.pending`: what is pending right now, including save state, trigger resolution, and draft warnings
 - `current_process.changes`: what changed locally and whether the editor has unsaved local work
 - `current_process.affordances`: what is editable right now for the operator
+- `current_process.affordances.actions`: canonical action-discovery layer for the current context; every entry must reference a concrete `action_id`
 - `current_process.registries`: adjacent state needed for reasoning about role/document/system picks without scraping sidebars
+
+## Affordance descriptors
+
+Each affordance action descriptor must expose:
+
+- `action_id`: canonical action-registry id such as `workflow.update` or `trigger.set`
+- `availability`: `available` or `unavailable`
+- `reason`: explicit blocked/unavailable reason when not available
+- `suggested_args`: context-derived arguments the assistant can start from
+- `scope`: where the affordance comes from (`workflow`, `selection`, `canvas`, `view`)
+
+On the server prompt path, affordances are enriched with registry metadata:
+
+- `registry.autonomy`
+- `registry.current_endpoint`
+- `registry.arg_names`
+- `risk_level`
+
+This keeps discovery tied to canonical actions, not to prompt prose or DOM guesswork.
 
 ## Freshness and invalidation
 
