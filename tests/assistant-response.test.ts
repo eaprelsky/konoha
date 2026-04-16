@@ -78,6 +78,9 @@ describe("normalizeAssistantResponse", () => {
     const raw = JSON.stringify({ reply: "Добавил шаг", schema_patch: patch });
     const resp = await normalizeAssistantResponse(raw, baseOpts);
     expect(resp.schema_patch).toEqual(patch);
+    expect(resp.action_receipts).toHaveLength(1);
+    expect(resp.action_receipts[0]?.action).toBe("workflow.update");
+    expect(resp.observable_result.status).toBe("succeeded");
   });
 
   it("extracts highlight UI actions", async () => {
@@ -114,6 +117,8 @@ describe("normalizeAssistantResponse", () => {
     expect(resp.actions_taken[0].status).toBe("needs_confirm");
     expect(resp.pending_confirmations).toHaveLength(1);
     expect(resp.pending_confirmations[0].action).toBe("workflow.create");
+    expect(resp.action_receipts.some(receipt => receipt.action === "workflow.create" && receipt.status === "pending_confirmation")).toBe(true);
+    expect(resp.observable_result.status).toBe("pending_confirmation");
   });
 
   it("skips workflow creation when execute_actions is false", async () => {
@@ -131,6 +136,8 @@ describe("normalizeAssistantResponse", () => {
     expect(resp.created_workflow).toBeNull();
     expect(resp.actions_taken).toHaveLength(0);
     expect(resp.pending_confirmations).toHaveLength(0);
+    expect(resp.action_receipts).toHaveLength(0);
+    expect(resp.observable_result.status).toBe("no_effect");
   });
 });
 
@@ -143,6 +150,8 @@ describe("buildSseParsedEvent", () => {
       created_workflow: null,
       actions_taken: [],
       pending_confirmations: [{ action: "workflow.create" }],
+      action_receipts: [{ action: "workflow.create", status: "pending_confirmation", summary: "Pending" }],
+      observable_result: { status: "pending_confirmation", summary: "Pending", receipts: [], counts: { succeeded: 0, pending_confirmation: 1, failed: 0, partial: 0 } },
       ui_actions: [{ type: "highlight" as const, selector: "#x" }],
     };
     const event = buildSseParsedEvent(resp as any);
@@ -151,5 +160,7 @@ describe("buildSseParsedEvent", () => {
     expect(event.actions).toEqual(resp.ui_actions);
     expect(event.actions_taken).toEqual([]);
     expect(event.pending_confirmations).toEqual(resp.pending_confirmations);
+    expect(event.action_receipts).toEqual(resp.action_receipts);
+    expect(event.observable_result).toEqual(resp.observable_result);
   });
 });

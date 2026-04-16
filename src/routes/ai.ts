@@ -229,6 +229,7 @@ async function handleTsunadeChatRequest(
   const normalized = await normalizeAssistantResponse(rawReply, {
     chat_id: chatId,
     agent_id: agentId,
+    session_id: chatId,
   });
 
   await redis.rpush(histKey, JSON.stringify({ role: "user", content: message }));
@@ -243,6 +244,9 @@ async function handleTsunadeChatRequest(
     created_workflow: normalized.created_workflow,
     actions: normalized.ui_actions,
     actions_taken: normalized.actions_taken,
+    action_receipts: normalized.action_receipts,
+    observable_result: normalized.observable_result,
+    pending_confirmations: normalized.pending_confirmations,
   };
 }
 
@@ -534,6 +538,7 @@ router.post("/ai/chat", async (c) => {
               chat_id: chatId,
               execute_actions: mode === "process",
               agent_id: mode === "admin" ? "kiba" : "tsunade",
+              session_id: chatId,
             });
             ctrl.enqueue(sse(JSON.stringify(buildSseParsedEvent(normalized))));
           } catch { /* not JSON — delta stream is fine as-is */ }

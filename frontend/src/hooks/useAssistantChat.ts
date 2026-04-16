@@ -42,6 +42,14 @@ function extractStreamingText(raw: string): string {
   return raw;
 }
 
+function formatReceiptSummary(receipt: any): string {
+  if (!receipt || typeof receipt !== 'object') return '';
+  const summary = typeof receipt.summary === 'string' ? receipt.summary : '';
+  const status = typeof receipt.status === 'string' ? receipt.status : 'unknown';
+  if (!summary) return '';
+  return `[${status}] ${summary}`;
+}
+
 export interface UseAssistantChatResult {
   msgs: Msg[];
   input: string;
@@ -168,6 +176,14 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
                     .map((item: any) => typeof item?.action === 'string' ? item.action : 'unknown')
                     .join(', ');
                   updated.push({ role: 'system' as const, text: `Требуется подтверждение: ${labels}` });
+                }
+                if (Array.isArray(ev.action_receipts) && ev.action_receipts.length > 0) {
+                  for (const receipt of ev.action_receipts) {
+                    const text = formatReceiptSummary(receipt);
+                    if (text) updated.push({ role: 'system' as const, text });
+                  }
+                } else if (ev.observable_result && typeof ev.observable_result.summary === 'string' && ev.observable_result.summary) {
+                  updated.push({ role: 'system' as const, text: ev.observable_result.summary });
                 }
                 return updated;
               });

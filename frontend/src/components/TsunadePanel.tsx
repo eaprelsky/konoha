@@ -118,6 +118,18 @@ export function TsunadePanel({ schema, onClose, onSchemaPatch }: TsunadePanelPro
         onSchemaPatch(res.schema_patch);
         setMsgs(prev => [...prev, { role: 'system', text: 'Схема обновлена. Нажмите 💾 для сохранения.' }]);
       }
+      if (Array.isArray(res.pending_confirmations) && res.pending_confirmations.length > 0) {
+        const labels = res.pending_confirmations.map(item => item.action).join(', ');
+        setMsgs(prev => [...prev, { role: 'system', text: `Требуется подтверждение: ${labels}` }]);
+      }
+      const actionReceipts = res.action_receipts ?? [];
+      if (actionReceipts.length > 0) {
+        setMsgs(prev => [...prev, ...actionReceipts
+          .filter(r => typeof r.summary === 'string' && r.summary)
+          .map(r => ({ role: 'system' as const, text: `[${r.status}] ${r.summary}` }))]);
+      } else if (res.observable_result?.summary) {
+        setMsgs(prev => [...prev, { role: 'system', text: res.observable_result!.summary }]);
+      }
 
       if (res.actions && res.actions.length > 0) {
         const act = res.actions[0];

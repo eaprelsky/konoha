@@ -46,6 +46,10 @@ export interface AssistantResponse {
   actions_taken: AssistantAction[];
   /** Explicit confirmations required before risky assistant actions may proceed */
   pending_confirmations: PendingConfirmation[];
+  /** Canonical post-action receipts for observable operator results */
+  action_receipts: ActionReceipt[];
+  /** Aggregate observable result surface for the whole assistant turn */
+  observable_result: ObservableResult;
   /** UI actions (highlights, etc.) */
   ui_actions: UiAction[];
 }
@@ -67,6 +71,38 @@ export interface PendingConfirmation {
     confirmation_required: true;
   };
   params: Record<string, unknown>;
+}
+
+export interface ActionReceiptResource {
+  kind: "workflow" | "element" | "flow" | "confirmation";
+  id: string;
+  label?: string;
+  change: "created" | "updated" | "pending" | "failed";
+}
+
+export interface ActionReceipt {
+  id: string;
+  action: string;
+  status: "succeeded" | "pending_confirmation" | "failed" | "partial";
+  summary: string;
+  details?: string;
+  changed_resources: ActionReceiptResource[];
+  audit: {
+    session_id: string;
+    action_type: string;
+  };
+}
+
+export interface ObservableResult {
+  status: "succeeded" | "pending_confirmation" | "failed" | "partial" | "no_effect";
+  summary: string;
+  receipts: ActionReceipt[];
+  counts: {
+    succeeded: number;
+    pending_confirmation: number;
+    failed: number;
+    partial: number;
+  };
 }
 
 export interface NormalizeOptions {
@@ -95,6 +131,7 @@ export async function normalizeAssistantResponse(
   const executeActions = opts.execute_actions !== false;
   const actionsTaken: AssistantAction[] = [];
   const pendingConfirmations: PendingConfirmation[] = [];
+  const actionReceipts: ActionReceipt[] = [];
   let reply = rawText;
   let schemaPatch: unknown = null;
   let createdWorkflow: AssistantResponse["created_workflow"] = null;
@@ -110,6 +147,8 @@ export async function normalizeAssistantResponse(
     // Extract schema patch
     if (parsed.schema_patch && typeof parsed.schema_patch === "object") {
       schemaPatch = parsed.schema_patch;
+      const schemaPatchReceipt = await buildSchemaPatchReceipt(parsed.schema_patch, opts);
+      actionReceipts.push(schemaPatchReceipt);
     }
 
     // Extract UI actions (highlights, etc.)
@@ -127,10 +166,13 @@ export async function normalizeAssistantResponse(
       actionsTaken.push(action);
       if (action.status === "executed" && action.result) {
         createdWorkflow = { id: action.result.id as string, name: action.result.name as string, ...action.result };
+        actionReceipts.push(buildWorkflowCreateReceipt(action, opts, "succeeded"));
       } else if (action.status === "needs_confirm") {
         pendingConfirmations.push(buildPendingConfirmation("workflow.create", action.params));
+        actionReceipts.push(buildWorkflowCreateReceipt(action, opts, "pending_confirmation"));
         reply = reply + `\n\nТребуется подтверждение перед выполнением действия: workflow.create.`;
       } else if (action.status === "failed") {
+        actionReceipts.push(buildWorkflowCreateReceipt(action, opts, "failed"));
         reply = reply + `\n\n⚠️ Ошибка создания процесса: ${action.error}`;
       }
     }
@@ -138,6 +180,7 @@ export async function normalizeAssistantResponse(
 
   // If reply still looks like JSON, sanitize it
   reply = sanitizeReply(reply);
+  const observableResult = buildObservableResult(actionReceipts);
 
   return {
     reply,
@@ -146,6 +189,8 @@ export async function normalizeAssistantResponse(
     created_workflow: createdWorkflow,
     actions_taken: actionsTaken,
     pending_confirmations: pendingConfirmations,
+    action_receipts: actionReceipts,
+    observable_result: observableResult,
     ui_actions: uiActions,
   };
 }
@@ -261,6 +306,161 @@ function buildPendingConfirmation(action: string, params: Record<string, unknown
   };
 }
 
+function buildWorkflowCreateReceipt(
+  action: AssistantAction,
+  opts: NormalizeOptions,
+  status: ActionReceipt["status"],
+): ActionReceipt {
+  const workflowId = typeof action.result?.id === "string"
+    ? action.result.id
+    : typeof action.params.id === "string"
+    ? action.params.id
+    : "workflow.create";
+  const workflowName = typeof action.result?.name === "string"
+    ? action.result.name
+    : typeof action.params.name === "string"
+    ? action.params.name
+    : undefined;
+  return {
+    id: randomUUID(),
+    action: "workflow.create",
+    status,
+    summary:
+      status === "succeeded"
+        ? `Создан черновик процесса${workflowName ? ` "${workflowName}"` : ""}.`
+        : status === "pending_confirmation"
+        ? `Создание процесса${workflowName ? ` "${workflowName}"` : ""} ожидает подтверждения.`
+        : `Создание процесса${workflowName ? ` "${workflowName}"` : ""} завершилось ошибкой.`,
+    ...(action.error ? { details: action.error } : {}),
+    changed_resources: [
+      {
+        kind: "workflow",
+        id: workflowId,
+        ...(workflowName ? { label: workflowName } : {}),
+        change: status === "succeeded" ? "created" : status === "pending_confirmation" ? "pending" : "failed",
+      },
+    ],
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: "workflow.create",
+    },
+  };
+}
+
+async function buildSchemaPatchReceipt(
+  schemaPatch: unknown,
+  opts: NormalizeOptions,
+): Promise<ActionReceipt> {
+  const patch = schemaPatch as Record<string, unknown>;
+  const changedResources: ActionReceiptResource[] = [];
+
+  if (Array.isArray(patch.update_elements)) {
+    for (const item of patch.update_elements) {
+      if (item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string") {
+        changedResources.push({
+          kind: "element",
+          id: (item as Record<string, unknown>).id as string,
+          change: "updated",
+        });
+      }
+    }
+  }
+  if (patch.update_positions && typeof patch.update_positions === "object") {
+    for (const id of Object.keys(patch.update_positions as Record<string, unknown>)) {
+      changedResources.push({ kind: "element", id, change: "updated" });
+    }
+  }
+  if (Array.isArray(patch.add_elements)) {
+    for (const item of patch.add_elements) {
+      if (item && typeof item === "object") {
+        const id = typeof (item as Record<string, unknown>).id === "string"
+          ? (item as Record<string, unknown>).id as string
+          : `new-element-${changedResources.length + 1}`;
+        changedResources.push({
+          kind: "element",
+          id,
+          ...(typeof (item as Record<string, unknown>).label === "string" ? { label: (item as Record<string, unknown>).label as string } : {}),
+          change: "created",
+        });
+      }
+    }
+  }
+  if (Array.isArray(patch.remove_elements)) {
+    for (const id of patch.remove_elements) {
+      if (typeof id === "string") {
+        changedResources.push({ kind: "element", id, change: "updated" });
+      }
+    }
+  }
+  if (Array.isArray(patch.add_flow)) {
+    for (const edge of patch.add_flow) {
+      if (Array.isArray(edge) && typeof edge[0] === "string" && typeof edge[1] === "string") {
+        changedResources.push({ kind: "flow", id: `${edge[0]}:${edge[1]}`, change: "created" });
+      }
+    }
+  }
+  if (Array.isArray(patch.remove_flow)) {
+    for (const edge of patch.remove_flow) {
+      if (Array.isArray(edge) && typeof edge[0] === "string" && typeof edge[1] === "string") {
+        changedResources.push({ kind: "flow", id: `${edge[0]}:${edge[1]}`, change: "updated" });
+      }
+    }
+  }
+
+  await auditLog({
+    timestamp: new Date().toISOString(),
+    session_id: opts.session_id ?? opts.chat_id,
+    action_type: "workflow.update",
+    parameters: JSON.stringify(schemaPatch),
+    result: "ok",
+    agent_chain: opts.agent_id ?? "tsunade",
+  }).catch(() => {});
+
+  return {
+    id: randomUUID(),
+    action: "workflow.update",
+    status: "succeeded",
+    summary: `Подготовлено изменение схемы: ${changedResources.length} объект(ов) затронуто.`,
+    changed_resources: changedResources,
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: "workflow.update",
+    },
+  };
+}
+
+function buildObservableResult(receipts: ActionReceipt[]): ObservableResult {
+  const counts = {
+    succeeded: receipts.filter((receipt) => receipt.status === "succeeded").length,
+    pending_confirmation: receipts.filter((receipt) => receipt.status === "pending_confirmation").length,
+    failed: receipts.filter((receipt) => receipt.status === "failed").length,
+    partial: receipts.filter((receipt) => receipt.status === "partial").length,
+  };
+
+  const status: ObservableResult["status"] =
+    counts.failed > 0 && (counts.succeeded > 0 || counts.pending_confirmation > 0 || counts.partial > 0)
+      ? "partial"
+      : counts.failed > 0
+      ? "failed"
+      : counts.pending_confirmation > 0
+      ? "pending_confirmation"
+      : counts.succeeded > 0 || counts.partial > 0
+      ? "succeeded"
+      : "no_effect";
+
+  const summary =
+    receipts.length === 0
+      ? "Изменений не зафиксировано."
+      : receipts.map((receipt) => receipt.summary).join(" ");
+
+  return {
+    status,
+    summary,
+    receipts,
+    counts,
+  };
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function tryParseJson(raw: string): Record<string, unknown> | null {
@@ -343,5 +543,7 @@ export function buildSseParsedEvent(resp: AssistantResponse): Record<string, unk
     actions: resp.ui_actions,
     actions_taken: resp.actions_taken,
     pending_confirmations: resp.pending_confirmations,
+    action_receipts: resp.action_receipts,
+    observable_result: resp.observable_result,
   };
 }

@@ -80,6 +80,18 @@ export function TsunadeChatPanel({
           setChatMsgs(prev => [...prev, { role: 'system', text: 'Схема обновлена. Нажмите 💾 для сохранения.' }]);
         }
       }
+      if (Array.isArray(res.pending_confirmations) && res.pending_confirmations.length > 0) {
+        const labels = res.pending_confirmations.map(item => item.action).join(', ');
+        setChatMsgs(prev => [...prev, { role: 'system', text: `Требуется подтверждение: ${labels}` }]);
+      }
+      const actionReceipts = res.action_receipts ?? [];
+      if (actionReceipts.length > 0) {
+        setChatMsgs(prev => [...prev, ...actionReceipts
+          .filter(r => typeof r.summary === 'string' && r.summary)
+          .map(r => ({ role: 'system' as const, text: `[${r.status}] ${r.summary}` }))]);
+      } else if (res.observable_result?.summary) {
+        setChatMsgs(prev => [...prev, { role: 'system', text: res.observable_result!.summary }]);
+      }
       if (res.created_workflow) {
         window.dispatchEvent(new CustomEvent('konoha:workflow_created', { detail: res.created_workflow }));
         navigate(`/editor/${res.created_workflow.id}`);
