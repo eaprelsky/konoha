@@ -5,6 +5,8 @@ Run: python -m pytest tests/test_watchdog_desync.py -v
 import sys
 import os
 import pytest
+import asyncio
+from contextlib import suppress
 
 # Add scripts dir to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
@@ -115,3 +117,121 @@ class TestDesyncConfig:
         assert is_session_noise({"text": "SESSION_OFFLINE:kakashi"}) is True
         assert is_session_noise({"text": "kakashi going offline (session end)"}) is True
         assert is_session_noise({"text": "kakashi:fix issue=505"}) is False
+
+
+class TestDesyncTimerReset:
+    def test_recovery_grace_does_not_retrigger_desync(self, monkeypatch):
+        import watchdog_base as _b
+
+        async def scenario():
+            delivered = asyncio.Event()
+            recovery_started_at = {"ts": None}
+            recovery_calls = {"count": 0}
+
+            monkeypatch.setattr(_b, "TMUX_SESSION", "test-session")
+            monkeypatch.setattr(_b, "IDLE_POLL_SEC", 0.01)
+            monkeypatch.setattr(_b, "IDLE_TIMEOUT_SEC", 0.02)
+            monkeypatch.setattr(_b, "WAKE_TIMEOUT_SEC", 0)
+            monkeypatch.setattr(_b, "DESYNC_RECOVERY_GRACE_SEC", 0.03)
+            monkeypatch.setattr(_b, "circuit_is_open", lambda: False)
+            monkeypatch.setattr(_b, "format_batch", lambda pending: "prompt")
+            monkeypatch.setattr(_b, "sanitize_message_text", lambda text: text)
+            monkeypatch.setattr(_b, "is_session_alive", lambda session: True)
+
+            def fake_is_agent_idle(_session, stable_checks=2):
+                started = recovery_started_at["ts"]
+                return started is not None and (asyncio.get_running_loop().time() - started) >= 0.03
+
+            async def fake_recovery():
+                recovery_calls["count"] += 1
+                recovery_started_at["ts"] = asyncio.get_running_loop().time()
+                return True
+
+            async def fake_tmux_send(_session, _prompt):
+                delivered.set()
+                return True
+
+            async def fake_audit(_reason, _detail=""):
+                return None
+
+            monkeypatch.setattr(_b, "is_agent_idle", fake_is_agent_idle)
+            monkeypatch.setattr(_b, "try_desync_recovery", fake_recovery)
+            monkeypatch.setattr(_b, "tmux_send", fake_tmux_send)
+            monkeypatch.setattr(_b, "_send_desync_audit", fake_audit)
+
+            q = asyncio.Queue()
+            await q.put([{"data": {"text": "ping"}}])
+
+            task = asyncio.create_task(_b.send_loop(q))
+            try:
+                await asyncio.wait_for(delivered.wait(), timeout=0.5)
+            finally:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+            assert recovery_calls["count"] == 1
+
+        asyncio.run(scenario())
+
+    def test_wake_grace_does_not_consume_desync_budget(self, monkeypatch):
+        import watchdog_base as _b
+
+        async def scenario():
+            delivered = asyncio.Event()
+            wake_started_at = {"ts": None}
+            recovery_calls = {"count": 0}
+
+            monkeypatch.setattr(_b, "TMUX_SESSION", "test-session")
+            monkeypatch.setattr(_b, "IDLE_POLL_SEC", 0.01)
+            monkeypatch.setattr(_b, "IDLE_TIMEOUT_SEC", 0.02)
+            monkeypatch.setattr(_b, "WAKE_TIMEOUT_SEC", 0.03)
+            monkeypatch.setattr(_b, "DESYNC_RECOVERY_GRACE_SEC", 0.0)
+            monkeypatch.setattr(_b, "circuit_is_open", lambda: False)
+            monkeypatch.setattr(_b, "format_batch", lambda pending: "prompt")
+            monkeypatch.setattr(_b, "sanitize_message_text", lambda text: text)
+
+            def fake_is_session_alive(_session):
+                started = wake_started_at["ts"]
+                return started is not None and (asyncio.get_running_loop().time() - started) >= 0.03
+
+            def fake_is_agent_idle(_session, stable_checks=2):
+                return fake_is_session_alive(_session)
+
+            def fake_wake():
+                if wake_started_at["ts"] is None:
+                    wake_started_at["ts"] = asyncio.get_running_loop().time()
+                return True
+
+            async def fake_recovery():
+                recovery_calls["count"] += 1
+                return True
+
+            async def fake_tmux_send(_session, _prompt):
+                delivered.set()
+                return True
+
+            async def fake_audit(_reason, _detail=""):
+                return None
+
+            monkeypatch.setattr(_b, "is_session_alive", fake_is_session_alive)
+            monkeypatch.setattr(_b, "is_agent_idle", fake_is_agent_idle)
+            monkeypatch.setattr(_b, "try_wake_agent", fake_wake)
+            monkeypatch.setattr(_b, "try_desync_recovery", fake_recovery)
+            monkeypatch.setattr(_b, "tmux_send", fake_tmux_send)
+            monkeypatch.setattr(_b, "_send_desync_audit", fake_audit)
+
+            q = asyncio.Queue()
+            await q.put([{"data": {"text": "ping"}}])
+
+            task = asyncio.create_task(_b.send_loop(q))
+            try:
+                await asyncio.wait_for(delivered.wait(), timeout=0.5)
+            finally:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+            assert recovery_calls["count"] == 0
+
+        asyncio.run(scenario())

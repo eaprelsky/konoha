@@ -52,6 +52,7 @@ FREEZE_ALERT_TARGET = ""
 DESYNC_RECOVERY_ENABLED = True   # enable auto-restart + redispatch on stuck agent
 TASK_ACK_TIMEOUT_SEC    = 120    # seconds to wait for agent progress after dispatch
 DESYNC_MAX_RETRIES      = 1      # max recovery attempts before giving up (per batch)
+DESYNC_RECOVERY_GRACE_SEC = 30   # startup grace after successful recovery; does not consume waited budget
 
 KONOHA_TEXT_LIMIT = 3500  # chars; tmux send-keys has ~4095 byte TTY buffer limit (#299)
 
@@ -334,23 +335,35 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
 
         waited = 0.0
         wake_attempted = False
+        grace_deadline = 0.0
         while True:
             if is_agent_idle(TMUX_SESSION):
                 break
+            now = time.monotonic()
+            if grace_deadline > now:
+                await asyncio.sleep(min(IDLE_POLL_SEC, max(0.2, grace_deadline - now)))
+                continue
+            if grace_deadline > 0.0:
+                log.info(f"Startup grace elapsed for {TMUX_SESSION} — resuming desync timer")
+                grace_deadline = 0.0
+                waited = 0.0
             # On-demand wake: start the agent service if session doesn't exist
             if WAKE_TIMEOUT_SEC > 0 and not is_session_alive(TMUX_SESSION) and not wake_attempted:
                 wake_attempted = True
                 if try_wake_agent():
+                    grace_deadline = max(grace_deadline, time.monotonic() + WAKE_TIMEOUT_SEC)
                     log.info(f"Waiting for {TMUX_SESSION} session after wake (max {WAKE_TIMEOUT_SEC}s)")
                     await asyncio.sleep(IDLE_POLL_SEC)
-                    waited += IDLE_POLL_SEC
                     continue
-            timeout_limit = max(IDLE_TIMEOUT_SEC, WAKE_TIMEOUT_SEC if wake_attempted else IDLE_TIMEOUT_SEC)
-            if waited >= timeout_limit:
+            if waited >= IDLE_TIMEOUT_SEC:
                 log.warning(f"Agent {TMUX_SESSION} busy >{waited:.0f}s — attempting desync recovery (#505)")
                 await _send_desync_audit("agent unresponsive", f"waited={waited:.0f}s msgs={len(pending)}")
                 recovered = await try_desync_recovery()
                 if recovered:
+                    # Recovery starts a fresh session; stale timeout budget must not carry over.
+                    waited = 0.0
+                    wake_attempted = False
+                    grace_deadline = max(grace_deadline, time.monotonic() + DESYNC_RECOVERY_GRACE_SEC)
                     log.info(f"Desync recovery succeeded — retrying delivery of {len(pending)} msg(s)")
                     continue
                 log.warning(f"Desync recovery failed — dropping {len(pending)} msgs")
