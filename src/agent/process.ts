@@ -55,6 +55,111 @@ async function getTmuxPid(id: string): Promise<number | null> {
   return isNaN(pid) ? null : pid;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function paneIsIdle(content: string): boolean {
+  const lines = content
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean);
+  const lastLines = lines.slice(-12);
+  const hasClaudeQueue = lastLines.some(line => line.toLowerCase().includes("queued messages"));
+  const hasClaudePrompt = lastLines.some(line => (
+    (line === "❯" || line === "❯\xa0" || line.startsWith("❯ ") || line.startsWith("❯\xa0"))
+    && !line.includes("Pasted text")
+  )) && !hasClaudeQueue;
+  const hasCodexStartup = lastLines.some(line => line.includes("Booting MCP server") || line.includes("Starting MCP servers"));
+  const hasCodexPrompt = lastLines.some(line => line.startsWith("› ")) && !hasCodexStartup;
+  const hasCursorReady = lastLines.some(line => line.includes("→ Add a follow-up"))
+    || lastLines.some(line => line.includes("ctrl+c to stop"))
+    || lastLines.some(line => line.includes("▶︎ Auto-run everything"));
+  const hasOpencodeIdle = lastLines.some(line => line.includes("ctrl+p commands"))
+    || lastLines.some(line => line.includes("tab agents"));
+  return hasClaudePrompt || hasCodexPrompt || hasCursorReady || hasOpencodeIdle;
+}
+
+async function getTmuxPaneContent(id: string, lines = 80): Promise<string> {
+  const r = await sh("tmux", ["-L", tmuxSocket(id), "capture-pane", "-p", "-t", tmuxSession(id), "-S", `-${lines}`]);
+  return r.ok ? r.stdout : "";
+}
+
+async function waitForIdlePrompt(id: string, timeoutMs = 45000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await isTmuxRunning(id))) return false;
+    const pane = await getTmuxPaneContent(id);
+    if (pane.trim() && paneIsIdle(pane)) return true;
+    await sleep(500);
+  }
+  return false;
+}
+
+async function dismissPastedDialog(id: string): Promise<void> {
+  const session = tmuxSession(id);
+  const socket = tmuxSocket(id);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const pane = await getTmuxPaneContent(id);
+    if (!pane.includes("Pasted text")) return;
+    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Enter"]);
+    await sleep(600);
+  }
+}
+
+async function confirmSubmitted(id: string, timeoutMs = 4000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await isTmuxRunning(id))) return false;
+    const pane = await getTmuxPaneContent(id);
+    if (pane.includes("Pasted text")) {
+      await dismissPastedDialog(id);
+      continue;
+    }
+    if (pane.trim() && !paneIsIdle(pane)) return true;
+    await sleep(400);
+  }
+  return false;
+}
+
+async function retypeStartupPrompt(id: string, text: string): Promise<void> {
+  const session = tmuxSession(id);
+  const socket = tmuxSocket(id);
+  await sh("tmux", ["-L", socket, "send-keys", "-t", session, "C-u"]);
+  await sleep(150);
+  const typed = await sh("tmux", ["-L", socket, "send-keys", "-t", session, text]);
+  if (!typed.ok) throw new Error(typed.stderr || `failed to retype startup prompt for ${id}`);
+  await sleep(350);
+  await dismissPastedDialog(id);
+}
+
+async function sendStartupPrompt(id: string, text: string): Promise<void> {
+  const session = tmuxSession(id);
+  const socket = tmuxSocket(id);
+
+  const ready = await waitForIdlePrompt(id, 45000);
+  if (!ready && !(await isTmuxRunning(id))) {
+    throw new Error(`tmux session ${id} disappeared before startup prompt`);
+  }
+
+  const typed = await sh("tmux", ["-L", socket, "send-keys", "-t", session, text]);
+  if (!typed.ok) throw new Error(typed.stderr || `failed to type startup prompt for ${id}`);
+  await sleep(350);
+  await dismissPastedDialog(id);
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt >= 2) {
+      await retypeStartupPrompt(id, text);
+    }
+
+    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Enter"]);
+    if (await confirmSubmitted(id, attempt === 0 ? 4500 : 3500)) return;
+  }
+
+  await sh("tmux", ["-L", socket, "send-keys", "-t", session, "C-u"]);
+  console.warn(`[agent:${id}] startup prompt stayed idle after submit retries; continuing startup without blocking agent launch`);
+}
+
 // ── State persistence ────────────────────────────────────────────────────────
 
 async function saveState(state: AgentState): Promise<void> {
@@ -148,7 +253,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const runtimeCmd = envPrefix ? `env ${envPrefix}${launch.command}` : launch.command;
 
     // Wrap in restart loop — without it the interactive CLI may exit after startup or on crash.
-    const loopScript = `export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"; while true; do ${runtimeCmd}; echo "[$(date)] ${launch.provider} exited (code $?), restarting in 5s..."; sleep 5; done`;
+    const loopScript = `export PATH="$HOME/.bun/bin:$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"; while true; do ${runtimeCmd}; echo "[$(date)] ${launch.provider} exited (code $?), restarting in 5s..."; sleep 5; done`;
 
     // Use named socket (-L) to isolate each agent on its own tmux server.
     // If one tmux server crashes, only that agent is affected — not all lifecycle agents.
@@ -168,9 +273,10 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     }
 
     // Inject startup message so agent executes its startup sequence.
-    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Прочитай AGENTS.md и выполни startup sequence."]);
-    await new Promise(res => setTimeout(res, 350));
-    await sh("tmux", ["-L", socket, "send-keys", "-t", session, "Enter"]);
+    await sendStartupPrompt(id, "Прочитай AGENTS.md и выполни startup sequence.");
+    if (!(await isTmuxRunning(id))) {
+      throw new Error(`tmux session ${id} disappeared during startup`);
+    }
 
     const pid = await getTmuxPid(id);
     const state: AgentState = {

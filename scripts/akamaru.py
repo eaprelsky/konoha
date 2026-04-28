@@ -197,10 +197,12 @@ async def watch_lifecycle() -> None:
                         sender = msg.get("from", "")
                         if _is_offline_event(text):
                             agent = _extract_agent_from_lifecycle(text, sender)
-                            if agent and agent not in _offline_agents:
+                            if agent and agent in ON_DEMAND_AGENTS and agent not in _offline_agents:
                                 _offline_agents.add(agent)
                                 log.info(f"Lifecycle: {agent} going offline — added to suppression")
                                 changed = True
+                            elif agent and agent not in ON_DEMAND_AGENTS:
+                                log.info(f"Lifecycle: {agent} offline event ignored for suppression (persistent agent)")
                         elif _is_online_event(text):
                             agent = _extract_agent_from_lifecycle(text, sender)
                             if agent and agent in _offline_agents:
@@ -217,7 +219,7 @@ async def watch_lifecycle() -> None:
             log.warning(f"watch_lifecycle error: {e}")
 
         # Periodically sync lifecycle.status from /agents API (#523)
-        # Agents with lifecycle.status=stopped are intentionally offline — suppress their alerts
+        # Only on-demand agents with lifecycle.status=stopped are intentionally offline.
         now = time.monotonic()
         if now - last_api_poll >= LIFECYCLE_API_POLL_INTERVAL:
             last_api_poll = now
@@ -241,9 +243,9 @@ async def watch_lifecycle() -> None:
                         if not aid or aid not in WATCHED_AGENTS:
                             continue
                         lc = agent.get("lifecycle", {})
-                        if lc.get("status") == "stopped":
+                        if lc.get("status") == "stopped" and aid in ON_DEMAND_AGENTS:
                             stopped_agents.add(aid)
-                        elif lc.get("status") == "running":
+                        elif lc.get("status") == "running" or aid not in ON_DEMAND_AGENTS:
                             running_agents.add(aid)
                     # Add stopped agents to suppression
                     changed = False
@@ -725,7 +727,11 @@ async def main() -> None:
 
     # Load persisted offline suppression list from previous run
     global _offline_agents
-    _offline_agents = load_offline_agents()
+    loaded_offline = load_offline_agents()
+    _offline_agents = {agent for agent in loaded_offline if agent in ON_DEMAND_AGENTS}
+    if _offline_agents != loaded_offline:
+        save_offline_agents(_offline_agents)
+        log.info(f"Removed persistent agents from offline suppression: {loaded_offline - _offline_agents}")
     if _offline_agents:
         log.info(f"Loaded offline suppression list: {_offline_agents}")
 

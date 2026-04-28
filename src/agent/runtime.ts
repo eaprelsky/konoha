@@ -10,9 +10,10 @@ import { createLogger } from "../logger";
 
 const log = createLogger("agent:runtime");
 
-const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_AGENT_MODEL = "sonnet";
 const CODEX_CONFIG_PATH = "/home/ubuntu/.codex/config.toml";
 const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
+const CLAUDE_WRAPPER_PATH = "/home/ubuntu/konoha/scripts/run-claude-agent.sh";
 
 export { AGENT_WORKDIR_ROOT, DEFAULT_AGENT_MODEL };
 
@@ -92,6 +93,28 @@ export function formatAgentModel(def: Pick<AgentDef, "model" | "runtime">): stri
   if (/^(claude|codex|cursor|glm):/.test(raw)) return raw;
   if (def.runtime) return `${def.runtime}:${raw}`;
   return raw;
+}
+
+function normalizeClaudeRuntimeModel(value: string): string {
+  const raw = value.trim();
+  switch (raw) {
+    case "":
+    case "auto":
+    case "claude":
+    case "sonnet":
+    case "claude-sonnet-4-6":
+    case "glm-5.1":
+      return "sonnet";
+    case "haiku":
+    case "claude-haiku-4-5-20251001":
+    case "glm-4.5-air":
+      return "haiku";
+    case "opus":
+    case "claude-opus-4-6":
+      return "opus";
+    default:
+      return raw;
+  }
 }
 
 // ── MCP config ─────────────────────────────────────────────────────────────
@@ -186,7 +209,9 @@ function loadSharedMcpServers(
   const globalEnv = loadGlobalEnv();
   const vars = { ...loadProcessEnv(), ...globalEnv, ...agentEnv };
   const merged: Record<string, ResolvedMcpServerDef> = {};
-  const allowed = allowlist?.length ? new Set(allowlist) : null;
+  // Distinguish between "no allowlist provided" (include all shared MCPs)
+  // and "explicit empty allowlist" (include none of the shared MCPs).
+  const allowed = allowlist ? new Set(allowlist) : null;
 
   for (const configPath of SHARED_MCP_CONFIG_PATHS) {
     if (!existsSync(configPath)) continue;
@@ -348,8 +373,9 @@ export function buildLaunchCommand(
   }
 
   const args = [
-    "claude",
-    "--model", runtime.runtimeModel,
+    ...(runtime.provider === "glm" ? ["env", "KONOHA_CLAUDE_PROVIDER_PROFILE=glm"] : []),
+    CLAUDE_WRAPPER_PATH,
+    normalizeClaudeRuntimeModel(runtime.runtimeModel),
     "--dangerously-skip-permissions",
     "--mcp-config", mcpConfigPath,
   ];

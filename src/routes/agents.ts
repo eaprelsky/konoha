@@ -83,7 +83,7 @@ router.post("/", async (c) => {
     fallback_runtime,
     launch_strategy,
     startup_timeout_sec,
-    model = "claude:claude-sonnet-4-6",
+    model = "claude:sonnet",
     env,
     tags,
     capabilities,
@@ -185,7 +185,7 @@ router.get("/tmux/:id", async (c) => {
 router.get("/:id/system-template", async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
-  const base = def ?? { id, name: id, runtime: "claude" as const, model: "claude-sonnet-4-6", system_prompt: undefined, capabilities: [] };
+  const base = def ?? { id, name: id, runtime: "claude" as const, model: "claude:sonnet", system_prompt: undefined, capabilities: [] };
   const template = await buildSystemPrompt(id, base);
   return c.json({ template });
 });

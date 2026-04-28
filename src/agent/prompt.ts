@@ -22,7 +22,7 @@ const SYSTEM_TEMPLATE = `\
 
 ## Startup sequence
 1. source /home/ubuntu/.agent-env
-2. Read /opt/shared/agent-memory/MEMORY.md and all referenced files
+2. Read /opt/shared/agent-memory/MEMORY.md, then read only the files listed under \`Startup Core\`. Use other linked memory files on demand.
 3. Register on Konoha bus: konoha_register(id={{id}}, name={{name}}, model={{model}})
 4. Read your personal memory if it exists: /opt/shared/agent-memory/{{id}}/MEMORY.md
 5. Wait for tasks — watchdog delivers them via Konoha bus
