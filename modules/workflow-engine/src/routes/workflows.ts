@@ -15,7 +15,8 @@ import {
 } from "../../../../src/workflow-loader";
 import { normalizeElementNames } from "../../../../src/normalizer";
 import { deleteCasesByProcess } from "../../../../src/runtime";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { resolveBatchProgrammatic, type ProcessContext } from "../../../../src/trigger-resolver";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByProcessAndInstance, type TriggerDef } from "../../../../src/event-manager";
 
@@ -244,7 +245,7 @@ router.delete("/:id{.+}", requireAuth, async (c) => {
 });
 
 // Load workflow definitions from disk into Redis on startup
-const WORKFLOWS_DIR = process.env.KONOHA_WORKFLOWS_DIR || join(import.meta.dir, "..", "..", "..", "..", "workflows");
+const WORKFLOWS_DIR = process.env.KONOHA_WORKFLOWS_DIR || join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "workflows");
 loadWorkflows(WORKFLOWS_DIR).then(({ loaded, errors }) => {
   console.log(`[workflow-loader] startup: ${loaded} loaded, ${errors} failed validation`);
 }).catch((e) => {
