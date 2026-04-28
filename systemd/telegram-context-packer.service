@@ -1,0 +1,23 @@
+[Unit]
+Description=Telegram Context Packer - packs uncertain router events for agents
+After=network.target redis-server.service telegram-bus.service
+Wants=redis-server.service telegram-bus.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/konoha
+EnvironmentFile=/home/ubuntu/.agent-env
+UnsetEnvironment=http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+Environment=PYTHONUNBUFFERED=1
+Environment=TELEGRAM_CONTEXT_MODEL=google/gemini-2.0-flash-lite-001
+Environment=TELEGRAM_CONTEXT_MIN_CONFIDENCE=0.65
+Environment=TELEGRAM_CONTEXT_TIMEOUT_SEC=8.0
+ExecStart=/usr/bin/python3 -u /home/ubuntu/konoha/scripts/telegram-context-packer.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
