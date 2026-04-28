@@ -43,32 +43,43 @@ async function waitFor(check: () => Promise<boolean>, maxMs = 5000): Promise<boo
 }
 
 afterAll(async () => {
+  // Clean up agents registered by this test file (routing tests may leave naruto)
+  const listed = await req("GET", "/agents");
+  if (Array.isArray(listed.body)) {
+    for (const a of listed.body) {
+      if (a.id === "naruto" || a.id?.startsWith("test-stuck-") || a.id?.startsWith("test-overdue-")) {
+        await req("DELETE", `/agents/${a.id}?hard=true`);
+      }
+    }
+  }
   redis.disconnect();
+  delete process.env.KONOHA_PORT;
 });
 
 describe("Tsunade registration", () => {
   test("tsunade is registered on the bus with correct subscriptions", async () => {
-    // Wait for initTsunade to complete (async on startup)
-    const registered = await waitFor(async () => {
-      const raw = await redis.hget("konoha:registry", "tsunade");
-      return !!raw;
-    });
-    expect(registered).toBe(true);
+    // Wait for initTsunade to complete (async on startup). The registry is
+    // PG-backed, so we verify through the HTTP API, not redis.hget.
+    await tsunadeReady;
 
-    const raw = await redis.hget("konoha:registry", "tsunade");
-    const agent = JSON.parse(raw!);
-    expect(agent.id).toBe("tsunade");
-    expect(agent.roles).toContain("architect");
-    expect(agent.eventSubscriptions).toContain("process.exception");
-    expect(agent.eventSubscriptions).toContain("workitem.stuck");
-    expect(agent.eventSubscriptions).toContain("workitem.overdue");
+    const { status, body } = await req("GET", "/agents");
+    expect(status).toBe(200);
+    const tsunade = body.find((a: any) => a.id === "tsunade");
+    expect(tsunade).toBeDefined();
+    expect(tsunade.roles).toContain("architect");
+    expect(tsunade.eventSubscriptions).toContain("process.exception");
+    expect(tsunade.eventSubscriptions).toContain("workitem.stuck");
+    expect(tsunade.eventSubscriptions).toContain("workitem.overdue");
   });
 });
 
 describe("Tsunade event routing", () => {
-  // Wait for Tsunade's pub/sub subscriber to be fully active before running routing tests
+  // Wait for Tsunade's stream consumer group to be fully ready before routing tests.
+  // The consumer group may have been destroyed by prior test cleanup; ensure it exists.
   beforeAll(async () => {
     await tsunadeReady;
+    await redis.xgroup("CREATE", "konoha:agent:tsunade", "tsunade-handler", "$", "MKSTREAM")
+      .catch(() => {});
   }, 30_000);
 
   test("process.exception event delivers message to naruto", async () => {

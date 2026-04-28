@@ -117,7 +117,12 @@ async function startStreamPoller(pollRedis: Redis): Promise<void> {
           }
         }
       } catch (e: any) {
-        if (!e.message?.includes("Connection")) {
+        if (e.message?.includes("NOGROUP")) {
+          // Consumer group was destroyed (e.g. stream deleted by cleanup).
+          // Recreate it so the poller can continue processing events.
+          await pollRedis.xgroup("CREATE", TSUNADE_STREAM, TSUNADE_GROUP, "$", "MKSTREAM")
+            .catch(() => {});
+        } else if (!e.message?.includes("Connection")) {
           log.error("stream poll error", { error: e.message });
         }
         await new Promise(res => setTimeout(res, 2000));

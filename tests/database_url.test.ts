@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
-import { getDatabaseUrl, hasDatabaseCredentials } from "../src/storage/database-url";
+import { credentialConfig, getDatabaseUrl, hasDatabaseCredentials } from "../src/storage/database-url";
 
 const REPO_ENV = "/home/ubuntu/konoha/.env";
 
@@ -9,6 +9,11 @@ function cleanupFile(path: string) {
     rmSync(path, { force: true });
   } catch {}
 }
+
+// Restrict credential resolution to the repo .env only.
+// System files (/opt/shared/.shared-credentials, /opt/konoha/.env.global)
+// carry real DATABASE_URL values and would override test env vars.
+credentialConfig.sources = [REPO_ENV];
 
 afterEach(() => {
   delete process.env.DATABASE_URL;

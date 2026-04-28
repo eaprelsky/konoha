@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import Redis from "ioredis";
 import {
   createEventWait,
@@ -11,6 +11,23 @@ const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.en
 const RUN = `ew${Date.now()}`;
 const ALL_STATUSES = ["active", "fired", "cancelled", "overdue", "escalated"] as const;
 const createdWaits: EventWait[] = [];
+
+async function cleanupAllEventWaits() {
+  // Clean up stale event-wait keys from any prior test file.
+  const keys = await redis.keys("konoha:event-waits:*");
+  const waitKeys = await redis.keys("event-wait:*");
+  const allKeys = [...keys, ...waitKeys];
+  if (allKeys.length) await redis.del(...allKeys);
+  // Clean up set memberships
+  for (const status of ALL_STATUSES) {
+    await redis.del(`konoha:event-waits:status:${status}`);
+  }
+  await redis.del("konoha:event-waits:active");
+}
+
+beforeAll(async () => {
+  await cleanupAllEventWaits();
+});
 
 async function trackWait(params: Parameters<typeof createEventWait>[0]): Promise<EventWait> {
   const wait = await createEventWait(params);

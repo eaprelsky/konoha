@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test, afterAll } from "bun:test";
 import { makeRoleDef, makeWorkflowDefinition } from "./factories";
 
 type MockAgent = {
@@ -71,18 +71,13 @@ mock.module("../src/runtime/roles", () => ({
   },
 }));
 
-mock.module("child_process", () => ({
-  execFile(
-    cmd: string,
-    args: string[],
-    callback: (err: Error | null, stdout?: string, stderr?: string) => void,
-  ) {
-    state.telegramExecs.push({ cmd, args });
-    callback(null, "", "");
-  },
-}));
+const { dispatchWorkItem, tgTransport } = await import("../src/dispatcher");
 
-const { dispatchWorkItem } = await import("../src/dispatcher");
+// Patch tgTransport for test — Bun 1.3.11 mock.module does not intercept
+// Node.js built-in "child_process", so we replace the promisified wrapper directly.
+tgTransport.execFileAsync = async (cmd: string, args: string[]) => {
+  state.telegramExecs.push({ cmd, args });
+};
 
 function resetState() {
   state.agents = [];
@@ -272,4 +267,8 @@ describe("dispatcher coverage", () => {
     expect(state.sentMessages).toHaveLength(0);
     expect(state.telegramExecs).toHaveLength(0);
   });
+});
+
+afterAll(() => {
+  mock.restore();
 });

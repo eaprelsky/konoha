@@ -4,6 +4,9 @@ process.env.REDIS_DB = "1";
 // Disable PG reads in tests: all CRUD is validated through Redis (DB 1).
 // pgUpsert* calls are fire-and-forget and may not settle before assertions.
 process.env.PG_READ = "false";
+// Use a stable test admin token. Server.test.ts restores it in afterAll if it
+// mutates it, but the preload must set it first so all files see the same token.
+process.env.KONOHA_TOKEN = "test-admin-token-preload";
 
 import Redis from "ioredis";
 

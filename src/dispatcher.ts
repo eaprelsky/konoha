@@ -14,7 +14,9 @@ import type { AssignmentStrategy } from "./runtime/roles";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
-const execFileAsync = promisify(execFile);
+export const tgTransport = {
+  execFileAsync: promisify(execFile),
+};
 const log = createLogger("dispatcher");
 const TG_SEND_SCRIPT = "/home/ubuntu/naruto-tg-send.py";
 
@@ -226,7 +228,7 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
 
   if (resolved?.type === "person") {
     const tgText = buildPersonText();
-    await execFileAsync("python3", [TG_SEND_SCRIPT, String(resolved.person.tg_id), tgText])
+    await tgTransport.execFileAsync("python3", [TG_SEND_SCRIPT, String(resolved.person.tg_id), tgText])
       .then(() => log.info("telegram sent", { tg_id: resolved.person.tg_id, work_item_id }))
       .catch(e => log.error("telegram send failed", { work_item_id, error: e.message }));
     return;

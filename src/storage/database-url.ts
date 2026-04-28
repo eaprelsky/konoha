@@ -1,11 +1,13 @@
 import { config } from "../config";
 import { existsSync, readFileSync } from "fs";
 
-const CREDENTIAL_SOURCES = [
-  "/opt/shared/.shared-credentials",
-  "/opt/konoha/.env.global",
-  "/home/ubuntu/konoha/.env",
-];
+export const credentialConfig = {
+  sources: [
+    "/opt/shared/.shared-credentials",
+    "/opt/konoha/.env.global",
+    "/home/ubuntu/konoha/.env",
+  ] as string[],
+};
 
 function parseEnvFile(filepath: string): Record<string, string> {
   if (!existsSync(filepath)) return {};
@@ -26,7 +28,7 @@ function parseEnvFile(filepath: string): Record<string, string> {
 }
 
 function resolveCredentialEnv(): Record<string, string> {
-  for (const source of CREDENTIAL_SOURCES) {
+  for (const source of credentialConfig.sources) {
     const values = parseEnvFile(source);
     if (values.DATABASE_URL || values.PGHOST || values.PGUSER || values.PGPASSWORD) {
       return values;
