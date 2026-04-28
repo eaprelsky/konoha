@@ -342,6 +342,7 @@ actRouter.get("/", requireAuth, async (c) => {
  */
 actRouter.get("/:actionId", requireAuth, async (c) => {
   const actionId = c.req.param("actionId");
+  if (!actionId) return c.json({ error: "actionId required" }, 400);
   const action = getAction(actionId);
   if (!action) {
     return c.json(fail(actionId, `Unknown action: ${actionId}`), 404);

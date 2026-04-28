@@ -48,6 +48,8 @@ export interface WorkflowElement {
     // manual
     action?: string;
     role?: string;
+    deadline?: string;
+    escalation_target?: string;
     // system
     event_name?: string;
     process_ref?: string;
