@@ -27,6 +27,14 @@ Codex CLI is the designated fallback runtime and is configured in AgentDef (`fal
 1. A supported network/auth path becomes available for the Vienna region
 2. The server is migrated to a supported OpenAI region
 
+As of 2026-04-28 the server has a local proxy chain (`sing-box` SOCKS on `127.0.0.1:1080`, `privoxy` HTTP proxy on `127.0.0.1:8118`), but its upstream credentials are not valid for Codex:
+
+- `breakfast` fails Reality verification
+- `vanya-ss` times out
+- `aeza` accepts SOCKS connections but returns empty TCP/TLS responses
+
+Therefore Codex must stay disabled until fresh proxy/VPN credentials are installed and `scripts/healthcheck-system.py` reports a healthy `codex_proxy.chatgpt` check.
+
 ### Profile Fields
 
 AgentDef expresses the runtime profile through:

@@ -35,6 +35,7 @@ CORE_SERVICES = [
     "agent-watchdog-kakashi",
     "agent-watchdog-kiba",
 ]
+PROXY_SERVICES = ["sing-box", "privoxy"]
 PERMANENT_AGENTS = ["naruto", "sasuke", "kakashi", "kiba"]
 STREAM_GROUPS = {
     "telegram:incoming": ["sasuke"],
@@ -73,6 +74,11 @@ def load_env_defaults() -> None:
 
 def run(cmd: list[str], timeout: int = 10) -> tuple[int, str, str]:
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def run_env(cmd: list[str], env: dict[str, str], timeout: int = 10) -> tuple[int, str, str]:
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env={**os.environ, **env})
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
@@ -266,10 +272,46 @@ def check_workflow_engine() -> list[Check]:
     return checks
 
 
+def check_codex_proxy() -> list[Check]:
+    checks: list[Check] = []
+    proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
+    if not proxy:
+        return [Check("WARN", "codex_proxy.env", "https_proxy is not configured", "Set https_proxy/http_proxy for Codex egress only")]
+
+    for service in PROXY_SERVICES:
+        rc, stdout, stderr = run(["systemctl", "is-active", service], timeout=5)
+        state = stdout.strip() or stderr.strip()
+        if rc == 0 and state == "active":
+            checks.append(Check("OK", f"codex_proxy.service.{service}", "active"))
+        else:
+            checks.append(Check("WARN", f"codex_proxy.service.{service}", state or "inactive", f"Run: sudo systemctl restart {service}"))
+
+    env = {
+        "http_proxy": os.environ.get("http_proxy", proxy),
+        "https_proxy": proxy,
+        "HTTP_PROXY": os.environ.get("HTTP_PROXY", os.environ.get("http_proxy", proxy)),
+        "HTTPS_PROXY": os.environ.get("HTTPS_PROXY", proxy),
+        "no_proxy": "127.0.0.1,localhost",
+        "NO_PROXY": "127.0.0.1,localhost",
+    }
+    rc, stdout, stderr = run_env(
+        ["curl", "-sS", "--max-time", "12", "-o", "/dev/null", "-w", "%{http_code}", "https://chatgpt.com/"],
+        env,
+        timeout=15,
+    )
+    code = stdout.strip()
+    if rc == 0 and code and code not in {"000", "502", "503", "504"}:
+        checks.append(Check("OK", "codex_proxy.chatgpt", f"HTTP {code} through configured proxy"))
+    else:
+        detail = (stderr or f"HTTP {code or '000'}").splitlines()[-1][:220]
+        checks.append(Check("WARN", "codex_proxy.chatgpt", detail, "Refresh sing-box upstream credentials before enabling Codex fallback"))
+    return checks
+
+
 def main() -> int:
     load_env_defaults()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine):
+    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine, check_codex_proxy):
         checks.extend(fn())
     return print_report(checks)
 
