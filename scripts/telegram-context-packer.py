@@ -10,6 +10,7 @@ from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 
 import redis
+from model_capabilities import apply_capability_fields
 
 REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
@@ -64,6 +65,8 @@ def _call_model(event: dict, history: list[dict]) -> dict:
             "chat_title": event.get("chat_title", ""),
             "sender": event.get("sender_name") or event.get("sender_username") or "?",
             "text": (event.get("text") or "")[:1500],
+            "attachment_kind": event.get("attachment_kind", ""),
+            "has_attachment": bool(event.get("attachment_path")),
             "router_route": event.get("router_route", "none"),
             "router_reason": event.get("router_reason", ""),
         },
@@ -143,7 +146,7 @@ def _build_agent_event(event: dict, packed: dict) -> dict:
         f"Router reason: {reason}\n\n"
         "Обработай с учетом контекста и при необходимости ответь через tg-send-user.py."
     )
-    return {
+    result = {
         "source": "context_packer",
         "chat_id": event.get("chat_id", ""),
         "chat_title": event.get("chat_title", ""),
@@ -160,6 +163,13 @@ def _build_agent_event(event: dict, packed: dict) -> dict:
         "router_confidence": f"{float(packed.get('confidence', 0.0)):.2f}",
         "router_reason": reason,
     }
+    if event.get("attachment_path"):
+        result["attachment_path"] = event.get("attachment_path", "")
+        result["attachment_kind"] = event.get("attachment_kind", "")
+    if event.get("attachment_name"):
+        result["attachment_name"] = event.get("attachment_name", "")
+    apply_capability_fields(result, route)
+    return result
 
 
 def _ensure_group(r: redis.Redis) -> None:
@@ -185,13 +195,23 @@ def _process_item(r: redis.Redis, entry_id: str, raw: dict) -> None:
             "route": str(packed.get("route", "none")),
             "reason": str(packed.get("reason", ""))[:500],
         }
-        r.xadd(AUDIT_STREAM, audit, maxlen=5000, approximate=True)
         if should_route:
             routed = _build_agent_event(event, packed)
-            out_id = r.xadd(OUT_STREAM, routed, maxlen=1000, approximate=True)
-            print(f"ROUTE {entry_id} -> {OUT_STREAM}/{out_id} conf={confidence:.2f}", flush=True)
+            target_stream = routed.get("target_stream") or OUT_STREAM
+            if target_stream == "telegram:incoming":
+                target_stream = OUT_STREAM
+            audit["target_stream"] = target_stream
+            audit["required_capabilities"] = routed.get("required_capabilities", "")
+            audit["missing_capabilities"] = routed.get("missing_capabilities", "")
+            out_id = r.xadd(target_stream, routed, maxlen=1000, approximate=True)
+            print(
+                f"ROUTE {entry_id} -> {target_stream}/{out_id} conf={confidence:.2f} "
+                f"missing={routed.get('missing_capabilities', '')}",
+                flush=True,
+            )
         else:
             print(f"SKIP {entry_id} conf={confidence:.2f} reason={audit['reason'][:80]}", flush=True)
+        r.xadd(AUDIT_STREAM, audit, maxlen=5000, approximate=True)
         r.xack(STREAM, GROUP, entry_id)
     except (HTTPError, URLError, TimeoutError, RuntimeError, json.JSONDecodeError, KeyError, ValueError) as e:
         r.xadd(DEAD_STREAM, {

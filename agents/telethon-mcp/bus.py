@@ -7,9 +7,13 @@ import hashlib
 import re
 import os
 import json
+import sys
 from datetime import datetime
 from urllib import request as urlrequest
 from urllib.error import URLError, HTTPError
+
+sys.path.insert(0, '/home/ubuntu/konoha/scripts')
+from model_capabilities import apply_capability_fields  # noqa: E402
 
 SESSION = '/opt/shared/telegram_session'
 WIKI_DIR = '/opt/shared/wiki/group-chats'
@@ -17,7 +21,7 @@ os.makedirs(WIKI_DIR, exist_ok=True)
 
 # Sync redis for stream group creation only
 sr = sync_redis.Redis(host='localhost', port=6379, decode_responses=True)
-for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:commands', 'telegram:needs_context']:
+for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:commands', 'telegram:needs_context', 'telegram:vision_requests']:
     try:
         sr.xgroup_create(s, 'claude-agents', id='0', mkstream=True)
     except:
@@ -87,6 +91,9 @@ async def _append_history(rd: aioredis.Redis, chat_id: str | int, item: dict) ->
         'text': (item.get('text') or '')[:800],
         'action_hint': item.get('action_hint', ''),
         'route': item.get('router_route', ''),
+        'attachment_kind': item.get('attachment_kind', ''),
+        'required_capabilities': item.get('required_capabilities', ''),
+        'missing_capabilities': item.get('missing_capabilities', ''),
     }
     try:
         await rd.rpush(key, json.dumps(compact, ensure_ascii=False))
@@ -165,11 +172,13 @@ async def _route_with_llm(
     is_group: bool,
     rule_action: str,
     recent_history: list[dict] | None = None,
+    attachment_kind: str = '',
+    attachment_path: str = '',
 ) -> dict:
     """Classify non-obvious group traffic with a cheap model."""
     if not ROUTER_ENABLED or not OPENROUTER_API_KEY:
         return {'action': rule_action, 'route': 'none', 'confidence': 0.0, 'reason': 'router_disabled'}
-    if not is_group or rule_action != 'observe' or not text.strip():
+    if not is_group or rule_action != 'observe' or (not text.strip() and not attachment_kind):
         return {'action': rule_action, 'route': 'none', 'confidence': 0.0, 'reason': 'router_not_applicable'}
 
     payload = {
@@ -177,6 +186,8 @@ async def _route_with_llm(
         'sender_name': sender_name,
         'sender_username': sender_username,
         'text': text[:1200],
+        'attachment_kind': attachment_kind,
+        'has_attachment': bool(attachment_path),
         'rule_action': rule_action,
         'recent_history': recent_history or [],
     }
@@ -204,6 +215,9 @@ async def _route_with_llm(
     if action == 'needs_context' and confidence < 0.45:
         action = 'observe'
         reason = f'low_context_confidence:{reason}'
+    if attachment_kind and action == 'observe' and confidence >= 0.55:
+        action = 'needs_context'
+        reason = f'attachment_context:{reason}'
     return {'action': action, 'route': route, 'confidence': confidence, 'reason': reason}
 
 def _classify_action_hint(
@@ -339,12 +353,15 @@ async def on_message(event):
         is_group=is_group,
         rule_action=rule_action_hint,
         recent_history=recent_history,
+        attachment_kind=attachment_kind,
+        attachment_path=attachment_path,
     )
     action_hint = router_result['action']
     data['action_hint'] = action_hint
     data['router_route'] = router_result.get('route', 'none')
     data['router_confidence'] = f"{router_result.get('confidence', 0.0):.2f}"
     data['router_reason'] = router_result.get('reason', '')
+    capability = apply_capability_fields(data, data['router_route'])
 
     # Dedup: set a routing key so other paths can check if Telethon already handled
     # Key: telegram:routed:{chat_id}:{sender_id}:{first-50-chars-hash}, TTL 30s
@@ -363,13 +380,23 @@ async def on_message(event):
         # Claim and route only actionable messages to Sasuke. Non-actionable
         # group traffic is kept in the audit log, but not sent to the LLM.
         await rd.set(dedup_key, 'telethon', ex=30)
-        await rd.xadd('telegram:incoming', data, maxlen=1000)
+        target_stream = capability.get('target_stream') or 'telegram:incoming'
+        await rd.xadd(target_stream, data, maxlen=1000)
+        if target_stream != 'telegram:incoming':
+            print(
+                f"CAPROUTE [{event.chat_id}] {target_stream} "
+                f"missing={data.get('missing_capabilities')}: {msg_text[:60]}",
+                flush=True,
+            )
     elif action_hint == 'needs_context':
         data['router_context'] = json.dumps(recent_history, ensure_ascii=False)
-        await rd.xadd('telegram:needs_context', data, maxlen=1000)
+        target_stream = capability.get('target_stream') or 'telegram:needs_context'
+        if target_stream == 'telegram:incoming':
+            target_stream = 'telegram:needs_context'
+        await rd.xadd(target_stream, data, maxlen=1000)
         print(
-            f"CONTEXT [{event.chat_id}] {data.get('router_route')} "
-            f"conf={data.get('router_confidence')}: {msg_text[:60]}",
+            f"CONTEXT [{event.chat_id}] {target_stream} {data.get('router_route')} "
+            f"conf={data.get('router_confidence')} missing={data.get('missing_capabilities')}: {msg_text[:60]}",
             flush=True,
         )
     else:
