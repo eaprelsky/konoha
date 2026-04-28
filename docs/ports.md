@@ -7,8 +7,9 @@
 |------|---------|---------|-------|
 | 3100 | Konoha backend (API server) | `KONOHA_PORT` | Default; routes: /workflows, /agents, /messages |
 | 3200 | Konoha bus (HTTP + MCP) | `KONOHA_PUBLIC_URL` | Inter-agent message bus, SSE stream |
-| 3201 | konoha-dashboard | `TESTBENCH_PORT` | Monitoring UI + testbench proxy — DO NOT use for E2E tests |
+| 3201 | konoha-dashboard | n/a | Monitoring UI — DO NOT use for E2E tests |
 | 3202 | E2E test backend | `KONOHA_PORT=3202` | Playwright webServer; isolated instance, reuseExistingServer: false |
+| 3203 | konoha-testbench | `TESTBENCH_PORT` | Persistent Chromium testbench API |
 
 ## Rules
 

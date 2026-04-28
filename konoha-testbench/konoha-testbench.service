@@ -8,7 +8,7 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/konoha/konoha-testbench
 EnvironmentFile=-/home/ubuntu/.agent-env
-Environment=TESTBENCH_PORT=3201
+Environment=TESTBENCH_PORT=3203
 Environment=TESTBENCH_POOL_SIZE=3
 Environment=DISPLAY=:99
 ExecStart=/home/ubuntu/.bun/bin/bun run src/server.ts

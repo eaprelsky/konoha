@@ -18,7 +18,7 @@ export const base: PlaywrightTestConfig = {
     },
   },
   webServer: {
-    // Port 3202: reserved for E2E (3201 = konoha-testbench, 3200 = konoha.service).
+    // Port 3202: reserved for E2E (3201 = konoha-dashboard, 3203 = konoha-testbench, 3200 = konoha.service).
     // KONOHA_TOKEN hardcoded to dev token so server and extraHTTPHeaders always agree.
     command: 'KONOHA_PORT=3202 KONOHA_TOKEN=konoha-dev-token bun run core/src/server.ts',
     url: 'http://127.0.0.1:3202/health',

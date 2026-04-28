@@ -63,7 +63,7 @@ Additionally: `akamaru.service` — autonomous system health monitoring.
 
 | Service | Purpose |
 |---------|---------|
-| `konoha-testbench` | Persistent Chromium service (port 3201), Playwright BrowserContext pool (3 sessions), used by Hinata for GUI testing. systemd: konoha-testbench.service |
+| `konoha-testbench` | Persistent Chromium service (port 3203), Playwright BrowserContext pool (3 sessions), used by Hinata for GUI testing. systemd: konoha-testbench.service |
 
 ## Adding a New Agent
 

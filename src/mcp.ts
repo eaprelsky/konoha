@@ -504,9 +504,9 @@ if (enabledSkills.includes("process-tools")) {
 
 // ── TestBench Tools (Skill: testbench) ───────────────────────────────────────
 // Registered only when KONOHA_SKILLS includes "testbench".
-// Gives agents access to the konoha-testbench Chromium service (port 3201).
+// Gives agents access to the konoha-testbench Chromium service (port 3203).
 
-const TESTBENCH_URL = process.env.TESTBENCH_URL || "http://127.0.0.1:3201";
+const TESTBENCH_URL = process.env.TESTBENCH_URL || "http://127.0.0.1:3203";
 
 async function tbApi<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${TESTBENCH_URL}${path}`, {
