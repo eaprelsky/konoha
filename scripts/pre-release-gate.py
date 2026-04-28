@@ -14,15 +14,48 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
-KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 KONOHA_REPO  = Path(os.environ.get("KONOHA_REPO", os.path.expanduser("~/konoha")))
 NOTIFY       = "--notify" in sys.argv
+ENV_FILES    = [Path("/home/ubuntu/.agent-env"), Path("/opt/shared/.shared-credentials")]
+
+
+def load_env_defaults() -> dict[str, str]:
+    """Read env-style config files without sourcing shell code."""
+    values: dict[str, str] = {}
+    for path in ENV_FILES:
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            values[key.strip()] = value.strip().strip("\"'")
+    return values
+
+
+ENV_DEFAULTS = load_env_defaults()
+KONOHA_URL   = os.environ.get("KONOHA_URL") or ENV_DEFAULTS.get("KONOHA_URL") or "http://127.0.0.1:3200"
+KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN") or ENV_DEFAULTS.get("KONOHA_TOKEN") or ""
+BUN_BIN      = os.environ.get("BUN_BIN") or shutil.which("bun") or "/home/ubuntu/.bun/bin/bun"
+TESTBENCH_URL = (
+    os.environ.get("TESTBENCH_URL")
+    or ENV_DEFAULTS.get("TESTBENCH_URL")
+    or f"http://127.0.0.1:{os.environ.get('TESTBENCH_PORT') or ENV_DEFAULTS.get('TESTBENCH_PORT') or '3203'}"
+).rstrip("/")
+DASHBOARD_URL = (
+    os.environ.get("DASHBOARD_URL")
+    or ENV_DEFAULTS.get("DASHBOARD_URL")
+    or "http://127.0.0.1:3201"
+).rstrip("/")
 
 
 def run(cmd: list[str], cwd: Path | None = None, timeout: int = 120) -> tuple[int, str, str]:
@@ -35,8 +68,8 @@ def run(cmd: list[str], cwd: Path | None = None, timeout: int = 120) -> tuple[in
 
 
 def check_typecheck() -> tuple[bool, str]:
-    """Check 1: bun run typecheck — zero TypeScript errors."""
-    rc, stdout, stderr = run(["bun", "run", "typecheck"], timeout=120)
+    """Check 1: TypeScript has zero errors."""
+    rc, stdout, stderr = run([BUN_BIN, "x", "tsc", "--noEmit"], timeout=120)
     if rc == 0:
         return True, "TypeScript: no errors"
     output = (stdout + stderr).strip()[:500]
@@ -45,7 +78,7 @@ def check_typecheck() -> tuple[bool, str]:
 
 def check_tests() -> tuple[bool, str]:
     """Check 2: bun test — all tests pass."""
-    rc, stdout, stderr = run(["bun", "test", "--timeout", "30000"], timeout=180)
+    rc, stdout, stderr = run([BUN_BIN, "test", "--timeout", "30000"], timeout=180)
     if rc == 0:
         return True, "Tests: all pass"
     output = (stdout + stderr).strip()[:500]
@@ -79,7 +112,7 @@ def check_runtime_size() -> tuple[bool, str]:
 
 def check_no_p0_issues() -> tuple[bool, str]:
     """Check 5: no open GitHub issues with label 'P0: critical'."""
-    gh_token = os.environ.get("GH_TOKEN", "")
+    gh_token = os.environ.get("GH_TOKEN") or ENV_DEFAULTS.get("GH_TOKEN") or ""
     if not gh_token:
         return True, "P0 issues: GH_TOKEN not set, skipping"
     env = {**os.environ, "GH_TOKEN": gh_token}
@@ -134,27 +167,26 @@ def check_version_match() -> tuple[bool, str]:
 
 def check_testbench_smoke() -> tuple[bool, str]:
     """Check 8: TestBench smoke — login, dashboard, editor, load process."""
-    # Check if testbench is running by hitting the health endpoint
-    result = subprocess.run(
-        ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-         "http://127.0.0.1:3001/health"],
-        capture_output=True, text=True, timeout=10,
-    )
-    if result.returncode != 0 or result.stdout.strip() != "200":
-        return False, "TestBench: not reachable (http://127.0.0.1:3001/health)"
+    def testbench_request(method: str, path: str, body: dict | None = None) -> dict:
+        data = json.dumps(body).encode("utf-8") if body is not None else None
+        headers = {"Content-Type": "application/json"}
+        if KONOHA_TOKEN:
+            headers["Authorization"] = f"Bearer {KONOHA_TOKEN}"
+        req = urllib.request.Request(f"{TESTBENCH_URL}{path}", data=data, method=method, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
 
-    # Run a quick session test via TestBench API
     try:
-        # Acquire session
-        sess_result = subprocess.run(
-            ["curl", "-s", "-X", "POST", "http://127.0.0.1:3001/testbench/session"],
-            capture_output=True, text=True, timeout=15,
-        )
-        sess = json.loads(sess_result.stdout)
-        sid = sess.get("session_id")
-        if not sid:
-            return False, f"TestBench: failed to acquire session: {sess_result.stdout[:200]}"
+        status = testbench_request("GET", "/testbench/status")
+    except urllib.error.HTTPError as e:
+        return False, f"TestBench: {TESTBENCH_URL}/testbench/status returned HTTP {e.code}"
+    except Exception as e:
+        return False, f"TestBench: not reachable ({TESTBENCH_URL}/testbench/status): {e}"
 
+    if not status.get("ok"):
+        return False, f"TestBench: unhealthy status: {json.dumps(status)[:200]}"
+
+    try:
         steps = [
             ("/ui/login", "Login page"),
             ("/ui/processes", "Dashboard"),
@@ -162,23 +194,11 @@ def check_testbench_smoke() -> tuple[bool, str]:
         ]
 
         for path, label in steps:
-            nav_result = subprocess.run(
-                ["curl", "-s", "-X", "POST", "http://127.0.0.1:3001/testbench/navigate",
-                 "-H", "Content-Type: application/json",
-                 "-d", json.dumps({"session_id": sid, "url": f"http://127.0.0.1:5173{path}"})],
-                capture_output=True, text=True, timeout=15,
-            )
-            nav = json.loads(nav_result.stdout)
-            if nav.get("status") not in ("ok", "success"):
-                return False, f"TestBench: navigation to {label} failed: {nav_result.stdout[:200]}"
+            nav = testbench_request("POST", "/testbench/navigate", {"url": f"{DASHBOARD_URL}{path}"})
+            if not nav.get("ok"):
+                return False, f"TestBench: navigation to {label} failed: {json.dumps(nav)[:200]}"
 
-        # Release session
-        subprocess.run(
-            ["curl", "-s", "-X", "POST", "http://127.0.0.1:3001/testbench/release",
-             "-H", "Content-Type: application/json",
-             "-d", json.dumps({"session_id": sid})],
-            capture_output=True, text=True, timeout=10,
-        )
+        testbench_request("POST", "/testbench/reset")
 
         return True, "TestBench smoke: login, dashboard, editor OK"
 

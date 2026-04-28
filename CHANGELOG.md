@@ -4,6 +4,13 @@ All notable changes to Konoha are documented here.
 
 ---
 
+## [1.4.2] — 2026-04-28
+
+### Fixed
+- **Pre-release gate environment drift** (#544) — resolved Bun path handling, current TestBench URL/auth checks, and version-gate metadata.
+
+---
+
 ## [1.4.0] — 2026-03-XX
 
 ### Added
