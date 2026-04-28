@@ -43,10 +43,21 @@ async function resolveTriggers(
   if (eventsToResolve.length === 0) return { elements: updatedElements, needs_review: false };
 
   const ctx: ProcessContext = processContext ?? {};
-  const results = await resolveBatchProgrammatic(
-    eventsToResolve.map(el => ({ id: el.id, label: el.label, manual_override: el.trigger?.manual_override })),
-    ctx,
-  );
+  let results: Awaited<ReturnType<typeof resolveBatchProgrammatic>>;
+  try {
+    results = await Promise.race([
+      resolveBatchProgrammatic(
+        eventsToResolve.map(el => ({ id: el.id, label: el.label, manual_override: el.trigger?.manual_override })),
+        ctx,
+      ),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("trigger resolver timed out after 60s")), 60_000)
+      ),
+    ]);
+  } catch (e: any) {
+    console.warn(`[workflow-deploy] trigger resolver failed (${e.message}), marking all events for manual review`);
+    return { elements: updatedElements, needs_review: true };
+  }
 
   let needs_review = false;
   const resultMap = new Map(results.map(r => [r.id, r.trigger]));
