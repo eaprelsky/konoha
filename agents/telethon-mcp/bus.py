@@ -44,6 +44,7 @@ ROUTER_TIMEOUT_SEC = float(os.environ.get('TELEGRAM_ROUTER_TIMEOUT_SEC', '4.0'))
 ROUTER_HISTORY_LIMIT = int(os.environ.get('TELEGRAM_ROUTER_HISTORY_LIMIT', '20'))
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+RETRYABLE_OPENROUTER_STATUS = {401, 402, 403, 408, 409, 429, 500, 502, 503, 504}
 
 def _load_trusted_ids() -> set[int]:
     """Load trusted user IDs from shared config."""
@@ -85,6 +86,24 @@ def _current_trusted_ids() -> set[int]:
 
 
 _current_trusted_ids()
+
+
+def _openrouter_api_keys() -> list[str]:
+    keys: list[str] = []
+    for name in ['OPENROUTER_API_KEY', 'OPENROUTER_API_KEYS']:
+        raw = os.environ.get(name, '')
+        keys.extend(part.strip() for part in raw.split(',') if part.strip())
+    for idx in range(1, 6):
+        raw = os.environ.get(f'OPENROUTER_API_KEY_FALLBACK_{idx}', '')
+        if raw.strip():
+            keys.append(raw.strip())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        if key not in seen:
+            seen.add(key)
+            deduped.append(key)
+    return deduped
 
 
 def _history_key(chat_id: str | int) -> str:
@@ -144,7 +163,8 @@ def _parse_router_json(raw: str) -> dict:
 
 def _call_openrouter_router(payload: dict) -> dict:
     """Blocking OpenRouter call; run via asyncio.to_thread from the event loop."""
-    if not OPENROUTER_API_KEY:
+    keys = _openrouter_api_keys()
+    if not keys:
         raise RuntimeError('OPENROUTER_API_KEY is not set')
 
     system = (
@@ -169,21 +189,37 @@ def _call_openrouter_router(payload: dict) -> dict:
             {'role': 'user', 'content': user},
         ],
     }).encode('utf-8')
-    req = urlrequest.Request(
-        OPENROUTER_URL,
-        data=body,
-        headers={
-            'Authorization': f'Bearer {OPENROUTER_API_KEY}',
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://agent.eaprelsky.ru',
-            'X-Title': 'Konoha Telegram Router',
-        },
-        method='POST',
-    )
     # Ignore process proxy env: the shared LLM proxy breaks several HTTPS APIs on this host.
     opener = urlrequest.build_opener(urlrequest.ProxyHandler({}))
-    with opener.open(req, timeout=ROUTER_TIMEOUT_SEC) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
+    last_error: Exception | None = None
+    for idx, api_key in enumerate(keys, start=1):
+        req = urlrequest.Request(
+            OPENROUTER_URL,
+            data=body,
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'https://agent.eaprelsky.ru',
+                'X-Title': 'Konoha Telegram Router',
+            },
+            method='POST',
+        )
+        try:
+            with opener.open(req, timeout=ROUTER_TIMEOUT_SEC) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                break
+        except HTTPError as exc:
+            last_error = exc
+            if exc.code not in RETRYABLE_OPENROUTER_STATUS or idx == len(keys):
+                raise
+            print(f'OpenRouter key #{idx} failed with HTTP {exc.code}; trying fallback', flush=True)
+        except URLError as exc:
+            last_error = exc
+            if idx == len(keys):
+                raise
+            print(f'OpenRouter key #{idx} network error; trying fallback', flush=True)
+    else:
+        raise RuntimeError(f'OpenRouter request failed: {last_error}')
     content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
     return _parse_router_json(content)
 
@@ -201,7 +237,7 @@ async def _route_with_llm(
     attachment_path: str = '',
 ) -> dict:
     """Classify non-obvious group traffic with a cheap model."""
-    if not ROUTER_ENABLED or not OPENROUTER_API_KEY:
+    if not ROUTER_ENABLED or not _openrouter_api_keys():
         return {'action': rule_action, 'route': 'none', 'confidence': 0.0, 'reason': 'router_disabled'}
     if not is_group or rule_action != 'observe' or (not text.strip() and not attachment_kind):
         return {'action': rule_action, 'route': 'none', 'confidence': 0.0, 'reason': 'router_not_applicable'}

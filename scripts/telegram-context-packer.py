@@ -27,6 +27,7 @@ TIMEOUT_SEC = float(os.environ.get("TELEGRAM_CONTEXT_TIMEOUT_SEC", "8.0"))
 MAX_CONTEXT_CHARS = int(os.environ.get("TELEGRAM_CONTEXT_MAX_CHARS", "6000"))
 
 STOP = False
+RETRYABLE_OPENROUTER_STATUS = {401, 402, 403, 408, 409, 429, 500, 502, 503, 504}
 
 
 def _stop(_signum, _frame) -> None:
@@ -46,11 +47,59 @@ def _parse_json(raw: str) -> dict:
     return json.loads(raw)
 
 
-def _call_model(event: dict, history: list[dict]) -> dict:
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY is not set")
+def _openrouter_api_keys() -> list[str]:
+    keys: list[str] = []
+    for name in ["OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"]:
+        raw = os.environ.get(name, "")
+        keys.extend(part.strip() for part in raw.split(",") if part.strip())
+    for idx in range(1, 6):
+        raw = os.environ.get(f"OPENROUTER_API_KEY_FALLBACK_{idx}", "")
+        if raw.strip():
+            keys.append(raw.strip())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        if key not in seen:
+            seen.add(key)
+            deduped.append(key)
+    return deduped
 
+
+def _openrouter_json(body: bytes, title: str, timeout: float) -> dict:
+    keys = _openrouter_api_keys()
+    if not keys:
+        raise RuntimeError("OPENROUTER_API_KEY is not set")
+    opener = urlrequest.build_opener(urlrequest.ProxyHandler({}))
+    last_error: Exception | None = None
+    for idx, api_key in enumerate(keys, start=1):
+        req = urlrequest.Request(
+            OPENROUTER_URL,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://agent.eaprelsky.ru",
+                "X-Title": title,
+            },
+            method="POST",
+        )
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except HTTPError as exc:
+            last_error = exc
+            if exc.code not in RETRYABLE_OPENROUTER_STATUS or idx == len(keys):
+                raise
+            print(f"OpenRouter key #{idx} failed with HTTP {exc.code}; trying fallback", flush=True)
+        except URLError as exc:
+            last_error = exc
+            if idx == len(keys):
+                raise
+            print(f"OpenRouter key #{idx} network error; trying fallback", flush=True)
+    raise RuntimeError(f"OpenRouter request failed: {last_error}")
+
+
+def _call_model(event: dict, history: list[dict]) -> dict:
     system = (
         "Ты context packer для Telegram-потока команды. Ответь строго JSON без Markdown. "
         "Определи, нужно ли будить агента, и если да — собери короткий context packet. "
@@ -84,20 +133,7 @@ def _call_model(event: dict, history: list[dict]) -> dict:
         },
         ensure_ascii=False,
     ).encode("utf-8")
-    req = urlrequest.Request(
-        OPENROUTER_URL,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://agent.eaprelsky.ru",
-            "X-Title": "Konoha Telegram Context Packer",
-        },
-        method="POST",
-    )
-    opener = urlrequest.build_opener(urlrequest.ProxyHandler({}))
-    with opener.open(req, timeout=TIMEOUT_SEC) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    data = _openrouter_json(body, "Konoha Telegram Context Packer", TIMEOUT_SEC)
     content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
     return _parse_json(content)
 

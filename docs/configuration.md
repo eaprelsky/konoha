@@ -31,6 +31,9 @@ All configuration is done through environment variables. In production they are 
 | Variable | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key. Used by normalizer, trigger resolver, AI chat endpoint, and KB. |
+| `OPENROUTER_API_KEY` | Yes for Telegram router/packers | Primary OpenRouter key. |
+| `OPENROUTER_API_KEYS` | No | Optional comma-separated OpenRouter keys used after the primary key. |
+| `OPENROUTER_API_KEY_FALLBACK_1..5` | No | Optional fallback OpenRouter keys. Used when the primary key returns auth/payment/rate-limit/server errors or a network error. |
 
 ---
 

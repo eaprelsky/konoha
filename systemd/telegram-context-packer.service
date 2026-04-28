@@ -7,6 +7,7 @@ Wants=redis-server.service telegram-bus.service
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/konoha
+EnvironmentFile=/opt/shared/.shared-credentials
 EnvironmentFile=/home/ubuntu/.agent-env
 UnsetEnvironment=http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 Environment=PYTHONUNBUFFERED=1
