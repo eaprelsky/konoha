@@ -70,6 +70,20 @@ All configuration is done through environment variables. In production they are 
 
 ---
 
+## Shared Config Validation
+
+Production shared config is validated by:
+
+```bash
+python3 scripts/validate-shared-config.py --require-credentials --require-trusted-users
+```
+
+The validator checks `/opt/shared/.shared-credentials` and `/opt/shared/.trusted-users.json` without printing secret values. It fails on malformed env lines, shell syntax errors, conflicting duplicate keys, missing/empty required keys, invalid trust JSON, and an empty trusted-user list.
+
+Allowed duplicate keys are documented in the validator: `SERVICE_ACCOUNT_PATH` and `DRIVE_FOLDER_ID` may appear twice only when both values are identical. All other duplicate keys must be removed.
+
+---
+
 ## MCP / Agent
 
 | Variable | Default | Description |

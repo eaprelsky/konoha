@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "typescript": "^6.0.3"
   }
 }

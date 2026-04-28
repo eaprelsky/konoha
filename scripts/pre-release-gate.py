@@ -3,7 +3,7 @@
 Pre-release gate script (SHIKADAI-4, #365).
 
 Triggered by "release-request" message in Konoha bus.
-Runs 8 checks; reports Approved or Blocked to naruto (and optionally to Yegor).
+Runs release checks; reports Approved or Blocked to naruto (and optionally to Yegor).
 
 Usage:
     python3 pre-release-gate.py                # run checks, print results
@@ -83,6 +83,22 @@ def check_tests() -> tuple[bool, str]:
         return True, "Gate tests: all pass"
     output = (stdout + stderr).strip()[:500]
     return False, f"Gate test failures:\n{output}"
+
+
+def check_shared_config() -> tuple[bool, str]:
+    """Check shared credential/trust config without exposing secret values."""
+    validator = KONOHA_REPO / "scripts" / "validate-shared-config.py"
+    rc, stdout, stderr = run([
+        sys.executable,
+        str(validator),
+        "--require-credentials",
+        "--require-trusted-users",
+    ], timeout=30)
+    output = (stdout + stderr).strip()
+    if rc == 0:
+        last = output.splitlines()[-1] if output else "OK"
+        return True, f"Shared config: {last}"
+    return False, f"Shared config validation failed:\n{output[:700]}"
 
 
 def check_file_sizes() -> tuple[bool, str]:
@@ -209,6 +225,7 @@ def check_testbench_smoke() -> tuple[bool, str]:
 CHECKS = [
     ("typecheck",      check_typecheck),
     ("tests",          check_tests),
+    ("shared_config",  check_shared_config),
     ("file_sizes",     check_file_sizes),
     ("runtime_size",   check_runtime_size),
     ("no_p0_issues",   check_no_p0_issues),
