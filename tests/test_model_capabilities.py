@@ -18,6 +18,12 @@ def test_deepseek_profile_is_text_only_for_vision_routing():
     assert CAP_VISION not in caps
 
 
+def test_qwen_vl_profile_supports_vision():
+    caps = model_capabilities("qwen/qwen3.5-flash")
+    assert CAP_TEXT in caps
+    assert CAP_VISION in caps
+
+
 def test_photo_event_routes_to_vision_stream_when_target_lacks_vision(monkeypatch):
     monkeypatch.delenv("KONOHA_AGENT_SASUKE_MODEL", raising=False)
     event = {"attachment_kind": "photo", "attachment_path": "/tmp/image.jpg"}

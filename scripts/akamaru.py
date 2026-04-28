@@ -35,6 +35,8 @@ WATCHED_SERVICES = [
     "konoha.service",
     "telegram-bot.service",
     "telegram-bus.service",
+    "telegram-context-packer.service",
+    "telegram-vision-packer.service",
     "agent-autostart.service",
     "agent-watchdog-lifecycle.service",
     "agent-watchdog-naruto.service",
@@ -47,6 +49,7 @@ SAFE_RESTART_SERVICES = {
     "telegram-bot.service",
     "telegram-bus.service",
     "telegram-context-packer.service",
+    "telegram-vision-packer.service",
 }
 
 WATCHED_SESSIONS = [
