@@ -79,14 +79,23 @@ def is_session_noise(data: dict) -> bool:
 
 # ── Idle detection ───────────────────────────────────────────────────────────
 
-def tmux_pane_content(session: str) -> str:
+def tmux_pane_capture(session: str) -> tuple[bool, str]:
+    if not is_session_alive(session):
+        return False, ""
     try:
-        return subprocess.check_output(
+        result = subprocess.run(
             ["tmux", "-L", session, "capture-pane", "-pt", session],
-            timeout=3
-        ).decode("utf-8", errors="replace")
+            capture_output=True, timeout=3,
+        )
+        if result.returncode != 0:
+            return False, ""
+        return True, result.stdout.decode("utf-8", errors="replace")
     except Exception:
-        return ""
+        return False, ""
+
+
+def tmux_pane_content(session: str) -> str:
+    return tmux_pane_capture(session)[1]
 
 
 def is_session_alive(session: str) -> bool:
@@ -106,12 +115,14 @@ def is_agent_idle(session: str, stable_checks: int = 2) -> bool:
     def has_prompt(content: str) -> bool:
         lines = [l.strip() for l in content.strip().split("\n") if l.strip()]
         last_lines = lines[-12:]
+        has_claude_queue = any("queued messages" in l.lower() for l in last_lines)
         has_claude_prompt = any(
             (l == "❯" or l == "❯\xa0" or l.startswith("❯ ") or l.startswith("❯\xa0"))
             and "Pasted text" not in l
             for l in last_lines
-        )
-        has_codex_prompt = any(l.startswith("› ") for l in last_lines)
+        ) and not has_claude_queue
+        has_codex_startup = any("Booting MCP server" in l or "Starting MCP servers" in l for l in last_lines)
+        has_codex_prompt = any(l.startswith("› ") for l in last_lines) and not has_codex_startup
         has_cursor_ready = (
             any("→ Add a follow-up" in l for l in last_lines)
             or any("ctrl+c to stop" in l for l in last_lines)
@@ -119,7 +130,8 @@ def is_agent_idle(session: str, stable_checks: int = 2) -> bool:
         )
         return has_claude_prompt or has_codex_prompt or has_cursor_ready
     for _ in range(stable_checks):
-        if not has_prompt(tmux_pane_content(session)):
+        alive, content = tmux_pane_capture(session)
+        if not alive or not has_prompt(content):
             return False
         if stable_checks > 1:
             time.sleep(1.0)
@@ -150,10 +162,13 @@ async def tmux_send(session: str, text: str) -> bool:
     # Wait for compacting to finish before sending — avoids [Pasted text] race (#147)
     compacting_waited = 0
     while compacting_waited < 120:
+        if not is_session_alive(session):
+            log.error(f"Delivery failed: tmux session {session} is missing before send")
+            return False
         if is_agent_idle(session, stable_checks=1):
             break
         last_lines = chr(10).join(tmux_pane_content(session).strip().split(chr(10))[-6:])
-        if not any(kw in last_lines for kw in ("Compacting", "Churned for", "\u273b")):
+        if not any(kw in last_lines for kw in ("Compacting", "Churned for", "✻")):
             break
         log.info(f"Agent {session} compacting — waiting (waited {compacting_waited}s)")
         await asyncio.sleep(2.0)
@@ -164,45 +179,70 @@ async def tmux_send(session: str, text: str) -> bool:
         log.info(f"Compacting done after {compacting_waited}s — proceeding")
         await asyncio.sleep(1.0)  # small buffer after compacting ends
 
-    # Capture pane content BEFORE send to detect delivery confirmation (#50)
-    content_before = tmux_pane_content(session)
-    # send-keys without -l: simulates typing (no paste mode, no [Pasted text] indicator)
+    async def dismiss_pasted_dialog() -> None:
+        for _ in range(5):
+            alive, pane = tmux_pane_capture(session)
+            if not alive:
+                return
+            if "Pasted text" not in pane:
+                return
+            log.warning(f"[Pasted text] dialog detected in {session} — sending Enter")
+            await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
+            await asyncio.sleep(0.6)
+
+
+    async def retype_prompt() -> bool:
+        await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "C-u", timeout=5.0)
+        await asyncio.sleep(0.15)
+        ok_local = await tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
+        if not ok_local:
+            log.error(f"Retype timed out for {session}")
+            return False
+        await asyncio.sleep(0.35)
+        await dismiss_pasted_dialog()
+        return True
+
+    async def wait_for_submit(timeout_sec: float) -> bool:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            alive, pane = tmux_pane_capture(session)
+            if not alive:
+                log.error(f"Delivery failed: tmux session {session} disappeared during submit")
+                return False
+            if "Pasted text" in pane:
+                log.warning(f"[Pasted text] dialog appeared after submit in {session} — sending Enter")
+                await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
+                await asyncio.sleep(0.6)
+                continue
+            if pane.strip() and not is_agent_idle(session, stable_checks=1):
+                log.info("Delivery confirmed: agent left idle state after submit")
+                return True
+            await asyncio.sleep(0.4)
+        return False
+
+
     ok = await tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
     if not ok:
         log.error(f"send-keys timed out for {session} — skipping delivery")
         return False
-    # Wait for potential [Pasted text] dialog before sending Enter (#145 race fix)
     await asyncio.sleep(0.5)
-    # Dismiss [Pasted text] if it appeared — check BEFORE Enter to fix race condition (#145)
-    for _ in range(5):
-        content = tmux_pane_content(session)
-        if "Pasted text" in content:
-            log.warning(f"[Pasted text] dialog detected in {session} — sending Enter to dismiss")
-            await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
-            await asyncio.sleep(0.5)
-        else:
-            break
-    # Always send submit Enter after optional dialog dismissal (#145)
-    await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
-    log.info(f"Sent prompt to {session} ({len(text)} chars)")
-    await asyncio.sleep(2.0)  # give agent more time to start processing
-    for attempt in range(3):
-        content_after = tmux_pane_content(session)
-        if content_after != content_before:
-            log.info(f"Delivery confirmed: pane content changed after send")
-            break  # pane changed — agent received the message (#50)
-        if not is_agent_idle(session, stable_checks=2):
-            break  # agent is processing — good
-        log.warning(f"Pane unchanged and agent idle (attempt {attempt+1}), resending full prompt")
-        await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "C-u", timeout=5.0)
-        ok = await tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
-        if not ok:
-            log.error(f"Resend attempt {attempt+1} timed out for {session}")
-            break
-        await asyncio.sleep(0.3)
+    await dismiss_pasted_dialog()
+
+    for attempt in range(4):
+        if attempt == 1:
+            log.warning("Agent stayed idle after submit attempt 1 — retrying Enter")
+        elif attempt >= 2:
+            log.warning(f"Agent stayed idle after submit attempt {attempt} — clearing input and retyping prompt")
+            if not await retype_prompt():
+                return False
+
         await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
-        await asyncio.sleep(2.0)
-    return True
+        log.info(f"Sent prompt to {session} ({len(text)} chars), submit attempt {attempt + 1}")
+        if await wait_for_submit(4.0 if attempt == 0 else 3.0):
+            return True
+
+    log.error(f"Delivery failed: agent {session} stayed idle after submit retries")
+    return False
 
 
 # ── Message formatting ────────────────────────────────────────────────────────
