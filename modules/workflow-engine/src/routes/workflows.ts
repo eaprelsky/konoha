@@ -29,11 +29,6 @@ async function resolveTriggers(
   elements: WorkflowElement[],
   processContext?: ProcessContext,
 ): Promise<{ elements: WorkflowElement[]; needs_review: boolean }> {
-  const { buildAdjacency } = await import("../../../../src/workflow-loader").then(m => {
-    // Re-use buildAdjacency via a small local helper to identify start nodes
-    return { buildAdjacency: null };
-  });
-
   // Build edge maps inline to identify event nodes needing resolve
   const outCount = new Map<string, number>();
   const inCount = new Map<string, number>();
