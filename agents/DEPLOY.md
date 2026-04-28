@@ -123,16 +123,13 @@ Get your Telegram ID from @userinfobot.
 ## Step 6: Install and Start Services
 
 ```bash
-# Copy systemd services
-sudo cp agents/systemd/agent-naruto.service /etc/systemd/system/
-sudo cp agents/systemd/agent-sasuke.service /etc/systemd/system/
-sudo cp agents/systemd/agent-telegram.service /etc/systemd/system/
-
-# Copy scripts to ~/scripts
-mkdir -p ~/scripts
-cp agents/scripts/* ~/scripts/
-cp -r agents/scripts/hooks ~/scripts/
-chmod +x ~/scripts/*.sh
+# Copy canonical systemd services
+sudo cp systemd/*.service /etc/systemd/system/
+sudo cp systemd/*.timer /etc/systemd/system/ 2>/dev/null || true
+sudo mkdir -p /etc/systemd/system/konoha.service.d /etc/systemd/system/telegram-bus.service.d /etc/systemd/system/telegram-bot.service.d
+sudo cp systemd/dropins/konoha-managed-agents.conf /etc/systemd/system/konoha.service.d/managed-agents.conf
+sudo cp systemd/dropins/telegram-bus-router.conf /etc/systemd/system/telegram-bus.service.d/router.conf
+sudo cp systemd/dropins/telegram-bot-no-llm-proxy.conf /etc/systemd/system/telegram-bot.service.d/no-llm-proxy.conf
 
 # Copy agent utilities
 cp agents/naruto-tg-send.py ~/
@@ -142,7 +139,8 @@ cp agents/AGENTS.md ~/
 # Install Konoha bus
 bun install
 sudo systemctl daemon-reload
-sudo systemctl enable --now redis-server konoha claude-telegram claude-naruto claude-sasuke
+sudo systemctl enable --now redis-server konoha telegram-bot telegram-bus telegram-context-packer telegram-vision-packer
+sudo systemctl enable --now agent-naruto agent-sasuke agent-kakashi agent-kiba agent-watchdog-naruto agent-watchdog-sasuke agent-watchdog-kakashi agent-watchdog-kiba agent-watchdog-lifecycle akamaru
 ```
 
 ---
@@ -205,17 +203,10 @@ For Sasuke, also add `telethon-channel` MCP (see `telethon-mcp/` README).
 ├── naruto-tg-send.py            # Send via bot (Naruto only — do NOT use from Sasuke)
 ├── tg-send-user.py              # Send via user account (Sasuke)
 ├── setup-agent.sh               # One-time server setup
-├── scripts/
-│   ├── restart-naruto.sh        # Restart Naruto agent
-│   ├── restart-sasuke.sh        # Restart Sasuke agent
-│   ├── restart-safe.sh          # Safe restart with Konoha broadcast
-│   ├── watchdog-check.sh        # Heartbeat watchdog (called by cron)
-│   ├── check-messages.sh        # Poll Telegram bot message queue
-│   ├── check-watchdogs.py       # Check agent statuses
-│   ├── agent-naruto-service.sh # Naruto tmux loop
-│   ├── agent-sasuke-service.sh # Sasuke tmux loop
-│   └── hooks/                   # Claude Code hooks
 ├── konoha/                      # Konoha bus source
+│   ├── systemd/                 # Canonical service units
+│   ├── scripts/                 # Lifecycle wrappers, watchdogs, health checks
+│   └── docs/agent-operations-runbook.md
 └── telethon-mcp/                # Telethon bridge
     ├── bus.py                   # Telethon ↔ Redis bridge
     ├── channel-server.ts        # Channel MCP server
@@ -263,7 +254,7 @@ tail -f /tmp/telegram-bot-service.log
 
 **Photo uploads fail (Grammy proxy bug):**
 Re-apply patch to `node_modules/grammy/out/shim.node.js` — replace `node-fetch` with `globalThis.fetch`.
-See `agents/scripts/patch-telegram-plugin.sh`.
+See current Telegram deployment notes; the retired `agents/scripts/` tree is not part of the deployment.
 
 **Agent heartbeat stale:**
 ```bash

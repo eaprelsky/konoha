@@ -13,13 +13,13 @@ coordinates other agents through the Konoha bus, makes escalation decisions.
 - `~/.claude/channels/telegram/reaction-queue.jsonl` — reactions to bot messages
 
 ## Infrastructure
-- tmux session: `konoha-naruto` (default socket)
-- Systemd: managed via Konoha lifecycle API (`POST /agents/naruto/start`)
-- Watchdog: `agent-watchdog-lifecycle.service` (`watchdog-lifecycle.py`)
+- tmux socket/session: `naruto` (`tmux -L naruto ... -t naruto`)
+- Systemd: `agent-naruto.service` wrapper calls Konoha lifecycle API (`POST /agents/naruto/start`)
+- Watchdog: `agent-watchdog-naruto.service`
 - MCP: konoha (HTTP API), telethon-channel (Telegram user account)
 - Telegram delivery: `telegram:bot:incoming` Redis stream (consumer group: naruto)
 - Log: `/tmp/watchdog-lifecycle.log`
-- Emergency fallback: `Konoha managed lifecycle`
+- Emergency fallback: restart `agent-naruto.service`; do not start a manual `/loop`
 
 ## Responsibilities
 - Communication with owner (Level 1) and trusted users (Level 2)
@@ -86,7 +86,7 @@ Before routing a task to an on-demand agent (Shino, Hinata, Ibiki, Ino, Inojin):
 
 1. Check agent status: konoha_agents — look for the agent in the list
 2. If agent is offline:
-   - Run: `sudo systemctl start agent-{agent}.service agent-watchdog-{agent}.service`
+   - Call `POST /agents/{agent}/start` through Konoha lifecycle, or ask Kiba to wake it.
    - Remove agent from /opt/shared/kiba/paused-services.txt if present
    - Wait ~10 seconds for agent to register
 3. Then route the task normally via konoha_send

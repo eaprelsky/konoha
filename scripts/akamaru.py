@@ -37,7 +37,6 @@ WATCHED_SERVICES = [
     "telegram-bus.service",
     "telegram-context-packer.service",
     "telegram-vision-packer.service",
-    "agent-autostart.service",
     "agent-watchdog-lifecycle.service",
     "agent-watchdog-naruto.service",
     "agent-watchdog-sasuke.service",
@@ -336,6 +335,7 @@ def is_alert_suppressed(alert: str, paused: set[str]) -> bool:
             f"session={agent}" in alert or
             f"service=agent-{agent}" in alert or
             f"service=agent-watchdog-{agent}" in alert or
+            # Retired unit names may still appear in old alert payloads.
             f"service=claude-{agent}" in alert or
             f"service=claude-watchdog-{agent}" in alert
         ):

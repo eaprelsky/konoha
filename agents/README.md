@@ -53,11 +53,16 @@ Akamaru alerts ──► Konoha ──► watchdog-kiba ──► tmux kiba
 
 ## Systemd Services
 
-Each permanent agent has two services:
-- `agent-{agent}.service` — starts Claude Code in tmux
-- `agent-watchdog-{agent}.service` — delivers events to the agent
+Canonical unit files live in `/home/ubuntu/konoha/systemd/`.
+The retired `agents/systemd/` and `agents/scripts/agent-*-service.sh` paths must not be used.
+
+Permanent agents use two services:
+- `agent-{agent}.service` — supervises the agent through the Konoha lifecycle API (`scripts/agent-api-service.sh`)
+- `agent-watchdog-{agent}.service` — delivers Telegram/Konoha/GitHub events to the agent's isolated tmux socket
 
 Additionally: `akamaru.service` — autonomous system health monitoring.
+
+On-demand agents are started by `POST /agents/{id}/start` and receive messages through `agent-watchdog-lifecycle.service`.
 
 ## Running Services
 
@@ -67,9 +72,9 @@ Additionally: `akamaru.service` — autonomous system health monitoring.
 
 ## Adding a New Agent
 
-1. Create `agents/{name}/AGENTS.md` with the agent's role description
-2. Create `agents/{name}/.mcp-{name}.json` using `agents/.mcp-template.json` as template
-3. Create `scripts/agent-{name}-service.sh` and `scripts/watchdog-{name}.py`
-4. Create systemd unit files and enable them
-5. Add the agent to the table above
-6. Add the session to `WATCHED_SESSIONS` in `scripts/akamaru.py`
+1. Create/update the AgentDef via Konoha UI/API: `runtime`, `model`, `capabilities`, optional `shared_mcp_allowlist`, optional `redis_streams`.
+2. Put long-lived role instructions in `agents/{name}/AGENTS.md` only if this is a named system agent.
+3. For on-demand agents, add the id to `WATCHDOG_AGENTS` in `systemd/agent-watchdog-lifecycle.service`.
+4. For permanent agents, instantiate `systemd/agent-managed@.service` or add a dedicated `systemd/agent-{name}.service` wrapper that calls `scripts/agent-api-service.sh`.
+5. Add monitoring metadata to `scripts/akamaru.py` (`WATCHED_AGENTS`, `WATCHED_SESSIONS`, `AGENT_WATCHDOGS`) only if Kiba should supervise it.
+6. Do not create per-agent startup shell loops; lifecycle owns tmux, prompts, MCP config, restart loop, and runtime selection.

@@ -28,7 +28,7 @@ interface AgentDef {
   avatar_url?: string;
   gender?: 'male' | 'female' | 'neutral';
   protected?: boolean;                // system agents — cannot be deleted
-  tmux_session_override?: string;     // use this tmux session name instead of konoha-{id}
+  tmux_session_override?: string;     // compatibility/status hint; managed sessions use the agent id
   created_at: string;
   updated_at: string;
 }
@@ -134,26 +134,27 @@ Always includes the Konoha MCP server (so agents can call `konoha_register`, `ko
 
 For each skill in `capabilities[]`, its `mcp_servers` entries are merged in. Environment variable references (`${VAR}`) are resolved from `/opt/konoha/.env.global` and the agent's own `env` map.
 
-### 4. Launch tmux session with restart loop
+### 4. Launch runtime in isolated tmux with restart loop
 
 ```bash
-tmux new-session -d -s konoha-{id} -c /opt/shared/agent-workdirs/{id} bash -c "
+tmux -L {id} new-session -d -s {id} -c /opt/shared/agent-workdirs/{id} bash -c "
   while true; do
-    claude --model {model} --mcp-config .mcp.json
-    echo '[date] Claude exited (code $?), restarting in 5s...'
+    <runtime command built from AgentDef.runtime + AgentDef.model>
+    echo '[date] runtime exited (code $?), restarting in 5s...'
     sleep 5
   done
 "
 ```
 
-The `while true` loop ensures Claude Code automatically restarts after processing a startup message and exiting (fixes #236).
+The runtime command is built by `src/agent/runtime.ts` and may be Claude, Codex, Cursor, or GLM.
+The `while true` loop ensures the interactive CLI automatically restarts after processing a startup message or crashing.
 
 ### 5. Inject startup message
 
 After a 7-second wait (for Claude Code to initialize):
 
 ```bash
-tmux send-keys -t konoha-{id} "Прочитай AGENTS.md и выполни startup sequence." Enter
+tmux -L {id} send-keys -t {id} "Прочитай AGENTS.md и выполни startup sequence." Enter
 ```
 
 The agent reads its AGENTS.md, registers on the Konoha bus, and waits for tasks from the watchdog.
@@ -202,9 +203,14 @@ When a workflow or role assignment changes, managed agents get their AGENTS.md r
 
 ## tmux session naming
 
-Default: `konoha-{agent_id}` (e.g. `konoha-naruto`, `konoha-kakashi`).
+Every managed agent uses an isolated tmux socket and session named exactly as the agent id:
 
-System agents with `tmux_session_override` use their override name directly (e.g. `naruto`, `sasuke`, `kakashi`). This allows the UI to detect live status for manually started sessions.
+```bash
+tmux -L {agent_id} has-session -t {agent_id}
+tmux -L {agent_id} capture-pane -pt {agent_id}
+```
+
+The old `konoha-{agent_id}` session naming is retired. `tmux_session_override` remains in the API for compatibility/status display only; process management uses `src/agent/process.ts`.
 
 ---
 

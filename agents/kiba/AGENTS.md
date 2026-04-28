@@ -52,13 +52,13 @@ When `kiba:alert agent=<id> compacting_loop duration=Nmin` arrives:
 3. Log to /opt/shared/kiba/logs/YYYY-MM-DD.md
 
 When `kiba:alert agent=<id> stuck duration=Nmin` arrives (no compacting text):
-1. Capture pane: `tmux capture-pane -pt <id> | tail -20`
+1. Capture pane: `tmux -L <id> capture-pane -pt <id> | tail -20`
 2. Notify Naruto: `konoha_send(to=naruto, text="[Kiba] Agent <id> stuck Nmin — pane content: ...")`
 3. Let Naruto decide whether to restart
 
 ### idle_with_messages alert
 When `kiba:alert agent=<id> idle_with_messages` arrives:
-1. Check the agent's tmux session is alive: `tmux list-sessions`
+1. Check the agent's tmux session is alive: `tmux -L <id> has-session -t <id>`
 2. Check the agent's Konoha message queue: `curl -s -H "Authorization: Bearer $KONOHA_TOKEN" http://127.0.0.1:3200/messages/<id>/history?count=5`
 3. If messages look like tasks (type=task) — nudge the agent via Konoha:
    `konoha_send(to=<id>, text="kiba: you have unprocessed messages, please check your queue")`
@@ -77,14 +77,13 @@ Check everything and write a report:
 ```bash
 # 1. Systemd services
 systemctl is-active agent-naruto.service agent-sasuke.service agent-mirai.service \
-  agent-jiraiya.service agent-shino.service agent-hinata.service \
+  agent-kakashi.service agent-kiba.service \
   agent-watchdog-naruto.service agent-watchdog-sasuke.service \
-  agent-watchdog-mirai.service agent-watchdog-jiraiya.service \
-  agent-watchdog-shino.service agent-watchdog-hinata.service \
-  agent-watchdog-kiba.service akamaru.service
+  agent-watchdog-kakashi.service agent-watchdog-kiba.service \
+  agent-watchdog-lifecycle.service akamaru.service
 
 # 2. tmux sessions
-tmux list-sessions
+for a in naruto sasuke kakashi kiba; do tmux -L "$a" has-session -t "$a"; done
 
 # 3. Redis
 redis-cli ping
