@@ -47,19 +47,44 @@ OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
 def _load_trusted_ids() -> set[int]:
     """Load trusted user IDs from shared config."""
-    try:
-        cfg = json.loads(open(TRUSTED_USERS_FILE).read())
-        ids = set()
-        if cfg.get('owner', {}).get('telegram_id'):
-            ids.add(int(cfg['owner']['telegram_id']))
-        for u in cfg.get('trusted', []):
-            if u.get('telegram_id'):
-                ids.add(int(u['telegram_id']))
-        return ids
-    except Exception:
-        return set()
+    cfg = json.loads(open(TRUSTED_USERS_FILE).read())
+    ids = set()
+    if cfg.get('owner', {}).get('telegram_id'):
+        ids.add(int(cfg['owner']['telegram_id']))
+    for u in cfg.get('trusted', []):
+        if u.get('telegram_id'):
+            ids.add(int(u['telegram_id']))
+    return ids
 
-TRUSTED_IDS = _load_trusted_ids()
+TRUSTED_IDS_CACHE: set[int] = set()
+TRUSTED_IDS_MTIME_NS: int | None = None
+
+
+def _current_trusted_ids() -> set[int]:
+    """Return trusted IDs, reloading the shared file when it changes."""
+    global TRUSTED_IDS_CACHE, TRUSTED_IDS_MTIME_NS
+    try:
+        mtime_ns = os.stat(TRUSTED_USERS_FILE).st_mtime_ns
+    except Exception as e:
+        print(f'TRUSTED USERS STAT ERR: {e}', flush=True)
+        return TRUSTED_IDS_CACHE
+
+    if TRUSTED_IDS_MTIME_NS == mtime_ns:
+        return TRUSTED_IDS_CACHE
+
+    try:
+        trusted_ids = _load_trusted_ids()
+    except Exception as e:
+        print(f'TRUSTED USERS RELOAD ERR: {e}', flush=True)
+        return TRUSTED_IDS_CACHE
+
+    TRUSTED_IDS_CACHE = trusted_ids
+    TRUSTED_IDS_MTIME_NS = mtime_ns
+    print(f'TRUSTED USERS RELOADED: {len(trusted_ids)} ids', flush=True)
+    return TRUSTED_IDS_CACHE
+
+
+_current_trusted_ids()
 
 
 def _history_key(chat_id: str | int) -> str:
@@ -245,7 +270,7 @@ def _classify_action_hint(
 
     if not is_group:
         # Private message
-        return 'respond' if sender_id in TRUSTED_IDS else 'ignore'
+        return 'respond' if sender_id in _current_trusted_ids() else 'ignore'
 
     # Group message
     addressed_to_me = any(t in text_lower for t in USER_ACCOUNT_TRIGGERS)

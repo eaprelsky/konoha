@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth";
 import type { HonoEnv } from "../types";
-import { readFileSync, writeFileSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 
 const TRUSTED_USERS_PATH = "/opt/shared/.trusted-users.json";
+const TRUSTED_USERS_BACKUP_DIR = "/opt/shared/trusted-users-backups";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,14 @@ function readFile(): TrustedUsersFile {
 }
 
 function writeFile(data: TrustedUsersFile): void {
-  writeFileSync(TRUSTED_USERS_PATH, JSON.stringify(data, null, 2), { mode: 0o600 });
+  if (existsSync(TRUSTED_USERS_PATH)) {
+    mkdirSync(TRUSTED_USERS_BACKUP_DIR, { recursive: true, mode: 0o700 });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    copyFileSync(TRUSTED_USERS_PATH, `${TRUSTED_USERS_BACKUP_DIR}/trusted-users.${stamp}.json`);
+  }
+  const tmpPath = `${TRUSTED_USERS_PATH}.${process.pid}.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+  renameSync(tmpPath, TRUSTED_USERS_PATH);
 }
 
 // ── Router ────────────────────────────────────────────────────────────────────
