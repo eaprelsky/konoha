@@ -1,13 +1,17 @@
 [Unit]
-Description=Claude Agent Kiba (System Guardian)
-After=network.target redis.service
-Wants=agent-watchdog-kiba.service
+Description=Konoha Managed Agent Kiba
+After=network.target redis.service konoha.service
+Wants=konoha.service agent-watchdog-kiba.service
 After=agent-watchdog-kiba.service
 
 [Service]
 Type=simple
 User=ubuntu
-ExecStart=/home/ubuntu/konoha/scripts/agent-kiba-service.sh
+EnvironmentFile=/home/ubuntu/.agent-env
+Environment=HOME=/home/ubuntu
+Environment=KONOHA_AGENT_ID=kiba
+Environment=PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh kiba
 Restart=always
 MemoryMax=800M
 RestartSec=10

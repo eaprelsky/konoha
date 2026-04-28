@@ -7,7 +7,8 @@ Wants=redis-server.service konoha.service
 Type=simple
 User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
-Environment=WATCHDOG_AGENTS=mirai,shino,hinata,ibiki,ino,inojin,guy,shikadai,shikamaru,tsunade
+Environment=PYTHONUNBUFFERED=1
+Environment=WATCHDOG_AGENTS=mirai,jiraiya,shino,hinata,ibiki,ino,inojin,guy,shikadai
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-lifecycle.py
 Restart=always
 RestartSec=10

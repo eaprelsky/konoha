@@ -63,10 +63,33 @@ def tmux_socket(agent_id: str) -> str:
     return agent_id
 
 
+def pane_is_idle(content: str) -> bool:
+    lines = [line.strip() for line in content.strip().split("\n") if line.strip()]
+    last_lines = lines[-12:]
+    has_claude_prompt = any(
+        (line == "❯" or line == "❯\xa0" or line.startswith("❯ ") or line.startswith("❯\xa0"))
+        and "Pasted text" not in line
+        for line in last_lines
+    )
+    has_codex_prompt = any(line.startswith("› ") for line in last_lines)
+    has_cursor_ready = (
+        any("→ Add a follow-up" in line for line in last_lines)
+        or any("ctrl+c to stop" in line for line in last_lines)
+        or any("▶︎ Auto-run everything" in line for line in last_lines)
+    )
+    has_opencode_idle = (
+        any("ctrl+p commands" in line for line in last_lines)
+        or any("tab agents" in line for line in last_lines)
+    )
+    return has_claude_prompt or has_codex_prompt or has_cursor_ready or has_opencode_idle
+
+
 def is_agent_idle(agent_id: str) -> bool:
-    """Check if agent's tmux session shows the ❯ prompt (idle)."""
+    """Check if agent's tmux session shows a supported ready-for-input prompt."""
     session = tmux_session(agent_id)
     socket = tmux_socket(agent_id)
+    if not is_session_alive(agent_id):
+        return False
     try:
         result = subprocess.run(
             ["tmux", "-L", socket, "capture-pane", "-t", session, "-p"],
@@ -74,12 +97,7 @@ def is_agent_idle(agent_id: str) -> bool:
         )
         if result.returncode != 0:
             return False
-        lines = result.stdout.strip().split("\n")
-        for line in reversed(lines[-5:]):
-            stripped = line.strip()
-            if stripped.startswith("❯") and len(stripped) < 5:
-                return True
-        return False
+        return pane_is_idle(result.stdout)
     except Exception:
         return False
 
@@ -115,9 +133,79 @@ def has_pasted_text(agent_id: str) -> bool:
 
 
 async def tmux_send(agent_id: str, text: str) -> bool:
-    """Send text to agent's tmux session via send-keys. Retries Enter if pasted text gets stuck."""
+    """Send text to agent's tmux session and confirm submission only after it leaves idle."""
     session = tmux_session(agent_id)
     socket = tmux_socket(agent_id)
+
+    def pane_content() -> str:
+        try:
+            result = subprocess.run(
+                ["tmux", "-L", socket, "capture-pane", "-t", session, "-p"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0:
+                return ""
+            return result.stdout
+        except Exception:
+            return ""
+
+    async def dismiss_pasted_dialog() -> None:
+        for _ in range(5):
+            if not has_pasted_text(agent_id):
+                return
+            log.warning(f"[{agent_id}] [Pasted text] dialog detected — sending Enter to dismiss")
+            proc = await asyncio.create_subprocess_exec(
+                "tmux", "-L", socket, "send-keys", "-t", session, "Enter",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.wait(), timeout=5)
+            await asyncio.sleep(0.6)
+
+    async def retype_prompt() -> bool:
+        proc_clear = await asyncio.create_subprocess_exec(
+            "tmux", "-L", socket, "send-keys", "-t", session, "C-u",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc_clear.wait(), timeout=5)
+        await asyncio.sleep(0.15)
+        proc_type = await asyncio.create_subprocess_exec(
+            "tmux", "-L", socket, "send-keys", "-t", session, text,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc_type.wait(), timeout=5)
+        if proc_type.returncode != 0:
+            return False
+        await asyncio.sleep(0.35)
+        await dismiss_pasted_dialog()
+        return True
+
+    async def wait_for_submit(timeout_sec: float) -> bool:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if not is_session_alive(agent_id):
+                log.error(f"[{agent_id}] delivery failed: tmux session disappeared during submit")
+                return False
+            content = pane_content()
+            if "Pasted text" in content:
+                log.warning(f"[{agent_id}] [Pasted text] appeared after submit — sending Enter")
+                proc_enter = await asyncio.create_subprocess_exec(
+                    "tmux", "-L", socket, "send-keys", "-t", session, "Enter",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(proc_enter.wait(), timeout=5)
+                await asyncio.sleep(0.6)
+                continue
+            if content.strip() and not is_agent_idle(agent_id):
+                log.info(f"[{agent_id}] Delivery confirmed: agent left idle state after submit")
+                return True
+            await asyncio.sleep(0.4)
+        return False
+
+
     try:
         proc = await asyncio.create_subprocess_exec(
             "tmux", "-L", socket, "send-keys", "-t", session, text,
@@ -127,27 +215,29 @@ async def tmux_send(agent_id: str, text: str) -> bool:
         await asyncio.wait_for(proc.wait(), timeout=5)
         if proc.returncode != 0:
             return False
-        proc2 = await asyncio.create_subprocess_exec(
-            "tmux", "-L", socket, "send-keys", "-t", session, "Enter",
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await asyncio.wait_for(proc2.wait(), timeout=5)
 
-        # Retry Enter if pasted text is stuck on prompt (#260)
-        for retry in range(3):
-            await asyncio.sleep(3)
-            if not has_pasted_text(agent_id):
-                break
-            log.warning(f"[{agent_id}] pasted text stuck, retrying Enter (attempt {retry+1})")
-            retry_proc = await asyncio.create_subprocess_exec(
+        await asyncio.sleep(0.5)
+        await dismiss_pasted_dialog()
+
+        for attempt in range(4):
+            if attempt == 1:
+                log.warning(f"[{agent_id}] agent stayed idle after submit attempt 1 — retrying Enter")
+            elif attempt >= 2:
+                log.warning(f"[{agent_id}] agent stayed idle after submit attempt {attempt} — clearing input and retyping prompt")
+                if not await retype_prompt():
+                    return False
+
+            proc_enter = await asyncio.create_subprocess_exec(
                 "tmux", "-L", socket, "send-keys", "-t", session, "Enter",
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            await asyncio.wait_for(retry_proc.wait(), timeout=5)
+            await asyncio.wait_for(proc_enter.wait(), timeout=5)
+            if await wait_for_submit(4.0 if attempt == 0 else 3.0):
+                return True
 
-        return True
+        log.error(f"[{agent_id}] delivery failed: agent stayed idle after submit retries")
+        return False
     except Exception as e:
         log.error(f"tmux_send({agent_id}) error: {e}")
         return False
@@ -423,7 +513,7 @@ async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
             waited += IDLE_POLL_SEC
             if waited > max(IDLE_TIMEOUT_SEC, WAKE_TIMEOUT_SEC):
                 log.warning(f"[{agent_id}] desync: busy >{waited:.0f}s — attempting lifecycle restart (#505)")
-                restarted = try_wake_agent(agent_id)  # lifecycle /restart
+                restarted = try_restart_agent(agent_id)
                 if restarted:
                     log.info(f"[{agent_id}] desync recovery: restart requested, waiting 30s")
                     await asyncio.sleep(30)
@@ -450,27 +540,36 @@ async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
 
 # ── On-demand agent wake ──────────────────────────────────────────────────────
 
-def try_wake_agent(agent_id: str) -> bool:
-    """Start a managed agent via the Konoha lifecycle API.
-    Returns True if the start request succeeded."""
+def request_lifecycle(agent_id: str, action: str) -> bool:
+    """Call a Konoha lifecycle action for a managed agent."""
     try:
         env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
         result = subprocess.run(
             [
                 "curl", "-sf", "-X", "POST",
                 "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
-                f"{KONOHA_URL}/agents/{agent_id}/start",
+                f"{KONOHA_URL}/agents/{agent_id}/{action}",
             ],
             capture_output=True, timeout=30, env=env,
         )
         if result.returncode == 0:
-            log.info(f"[{agent_id}] on-demand wake: started via lifecycle API")
+            log.info(f"[{agent_id}] lifecycle {action}: request accepted")
             return True
-        log.warning(f"[{agent_id}] failed to wake via lifecycle API: {result.stderr.decode(errors='replace')[:200]}")
+        log.warning(f"[{agent_id}] lifecycle {action} failed: {result.stderr.decode(errors='replace')[:200]}")
         return False
     except Exception as e:
-        log.warning(f"[{agent_id}] failed to wake via lifecycle API: {e}")
+        log.warning(f"[{agent_id}] lifecycle {action} failed: {e}")
         return False
+
+
+def try_wake_agent(agent_id: str) -> bool:
+    """Start a managed agent via the Konoha lifecycle API."""
+    return request_lifecycle(agent_id, "start")
+
+
+def try_restart_agent(agent_id: str) -> bool:
+    """Restart a desynchronized managed agent via the Konoha lifecycle API."""
+    return request_lifecycle(agent_id, "restart")
 
 
 # ── Per-agent watcher ─────────────────────────────────────────────────────────

@@ -41,7 +41,6 @@ WATCHED_SERVICES = [
     "agent-watchdog-sasuke.service",
     "agent-watchdog-kakashi.service",
     "agent-watchdog-kiba.service",
-    "agent-watchdog-jiraiya.service",
 ]
 
 SAFE_RESTART_SERVICES = {
@@ -53,17 +52,17 @@ SAFE_RESTART_SERVICES = {
 WATCHED_SESSIONS = [
     "naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata",
     "kiba", "ibiki", "ino", "inojin", "guy", "kakashi",
-    "shikadai", "shikamaru", "tsunade",
+    "shikadai",
 ]
 WATCHED_AGENTS   = [
     "naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata",
     "kiba", "ibiki", "ino", "inojin", "guy", "kakashi",
-    "shikadai", "shikamaru", "tsunade",
+    "shikadai",
 ]
 
 # On-demand agents: stop after mission complete — inactive state is expected, not a failure.
 # Do NOT alert when their sessions are missing. Still alert on failed watchdogs.
-ON_DEMAND_AGENTS = {"mirai", "jiraiya", "shino", "hinata", "ibiki", "ino", "inojin", "guy", "shikadai", "shikamaru", "tsunade"}
+ON_DEMAND_AGENTS = {"mirai", "jiraiya", "shino", "hinata", "ibiki", "ino", "inojin", "guy", "shikadai"}
 
 # For each agent: watchdog service that MUST be running when the tmux session is alive (#98)
 AGENT_WATCHDOGS = {
@@ -71,7 +70,7 @@ AGENT_WATCHDOGS = {
     "sasuke":    "agent-watchdog-sasuke.service",
     "kakashi":   "agent-watchdog-kakashi.service",
     "kiba":      "agent-watchdog-kiba.service",
-    "jiraiya":   "agent-watchdog-jiraiya.service",
+    "jiraiya":   "agent-watchdog-lifecycle.service",
     "mirai":     "agent-watchdog-lifecycle.service",
     "shino":     "agent-watchdog-lifecycle.service",
     "hinata":    "agent-watchdog-lifecycle.service",
@@ -80,8 +79,6 @@ AGENT_WATCHDOGS = {
     "inojin":    "agent-watchdog-lifecycle.service",
     "guy":       "agent-watchdog-lifecycle.service",
     "shikadai":  "agent-watchdog-lifecycle.service",
-    "shikamaru": "agent-watchdog-lifecycle.service",
-    "tsunade":   "agent-watchdog-lifecycle.service",
 }
 
 PAUSED_FILE = os.getenv("AKAMARU_PAUSED_FILE", "/opt/shared/kiba/paused-services.txt")
