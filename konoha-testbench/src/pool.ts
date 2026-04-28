@@ -24,10 +24,12 @@ export interface Session {
 let _browser: Browser | null = null;
 const _pool: (Session | null)[] = new Array(POOL_SIZE).fill(null);
 const _available: number[] = []; // indices of free slots
-const _waiters: ((idx: number) => void)[] = [];
+const _waiters: { resolve: (idx: number) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }[] = [];
+let _closing = false;
 
 /** Initialize browser and warm-up session pool */
 export async function initPool(): Promise<void> {
+  _closing = false;
   _browser = await chromium.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
@@ -96,6 +98,7 @@ async function _createSession(idx: number): Promise<void> {
 
 /** Acquire a free session, waiting up to ACQUIRE_TIMEOUT_MS if all are busy */
 export async function acquireSession(): Promise<Session> {
+  if (_closing) throw new Error("TestBench is shutting down");
   if (_available.length > 0) {
     const idx = _available.shift()!;
     const session = _pool[idx]!;
@@ -106,11 +109,11 @@ export async function acquireSession(): Promise<Session> {
   // Wait for a slot to free
   const idx = await new Promise<number>((resolve, reject) => {
     const timer = setTimeout(() => {
-      const i = _waiters.indexOf(resolve);
+      const i = _waiters.findIndex((waiter) => waiter.resolve === resolve);
       if (i >= 0) _waiters.splice(i, 1);
       reject(new Error(`No free TestBench session (pool size ${POOL_SIZE}) — try again after 30s`));
     }, ACQUIRE_TIMEOUT_MS);
-    _waiters.push((i) => { clearTimeout(timer); resolve(i); });
+    _waiters.push({ resolve, reject, timer });
   });
 
   const session = _pool[idx]!;
@@ -120,6 +123,7 @@ export async function acquireSession(): Promise<Session> {
 
 /** Acquire a specific session by ID. Throws if the session is currently busy. */
 export async function acquireSessionById(id: number): Promise<Session> {
+  if (_closing) throw new Error("TestBench is shutting down");
   if (id < 0 || id >= POOL_SIZE) throw new Error(`Invalid session id: ${id} (pool size ${POOL_SIZE})`);
   const idx = _available.indexOf(id);
   if (idx === -1) throw new Error(`Session ${id} is busy`);
@@ -143,9 +147,13 @@ export async function releaseSession(session: Session, reset = false): Promise<v
     }
   }
   session.acquiredAt = "";
+  if (_closing) {
+    return;
+  }
   if (_waiters.length > 0) {
     const waiter = _waiters.shift()!;
-    waiter(session.id);
+    clearTimeout(waiter.timer);
+    waiter.resolve(session.id);
   } else {
     // LIFO: push to front so the most recently used session (with loaded page state)
     // is reused by the next acquire, keeping navigate → snapshot patterns consistent.
@@ -169,6 +177,12 @@ export function poolStatus(): { total: number; free: number; waiting: number; se
 }
 
 export async function closePool(): Promise<void> {
+  _closing = true;
+  for (const waiter of _waiters.splice(0)) {
+    clearTimeout(waiter.timer);
+    waiter.reject(new Error("TestBench is shutting down"));
+  }
+  _available.splice(0);
   for (const session of _pool) {
     if (session) {
       try { await session.context.close(); } catch {}

@@ -7,7 +7,7 @@
  */
 
 import { Hono } from "hono";
-import { initPool, acquireSession, acquireSessionById, releaseSession, poolStatus, POOL_SIZE, type Session } from "./pool";
+import { initPool, acquireSession, acquireSessionById, releaseSession, poolStatus, closePool, POOL_SIZE, type Session } from "./pool";
 import {
   slugify, saveBaseline, hasBaseline, compareWithBaseline, listBaselines,
   DIFF_THRESHOLD,
@@ -20,11 +20,14 @@ const TOKEN = process.env.KONOHA_TOKEN || "";
 // Must stay in sync with frontend/src/entries/app.tsx and frontend/src/components/Layout.tsx.
 const DASH_AUTH_KEY = "konoha_dash_auth";
 
+let shuttingDown = false;
+
 const app = new Hono();
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
 
 app.use("*", async (c, next) => {
+  if (shuttingDown) return c.json({ error: "TestBench is shutting down" }, 503);
   const auth = c.req.header("Authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!TOKEN || token !== TOKEN) return c.json({ error: "Unauthorized" }, 401);
@@ -541,6 +544,32 @@ app.onError((err, c) => {
 
 await initPool();
 console.log(`[testbench] Listening on port ${PORT}`);
+
+async function shutdown(signal: "SIGTERM" | "SIGINT"): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[testbench] ${signal} received, closing Playwright pool`);
+
+  const forceExit = setTimeout(() => {
+    console.error("[testbench] graceful shutdown timed out");
+    process.exit(1);
+  }, 10_000);
+  forceExit.unref?.();
+
+  try {
+    await closePool();
+    clearTimeout(forceExit);
+    console.log("[testbench] shutdown complete");
+    process.exit(0);
+  } catch (e) {
+    clearTimeout(forceExit);
+    console.error("[testbench] shutdown failed:", e);
+    process.exit(1);
+  }
+}
+
+process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
+process.once("SIGINT", () => { void shutdown("SIGINT"); });
 
 export default {
   port: PORT,
