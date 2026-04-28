@@ -6,7 +6,8 @@
     "dev": "bun run --watch core/src/server.ts",
     "start": "bun run core/src/server.ts",
     "mcp": "bun run src/mcp.ts",
-    "typecheck": "bun x tsc --noEmit",
+    "typecheck": "PATH=/home/ubuntu/.bun/bin:$PATH bun x tsc --noEmit",
+    "test:gate": "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/assistant-response.test.ts tests/redis.test.ts tests/operator-state.test.ts tests/akamaru_paused.test.ts tests/akamaru.test.ts tests/issue77_paused_names.test.ts tests/applyPatch.test.ts tests/kwe_email_adapter.test.ts",
     "test:operator-evals": "bun test tests/operator-evals.test.ts"
   },
   "dependencies": {

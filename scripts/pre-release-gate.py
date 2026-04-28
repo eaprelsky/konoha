@@ -77,12 +77,12 @@ def check_typecheck() -> tuple[bool, str]:
 
 
 def check_tests() -> tuple[bool, str]:
-    """Check 2: bun test — all tests pass."""
-    rc, stdout, stderr = run([BUN_BIN, "test", "--timeout", "30000"], timeout=180)
+    """Check 2: stable gate test suite passes."""
+    rc, stdout, stderr = run([BUN_BIN, "run", "test:gate"], timeout=180)
     if rc == 0:
-        return True, "Tests: all pass"
+        return True, "Gate tests: all pass"
     output = (stdout + stderr).strip()[:500]
-    return False, f"Test failures:\n{output}"
+    return False, f"Gate test failures:\n{output}"
 
 
 def check_file_sizes() -> tuple[bool, str]:
