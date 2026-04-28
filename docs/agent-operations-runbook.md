@@ -34,6 +34,31 @@ curl -fsS -X POST \
 
 Delivery for on-demand agents is handled by `agent-watchdog-lifecycle.service`.
 
+## Stop
+
+Permanent agents are stopped through systemd:
+
+```bash
+sudo systemctl stop agent-<id>.service
+```
+
+On-demand agents are stopped through the lifecycle API:
+
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer $KONOHA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "http://127.0.0.1:3200/agents/<id>/stop"
+```
+
+To prevent auto-restart by the lifecycle watchdog:
+
+```bash
+sudo systemctl mask agent-<id>.service
+sudo systemctl stop agent-watchdog-<id>.service
+```
+
 ## tmux
 
 Every managed agent uses an isolated tmux socket and session named after the agent id:
