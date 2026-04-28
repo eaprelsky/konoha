@@ -17,7 +17,7 @@ os.makedirs(WIKI_DIR, exist_ok=True)
 
 # Sync redis for stream group creation only
 sr = sync_redis.Redis(host='localhost', port=6379, decode_responses=True)
-for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:commands']:
+for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:commands', 'telegram:needs_context']:
     try:
         sr.xgroup_create(s, 'claude-agents', id='0', mkstream=True)
     except:
@@ -37,6 +37,7 @@ ROUTER_ENABLED = os.environ.get('TELEGRAM_ROUTER_ENABLED', '0') == '1'
 ROUTER_MODEL = os.environ.get('TELEGRAM_ROUTER_MODEL', 'google/gemini-2.0-flash-lite-001')
 ROUTER_MIN_CONFIDENCE = float(os.environ.get('TELEGRAM_ROUTER_MIN_CONFIDENCE', '0.75'))
 ROUTER_TIMEOUT_SEC = float(os.environ.get('TELEGRAM_ROUTER_TIMEOUT_SEC', '4.0'))
+ROUTER_HISTORY_LIMIT = int(os.environ.get('TELEGRAM_ROUTER_HISTORY_LIMIT', '20'))
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
@@ -55,6 +56,44 @@ def _load_trusted_ids() -> set[int]:
         return set()
 
 TRUSTED_IDS = _load_trusted_ids()
+
+
+def _history_key(chat_id: str | int) -> str:
+    return f'telegram:history:{chat_id}'
+
+
+async def _load_recent_history(rd: aioredis.Redis, chat_id: str | int) -> list[dict]:
+    """Load compact recent chat history for router context."""
+    try:
+        rows = await rd.lrange(_history_key(chat_id), -ROUTER_HISTORY_LIMIT, -1)
+    except Exception as e:
+        print(f'HISTORY READ ERR [{chat_id}]: {e}', flush=True)
+        return []
+    history: list[dict] = []
+    for row in rows:
+        try:
+            history.append(json.loads(row))
+        except Exception:
+            continue
+    return history
+
+
+async def _append_history(rd: aioredis.Redis, chat_id: str | int, item: dict) -> None:
+    """Persist compact chat history; values are safe for router context only."""
+    key = _history_key(chat_id)
+    compact = {
+        'ts': item.get('timestamp', ''),
+        'sender': item.get('sender_name') or item.get('sender_username') or '?',
+        'text': (item.get('text') or '')[:800],
+        'action_hint': item.get('action_hint', ''),
+        'route': item.get('router_route', ''),
+    }
+    try:
+        await rd.rpush(key, json.dumps(compact, ensure_ascii=False))
+        await rd.ltrim(key, -100, -1)
+        await rd.expire(key, 7 * 24 * 3600)
+    except Exception as e:
+        print(f'HISTORY WRITE ERR [{chat_id}]: {e}', flush=True)
 
 
 
@@ -79,11 +118,14 @@ def _call_openrouter_router(payload: dict) -> dict:
     system = (
         'Ты входной классификатор Telegram для команды. Ответь строго JSON без Markdown. '
         'Действия: respond = агент должен обработать и, возможно, ответить; '
+        'needs_context = потенциально важное, но нужен контекст предыдущих сообщений; '
         'observe = сохранить в лог, но не будить LLM-агента; drop = шум/спам. '
         'Будь консервативен: respond только если есть явная задача, вопрос к AI/агенту, просьба проверить/создать/найти/оценить/зарегистрировать, '
-        'или сообщение явно требует реакции операционного ассистента. Обычные разговоры, FYI, реклама, обсуждения между людьми -> observe/drop. '
+        'или сообщение явно требует реакции операционного ассистента. Если смысл зависит от длинного обсуждения, местоимений это/там/выше, '
+        'ссылок на прошлые договоренности, вложений или нескольких предыдущих сообщений — выбирай needs_context. '
+        'Обычные разговоры, FYI, реклама, обсуждения между людьми -> observe/drop. '
         'route: sasuke для Telegram/user-account помощника, ops для операционных задач, lead для лидов/CRM, task для задач, none если не маршрутизировать. '
-        'Формат: {"action":"drop|observe|respond","route":"sasuke|ops|lead|task|none","confidence":0.0,"reason":"short"}'
+        'Формат: {"action":"drop|observe|needs_context|respond","route":"sasuke|ops|lead|task|none","confidence":0.0,"reason":"short"}'
     )
     user = json.dumps(payload, ensure_ascii=False)
     body = json.dumps({
@@ -122,6 +164,7 @@ async def _route_with_llm(
     sender_username: str,
     is_group: bool,
     rule_action: str,
+    recent_history: list[dict] | None = None,
 ) -> dict:
     """Classify non-obvious group traffic with a cheap model."""
     if not ROUTER_ENABLED or not OPENROUTER_API_KEY:
@@ -135,6 +178,7 @@ async def _route_with_llm(
         'sender_username': sender_username,
         'text': text[:1200],
         'rule_action': rule_action,
+        'recent_history': recent_history or [],
     }
     try:
         result = await asyncio.to_thread(_call_openrouter_router, payload)
@@ -150,13 +194,16 @@ async def _route_with_llm(
         confidence = 0.0
     reason = str(result.get('reason', ''))[:160]
 
-    if action not in {'drop', 'observe', 'respond'}:
+    if action not in {'drop', 'observe', 'needs_context', 'respond'}:
         action = rule_action
     if route not in {'sasuke', 'ops', 'lead', 'task', 'none'}:
         route = 'none'
     if action == 'respond' and confidence < ROUTER_MIN_CONFIDENCE:
-        action = 'observe'
+        action = 'needs_context' if confidence >= 0.55 else 'observe'
         reason = f'low_confidence:{reason}'
+    if action == 'needs_context' and confidence < 0.45:
+        action = 'observe'
+        reason = f'low_context_confidence:{reason}'
     return {'action': action, 'route': route, 'confidence': confidence, 'reason': reason}
 
 def _classify_action_hint(
@@ -273,6 +320,9 @@ async def on_message(event):
     if attachment_name:
         data['attachment_name'] = attachment_name
 
+    rd = aioredis.Redis(host='localhost', port=6379, decode_responses=True)
+    recent_history = await _load_recent_history(rd, event.chat_id)
+
     # Classify action_hint (#484) — prevents dual responses from Naruto + Sasuke.
     rule_action_hint = _classify_action_hint(
         text=msg_text,
@@ -288,6 +338,7 @@ async def on_message(event):
         sender_username=getattr(sender, 'username', '') or '',
         is_group=is_group,
         rule_action=rule_action_hint,
+        recent_history=recent_history,
     )
     action_hint = router_result['action']
     data['action_hint'] = action_hint
@@ -297,7 +348,6 @@ async def on_message(event):
 
     # Dedup: set a routing key so other paths can check if Telethon already handled
     # Key: telegram:routed:{chat_id}:{sender_id}:{first-50-chars-hash}, TTL 30s
-    rd = aioredis.Redis(host='localhost', port=6379, decode_responses=True)
     dedup_key = f"telegram:routed:{event.chat_id}:{sender_id}"
     if msg_text:
         dedup_key += f":{hashlib.md5(msg_text[:100].encode()).hexdigest()[:12]}"
@@ -314,6 +364,14 @@ async def on_message(event):
         # group traffic is kept in the audit log, but not sent to the LLM.
         await rd.set(dedup_key, 'telethon', ex=30)
         await rd.xadd('telegram:incoming', data, maxlen=1000)
+    elif action_hint == 'needs_context':
+        data['router_context'] = json.dumps(recent_history, ensure_ascii=False)
+        await rd.xadd('telegram:needs_context', data, maxlen=1000)
+        print(
+            f"CONTEXT [{event.chat_id}] {data.get('router_route')} "
+            f"conf={data.get('router_confidence')}: {msg_text[:60]}",
+            flush=True,
+        )
     else:
         print(
             f"FILTER [{event.chat_id}] {action_hint}/{data.get('router_route')} "
@@ -322,6 +380,7 @@ async def on_message(event):
         )
 
     await rd.xadd('telegram:log', data, maxlen=5000)
+    await _append_history(rd, event.chat_id, data)
     await rd.aclose()
 
     if is_group and msg_text:
