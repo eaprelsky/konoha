@@ -22,6 +22,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import time
 sys.path.insert(0, os.path.dirname(__file__))
 import watchdog_base as _b
 
@@ -59,6 +60,9 @@ async def tmux_send(session: str, text: str) -> bool:
     text = text.replace("\n", " ").replace("\r", " ")
     compacting_waited = 0
     while compacting_waited < 120:
+        if not _b.is_session_alive(session):
+            _b.log.error(f"Delivery failed: tmux session {session} is missing before send")
+            return False
         if _b.is_agent_idle(session, stable_checks=1):
             break
         _b.log.info(f"Agent {session} compacting — waiting (waited {compacting_waited}s)")
@@ -70,54 +74,75 @@ async def tmux_send(session: str, text: str) -> bool:
         _b.log.info(f"Compacting done after {compacting_waited}s — proceeding")
         await asyncio.sleep(1.0)
 
-    content_before = _b.tmux_pane_content(session)
+    async def dismiss_pasted_dialog() -> None:
+        for _ in range(5):
+            if not _b.is_session_alive(session):
+                return
+            content = _b.tmux_pane_content(session)
+            if "Pasted text" not in content:
+                return
+            _b.log.warning(f"[Pasted text] dialog detected in {session} — sending Enter")
+            await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
+            await asyncio.sleep(0.6)
+
+
+    async def retype_prompt() -> bool:
+        await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "C-u", timeout=5.0)
+        await asyncio.sleep(0.15)
+        ok_local = await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
+        if not ok_local:
+            _b.log.error(f"Retype timed out for {session}")
+            return False
+        await asyncio.sleep(paste_wait)
+        await dismiss_pasted_dialog()
+        return True
+
+    async def wait_for_submit(timeout_sec: float) -> bool:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if not _b.is_session_alive(session):
+                _b.log.error(f"Delivery failed: tmux session {session} disappeared during submit")
+                return False
+            content = _b.tmux_pane_content(session)
+            if "Pasted text" in content:
+                _b.log.warning(f"[Pasted text] dialog appeared after submit in {session} — sending Enter")
+                await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
+                await asyncio.sleep(0.6)
+                continue
+            if content.strip() and not _b.is_agent_idle(session, stable_checks=1):
+                _b.log.info("Delivery confirmed: agent left idle state after submit")
+                return True
+            await asyncio.sleep(0.4)
+        return False
+
+
     ok = await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
     if not ok:
         _b.log.error(f"send-keys timed out for {session} — skipping delivery")
         return False
 
-    # Adaptive paste_wait — dialog appears only for longer inputs (#288, #300)
     if len(text) >= PASTE_DIALOG_THRESHOLD:
         paste_wait = max(1.5, min(len(text) / 3000.0, 3.0))
     else:
         paste_wait = 0.5
     await asyncio.sleep(paste_wait)
+    await dismiss_pasted_dialog()
 
-    for _ in range(5):
-        content = _b.tmux_pane_content(session)
-        if "Pasted text" in content:
-            _b.log.warning(f"[Pasted text] dialog detected in {session} — sending Enter to dismiss")
-            await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
-            await asyncio.sleep(paste_wait)
-        else:
-            break
-    await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
-    _b.log.info(f"Sent prompt to {session} ({len(text)} chars)")
-    await asyncio.sleep(2.0)
-    for attempt in range(3):
-        content_after = _b.tmux_pane_content(session)
-        if content_after != content_before:
-            _b.log.info("Delivery confirmed: pane content changed after send")
-            break
-        if not _b.is_agent_idle(session, stable_checks=2):
-            break
-        _b.log.warning(f"Pane unchanged and agent idle (attempt {attempt+1}), resending")
-        await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "C-u", timeout=5.0)
-        ok = await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
-        if not ok:
-            _b.log.error(f"Resend attempt {attempt+1} timed out for {session}")
-            break
-        await asyncio.sleep(paste_wait)
-        for _ in range(5):
-            retry_content = _b.tmux_pane_content(session)
-            if "Pasted text" in retry_content:
-                await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
-                await asyncio.sleep(paste_wait)
-            else:
-                break
+    for attempt in range(4):
+        if attempt == 1:
+            _b.log.warning("Agent stayed idle after submit attempt 1 — retrying Enter")
+        elif attempt >= 2:
+            _b.log.warning(f"Agent stayed idle after submit attempt {attempt} — clearing input and retyping prompt")
+            if not await retype_prompt():
+                return False
+
         await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
-        await asyncio.sleep(2.0)
-    return True
+        _b.log.info(f"Sent prompt to {session} ({len(text)} chars), submit attempt {attempt + 1}")
+        if await wait_for_submit(4.0 if attempt == 0 else 3.0):
+            return True
+
+    _b.log.error(f"Delivery failed: agent {session} stayed idle after submit retries")
+    return False
 
 
 # ── Message formatting (multi-source) ────────────────────────────────────────
@@ -156,7 +181,7 @@ def format_batch(events: list[dict]) -> str:
             text = d.get("text", "")
             ts = d.get("ts", "")[:16] if d.get("ts") else ""
             lines.append(f"\n[{ts}] {sender}: {text}")
-        lines.append("\nОбработай и ответь через naruto-tg-send.py.")
+        lines.append("\nОбработай и ответь через: python3 /home/ubuntu/naruto-tg-send.py <chat_id> \"<text>\" [reply_to].")
 
     if konoha_deduped:
         if lines:
