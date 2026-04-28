@@ -8,6 +8,8 @@ import re
 import os
 import json
 from datetime import datetime
+from urllib import request as urlrequest
+from urllib.error import URLError, HTTPError
 
 SESSION = '/opt/shared/telegram_session'
 WIKI_DIR = '/opt/shared/wiki/group-chats'
@@ -31,6 +33,13 @@ USER_ACCOUNT_TRIGGERS = ['клод', 'claude', '@eaclaude']
 # Words that indicate a message is for the bot — defer to bot path
 BOT_TRIGGERS = ['@eaprelsky_agent_bot']
 
+ROUTER_ENABLED = os.environ.get('TELEGRAM_ROUTER_ENABLED', '0') == '1'
+ROUTER_MODEL = os.environ.get('TELEGRAM_ROUTER_MODEL', 'google/gemini-2.0-flash-lite-001')
+ROUTER_MIN_CONFIDENCE = float(os.environ.get('TELEGRAM_ROUTER_MIN_CONFIDENCE', '0.75'))
+ROUTER_TIMEOUT_SEC = float(os.environ.get('TELEGRAM_ROUTER_TIMEOUT_SEC', '4.0'))
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
+OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+
 def _load_trusted_ids() -> set[int]:
     """Load trusted user IDs from shared config."""
     try:
@@ -46,6 +55,109 @@ def _load_trusted_ids() -> set[int]:
         return set()
 
 TRUSTED_IDS = _load_trusted_ids()
+
+
+
+def _parse_router_json(raw: str) -> dict:
+    """Parse a tiny JSON object from an LLM response."""
+    raw = (raw or '').strip()
+    if raw.startswith('```'):
+        raw = raw.strip('`')
+        raw = raw.replace('json\n', '', 1).replace('JSON\n', '', 1)
+    start = raw.find('{')
+    end = raw.rfind('}')
+    if start >= 0 and end > start:
+        raw = raw[start:end + 1]
+    return json.loads(raw)
+
+
+def _call_openrouter_router(payload: dict) -> dict:
+    """Blocking OpenRouter call; run via asyncio.to_thread from the event loop."""
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError('OPENROUTER_API_KEY is not set')
+
+    system = (
+        'Ты входной классификатор Telegram для команды. Ответь строго JSON без Markdown. '
+        'Действия: respond = агент должен обработать и, возможно, ответить; '
+        'observe = сохранить в лог, но не будить LLM-агента; drop = шум/спам. '
+        'Будь консервативен: respond только если есть явная задача, вопрос к AI/агенту, просьба проверить/создать/найти/оценить/зарегистрировать, '
+        'или сообщение явно требует реакции операционного ассистента. Обычные разговоры, FYI, реклама, обсуждения между людьми -> observe/drop. '
+        'route: sasuke для Telegram/user-account помощника, ops для операционных задач, lead для лидов/CRM, task для задач, none если не маршрутизировать. '
+        'Формат: {"action":"drop|observe|respond","route":"sasuke|ops|lead|task|none","confidence":0.0,"reason":"short"}'
+    )
+    user = json.dumps(payload, ensure_ascii=False)
+    body = json.dumps({
+        'model': ROUTER_MODEL,
+        'temperature': 0,
+        'max_tokens': 120,
+        'messages': [
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': user},
+        ],
+    }).encode('utf-8')
+    req = urlrequest.Request(
+        OPENROUTER_URL,
+        data=body,
+        headers={
+            'Authorization': f'Bearer {OPENROUTER_API_KEY}',
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://agent.eaprelsky.ru',
+            'X-Title': 'Konoha Telegram Router',
+        },
+        method='POST',
+    )
+    # Ignore process proxy env: the shared LLM proxy breaks several HTTPS APIs on this host.
+    opener = urlrequest.build_opener(urlrequest.ProxyHandler({}))
+    with opener.open(req, timeout=ROUTER_TIMEOUT_SEC) as resp:
+        data = json.loads(resp.read().decode('utf-8'))
+    content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+    return _parse_router_json(content)
+
+
+async def _route_with_llm(
+    *,
+    text: str,
+    chat_title: str,
+    sender_name: str,
+    sender_username: str,
+    is_group: bool,
+    rule_action: str,
+) -> dict:
+    """Classify non-obvious group traffic with a cheap model."""
+    if not ROUTER_ENABLED or not OPENROUTER_API_KEY:
+        return {'action': rule_action, 'route': 'none', 'confidence': 0.0, 'reason': 'router_disabled'}
+    if not is_group or rule_action != 'observe' or not text.strip():
+        return {'action': rule_action, 'route': 'none', 'confidence': 0.0, 'reason': 'router_not_applicable'}
+
+    payload = {
+        'chat_title': chat_title,
+        'sender_name': sender_name,
+        'sender_username': sender_username,
+        'text': text[:1200],
+        'rule_action': rule_action,
+    }
+    try:
+        result = await asyncio.to_thread(_call_openrouter_router, payload)
+    except (TimeoutError, URLError, HTTPError, RuntimeError, json.JSONDecodeError, KeyError, IndexError) as e:
+        print(f'ROUTER ERR: {type(e).__name__}: {str(e)[:120]}', flush=True)
+        return {'action': rule_action, 'route': 'none', 'confidence': 0.0, 'reason': 'router_error'}
+
+    action = str(result.get('action', rule_action)).lower()
+    route = str(result.get('route', 'none')).lower()
+    try:
+        confidence = float(result.get('confidence', 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    reason = str(result.get('reason', ''))[:160]
+
+    if action not in {'drop', 'observe', 'respond'}:
+        action = rule_action
+    if route not in {'sasuke', 'ops', 'lead', 'task', 'none'}:
+        route = 'none'
+    if action == 'respond' and confidence < ROUTER_MIN_CONFIDENCE:
+        action = 'observe'
+        reason = f'low_confidence:{reason}'
+    return {'action': action, 'route': route, 'confidence': confidence, 'reason': reason}
 
 def _classify_action_hint(
     text: str,
@@ -161,15 +273,27 @@ async def on_message(event):
     if attachment_name:
         data['attachment_name'] = attachment_name
 
-    # Classify action_hint (#484) — prevents dual responses from Naruto + Sasuke
-    action_hint = _classify_action_hint(
+    # Classify action_hint (#484) — prevents dual responses from Naruto + Sasuke.
+    rule_action_hint = _classify_action_hint(
         text=msg_text,
         is_group=is_group,
         sender_id=sender_id,
         reply_to_msg_id=reply_to_msg_id,
         my_sent_msg_ids=_last_sent_per_chat.get(event.chat_id, {'ids': set()}),
     )
+    router_result = await _route_with_llm(
+        text=msg_text,
+        chat_title=chat_title,
+        sender_name=f'{sender_name} {sender_last}'.strip(),
+        sender_username=getattr(sender, 'username', '') or '',
+        is_group=is_group,
+        rule_action=rule_action_hint,
+    )
+    action_hint = router_result['action']
     data['action_hint'] = action_hint
+    data['router_route'] = router_result.get('route', 'none')
+    data['router_confidence'] = f"{router_result.get('confidence', 0.0):.2f}"
+    data['router_reason'] = router_result.get('reason', '')
 
     # Dedup: set a routing key so other paths can check if Telethon already handled
     # Key: telegram:routed:{chat_id}:{sender_id}:{first-50-chars-hash}, TTL 30s
@@ -185,10 +309,18 @@ async def on_message(event):
         await rd.aclose()
         return
 
-    # Claim this message for telethon path
-    await rd.set(dedup_key, 'telethon', ex=30)
+    if action_hint == 'respond':
+        # Claim and route only actionable messages to Sasuke. Non-actionable
+        # group traffic is kept in the audit log, but not sent to the LLM.
+        await rd.set(dedup_key, 'telethon', ex=30)
+        await rd.xadd('telegram:incoming', data, maxlen=1000)
+    else:
+        print(
+            f"FILTER [{event.chat_id}] {action_hint}/{data.get('router_route')} "
+            f"conf={data.get('router_confidence')}: {msg_text[:60]}",
+            flush=True,
+        )
 
-    await rd.xadd('telegram:incoming', data, maxlen=1000)
     await rd.xadd('telegram:log', data, maxlen=5000)
     await rd.aclose()
 
@@ -198,7 +330,11 @@ async def on_message(event):
         with open(os.path.join(WIKI_DIR, f'{safe}_{date}.md'), 'a') as f:
             f.write(f'**[{event.date.strftime("%H:%M")}] {sender_name} {sender_last}:** {msg_text}\n\n')
 
-    print(f'IN [{event.chat_id}] {sender_name}: {msg_text[:60]}', flush=True)
+    print(
+        f"IN [{event.chat_id}] {sender_name} [{action_hint}/{data.get('router_route')} "
+        f"conf={data.get('router_confidence')}]: {msg_text[:60]}",
+        flush=True,
+    )
 
 async def outgoing_loop():
     rd = aioredis.Redis(host='localhost', port=6379, decode_responses=True)

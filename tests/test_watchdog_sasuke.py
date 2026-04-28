@@ -14,7 +14,16 @@ def _load_watchdog_sasuke():
 
 
 class _DummyRedis:
+    def __init__(self):
+        self.xadd_calls = []
+        self.xack_calls = []
+
     async def xadd(self, *args, **kwargs):
+        self.xadd_calls.append((args, kwargs))
+        return None
+
+    async def xack(self, *args, **kwargs):
+        self.xack_calls.append((args, kwargs))
         return None
 
 
@@ -25,8 +34,9 @@ def test_sasuke_send_loop_honors_recovery_grace(monkeypatch):
         delivered = asyncio.Event()
         recovery_started_at = {"ts": None}
         recovery_calls = {"count": 0}
+        dummy_redis = _DummyRedis()
 
-        monkeypatch.setattr(module.aioredis, "Redis", lambda *args, **kwargs: _DummyRedis())
+        monkeypatch.setattr(module.aioredis, "Redis", lambda *args, **kwargs: dummy_redis)
         monkeypatch.setattr(module._b, "TMUX_SESSION", "sasuke-test")
         monkeypatch.setattr(module._b, "IDLE_POLL_SEC", 0.01)
         monkeypatch.setattr(module._b, "IDLE_TIMEOUT_SEC", 0.02)
@@ -79,8 +89,9 @@ def test_sasuke_send_loop_does_not_mark_read_on_tmux_timeout(monkeypatch):
     async def scenario():
         mark_read_calls = {"count": 0}
         delivered_attempts = {"count": 0}
+        dummy_redis = _DummyRedis()
 
-        monkeypatch.setattr(module.aioredis, "Redis", lambda *args, **kwargs: _DummyRedis())
+        monkeypatch.setattr(module.aioredis, "Redis", lambda *args, **kwargs: dummy_redis)
         monkeypatch.setattr(module._b, "TMUX_SESSION", "sasuke-test")
         monkeypatch.setattr(module._b, "IDLE_POLL_SEC", 0.01)
         monkeypatch.setattr(module._b, "is_agent_idle", lambda _session, stable_checks=2: True)
@@ -98,7 +109,11 @@ def test_sasuke_send_loop_does_not_mark_read_on_tmux_timeout(monkeypatch):
         monkeypatch.setattr(module, "_mark_read_telegram", fake_mark_read)
 
         q = asyncio.Queue()
-        await q.put([{"source": "telegram", "data": {"text": "ping", "chat_id": "1", "msg_id": "2"}}])
+        await q.put([{
+            "source": "telegram",
+            "data": {"text": "ping", "chat_id": "1", "msg_id": "2"},
+            "redis_id": "1710000000000-0",
+        }])
 
         task = asyncio.create_task(module.send_loop(q))
         try:
@@ -111,6 +126,66 @@ def test_sasuke_send_loop_does_not_mark_read_on_tmux_timeout(monkeypatch):
                 await task
 
         assert delivered_attempts["count"] >= 2
+        assert dummy_redis.xack_calls == [
+            (("telegram:incoming", "sasuke", "1710000000000-0"), {})
+        ]
         assert mark_read_calls["count"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_sasuke_telegram_watcher_replays_pending_before_new_messages(monkeypatch):
+    module = _load_watchdog_sasuke()
+
+    class _ReplayRedis:
+        def __init__(self):
+            self.calls = []
+
+        async def xgroup_create(self, *args, **kwargs):
+            return None
+
+        async def xreadgroup(self, _group, _consumer, streams, count=10, block=5000):
+            stream_id = next(iter(streams.values()))
+            self.calls.append(stream_id)
+            if self.calls == ["0"]:
+                return [(
+                    module.TG_STREAM,
+                    [("1710000000001-0", {"text": "pending", "chat_id": "1", "msg_id": "10"})],
+                )]
+            if self.calls == ["0", "0"]:
+                return [(module.TG_STREAM, [])]
+            if self.calls == ["0", "0", ">"]:
+                return [(
+                    module.TG_STREAM,
+                    [("1710000000002-0", {"text": "new", "chat_id": "1", "msg_id": "11"})],
+                )]
+            await asyncio.sleep(3600)
+
+        async def xack(self, *args, **kwargs):
+            return None
+
+        async def aclose(self):
+            return None
+
+    async def scenario():
+        replay_redis = _ReplayRedis()
+        monkeypatch.setattr(module.aioredis, "Redis", lambda *args, **kwargs: replay_redis)
+        monkeypatch.setattr(module, "STALE_PENDING_MAX_AGE_SEC", 10**12)
+
+        q = asyncio.Queue()
+        task = asyncio.create_task(module.telegram_redis_watcher(q))
+        try:
+            first = await asyncio.wait_for(q.get(), timeout=0.5)
+            second = await asyncio.wait_for(q.get(), timeout=0.5)
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+        assert first["data"]["text"] == "pending"
+        assert first["redis_id"] == "1710000000001-0"
+        assert second["data"]["text"] == "new"
+        assert second["redis_id"] == "1710000000002-0"
+        assert replay_redis.calls[:3] == ["0", "0", ">"]
 
     asyncio.run(scenario())
