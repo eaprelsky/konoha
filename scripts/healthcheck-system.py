@@ -243,10 +243,33 @@ def print_report(checks: list[Check]) -> int:
     return 2 if fails else 0
 
 
+def check_workflow_engine() -> list[Check]:
+    checks: list[Check] = []
+    # Verify workflow definitions on disk are loadable
+    workflows_dir = os.environ.get("KONOHA_WORKFLOWS_DIR") or str(
+        Path(__file__).resolve().parent.parent / "workflows"
+    )
+    try:
+        import glob
+        json_files = glob.glob(f"{workflows_dir}/**/*.json", recursive=True)
+        checks.append(Check("OK", "workflow_engine.defs", f"{len(json_files)} workflow definitions on disk"))
+    except Exception as exc:
+        checks.append(Check("WARN", "workflow_engine.defs", str(exc), f"Check: ls {workflows_dir}"))
+        return checks
+
+    # Verify API routes are mounted
+    try:
+        api_get("/workflows")
+        checks.append(Check("OK", "workflow_engine.api", "/workflows route responds"))
+    except Exception as exc:
+        checks.append(Check("WARN", "workflow_engine.api", str(exc), "Check workflow-engine module is mounted"))
+    return checks
+
+
 def main() -> int:
     load_env_defaults()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config):
+    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine):
         checks.extend(fn())
     return print_report(checks)
 
