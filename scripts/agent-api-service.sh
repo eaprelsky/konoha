@@ -14,6 +14,7 @@ fi
 KONOHA_URL="${KONOHA_URL:-http://127.0.0.1:3200}"
 STATUS_URL="$KONOHA_URL/agents/$AGENT_ID/status"
 START_URL="$KONOHA_URL/agents/$AGENT_ID/start"
+STOP_URL="$KONOHA_URL/agents/$AGENT_ID/stop"
 AGENT_URL="$KONOHA_URL/agents/$AGENT_ID"
 SWITCH_URL="$KONOHA_URL/agents/$AGENT_ID/switch-runtime"
 NO_PROXY_VALUE="${no_proxy:-127.0.0.1,localhost}"
@@ -90,6 +91,14 @@ tmux_alive() {
 }
 
 export no_proxy="$NO_PROXY_VALUE"
+
+cleanup() {
+  echo "[$(date)] agent-api-service: stopping $AGENT_ID via Konoha API"
+  request POST "$STOP_URL" '{}' >/dev/null || true
+  exit 0
+}
+
+trap cleanup TERM INT
 
 echo "[$(date)] agent-api-service: managing $AGENT_ID via Konoha API"
 FAILURES=0

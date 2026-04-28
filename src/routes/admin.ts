@@ -101,6 +101,23 @@ Kiba is the guardian of the Konoha multi-agent system. He monitors agent health,
 - For agent lifecycle health, rely on the managed tmux session and service state
 - Keep responses concise and action-oriented`;
 
+function agentFilePrompt(id: string, title: string): string {
+  return `# ${title}
+
+## Managed Lifecycle
+This agent is managed by Konoha lifecycle, not by a legacy per-agent startup script.
+
+## Startup
+1. Read /home/ubuntu/konoha/agents/${id}/AGENTS.md as the source of truth for role instructions.
+2. Register on Konoha bus with id=${id}.
+3. Wait for watchdog-delivered tasks; do not poll manually unless your role instructions explicitly require a loop.
+
+## Operational Rules
+- Use Konoha as the primary inter-agent channel.
+- Report results to the agent named in your role instructions.
+- Keep responses concise and practical.`;
+}
+
 const SYSTEM_AGENTS = [
   {
     id: "naruto",
@@ -162,7 +179,114 @@ const SYSTEM_AGENTS = [
     tmux_session_override: "kakashi",
     gender: "male" as const,
   },
-  { id: "mirai", name: "Мирай", runtime: "claude" as const, fallback_runtime: "codex" as const, model: "claude:haiku", tags: ["system", "autostart"], tmux_session_override: "mirai", gender: "female" as const },
+  {
+    id: "mirai",
+    name: "Мирай",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("mirai", "Mirai — Border Agent"),
+    tags: ["system", "autostart"],
+    capabilities: ["email", "crm", "bitrix24"],
+    tmux_session_override: "mirai",
+    gender: "female" as const,
+  },
+  {
+    id: "jiraiya",
+    name: "Дзирайя (Корпоративная память)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("jiraiya", "Jiraiya — Corporate Memory"),
+    tags: ["system", "on-demand"],
+    capabilities: ["digest", "search", "kb-authoring", "classify"],
+    tmux_session_override: "jiraiya",
+    gender: "male" as const,
+  },
+  {
+    id: "shino",
+    name: "Шино (Архитектор тестов)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:sonnet",
+    system_prompt: agentFilePrompt("shino", "Shino — Testing Architect"),
+    tags: ["system", "on-demand"],
+    capabilities: ["test-plan", "bug-analysis", "coordination"],
+    tmux_session_override: "shino",
+    gender: "male" as const,
+  },
+  {
+    id: "hinata",
+    name: "Хината (Исполнитель тестов)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("hinata", "Hinata — Test Executor"),
+    tags: ["system", "on-demand"],
+    capabilities: ["run-tests", "smoke", "regression", "report"],
+    tmux_session_override: "hinata",
+    gender: "female" as const,
+  },
+  {
+    id: "ibiki",
+    name: "Ибики (Безопасность)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:sonnet",
+    system_prompt: agentFilePrompt("ibiki", "Ibiki — Security Specialist"),
+    tags: ["system", "on-demand"],
+    capabilities: ["pentest", "audit", "scan", "report"],
+    tmux_session_override: "ibiki",
+    gender: "male" as const,
+  },
+  {
+    id: "ino",
+    name: "Ино (Маркетолог Ноктюрны)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:sonnet",
+    system_prompt: agentFilePrompt("ino", "Ino — Nocturna Marketing"),
+    tags: ["system", "on-demand"],
+    capabilities: ["content-strategy", "copywriting", "seo", "analytics"],
+    tmux_session_override: "ino",
+    gender: "female" as const,
+  },
+  {
+    id: "inojin",
+    name: "Иноджин (Редактор Ноктюрны)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("inojin", "Inojin — Nocturna Editor"),
+    tags: ["system", "on-demand"],
+    capabilities: ["factcheck", "proofreading", "style-review", "verification"],
+    tmux_session_override: "inojin",
+    gender: "male" as const,
+  },
+  {
+    id: "guy",
+    name: "Гай (Разработчик)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("guy", "Guy — Kakashi Sub-Agent"),
+    tags: ["system", "on-demand"],
+    capabilities: ["translate", "scaffold", "search-replace", "boilerplate"],
+    tmux_session_override: "guy",
+    gender: "male" as const,
+  },
+  {
+    id: "shikadai",
+    name: "Шикадай (Советник)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:sonnet",
+    system_prompt: agentFilePrompt("shikadai", "Shikadai — Strategic Advisor"),
+    tags: ["system", "on-demand"],
+    capabilities: ["architecture", "process-analysis", "strategy", "code-review"],
+    tmux_session_override: "shikadai",
+    gender: "male" as const,
+  },
 ];
 
 async function syncSystemAgent(ag: (typeof SYSTEM_AGENTS)[number]): Promise<"created" | "updated"> {
