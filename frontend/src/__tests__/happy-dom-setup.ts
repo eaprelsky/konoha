@@ -1,6 +1,6 @@
 import { Window } from "happy-dom";
 
-const window = new Window();
+const window = new Window({ url: "http://localhost/" });
 
 // Set required globals for @testing-library/react
 (globalThis as any).window = window;
