@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 # ── Config ──────────────────────────────────────────────────────────────────
 KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
+AUTO_REMEDIATE = os.environ.get("AKAMARU_AUTO_REMEDIATE", "1") == "1"
 
 CHECK_INTERVAL  = 60   # seconds between full checks
 HEARTBEAT_ALERT = 600  # seconds (10 min) without heartbeat → alert
@@ -42,6 +43,12 @@ WATCHED_SERVICES = [
     "agent-watchdog-kiba.service",
     "agent-watchdog-jiraiya.service",
 ]
+
+SAFE_RESTART_SERVICES = {
+    "telegram-bot.service",
+    "telegram-bus.service",
+    "telegram-context-packer.service",
+}
 
 WATCHED_SESSIONS = [
     "naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata",
@@ -360,6 +367,78 @@ def is_service_active(service: str) -> bool:
         return r.stdout.strip() in ("active", "activating")
     except Exception:
         return False
+
+
+def run_command(args: list[str], timeout: int = 15) -> tuple[bool, str]:
+    """Run a bounded local command for deterministic remediation."""
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        output = (r.stdout + r.stderr).strip()
+        return r.returncode == 0, output[:500]
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
+def restart_service(service: str) -> tuple[bool, str]:
+    return run_command(["sudo", "-n", "systemctl", "restart", service], timeout=30)
+
+
+def nudge_tmux(session: str) -> tuple[bool, str]:
+    return run_command(["tmux", "-L", session, "send-keys", "-t", session, "Enter"], timeout=5)
+
+
+def restart_agent_session(agent: str) -> tuple[bool, str]:
+    if agent not in WATCHED_AGENTS:
+        return False, f"unknown agent {agent}"
+    # Kill only this agent's isolated tmux socket/session. Its systemd/API manager recreates it.
+    run_command(["tmux", "-L", agent, "kill-session", "-t", agent], timeout=10)
+    service = f"agent-{agent}.service"
+    ok, output = restart_service(service)
+    if ok:
+        return True, f"restarted {service}"
+    return False, f"failed to restart {service}: {output}"
+
+
+def extract_field(alert: str, name: str) -> str | None:
+    import re
+    match = re.search(rf"(?:^|\s){name}=([^\s]+)", alert)
+    return match.group(1) if match else None
+
+
+def remediate_alert(alert: str) -> str | None:
+    """Apply narrow, deterministic fixes before waking Kiba.
+
+    Akamaru may restart obviously dead transport/watchdog components or recycle an
+    agent session with a clear terminal-level failure. It deliberately does not
+    auto-approve permission prompts and does not restart konoha.service.
+    """
+    if not AUTO_REMEDIATE:
+        return None
+
+    service = extract_field(alert, "service")
+    if service:
+        if service.startswith("agent-watchdog-") or service in SAFE_RESTART_SERVICES:
+            ok, output = restart_service(service)
+            return f"auto_restart_service={service} ok={int(ok)} detail={output[:160]!r}"
+        return None
+
+    agent = extract_field(alert, "agent")
+    if agent and "watchdog=dead" in alert:
+        watchdog = AGENT_WATCHDOGS.get(agent)
+        if watchdog:
+            ok, output = restart_service(watchdog)
+            return f"auto_restart_watchdog={watchdog} ok={int(ok)} detail={output[:160]!r}"
+
+    session = extract_field(alert, "session")
+    if session and "tmux=stuck_paste" in alert:
+        ok, output = nudge_tmux(session)
+        return f"auto_nudge_tmux={session} ok={int(ok)} detail={output[:160]!r}"
+
+    if agent and ("token_exhausted=true" in alert or "compacting_loop" in alert):
+        ok, output = restart_agent_session(agent)
+        return f"auto_restart_agent={agent} ok={int(ok)} detail={output[:160]!r}"
+
+    return None
 
 
 # ── Check functions ───────────────────────────────────────────────────────────
@@ -767,6 +846,10 @@ async def main() -> None:
         if alerts:
             log.warning(f"Found {len(alerts)} alert(s): {alerts}")
             for alert in alerts:
+                remediation = remediate_alert(alert)
+                if remediation:
+                    log.warning(f"Remediation for {alert}: {remediation}")
+                    alert = f"{alert} {remediation}"
                 await send_alert(alert)
         else:
             log.debug(f"Check #{check_count}: all systems OK")
