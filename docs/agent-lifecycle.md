@@ -19,7 +19,10 @@ Both are stored in Redis and survive server restarts.
 interface AgentDef {
   id: string;                         // unique agent ID (e.g. "naruto", "kakashi")
   name: string;                       // display name
-  model: string;                      // Claude model ID (e.g. "claude-sonnet-4-6")
+  runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
+  fallback_runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
+  model: string;                      // provider-qualified model ID (e.g. "claude:sonnet", "codex:gpt-5.5")
+  reasoning_effort?: string;          // provider-specific effort, e.g. "high" for Codex
   system_prompt?: string;             // user-editable instructions (appended after system template)
   env?: Record<string, string>;       // custom env vars for this agent's process
   tags?: string[];                    // labels (e.g. ["system"])

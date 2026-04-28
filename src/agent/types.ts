@@ -23,6 +23,7 @@ export interface AgentDef {
   launch_strategy?: LaunchStrategy;
   startup_timeout_sec?: number;
   model: string;
+  reasoning_effort?: string;   // e.g. "high", "medium", "low" — provider-specific
   env?: Record<string, string>;
   tags?: string[];
   capabilities?: string[];  // skill IDs assigned to this agent

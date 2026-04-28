@@ -131,7 +131,15 @@ export function Agents() {
                             </>
                           ) : '-'}
                         </td>
-                        <td style={{ fontSize: 12, color: '#555' }}>{a.model || '-'}</td>
+                        <td style={{ fontSize: 12, color: '#555' }}>
+                          <div>{a.model || '-'}</div>
+                          {a.runtime || a.reasoning_effort ? (
+                            <div style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>
+                              {a.runtime || 'auto'}{a.fallback_runtime ? ` → ${a.fallback_runtime}` : ''}
+                              {a.reasoning_effort ? ` · ${a.reasoning_effort}` : ''}
+                            </div>
+                          ) : null}
+                        </td>
                         <td>
                           <div className="actions">
                             {canEdit && a.lifecycle && <>

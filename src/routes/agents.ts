@@ -31,6 +31,13 @@ import { silentCatch } from "../logger";
 
 const router = new Hono<HonoEnv>();
 
+const PROFILE_DEFAULT_MODELS: Record<string, string> = {
+  claude: "claude:sonnet",
+  codex: "codex:gpt-5.4",
+  cursor: "cursor:auto",
+  glm: "glm:glm-5.1",
+};
+
 // Apply auth to all protected routes
 // /agents/register is handled inline (invite token logic, no middleware)
 router.use("/invite", requireAdmin);
@@ -84,6 +91,7 @@ router.post("/", async (c) => {
     launch_strategy,
     startup_timeout_sec,
     model = "claude:sonnet",
+    reasoning_effort,
     env,
     tags,
     capabilities,
@@ -99,6 +107,7 @@ router.post("/", async (c) => {
     launch_strategy,
     startup_timeout_sec,
     model,
+    reasoning_effort,
     env,
     tags,
     capabilities,
@@ -155,6 +164,38 @@ router.post("/:id/restart", async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
+});
+
+// POST /agents/:id/switch-runtime — change runtime/profile and optionally restart
+router.post("/:id/switch-runtime", async (c) => {
+  const id = c.req.param("id")!;
+  const def = await getAgentDef(id);
+  if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
+  const body = await c.req.json().catch(() => null);
+  if (!body) return c.json({ error: "Invalid JSON" }, 400);
+  const { profile, runtime, model, reasoning_effort, fallback_runtime, restart } = body;
+  const updates: Record<string, unknown> = {};
+  const nextRuntime = runtime ?? profile;
+  if (nextRuntime !== undefined) updates.runtime = nextRuntime;
+  if (model !== undefined) {
+    updates.model = model;
+  } else if (profile && PROFILE_DEFAULT_MODELS[profile]) {
+    updates.model = PROFILE_DEFAULT_MODELS[profile];
+  }
+  if (reasoning_effort !== undefined) updates.reasoning_effort = reasoning_effort;
+  if (fallback_runtime !== undefined) updates.fallback_runtime = fallback_runtime;
+  if (Object.keys(updates).length === 0) return c.json({ error: "No fields to update" }, 400);
+  const updated = { ...def, ...updates, id, updated_at: new Date().toISOString() };
+  await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+  let state = null;
+  if (restart) {
+    try {
+      state = await restartAgent(id, updated);
+    } catch (e: any) {
+      return c.json({ def: updated, error: `Profile updated but restart failed: ${e.message}` }, 500);
+    }
+  }
+  return c.json({ def: updated, state });
 });
 
 // GET /agents/tmux/:id — capture tmux pane output (last 200 lines)

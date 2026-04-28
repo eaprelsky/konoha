@@ -206,6 +206,9 @@ export interface Agent {
   roles?: string[];
   capabilities?: string[];
   model?: string;
+  runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
+  fallback_runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
+  reasoning_effort?: string;
   system_prompt?: string;
   tags?: string[];
   lifecycle?: AgentLifecycle;

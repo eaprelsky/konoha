@@ -12,6 +12,12 @@ const log = createLogger("agent:runtime");
 
 const DEFAULT_AGENT_MODEL = "sonnet";
 const CODEX_CONFIG_PATH = "/home/ubuntu/.codex/config.toml";
+const CODEX_BIN_CANDIDATES = [
+  process.env.CODEX_BIN,
+  "/home/ubuntu/.npm-global/bin/codex",
+  "/home/ubuntu/.bun/bin/codex",
+  "codex",
+].filter(Boolean) as string[];
 const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
 const CLAUDE_WRAPPER_PATH = "/home/ubuntu/konoha/scripts/run-claude-agent.sh";
 
@@ -40,6 +46,13 @@ function configPathSegment(value: string): string {
 function codexServerName(value: string): string {
   const normalized = value.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
   return normalized || "mcp_server";
+}
+
+export function resolveCodexBinary(): string {
+  for (const candidate of CODEX_BIN_CANDIDATES) {
+    if (candidate === "codex" || existsSync(candidate)) return candidate;
+  }
+  return "codex";
 }
 
 function ensureCodexProjectTrusted(workdir: string): void {
@@ -338,7 +351,7 @@ function buildCodexMcpConfigArgs(mcpConfig: McpConfig): string[] {
 }
 
 export function buildLaunchCommand(
-  def: Pick<AgentDef, "model" | "runtime" | "codex_disable_features">,
+  def: Pick<AgentDef, "model" | "runtime" | "reasoning_effort" | "codex_disable_features">,
   workdir: string,
   mcpConfigPath: string,
   mcpConfig: McpConfig,
@@ -347,11 +360,12 @@ export function buildLaunchCommand(
 
   if (runtime.provider === "codex") {
     const args = [
-      "codex",
+      resolveCodexBinary(),
       "--no-alt-screen",
       "--model", runtime.runtimeModel,
       "--dangerously-bypass-approvals-and-sandbox",
       "-C", workdir,
+      ...(def.reasoning_effort ? ["-c", `model_reasoning_effort=${toToml(def.reasoning_effort)}`] : []),
       ...(def.codex_disable_features ?? []).flatMap(flag => ["--disable", flag]),
       ...buildCodexMcpConfigArgs(mcpConfig),
     ];

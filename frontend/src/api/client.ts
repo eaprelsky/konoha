@@ -181,8 +181,10 @@ export const api = {
     get: (id: string) => apiFetch<Agent>(`${BASE}/agents/${id}`),
     create: (params: { id: string; name: string; system_prompt?: string; model?: string }) =>
       apiFetch<Agent>(`${BASE}/agents`, { method: 'POST', body: JSON.stringify(params) }),
-    update: (id: string, patch: { name?: string; system_prompt?: string; model?: string; capabilities?: string[]; gender?: string }) =>
+    update: (id: string, patch: { name?: string; system_prompt?: string; runtime?: string; fallback_runtime?: string; model?: string; reasoning_effort?: string; capabilities?: string[]; gender?: string }) =>
       apiFetch<Agent>(`${BASE}/agents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    switchRuntime: (id: string, patch: { runtime?: string; fallback_runtime?: string; model?: string; reasoning_effort?: string; restart?: boolean }) =>
+      apiFetch<{ def: Agent; state?: AgentStatus | null; error?: string }>(`${BASE}/agents/${id}/switch-runtime`, { method: 'POST', body: JSON.stringify(patch) }),
     start: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/start`, { method: 'POST', body: '{}' }),
     stop: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/stop`, { method: 'POST', body: '{}' }),
     restart: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/restart`, { method: 'POST', body: '{}' }),

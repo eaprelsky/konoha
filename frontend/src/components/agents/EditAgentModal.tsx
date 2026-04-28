@@ -10,7 +10,10 @@ interface EditAgentModalProps { agent: Agent; onClose: () => void; onSaved: () =
 export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const [tab, setTab] = useState<'settings' | 'memory'>('settings');
   const [name, setName] = useState(agent.name);
+  const [runtime, setRuntime] = useState((agent as any).runtime || ((agent.model || '').split(':')[0] || 'claude'));
+  const [fallbackRuntime, setFallbackRuntime] = useState((agent as any).fallback_runtime || 'codex');
   const [model, setModel] = useState(agent.model || 'claude:claude-sonnet-4-6');
+  const [reasoningEffort, setReasoningEffort] = useState((agent as any).reasoning_effort || '');
   const [prompt, setPrompt] = useState((agent as any).system_prompt || '');
   const [sysTemplate, setSysTemplate] = useState<string | null>(null);
   const [sysExpanded, setSysExpanded] = useState(false);
@@ -30,6 +33,10 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
 
   useEffect(() => {
     api.agents.get(agent.id).then(d => {
+      setRuntime((d as any).runtime || ((d.model || '').split(':')[0] || 'claude'));
+      setFallbackRuntime((d as any).fallback_runtime || 'codex');
+      setModel(d.model || 'claude:claude-sonnet-4-6');
+      setReasoningEffort((d as any).reasoning_effort || '');
       setPrompt((d as any).system_prompt || '');
       setCapabilities((d as any).capabilities || []);
       setAvatarUrl((d as any).avatar_url);
@@ -94,7 +101,16 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
     e.preventDefault();
     setSubmitting(true); setError(null);
     try {
-      await api.agents.update(agent.id, { name: name.trim(), model, system_prompt: prompt, capabilities, gender });
+      await api.agents.update(agent.id, {
+        name: name.trim(),
+        runtime,
+        fallback_runtime: fallbackRuntime || undefined,
+        model,
+        reasoning_effort: reasoningEffort || undefined,
+        system_prompt: prompt,
+        capabilities,
+        gender,
+      });
       onSaved(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
   }
@@ -116,7 +132,11 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
 
         {tab === 'settings' && (
           <AgentSettingsTab
-            agentId={agent.id} name={name} setName={setName} model={model} setModel={setModel}
+            agentId={agent.id} name={name} setName={setName}
+            runtime={runtime} setRuntime={setRuntime}
+            fallbackRuntime={fallbackRuntime} setFallbackRuntime={setFallbackRuntime}
+            model={model} setModel={setModel}
+            reasoningEffort={reasoningEffort} setReasoningEffort={setReasoningEffort}
             gender={gender} setGender={setGender} prompt={prompt} setPrompt={setPrompt}
             sysTemplate={sysTemplate} sysExpanded={sysExpanded} setSysExpanded={setSysExpanded}
             avatarUrl={avatarUrl} avatarMode={avatarMode} setAvatarMode={setAvatarMode}
