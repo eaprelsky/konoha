@@ -29,6 +29,10 @@ import {
   listLLMClientProfiles,
   getLLMClientProfile,
   resolveLLMClientProfile,
+  listToolProfiles,
+  getToolProfile,
+  listSandboxProfiles,
+  getSandboxProfile,
   composeAgentView,
 } from "../agent-lifecycle";
 import type { AgentRuntimeState, LifecycleStatus, AgentProvider, AgentView } from "../agent-lifecycle";
@@ -51,6 +55,20 @@ function validateLLMClientProfile(id: unknown, field: string): { error: string }
   if (id === undefined || id === null || id === "") return null;
   if (typeof id !== "string") return { error: `${field} must be a string` };
   if (!getLLMClientProfile(id)) return { error: `Unknown ${field}: ${id}` };
+  return null;
+}
+
+function validateToolProfile(id: unknown): { error: string } | null {
+  if (id === undefined || id === null || id === "") return null;
+  if (typeof id !== "string") return { error: "tool_profile must be a string" };
+  if (!getToolProfile(id)) return { error: `Unknown tool_profile: ${id}` };
+  return null;
+}
+
+function validateSandboxProfile(id: unknown): { error: string } | null {
+  if (id === undefined || id === null || id === "") return null;
+  if (typeof id !== "string") return { error: "sandbox_profile must be a string" };
+  if (!getSandboxProfile(id)) return { error: `Unknown sandbox_profile: ${id}` };
   return null;
 }
 
@@ -113,11 +131,15 @@ router.post("/", async (c) => {
     env,
     tags,
     capabilities,
+    tool_profile,
+    sandbox_profile = "tmux",
     memory,
   } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
   const profileError = validateLLMClientProfile(llm_client_profile, "llm_client_profile")
-    ?? validateLLMClientProfile(fallback_llm_client_profile, "fallback_llm_client_profile");
+    ?? validateLLMClientProfile(fallback_llm_client_profile, "fallback_llm_client_profile")
+    ?? validateToolProfile(tool_profile)
+    ?? validateSandboxProfile(sandbox_profile);
   if (profileError) return c.json(profileError, 400);
   const def = await createAgentDef({
     id,
@@ -134,6 +156,8 @@ router.post("/", async (c) => {
     env,
     tags,
     capabilities,
+    tool_profile,
+    sandbox_profile,
     memory,
   });
   // Prepare personal memory directory
@@ -144,6 +168,15 @@ router.post("/", async (c) => {
 // GET /agents/llm-client-profiles — available runtime adapter/provider/model profiles
 router.get("/llm-client-profiles", async (c) => {
   return c.json(listLLMClientProfiles());
+});
+
+// GET /agents/tool-profiles — available tool/plugin profiles (#571)
+router.get("/tool-profiles", async (c) => {
+  return c.json(listToolProfiles());
+});
+
+router.get("/sandbox-profiles", async (c) => {
+  return c.json(listSandboxProfiles());
 });
 
 // GET /agents/:id/status — lifecycle status (tmux state, pid, uptime)
@@ -201,9 +234,11 @@ router.post("/:id/switch-runtime", async (c) => {
   if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON" }, 400);
-  const { profile, llm_client_profile, runtime, model, reasoning_effort, fallback_runtime, fallback_llm_client_profile, restart } = body;
+  const { profile, llm_client_profile, runtime, model, reasoning_effort, fallback_runtime, fallback_llm_client_profile, tool_profile, sandbox_profile, restart } = body;
   const profileError = validateLLMClientProfile(llm_client_profile, "llm_client_profile")
-    ?? validateLLMClientProfile(fallback_llm_client_profile, "fallback_llm_client_profile");
+    ?? validateLLMClientProfile(fallback_llm_client_profile, "fallback_llm_client_profile")
+    ?? validateToolProfile(tool_profile)
+    ?? validateSandboxProfile(sandbox_profile);
   if (profileError) return c.json(profileError, 400);
   const updates: Record<string, unknown> = {};
   const nextRuntime = runtime ?? profile;
@@ -223,6 +258,8 @@ router.post("/:id/switch-runtime", async (c) => {
   if (reasoning_effort !== undefined) updates.reasoning_effort = reasoning_effort;
   if (fallback_runtime !== undefined) updates.fallback_runtime = fallback_runtime;
   if (fallback_llm_client_profile !== undefined) updates.fallback_llm_client_profile = fallback_llm_client_profile;
+  if (tool_profile !== undefined) updates.tool_profile = tool_profile;
+  if (sandbox_profile !== undefined) updates.sandbox_profile = sandbox_profile;
   if (Object.keys(updates).length === 0) return c.json({ error: "No fields to update" }, 400);
   const updated = await updateAgentDef(id, updates);
   if (!updated) return c.json({ error: "Agent not found or not managed" }, 404);

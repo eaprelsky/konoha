@@ -35,6 +35,8 @@ interface AgentDef {
   fallback_runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
   llm_client_profile?: string;          // preferred: runtime adapter + provider + model profile
   fallback_llm_client_profile?: string;
+  tool_profile?: string;                // preferred: MCP/tool access boundary profile
+  sandbox_profile?: string;             // execution isolation profile, current default: "tmux"
   model: string;                      // provider-qualified model ID (e.g. "claude:sonnet", "codex:gpt-5.5")
   reasoning_effort?: string;          // provider-specific effort, e.g. "high" for Codex
   system_prompt?: string;             // user-editable instructions (appended after system template)
@@ -150,6 +152,34 @@ Always includes the Konoha MCP server (so agents can call `konoha_register`, `ko
 ```
 
 For each skill in `capabilities[]`, its `mcp_servers` entries are merged in. Environment variable references (`${VAR}`) are resolved from `/opt/konoha/.env.global` and the agent's own `env` map.
+
+### Tool Profiles
+
+`tool_profile` is the preferred way to describe shared MCP access. It is separate from `capabilities[]`:
+
+- `capabilities[]` describes skills/roles that shape the system prompt and may add skill-local MCP servers.
+- `tool_profile` describes shared MCP boundaries such as `telegram-userbot`, `diagnostics`, `business-ops`, or `knowledge-readwrite`.
+- `shared_mcp_allowlist` is still supported and takes precedence over `tool_profile` for backward compatibility.
+
+Available profiles are exposed by:
+
+```bash
+curl -H "Authorization: Bearer $KONOHA_TOKEN" \
+  http://127.0.0.1:3200/agents/tool-profiles
+```
+
+To add a tool profile safely:
+
+1. Add it in `src/agent/tool-profiles.ts` with explicit `mcp_servers`, `scopes`, and `dangerous_tools` if applicable.
+2. Prefer least privilege: do not use the `full` profile for new agents unless there is a written reason.
+3. Add or update a test in `tests/tool-profiles.test.ts`.
+4. Restart affected agents so `.mcp.json` is regenerated.
+
+### Sandbox Profiles
+
+`sandbox_profile` is separate from the LLM client and runtime adapter. Current production agents use `tmux`: isolated tmux socket/session named after the agent id, supervised through systemd and lifecycle API. `process`, `docker`, and `remote` are documented profiles for future migration, not active defaults.
+
+Move an agent to Docker/remote only when a tool profile requires stronger filesystem/network isolation than tmux/process can provide, and after adding lifecycle healthchecks for that sandbox type.
 
 ### 4. Launch runtime in isolated tmux with restart loop
 

@@ -361,11 +361,14 @@ function buildCodexMcpConfigArgs(mcpConfig: McpConfig): string[] {
 }
 
 export function buildLaunchCommand(
-  def: Pick<AgentDef, "model" | "runtime" | "llm_client_profile" | "reasoning_effort" | "codex_disable_features">,
+  def: Pick<AgentDef, "model" | "runtime" | "llm_client_profile" | "reasoning_effort" | "codex_disable_features" | "sandbox_profile">,
   workdir: string,
   mcpConfigPath: string,
   mcpConfig: McpConfig,
 ): { provider: AgentProvider; command: string } {
+  // #572: sandbox_profile is always "tmux" for now — all agents run in tmux sessions.
+  // When Docker/remote sandboxes are implemented, this function will dispatch
+  // to the appropriate launch path based on def.sandbox_profile.
   const runtime = resolveAgentRuntime(def);
   const profile = resolveLLMClientProfile(def);
   const reasoningEffort = def.reasoning_effort ?? profile?.reasoning_effort;

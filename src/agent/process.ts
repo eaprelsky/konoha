@@ -12,6 +12,7 @@ import { silentCatch } from "../logger";
 import { buildSystemPrompt } from "./prompt";
 import { buildMcpConfig, buildLaunchCommand, shellEscape, ensureCodexProjectTrusted, getLiveBitrixWebhook } from "./runtime";
 import { AGENT_WORKDIR_ROOT } from "./runtime";
+import { resolveSharedMcpAllowlist } from "./tool-profiles";
 import type { AgentDef, AgentState, LifecycleStatus } from "./types";
 
 const execFileAsync = promisify(execFile);
@@ -231,7 +232,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     const mcpConfig = await buildMcpConfig(
       def.capabilities ?? [],
       def.env ?? {},
-      def.shared_mcp_allowlist,
+      resolveSharedMcpAllowlist(def.shared_mcp_allowlist, def.tool_profile),
     );
     const liveBitrixWebhook = getLiveBitrixWebhook();
     const bitrixServer = mcpConfig.mcpServers.bitrix24;

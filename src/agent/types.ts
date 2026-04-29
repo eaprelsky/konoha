@@ -14,6 +14,23 @@ export interface AgentRedisStream {
   consumer?: string; // Consumer name (defaults to "{id}-lifecycle-watchdog")
 }
 
+export interface ToolProfile {
+  id: string;
+  name: string;
+  mcp_servers: string[];
+  scopes: ("read" | "write" | "execute")[];
+  dangerous_tools?: string[];
+  notes?: string;
+}
+
+export type SandboxType = "tmux" | "process" | "docker" | "remote";
+
+export interface SandboxProfile {
+  id: string;
+  type: SandboxType;
+  config?: Record<string, string>;
+}
+
 export interface AgentDef {
   id: string;
   name: string;
@@ -29,6 +46,8 @@ export interface AgentDef {
   env?: Record<string, string>;
   tags?: string[];
   capabilities?: string[];  // skill IDs assigned to this agent
+  tool_profile?: string;        // ToolProfile id (#571)
+  sandbox_profile?: string;     // SandboxProfile id (#572), defaults to "tmux"
   shared_mcp_allowlist?: string[]; // optional subset of shared MCP servers to include
   codex_disable_features?: string[]; // optional per-agent Codex feature disables
   memory?: string;           // path to agent memory file (e.g. /opt/shared/agent-memory/{id}/MEMORY.md)
@@ -45,6 +64,8 @@ export interface AgentTemplate {
   id: string;
   name: string;
   system_prompt?: string;
+  tool_profile?: string;        // ToolProfile id (#571)
+  sandbox_profile?: string;     // SandboxProfile id (#572), defaults to "tmux"
   tags?: string[];
   capabilities?: string[];
   memory?: string;
