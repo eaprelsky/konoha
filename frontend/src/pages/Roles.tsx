@@ -398,7 +398,7 @@ export function Roles() {
                       {r.assignees.length === 0 && <span style={{ color: '#999' }}>—</span>}
                       {r.assignees.length > 0 && (
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
-                          {r.name} -> {roleAssigneeLabel(r, agentLabels)}
+                          {r.name} {' -> '} {roleAssigneeLabel(r, agentLabels)}
                         </div>
                       )}
                     </td>
