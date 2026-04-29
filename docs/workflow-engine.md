@@ -33,6 +33,7 @@ The suite covers:
 - `workflow.update` schema patches through API and operator evals.
 - `workflow.open` navigation actions and receipts.
 - Confirmation-required `workflow.create` without side effects.
+- Deterministic eEPC state-machine semantics: start/end, manual function pause/resume, XOR branch selection, AND split/join, manual waits, event idempotency, and sub-process spawning.
 - Browser boundary: `AssistantWidget` consumes a canonical `/api/ai/chat` parsed event and applies the schema patch to `ProcessEditor`.
 - Operational boundary: system health, Telegram stream smoke, and Redis/PostgreSQL shadow verification.
 

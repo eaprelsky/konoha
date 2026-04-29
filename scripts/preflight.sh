@@ -32,6 +32,8 @@ run_backend_tests() {
     tests/issue77_paused_names.test.ts \
     tests/applyPatch.test.ts \
     tests/act-workflow-executor.test.ts \
+    tests/eepc-state-machine-regression.test.ts \
+    tests/cases_unit.test.ts \
     tests/kwe_email_adapter.test.ts \
     tests/ai-chat-contract.test.ts \
     tests/operator-evals.test.ts \
