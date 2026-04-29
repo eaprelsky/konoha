@@ -36,12 +36,19 @@ export function TsunadeChatPanel({
   showMining, miningData, onApplyPatch,
 }: TsunadeChatPanelProps) {
   const navigate = useNavigate();
+  const [assistantName, setAssistantName] = useState('Советник');
   const [chatId, setChatId] = useState<string | null>(null);
   const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const { showHighlight } = useHighlight();
+
+  useEffect(() => {
+    api.agents.get('tsunade')
+      .then(agent => setAssistantName(agent.name || 'Советник'))
+      .catch(() => setAssistantName('Советник'));
+  }, []);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -117,13 +124,13 @@ export function TsunadeChatPanel({
   return (
     <div className="tsunade-panel">
       <div className="tsunade-header">
-        <span className="tsunade-title">💬 Цунаде — AI-ассистент</span>
+        <span className="tsunade-title">💬 {assistantName} — AI-ассистент</span>
         <button className="tsunade-btn-close" onClick={onClose}>✕</button>
       </div>
       <div className="tsunade-messages">
         {chatMsgs.length === 0 && (
           <div style={{ color: '#94a3b8', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>
-            Спросите Цунаде о схеме.<br />
+            Спросите {assistantName} о схеме.<br />
             Например: «Выровняй элементы вертикально» или «Добавь шлюз XOR после функции X».
           </div>
         )}
@@ -139,7 +146,7 @@ export function TsunadeChatPanel({
         <textarea
           className="tsunade-input"
           rows={2}
-          placeholder="Сообщение Цунаде…"
+          placeholder={`Сообщение ${assistantName}…`}
           value={chatInput}
           onChange={e => setChatInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
