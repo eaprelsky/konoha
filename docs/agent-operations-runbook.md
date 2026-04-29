@@ -19,6 +19,24 @@ Each wrapper calls:
 
 That script talks to the Konoha lifecycle API and ensures the tmux session exists.
 
+## Control Plane Policy
+
+Systemd is only a supervisor. It must not launch `claude`, `codex`, `opencode`, or `tmux` directly for managed agents. Permanent `agent-*.service` units must call `scripts/agent-api-service.sh <id>`, which reconciles the Konoha lifecycle API with the tmux session.
+
+Delivery watchdogs are adapters, not lifecycle owners:
+
+| Unit | Responsibility |
+|------|----------------|
+| `agent-watchdog-naruto.service` | Telegram bot queue + Konoha SSE delivery to Naruto |
+| `agent-watchdog-sasuke.service` | Telegram userbot Redis streams + Konoha SSE delivery to Sasuke |
+| `agent-watchdog-kakashi.service` | GitHub/Konoha delivery to Kakashi |
+| `agent-watchdog-kiba.service` | Akamaru/Konoha delivery to Kiba |
+| `agent-watchdog-lifecycle.service` | Generic delivery for on-demand lifecycle-managed agents |
+
+The shared watchdog core is `scripts/watchdog_base.py`. The legacy universal `scripts/watchdog.py` is retained as a non-active fallback/reference and is split into small modules; it must not be wired into active systemd units without a deliberate migration.
+
+`python3 scripts/healthcheck-system.py` enforces this policy by checking permanent agent service entrypoints, known watchdog entrypoints, and source files over 1000 lines.
+
 ## On-Demand Agents
 
 On-demand agents are started through the Konoha lifecycle API:
