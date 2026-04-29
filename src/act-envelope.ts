@@ -132,6 +132,32 @@ function needConfirm(action: string): ActResult {
   return { ok: false, action, requires_confirm: true, action_version: ACTION_VERSION };
 }
 
+const SENSITIVE_ARG_RE = /(authorization|cookie|pass|password|secret|token|key)/i;
+
+function summarizeArgs(args: Record<string, unknown>): string {
+  const summary: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (SENSITIVE_ARG_RE.test(key)) {
+      summary[key] = "[redacted]";
+    } else if (typeof value === "string" && value.length > 160) {
+      summary[key] = `${value.slice(0, 157)}...`;
+    } else if (Array.isArray(value)) {
+      summary[key] = `[array:${value.length}]`;
+    } else if (value && typeof value === "object") {
+      summary[key] = "[object]";
+    } else {
+      summary[key] = value;
+    }
+  }
+  return JSON.stringify(summary);
+}
+
+function callerAgentChain(caller: CallerInfo | undefined): string {
+  if (!caller) return "api:unknown";
+  if (caller.isAdmin) return "api:admin";
+  return caller.agentId ? `api:agent:${caller.agentId}` : "api:agent";
+}
+
 function authorizeAction(action: ActionDef, args: Record<string, unknown>, caller: CallerInfo): string | null {
   const policy = getActionSecurity(action);
   if (policy.actor === "authenticated") return null;
@@ -175,6 +201,7 @@ async function executeRegisteredHandler(
         session_id: ctx.session_id,
         action_type: action.id,
         parameters: JSON.stringify(args),
+        args_summary: summarizeArgs(args),
         result: "ok",
         agent_chain: ctx.agent_chain,
       });
@@ -187,6 +214,7 @@ async function executeRegisteredHandler(
         session_id: ctx.session_id,
         action_type: action.id,
         parameters: JSON.stringify(args),
+        args_summary: summarizeArgs(args),
         result: "error",
         agent_chain: ctx.agent_chain,
         error: e.message,
@@ -226,6 +254,7 @@ export async function executeAction(
         session_id: sessionId,
         action_type: envelope.action,
         parameters: JSON.stringify(envelope.args),
+        args_summary: summarizeArgs(envelope.args),
         result: "blocked",
         agent_chain: agentChain,
       });
@@ -237,6 +266,7 @@ export async function executeAction(
         session_id: sessionId,
         action_type: envelope.action,
         parameters: JSON.stringify(envelope.args),
+        args_summary: summarizeArgs(envelope.args),
         result: "requires_confirm",
         agent_chain: agentChain,
       });
@@ -252,6 +282,7 @@ export async function executeAction(
         session_id: sessionId,
         action_type: envelope.action,
         parameters: JSON.stringify(envelope.args),
+        args_summary: summarizeArgs(envelope.args),
         result: direct.status >= 200 && direct.status < 300 ? "ok" : "error",
         agent_chain: agentChain,
         error: direct.status >= 200 && direct.status < 300 ? undefined : JSON.stringify(direct.data),
@@ -290,6 +321,7 @@ export async function executeAction(
         session_id: sessionId,
         action_type: envelope.action,
         parameters: JSON.stringify(envelope.args),
+        args_summary: summarizeArgs(envelope.args),
         result: response.ok ? "ok" : "error",
         agent_chain: agentChain,
         error: response.ok ? undefined : JSON.stringify(data),
@@ -300,6 +332,18 @@ export async function executeAction(
     }
     return ok(envelope.action, data, response.status);
   } catch (e: any) {
+    if (category === "act" && action.audited) {
+      await auditLog({
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+        action_type: envelope.action,
+        parameters: JSON.stringify(envelope.args),
+        args_summary: summarizeArgs(envelope.args),
+        result: "error",
+        agent_chain: agentChain,
+        error: e.message,
+      });
+    }
     return fail(envelope.action, `Internal routing error: ${e.message}`);
   }
 }
@@ -370,10 +414,24 @@ actRouter.post("/", requireAuth, async (c) => {
   const actionDef = getAction(envelope.action);
   if (actionDef) {
     const authError = authorizeAction(actionDef, envelope.args ?? {}, caller);
-    if (authError) return c.json(fail(envelope.action, authError), 403);
+    if (authError) {
+      if (classifyAction(actionDef.id) === "act" && actionDef.audited) {
+        await auditLog({
+          timestamp: new Date().toISOString(),
+          session_id: envelope.meta?.session_id ?? crypto.randomUUID(),
+          action_type: envelope.action,
+          parameters: JSON.stringify(envelope.args ?? {}),
+          args_summary: summarizeArgs(envelope.args ?? {}),
+          result: "blocked",
+          agent_chain: envelope.meta?.agent_chain ?? callerAgentChain(caller),
+          error: authError,
+        });
+      }
+      return c.json(fail(envelope.action, authError), 403);
+    }
   }
   const result = await executeAction(envelope, {
-    agent_chain: envelope.meta?.agent_chain ?? "api",
+    agent_chain: envelope.meta?.agent_chain ?? callerAgentChain(caller),
     authHeader: c.req.header("Authorization"),
     skipAutonomy: caller?.isAdmin === true,
   });

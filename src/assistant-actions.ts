@@ -165,6 +165,7 @@ export interface AuditEntry {
   session_id: string;
   action_type: string;
   parameters: string;
+  args_summary?: string;
   result: "ok" | "blocked" | "error" | "requires_confirm";
   agent_chain: string;
   error?: string;

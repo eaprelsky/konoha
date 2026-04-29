@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import Redis from "ioredis";
-import { AUTONOMY_KEY } from "../src/assistant-actions";
+import { AUDIT_STREAM, AUTONOMY_KEY } from "../src/assistant-actions";
 import { unregisterAgent } from "../src/redis";
 import { pgDeleteWorkflow, pgDeleteWorkItem } from "../src/storage/pg";
 
@@ -27,6 +27,17 @@ async function cleanupWorkflow(id: string) {
   await redis.srem("konoha:workflow:index", id);
   await redis.del(`workflow:${id}`);
   await pgDeleteWorkflow(id);
+}
+
+async function readAuditBySession(sessionId: string): Promise<Record<string, string>[]> {
+  const raw = await redis.xrevrange(AUDIT_STREAM, "+", "-", "COUNT", 50);
+  return raw
+    .map(([, fields]) => {
+      const entry: Record<string, string> = {};
+      for (let i = 0; i < fields.length; i += 2) entry[fields[i]] = fields[i + 1];
+      return entry;
+    })
+    .filter(entry => entry.session_id === sessionId);
 }
 
 beforeAll(async () => {
@@ -276,6 +287,7 @@ describe("/act workflow executor", () => {
     }));
     const agent = await reg.json();
     const headers = { Authorization: `Bearer ${agent.token}`, "Content-Type": "application/json" };
+    const deniedSession = `${RUN}-workflow-denied`;
 
     const workflowCreate = await app.fetch(new Request("http://localhost/act", {
       method: "POST",
@@ -284,9 +296,18 @@ describe("/act workflow executor", () => {
         action: "workflow.create",
         category: "act",
         args: { id: `${RUN}-blocked`, name: "Blocked", elements: [], flow: [], draft: true },
+        meta: { session_id: deniedSession },
       }),
     }));
     expect(workflowCreate.status).toBe(403);
+
+    const audit = await readAuditBySession(deniedSession);
+    expect(audit).toHaveLength(1);
+    expect(audit[0].action_type).toBe("workflow.create");
+    expect(audit[0].result).toBe("blocked");
+    expect(audit[0].agent_chain).toBe(`api:agent:${RBAC_AGENT_ID}`);
+    expect(audit[0].args_summary).toContain(`${RUN}-blocked`);
+    expect(audit[0].error).toBe("Forbidden: admin token required");
 
     const caseList = await app.fetch(new Request("http://localhost/act", {
       method: "POST",
