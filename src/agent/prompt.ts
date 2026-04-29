@@ -70,9 +70,8 @@ export async function buildRoleBlocks(agentId: string): Promise<string> {
     const workflowIds = await redis.smembers(`konoha:role:${roleId}:workflows`).catch(() => [] as string[]);
     if (workflowIds.length === 0) continue;
 
-    const roleLines: string[] = [`## Role: ${role.name}`];
-    if (role.description) roleLines.push(role.description);
-    roleLines.push("\nYou perform the following functions in business processes:\n");
+    const roleLines: string[] = [];
+    let hasAssignedFunctions = false;
 
     for (const wfId of workflowIds) {
       const wf = await getWorkflow(wfId).catch(() => null);
@@ -80,6 +79,12 @@ export async function buildRoleBlocks(agentId: string): Promise<string> {
 
       const functions = wf.elements.filter(el => el.type === "function" && el.role === roleId);
       if (functions.length === 0) continue;
+      if (!hasAssignedFunctions) {
+        roleLines.push(`## Role: ${role.name}`);
+        if (role.description) roleLines.push(role.description);
+        roleLines.push("\nYou perform the following functions in business processes:\n");
+        hasAssignedFunctions = true;
+      }
 
       roleLines.push(`### Process: ${wf.name}`);
 
@@ -115,7 +120,9 @@ export async function buildRoleBlocks(agentId: string): Promise<string> {
       }
     }
 
-    blocks.push(roleLines.join("\n"));
+    if (hasAssignedFunctions) {
+      blocks.push(roleLines.join("\n"));
+    }
   }
 
   if (blocks.length === 0) return "";
