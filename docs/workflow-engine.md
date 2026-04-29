@@ -171,7 +171,7 @@ The flag `PG_READ=true` switches reads to PostgreSQL (Phase 2 migration, issue #
 
 ### Write path
 
-All mutations go through `pgUpsertCase` / `pgUpsertWorkItem` / etc. Writes are fire-and-forget (`pgWrite`) to avoid blocking the runtime loop on DB latency.
+All mutations go through `pgUpsertCase` / `pgUpsertWorkItem` / etc. Most runtime writes are fire-and-forget (`pgWrite`) to avoid blocking the runtime loop on DB latency. Workflow definition writes are awaited by the workflow action executor so `workflow_snapshots` cannot race ahead of their parent `workflows` row.
 
 ### Read path
 

@@ -425,7 +425,7 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
     await redis.set(WORKFLOW_KEY_PREFIX + saved.id, JSON.stringify(saved));
     await redis.sadd(WORKFLOW_INDEX_KEY, saved.id);
     await updateRoleWorkflowIndex(saved as WorkflowDefinition);
-    pgUpsertWorkflow(saved as any);
+    await pgUpsertWorkflow(saved as any);
     syncSchemaToRegistry(saved as WorkflowDefinition, null).catch(e => log.error("schema-sync create error", { error: e instanceof Error ? e.message : String(e) }));
     return { workflow: saved, errors: [] };
   }
@@ -434,7 +434,7 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
   await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
   await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
   await updateRoleWorkflowIndex(def);
-  pgUpsertWorkflow(def as any);
+  await pgUpsertWorkflow(def as any);
   syncSchemaToRegistry(def, null).catch(e => log.error("schema-sync create error", { error: e instanceof Error ? e.message : String(e) }));
   return { workflow: def, errors: [] };
 }
@@ -449,7 +449,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   const versionNum = await redis.incr(WORKFLOW_VERSION_CTR_PREFIX + id);
   const archived = { ...JSON.parse(raw), saved_at: new Date().toISOString() };
   await redis.set(`${WORKFLOW_VERSION_KEY_PREFIX}${id}:v${versionNum}`, JSON.stringify(archived));
-  pgSaveWorkflowSnapshot(id, Number(versionNum), archived as any);
+  await pgSaveWorkflowSnapshot(id, Number(versionNum), archived as any);
 
   const updated: WorkflowDefinition = { ...current, ...patch, id }; // id is immutable
   const normalized = normalizeSystems(updated);
@@ -458,7 +458,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
     const saved = { ...normalized, status: 'draft' };
     await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
     await updateRoleWorkflowIndex(saved as WorkflowDefinition);
-    pgUpsertWorkflow(saved as any);
+    await pgUpsertWorkflow(saved as any);
     syncSchemaToRegistry(saved as WorkflowDefinition, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
     return { workflow: saved, errors: [] };
   }
@@ -470,7 +470,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   await updateRoleWorkflowIndex(normalized);
   // Notify hot-reload listener: agents with roles in this workflow need AGENTS.md refresh
   redis.xadd("konoha:agent-reload", "*", "type", "workflow.updated", "workflow_id", id, "timestamp", new Date().toISOString()).catch(silentCatch("workflow updated notification"));
-  pgUpsertWorkflow(normalized as any);
+  await pgUpsertWorkflow(normalized as any);
   syncSchemaToRegistry(normalized, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
   return { workflow: normalized, errors: [] };
 }
@@ -483,7 +483,7 @@ export async function archiveWorkflow(id: string): Promise<boolean> {
   await removeFromRoleWorkflowIndex(def);
   // Emit orphan warnings for roles/docs that were exclusive to this workflow
   cleanupWorkflowRefs(def).catch(e => log.error("schema-sync archiveWorkflow cleanup error", { error: e instanceof Error ? e.message : String(e) }));
-  pgDeleteWorkflow(id);
+  await pgDeleteWorkflow(id);
   // Keep the key in Redis (archived, not deleted) — remove from active index only
   return true;
 }

@@ -20,10 +20,11 @@ import { requireAuth } from "./middleware/auth";
 import {
   getAction,
   isValidAction,
+  validateActionArgs,
   type ActionDef,
-  type AutonomyLevel,
 } from "./action-registry";
 import { auditLog, checkAutonomy } from "./assistant-actions";
+import { assertActionArgs, executeActionDirect } from "./action-executor";
 
 // ── Envelope types ───────────────────────────────────────────────────────────
 
@@ -105,12 +106,9 @@ export function validateEnvelope(envelope: ActEnvelope): ValidationError[] {
     return errors;
   }
 
-  // Validate required arguments
-  const def = getAction(envelope.action)!;
-  for (const arg of def.args) {
-    if (arg.required && !(arg.name in envelope.args)) {
-      errors.push({ field: `args.${arg.name}`, message: `Required argument missing: ${arg.name}` });
-    }
+  const argsValidation = validateActionArgs(envelope.action, envelope.args);
+  for (const message of argsValidation.errors) {
+    errors.push({ field: "args", message });
   }
 
   // Verify category matches action
@@ -140,11 +138,8 @@ function needConfirm(action: string): ActResult {
 }
 
 // ── Action handlers ──────────────────────────────────────────────────────────
-// Maps action IDs to their implementation.
-// Phase 1: delegates to existing routes via internal fetch.
-// Phase 2: direct function calls.
-
-import { redis } from "./redis";
+// Workflow core actions execute directly. Remaining actions temporarily delegate
+// to existing endpoints until their contracts are migrated.
 
 /**
  * Resolve the internal HTTP endpoint for an action.
@@ -247,7 +242,30 @@ actRouter.post("/", requireAuth, async (c) => {
     }
   }
 
-  // 3. Route to handler
+  // 3. Prefer direct executor for migrated core actions.
+  const direct = await executeActionDirect(envelope.action, assertActionArgs(envelope.args));
+  if (direct) {
+    if (category === "act" && action.audited) {
+      await auditLog({
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+        action_type: envelope.action,
+        parameters: JSON.stringify(envelope.args),
+        result: direct.status >= 200 && direct.status < 300 ? "ok" : "error",
+        agent_chain: agentChain,
+        error: direct.status >= 200 && direct.status < 300 ? undefined : JSON.stringify(direct.data),
+      });
+    }
+
+    return c.json(
+      direct.status >= 200 && direct.status < 300
+        ? ok(envelope.action, direct.data)
+        : fail(envelope.action, isRecordWithError(direct.data) ? direct.data.error : JSON.stringify(direct.data)),
+      direct.status as any,
+    );
+  }
+
+  // 4. Route to legacy handler.
   const endpoint = resolveEndpoint(action, envelope.args);
   if (!endpoint) {
     // No current endpoint mapping — return action definition for reference
@@ -257,7 +275,7 @@ actRouter.post("/", requireAuth, async (c) => {
     }));
   }
 
-  // 4. Execute via internal sub-request
+  // 5. Execute via internal sub-request
   try {
     const baseUrl = `http://127.0.0.1:${process.env.KONOHA_PORT || 3200}`;
     const url = `${baseUrl}${endpoint.path}`;
@@ -280,7 +298,7 @@ actRouter.post("/", requireAuth, async (c) => {
     const response = await fetch(url, fetchOpts);
     const data = await response.json();
 
-    // 5. Audit log (for act/mutation actions)
+    // 6. Audit log (for act/mutation actions)
     if (category === "act" && action.audited) {
       await auditLog({
         timestamp: new Date().toISOString(),
@@ -301,6 +319,10 @@ actRouter.post("/", requireAuth, async (c) => {
     return c.json(fail(envelope.action, `Internal routing error: ${e.message}`), 500);
   }
 });
+
+function isRecordWithError(value: unknown): value is { error: string } {
+  return value !== null && typeof value === "object" && "error" in value && typeof (value as any).error === "string";
+}
 
 /**
  * POST /act/intent — Decompose a high-level intent into an action sequence.

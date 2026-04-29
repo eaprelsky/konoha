@@ -19,7 +19,7 @@ Current status legend:
 
 | Domain | HTTP surface | MCP surface | Action surface | Status | Follow-up |
 |---|---|---|---|---|---|
-| Workflow definitions | `/workflows` routes | `konoha_workflow_list/get/create/update` behind `process-tools` | `workflow.create/update/delete/list/get`, plus element/flow/trigger actions | Partial | #589: route mutations through `/act`; #591: eEPC regression suite |
+| Workflow definitions | `/workflows` compatibility wrappers | `konoha_workflow_list/get/create/update` behind `process-tools` | `workflow.create/update/delete/list/get`, plus element/flow/trigger actions | Canonical action executor for HTTP and `/act`; MCP still HTTP-wrapper | #591: eEPC regression suite |
 | Workflow elements/flow/triggers | Coarse workflow update via `/workflows`; trigger resolver routes | No fine-grained MCP tools | `element.add/update/remove`, `flow.add/remove`, `trigger.resolve/subscribe/cancel` | Gap | #589: promote action executor; #590 follow-up if MCP fine-grained editing is needed |
 | Cases | `/cases` routes | `konoha_case_list/start/get` | `case.start/get/list/close`, `event.confirm`, `event.waiting.list` | Partial | #592: runtime hardening; add MCP wrappers only after semantics are stable |
 | Work items | `/workitems` routes | `konoha_workitem_list/complete`, `konoha_complete_task` | `workitem.create/update/list/complete/cancel` | Partial | #589: unify completion path through validated action contracts |
@@ -38,14 +38,14 @@ Current status legend:
 
 ## Immediate Decisions
 
-- Workflow mutations should converge on `/act` and the action registry first; MCP tools should become thin wrappers after that.
+- Workflow definition mutations now converge on the action executor from `/act` and `/workflows`; MCP workflow tools are still HTTP wrappers and should become action wrappers when the MCP surface is revised.
 - MCP parity should not mean “every route becomes a tool”. Agent-facing tools should cover stable, useful operations; admin-only surfaces can remain HTTP-only.
 - Runtime semantics come before broader tool exposure. Waits, joins, subprocesses, retries, and idempotency need tests before more agents can safely drive them.
 - Legacy chat routes should remain compatibility shims only. New UI/API/MCP work should target `/api/ai/chat`, `/act`, and typed action receipts.
 
 ## Coverage Gaps To Track
 
-- #589 — make `/act` the primary executor for workflow core actions.
+- #589 — make `/act` the primary executor for workflow core actions. Closed for workflow definitions; element/flow/runtime operations remain scoped follow-ups.
 - #591 — deterministic eEPC state-machine regression suite.
 - #592 — harden waits, joins, subprocesses, retries, and idempotency.
 - #593 — persistence/API/MCP contracts for artifacts, roles, reminders, and agents.
