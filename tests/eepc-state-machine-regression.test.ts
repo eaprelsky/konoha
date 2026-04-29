@@ -143,7 +143,7 @@ describe("eEPC state-machine regression suite", () => {
     expect(await loadActiveWaitsForCase(kase.case_id)).toEqual([]);
   });
 
-  test("sales workflow turns Telegram lead into Sasuke triage and sales owner work items", async () => {
+  test("sales workflow turns Telegram lead into lead triage and sales owner work items", async () => {
     const id = wfId("sales-lead-intake");
     const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");
     const def: WorkflowDefinition = { ...JSON.parse(raw), id };
@@ -159,7 +159,7 @@ describe("eEPC state-machine regression suite", () => {
     expect(kase.position).toBe("f1");
 
     const triage = await pendingWorkItemForCase(kase.case_id, "f1");
-    expect(triage.assignee).toBe("sasuke");
+    expect(triage.assignee).toBe("lead_triage_specialist");
     expect(triage.input.source_chat).toBe("coMind Лиды");
     expect(triage.input._intent).toBeUndefined();
     const triageInstruction = await loadInstructionText(["sales.lead.triage"]);
@@ -244,7 +244,7 @@ describe("eEPC state-machine regression suite", () => {
       name: "Function output gateway regression",
       elements: [
         { id: "start", type: "event", label: "Started" },
-        { id: "triage", type: "function", label: "Triage", role: "sasuke" },
+        { id: "triage", type: "function", label: "Triage", role: "lead_triage_specialist" },
         { id: "route", type: "gateway", label: "Route", operator: "XOR" },
         { id: "accept", type: "function", label: "Accept lead", role: "sales_owner" },
         { id: "reject", type: "function", label: "Reject lead", role: "sales_owner" },

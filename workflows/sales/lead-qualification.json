@@ -2,7 +2,7 @@
   "id": "lead-qualification",
   "version": "3.0.0",
   "name": "Sales Lead Intake",
-  "description": "Human-in-the-loop sales workflow for signals from Telegram lead chats. Sasuke triages the incoming signal, the sales owner reviews it, prepares a content proposal, requests an estimate, and assembles the commercial proposal/follow-up. This replaces hardcoded Sasuke reminders with explicit workflow state.",
+  "description": "Human-in-the-loop sales workflow for signals from Telegram lead chats. A lead triage specialist reviews the incoming signal, the sales owner reviews it, prepares a content proposal, requests an estimate, and assembles the commercial proposal/follow-up. This replaces hardcoded agent reminders with explicit workflow state.",
   "triggers": [
     { "event_type": "lead.received", "start_node": "e1" }
   ],
@@ -17,7 +17,7 @@
       "doc_id": "sales.lead.human-review",
       "name": "Sales lead human review instruction",
       "type": "instruction",
-      "content": "Review Sasuke's triage and decide whether the signal should continue through the sales funnel. Return decision:string, lead_relevant:boolean, missing_context:string[], next_action:string, owner_notes:string. If context is insufficient, request clarification instead of inventing facts."
+      "content": "Review the lead triage output and decide whether the signal should continue through the sales funnel. Return decision:string, lead_relevant:boolean, missing_context:string[], next_action:string, owner_notes:string. If context is insufficient, request clarification instead of inventing facts."
     },
     {
       "doc_id": "sales.lead.content-proposal",
@@ -56,7 +56,7 @@
       "id": "f1",
       "type": "function",
       "label": "Triage lead signal",
-      "role": "sasuke",
+      "role": "lead_triage_specialist",
       "documents": ["sales.lead.triage"]
     },
     { "id": "e2", "type": "event", "label": "Lead triaged" },

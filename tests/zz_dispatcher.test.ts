@@ -124,6 +124,33 @@ describe("dispatcher coverage", () => {
     expect(state.sentMessages[0].text).toContain("Функция: Review request");
   });
 
+  test("routes a business workflow role to an assigned agent alias", async () => {
+    state.agents = [
+      { id: "sasuke", name: "Sasuke" },
+    ];
+    state.roleDef = makeRoleDef({
+      role_id: "lead_triage_specialist",
+      name: "Lead Triage Specialist",
+      assignees: ["sasuke"],
+      strategy: "manual",
+    });
+
+    await dispatchWorkItem({
+      role: "lead_triage_specialist",
+      label: "Triage lead signal",
+      work_item_id: "wi-lead-triage",
+      case_id: "case-sales",
+      process_id: "lead-qualification",
+      element_id: "f1",
+      docIds: ["sales.lead.triage"],
+    });
+
+    expect(state.sentMessages).toHaveLength(1);
+    expect(state.sentMessages[0].to).toBe("sasuke");
+    expect(state.sentMessages[0].text).toContain("Роль: lead_triage_specialist (role-m2m:manual)");
+    expect(state.sentMessages[0].text).not.toContain("Роль: sasuke");
+  });
+
   test("rotates assignees for round-robin roles", async () => {
     state.agents = [
       { id: "naruto", name: "Naruto" },

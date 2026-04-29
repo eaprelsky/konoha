@@ -86,12 +86,12 @@ describe("workflow-loader e2e: lead-qualification", () => {
     expect(e1!.trigger?.source).toBe("telegram");
   });
 
-  test("models Sasuke triage followed by human sales owner tasks", () => {
+  test("models lead triage followed by human sales owner tasks", () => {
     const stages = def.elements
       .filter(el => el.type === "function")
       .map(el => ({ id: el.id, label: el.label, role: el.role, documents: el.documents }));
     expect(stages).toEqual([
-      { id: "f1", label: "Triage lead signal", role: "sasuke", documents: ["sales.lead.triage"] },
+      { id: "f1", label: "Triage lead signal", role: "lead_triage_specialist", documents: ["sales.lead.triage"] },
       { id: "f2", label: "Review lead and decide next step", role: "sales_owner", documents: ["sales.lead.human-review"] },
       { id: "f3", label: "Prepare content proposal", role: "sales_owner", documents: ["sales.lead.content-proposal"] },
       { id: "f4", label: "Prepare estimate request", role: "sales_owner", documents: ["sales.lead.estimate-request"] },
