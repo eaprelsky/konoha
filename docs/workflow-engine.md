@@ -1,6 +1,6 @@
 # Workflow Engine — Architecture
 
-> Source: `modules/workflow-engine/` (frontend) · `src/runtime/` · `src/dispatcher.ts`
+> Source: `frontend/src` (canonical workflow UI) · `modules/workflow-engine/` (plugin wrappers + runtime module) · `src/runtime/` · `src/dispatcher.ts`
 
 ## Overview
 
@@ -10,6 +10,12 @@ The Workflow Engine executes business processes modelled as **eEPC diagrams** (e
 - **Flow** — directed edges `[from, to, condition?]`
 
 At runtime the engine creates a **Case** (instance of a process) and advances it step by step until it reaches a terminal event.
+
+## Frontend Boundary
+
+`frontend/src` is the canonical source of truth for workflow editor UI behavior: editor state, canvas rendering, schema patch application, Tsunade chat panel compatibility, work item UI, and navigation events.
+
+`modules/workflow-engine/frontend` is a plugin boundary. Its editor-facing files are thin re-export wrappers to `@core/...` so the plugin keeps stable route/import paths without maintaining a second copy of workflow UI behavior. New workflow editor behavior must be added to `frontend/src` first; module-local forks are allowed only for genuinely module-specific pages.
 
 ---
 
