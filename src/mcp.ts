@@ -2,6 +2,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { silentCatch } from "./logger";
+import {
+  actionCall,
+  actionCallSchema,
+  actionCatalog,
+  actionCatalogSchema,
+  actionGet,
+  actionGetSchema,
+} from "./mcp-action-bridge";
 
 const API_URL = process.env.KONOHA_URL || "http://127.0.0.1:3100";
 const ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
@@ -74,6 +82,31 @@ const server = new McpServer({
   name: "konoha",
   version: "0.1.0",
 });
+
+server.tool(
+  "konoha_action_catalog",
+  "List canonical Action Spine operations available through /act. Use this before konoha_action_call.",
+  actionCatalogSchema,
+  async (args) => actionCatalog(args)
+);
+
+server.tool(
+  "konoha_action_get",
+  "Get one canonical Action Spine operation contract, including args, security, audit, and implementation metadata.",
+  actionGetSchema,
+  async ({ action }) => actionGet(action)
+);
+
+server.tool(
+  "konoha_action_call",
+  "Invoke a canonical Action Spine operation through /act and return the same action receipt as the API.",
+  actionCallSchema,
+  async (args) => actionCall(args, {
+    api,
+    tokenProvider: () => agentToken,
+    allowAdminFallback: process.env.KONOHA_MCP_ACTION_ADMIN_FALLBACK === "1",
+  })
+);
 
 server.tool(
   "konoha_register",
