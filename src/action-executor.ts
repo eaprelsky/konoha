@@ -264,13 +264,18 @@ async function executeCaseAction(action: string, args: Record<string, unknown>):
     case "case.start": {
       const invalid = validationFailure("case.start", args);
       if (invalid) return invalid;
-      const kase = await createCase(
-        String(args.process_id),
-        String(args.subject),
-        (args.payload as Record<string, unknown>) ?? {},
-        args.start_node ? String(args.start_node) : undefined,
-      );
-      return { status: 201, data: kase };
+      try {
+        const kase = await createCase(
+          String(args.process_id),
+          String(args.subject),
+          (args.payload as Record<string, unknown>) ?? {},
+          args.start_node ? String(args.start_node) : undefined,
+        );
+        return { status: 201, data: kase };
+      } catch (e: any) {
+        const isNotFound = e.message?.includes("not found");
+        return { status: isNotFound ? 404 : 400, data: { error: e.message } };
+      }
     }
     case "case.get": {
       const invalid = validationFailure("case.get", args);
@@ -313,7 +318,7 @@ async function executeWorkItemAction(action: string, args: Record<string, unknow
       } catch (e: any) {
         if (e.message?.includes("not found")) return { status: 404, data: { error: e.message } };
         if (e.message?.includes("already done")) return { status: 409, data: { error: e.message } };
-        throw e;
+        return { status: 400, data: { error: e.message } };
       }
     }
     case "workitem.create": {
@@ -324,6 +329,7 @@ async function executeWorkItemAction(action: string, args: Record<string, unknow
         assignee: String(args.assignee),
         input: args.input as Record<string, unknown> | undefined,
         deadline: args.deadline ? String(args.deadline) : undefined,
+        process_id: args.process_id ? String(args.process_id) : undefined,
       });
       return { status: 201, data: wi };
     }
@@ -336,6 +342,7 @@ async function executeWorkItemAction(action: string, args: Record<string, unknow
         if (args.assignee !== undefined) patch.assignee = args.assignee;
         if (args.deadline !== undefined) patch.deadline = args.deadline;
         if (args.output !== undefined) patch.output = args.output;
+        if (args.label !== undefined) patch.label = args.label;
         const wi = await updateWorkItem(String(args.id), patch as any);
         return { status: 200, data: wi };
       } catch (e: any) {

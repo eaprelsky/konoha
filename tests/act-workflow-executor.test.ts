@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import Redis from "ioredis";
 import { AUDIT_STREAM, AUTONOMY_KEY } from "../src/assistant-actions";
 import { unregisterAgent } from "../src/redis";
+import { deleteCasesByProcess } from "../src/runtime/cases/crud";
 import { pgDeleteWorkflow, pgDeleteWorkItem } from "../src/storage/pg";
 
 process.env.KONOHA_PORT = "0";
@@ -15,6 +16,7 @@ const RUN = `act-wf-${Date.now()}`;
 const ACT_WORKFLOW_ID = `${RUN}-direct`;
 const HTTP_WORKFLOW_ID_PREFIX = `${RUN}-http`;
 let actWorkItemId: string | null = null;
+let wrapperWorkItemId: string | null = null;
 const ACT_PERSON_ID = `${RUN}-person`;
 const RBAC_AGENT_ID = `${RUN}-rbac-agent`;
 const savedAutonomy: Record<string, string | null> = {};
@@ -65,6 +67,7 @@ afterAll(async () => {
   for (const id of ids) {
     if (id.startsWith(HTTP_WORKFLOW_ID_PREFIX)) await cleanupWorkflow(id);
   }
+  await deleteCasesByProcess(`${HTTP_WORKFLOW_ID_PREFIX}-case`);
   if (actWorkItemId) {
     await redis.del(`workitem:${actWorkItemId}`);
     await redis.srem("konoha:workitems:assignee:act-test", actWorkItemId);
@@ -72,6 +75,14 @@ afterAll(async () => {
     await redis.srem("konoha:workitems:status:cancelled", actWorkItemId);
     await redis.zrem("konoha:workitems:all", actWorkItemId);
     await pgDeleteWorkItem(actWorkItemId);
+  }
+  if (wrapperWorkItemId) {
+    await redis.del(`workitem:${wrapperWorkItemId}`);
+    await redis.srem("konoha:workitems:assignee:act-wrapper", wrapperWorkItemId);
+    await redis.srem("konoha:workitems:status:pending", wrapperWorkItemId);
+    await redis.srem("konoha:workitems:status:cancelled", wrapperWorkItemId);
+    await redis.zrem("konoha:workitems:all", wrapperWorkItemId);
+    await pgDeleteWorkItem(wrapperWorkItemId);
   }
   await redis.hdel("people:custom", ACT_PERSON_ID);
   await unregisterAgent(RBAC_AGENT_ID, true).catch(() => {});
@@ -144,6 +155,36 @@ describe("/act workflow executor", () => {
     expect(body.flow).toEqual([]);
   });
 
+  test("keeps legacy /cases start as a compatibility wrapper around case.start", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-case`;
+    const workflowRes = await app.fetch(new Request("http://localhost/workflows?draft=true", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        id: workflowId,
+        name: "HTTP case wrapper workflow",
+        elements: [{ id: "start", type: "event", label: "Start" }],
+        flow: [],
+      }),
+    }));
+    expect(workflowRes.status).toBe(201);
+
+    const res = await app.fetch(new Request("http://localhost/cases", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        process_id: workflowId,
+        subject: "HTTP wrapper case",
+        payload: { source: "act-workflow-executor.test" },
+      }),
+    }));
+
+    const body = await res.json();
+    expect(res.status).toBe(201);
+    expect(body.process_id).toBe(workflowId);
+    expect(body.subject).toBe("HTTP wrapper case");
+  });
+
   test("executes case.list directly through the action envelope", async () => {
     const res = await app.fetch(new Request("http://localhost/act", {
       method: "POST",
@@ -212,6 +253,46 @@ describe("/act workflow executor", () => {
     const cancelled = await cancelRes.json();
     expect(cancelRes.status).toBe(200);
     expect(cancelled.data.status).toBe("cancelled");
+  });
+
+  test("keeps legacy /workitems mutations as compatibility wrappers around workitem actions", async () => {
+    const createRes = await app.fetch(new Request("http://localhost/workitems", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        label: "HTTP wrapper work item",
+        assignee: "act-wrapper",
+        input: { source: "legacy-wrapper" },
+        process_id: ACT_WORKFLOW_ID,
+      }),
+    }));
+
+    const created = await createRes.json();
+    expect(createRes.status).toBe(201);
+    expect(created.assignee).toBe("act-wrapper");
+    expect(created.process_id).toBe(ACT_WORKFLOW_ID);
+    wrapperWorkItemId = created.work_item_id;
+
+    const updateRes = await app.fetch(new Request(`http://localhost/workitems/${wrapperWorkItemId}`, {
+      method: "PATCH",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        label: "Updated HTTP wrapper work item",
+        deadline: "2030-02-01T00:00:00.000Z",
+      }),
+    }));
+    const updated = await updateRes.json();
+    expect(updateRes.status).toBe(200);
+    expect(updated.label).toBe("Updated HTTP wrapper work item");
+    expect(updated.deadline).toBe("2030-02-01T00:00:00.000Z");
+
+    const deleteRes = await app.fetch(new Request(`http://localhost/workitems/${wrapperWorkItemId}`, {
+      method: "DELETE",
+      headers: adminHeaders(),
+    }));
+    const cancelled = await deleteRes.json();
+    expect(deleteRes.status).toBe(200);
+    expect(cancelled.status).toBe("cancelled");
   });
 
   test("executes person actions directly through the action envelope", async () => {

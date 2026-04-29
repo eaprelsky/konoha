@@ -3,16 +3,11 @@ import { requireAdmin } from "../../../../src/middleware/auth";
 import type { HonoEnv, CallerInfo } from "../../../../src/types";
 import { redis } from "../../../../src/redis";
 import {
-  createCase,
   getCase,
-  forceCloseCase,
-  completeWorkItem,
   listWorkItems,
   listCases,
   deleteCasesByProcess,
-  createStandaloneWorkItem,
   getWorkItem,
-  updateWorkItem,
   createReminder,
   listReminders,
   updateReminderStatus,
@@ -33,6 +28,7 @@ import {
 } from "../../../../src/runtime/event-waits";
 import { getWorkflow } from "../../../../src/workflow-loader";
 import { emitEvent } from "../../../../src/runtime/event-log";
+import { executeActionDirect, type ActionExecution } from "../../../../src/action-executor";
 
 // Cases router — mounted at /cases
 export const casesRouter = new Hono<HonoEnv>();
@@ -62,6 +58,10 @@ function authorizedAssignee(c: RouteContext, requested?: string): string | undef
   return current.agentId ?? undefined;
 }
 
+function actionJson(c: RouteContext, result: ActionExecution): Response {
+  return c.json(result.data as any, result.status as any);
+}
+
 casesRouter.get("/", async (c) => {
   const status = (c.req.query("status") || undefined) as CaseStatus | undefined;
   const process_id = c.req.query("process_id") || undefined;
@@ -77,13 +77,8 @@ casesRouter.post("/", requireAdmin, async (c) => {
   const body = await c.req.json();
   const { process_id, subject, payload = {}, start_node } = body;
   if (!process_id || !subject) return c.json({ error: "process_id and subject required" }, 400);
-  try {
-    const kase = await createCase(process_id, subject, payload, start_node);
-    return c.json(kase, 201);
-  } catch (e: any) {
-    const isNotFound = e.message?.includes("not found");
-    return c.json({ error: e.message }, isNotFound ? 404 : 400);
-  }
+  const result = await executeActionDirect("case.start", { process_id, subject, payload, start_node });
+  return actionJson(c, result!);
 });
 
 casesRouter.get("/:id", async (c) => {
@@ -95,9 +90,8 @@ casesRouter.get("/:id", async (c) => {
 
 casesRouter.post("/:id/close", requireAdmin, async (c) => {
   const id = c.req.param("id");
-  const kase = await forceCloseCase(id!);
-  if (!kase) return c.json({ error: "Case not found" }, 404);
-  return c.json(kase);
+  const result = await executeActionDirect("case.close", { id });
+  return actionJson(c, result!);
 });
 
 // DELETE /cases?process_id=... — bulk delete cases for a process (admin cleanup)
@@ -192,12 +186,8 @@ workitemsRouter.post("/:id/complete", async (c) => {
   if (forbidden) return forbidden;
   const body = await c.req.json().catch(() => ({}));
   const output = body.output || {};
-  try {
-    const result = await completeWorkItem(id, output);
-    return c.json(result);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 400);
-  }
+  const result = await executeActionDirect("workitem.complete", { id, output });
+  return actionJson(c, result!);
 });
 
 workitemsRouter.get("/", async (c) => {
@@ -215,20 +205,16 @@ workitemsRouter.post("/", requireAdmin, async (c) => {
   const body = await c.req.json();
   const { label, assignee, input = {}, deadline, process_id } = body;
   if (!label || !assignee) return c.json({ error: "label and assignee required" }, 400);
-  const wi = await createStandaloneWorkItem({ label, assignee, input, deadline, process_id });
-  return c.json(wi, 201);
+  const result = await executeActionDirect("workitem.create", { label, assignee, input, deadline, process_id });
+  return actionJson(c, result!);
 });
 
 workitemsRouter.patch("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const body = await c.req.json().catch(() => ({}));
   const { status, assignee, deadline, output, label } = body;
-  try {
-    const wi = await updateWorkItem(id, { status, assignee, deadline, output, label });
-    return c.json(wi);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 400);
-  }
+  const result = await executeActionDirect("workitem.update", { id, status, assignee, deadline, output, label });
+  return actionJson(c, result!);
 });
 
 workitemsRouter.delete("/all", requireAdmin, async (c) => {
@@ -238,12 +224,8 @@ workitemsRouter.delete("/all", requireAdmin, async (c) => {
 
 workitemsRouter.delete("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
-  try {
-    const wi = await updateWorkItem(id, { status: "cancelled" });
-    return c.json(wi);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 404);
-  }
+  const result = await executeActionDirect("workitem.cancel", { id });
+  return actionJson(c, result!);
 });
 
 // POST /workitems/healthcheck — manual trigger for stuck work item recovery (#508)
