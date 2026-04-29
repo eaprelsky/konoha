@@ -81,7 +81,7 @@ router.post("/auth/login", async (c) => {
 router.get("/auth/me", async (c) => {
   const session = verifyDashboardSessionToken(getCookie(c, dashboardSessionCookieName()));
   if (!session) return c.json({ authenticated: false }, 401);
-  return c.json({ authenticated: true, username: session.sub });
+  return c.json({ authenticated: true, username: session.sub, isAdmin: true });
 });
 
 router.post("/auth/logout", async (c) => {

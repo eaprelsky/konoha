@@ -145,6 +145,45 @@ describe("Dashboard auth", () => {
     expect(agents.status).toBe(200);
   });
 
+  test("dashboard profile is saved separately from people directory", async () => {
+    const rawLogin = await app.fetch(new Request("http://localhost/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Real-IP": `10.0.3.${RUN.slice(-3)}` },
+      body: JSON.stringify({ username: "test-admin", password: "test-dashboard-password" }),
+    }));
+    const sessionCookie = (rawLogin.headers.get("set-cookie") || "").split(";")[0];
+    expect(sessionCookie).toContain("konoha_dash_session=");
+
+    const listed = await req("GET", "/people");
+    const trusted = Array.isArray(listed.body)
+      ? listed.body.find((person: any) => person.id && person.source !== "custom")
+      : null;
+
+    const saved = await req("PUT", "/profile/me", {
+      headers: { Cookie: sessionCookie, "Content-Type": "application/json" },
+      body: {
+        display_name: "Dashboard Owner",
+        position: "Owner",
+        person_id: trusted?.id,
+        capabilities: ["profile-test"],
+      },
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body.username).toBe("test-admin");
+    expect(saved.body.display_name).toBe("Dashboard Owner");
+    expect(saved.body.person_id).toBe(trusted?.id);
+
+    const profile = await req("GET", "/profile/me", {
+      headers: { Cookie: sessionCookie, "Content-Type": "application/json" },
+    });
+    expect(profile.status).toBe(200);
+    expect(profile.body.display_name).toBe("Dashboard Owner");
+
+    if (trusted?.id) {
+      expect(await redis.hget("people:custom", trusted.id)).toBeNull();
+    }
+  });
+
   test("dashboard host rejects injected bearer without dashboard session", async () => {
     const { status } = await req("GET", "/agents", {
       headers: {

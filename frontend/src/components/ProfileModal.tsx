@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type React from 'react';
 import { api } from '../api/client';
 import { useToken } from '../context/TokenContext';
-import type { Person, Skill } from '../api/types';
+import type { DashboardProfile, Person, Skill } from '../api/types';
 
 const styles = `
   .profile-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); z-index: 2000; display: flex; justify-content: center; align-items: center; }
@@ -62,6 +62,7 @@ export function ProfileModal({ onClose }: Props) {
   const [people, setPeople] = useState<Person[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [person, setPerson] = useState<Person | null>(null);
+  const [profile, setProfile] = useState<DashboardProfile | null>(null);
 
   const [name, setName] = useState('');
   const [position, setPosition] = useState('');
@@ -90,32 +91,49 @@ export function ProfileModal({ onClose }: Props) {
 
   useEffect(() => {
     if (!token) return;
-    Promise.all([api.people.list(), api.skills.list()])
-      .then(([pl, sl]) => {
+    Promise.all([api.profile.me(), api.people.list(), api.skills.list()])
+      .then(([profileData, pl, sl]) => {
         setPeople(pl);
         setSkills(sl);
-        const storedId = localStorage.getItem(PROFILE_PERSON_KEY);
-        if (storedId) {
-          const found = pl.find(p => p.id === storedId);
-          if (found) { loadPerson(found); return; }
+        setProfile(profileData);
+        const linkedId = profileData.person_id || localStorage.getItem(PROFILE_PERSON_KEY);
+        if (linkedId) {
+          const found = pl.find(p => p.id === linkedId) || null;
+          loadProfile(profileData, found);
+          return;
         }
-        setPhase('pick');
+        if (profileData.display_name && profileData.display_name !== profileData.username) {
+          loadProfile(profileData, null);
+          return;
+        }
+        setPhase(pl.length > 0 ? 'pick' : 'edit');
       })
-      .catch(() => setPhase('pick'));
+      .catch((e: any) => { setError(e.message); setPhase('edit'); });
   }, [token]);
 
-  function loadPerson(p: Person) {
-    setPerson(p);
-    setName(p.name);
-    setPosition(p.position || '');
-    setCapabilities(p.capabilities || []);
-    setAvatarUrl(p.avatar_url);
+  function loadProfile(profileData: DashboardProfile, linkedPerson: Person | null) {
+    setProfile(profileData);
+    setPerson(linkedPerson);
+    setName(profileData.display_name || linkedPerson?.name || profileData.username);
+    setPosition(profileData.position || linkedPerson?.position || '');
+    setCapabilities(profileData.capabilities || linkedPerson?.capabilities || []);
+    setAvatarUrl(profileData.avatar_url || linkedPerson?.avatar_url);
     setPhase('edit');
   }
 
   function pickPerson(p: Person) {
     localStorage.setItem(PROFILE_PERSON_KEY, p.id);
-    loadPerson(p);
+    loadProfile({
+      username: profile?.username || 'admin',
+      display_name: profile?.display_name || p.name,
+      position: profile?.position || p.position,
+      email: profile?.email || p.email,
+      telegram_username: profile?.telegram_username || p.tg_username,
+      telegram_id: profile?.telegram_id || p.tg_id,
+      person_id: p.id,
+      avatar_url: profile?.avatar_url || p.avatar_url,
+      capabilities: profile?.capabilities || p.capabilities,
+    }, p);
   }
 
   function toggleCap(id: string) {
@@ -123,12 +141,11 @@ export function ProfileModal({ onClose }: Props) {
   }
 
   async function doAvatarAction() {
-    if (!person) return;
     if (avatarMode === 'upload') { fileInputRef.current?.click(); return; }
     setGeneratingAvatar(true); setError(null);
     try {
       if (avatarMode === 'generate') {
-        const res = await api.people.generateAvatar(person.id, {
+        const res = await api.profile.generateAvatar({
           style: avatarStyle,
           prompt: avatarPrompt || undefined,
           description: position || undefined,
@@ -136,7 +153,7 @@ export function ProfileModal({ onClose }: Props) {
         setAvatarUrl(res.avatar_url);
       } else if (avatarMode === 'img2img') {
         if (!avatarFile) { setError('Выберите фото для генерации'); return; }
-        const res = await api.people.generateAvatarImg2Img(person.id, avatarFile, avatarPrompt || `Portrait in ${avatarStyle} style`);
+        const res = await api.profile.generateAvatarImg2Img(avatarFile, avatarPrompt || `Portrait in ${avatarStyle} style`);
         setAvatarUrl(res.avatar_url);
       }
     } catch (e: any) {
@@ -147,11 +164,11 @@ export function ProfileModal({ onClose }: Props) {
   }
 
   async function uploadAvatar(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!person || !e.target.files?.[0]) return;
+    if (!e.target.files?.[0]) return;
     const file = e.target.files[0];
     setGeneratingAvatar(true); setError(null);
     try {
-      const res = await api.people.uploadAvatar(person.id, file);
+      const res = await api.profile.uploadAvatar(file);
       setAvatarUrl(res.avatar_url);
     } catch (e: any) {
       setError(`Ошибка загрузки: ${e.message}`);
@@ -162,24 +179,20 @@ export function ProfileModal({ onClose }: Props) {
   }
 
   async function save() {
-    if (!person || !name.trim()) { setError('Имя обязательно'); return; }
-    if (person.source === 'file') {
-      setError('Профиль из trusted users редактируется в источнике данных; здесь можно менять пароль и аватар.');
-      return;
-    }
+    if (!name.trim()) { setError('Имя обязательно'); return; }
     setSubmitting(true); setError(null);
     try {
-      await api.people.save({
-        id: person.id,
-        name: name.trim(),
+      const saved = await api.profile.save({
+        display_name: name.trim(),
         position: position.trim(),
-        tg_id: person.tg_id,
-        tg_username: person.tg_username,
-        email: person.email,
-        channel: person.channel,
+        email: profile?.email || person?.email,
+        telegram_id: profile?.telegram_id || person?.tg_id,
+        telegram_username: profile?.telegram_username || person?.tg_username,
+        person_id: person?.id || profile?.person_id,
         capabilities: capabilities.length > 0 ? capabilities : undefined,
         avatar_url: avatarUrl,
       });
+      setProfile(saved);
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -217,6 +230,11 @@ export function ProfileModal({ onClose }: Props) {
 
   const initials = name.charAt(0).toUpperCase() || '?';
   const isFileBased = person?.source === 'file';
+  const telegramValue = profile?.telegram_username
+    ? `@${profile.telegram_username}`
+    : person?.tg_username
+      ? `@${person.tg_username}`
+      : String(profile?.telegram_id || person?.tg_id || '');
 
   return (
     <div className="profile-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -241,6 +259,13 @@ export function ProfileModal({ onClose }: Props) {
                   </div>
                 </div>
               ))}
+              <div className="picker-item" onClick={() => loadProfile(profile || { username: 'admin', display_name: '' }, null)}>
+                <div className="picker-avatar-ph">?</div>
+                <div>
+                  <div className="picker-name">Создать отдельный профиль</div>
+                  <div className="picker-pos">Без привязки к справочнику людей</div>
+                </div>
+              </div>
             </div>
             <div className="profile-actions">
               <button className="btn-profile-cancel" onClick={onClose}>Отмена</button>
@@ -248,14 +273,14 @@ export function ProfileModal({ onClose }: Props) {
           </>
         )}
 
-        {phase === 'edit' && person && (
+        {phase === 'edit' && (
           <div>
             <h2>Мой профиль</h2>
             {error && <div className="profile-error">{error}</div>}
             {passwordStatus && <div className="profile-success">{passwordStatus}</div>}
             {isFileBased && (
               <div className="profile-success">
-                Этот профиль загружен из trusted users. Имя, должность и навыки редактируются в источнике данных; пароль и аватар можно менять здесь.
+                Профиль связан с trusted users. Изменения ниже сохраняются в личный dashboard-профиль и не перезаписывают источник данных.
               </div>
             )}
 
@@ -322,15 +347,15 @@ export function ProfileModal({ onClose }: Props) {
             <div className="profile-section">Основное</div>
             <div className="profile-field">
               <label>Имя *</label>
-              <input value={name} onChange={e => setName(e.target.value)} required disabled={isFileBased} />
+              <input value={name} onChange={e => setName(e.target.value)} required />
             </div>
             <div className="profile-field">
               <label>Должность</label>
-              <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Например: CTO" disabled={isFileBased} />
+              <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Например: CTO" />
             </div>
             <div className="profile-field">
               <label>Telegram</label>
-              <input value={person.tg_username ? `@${person.tg_username}` : String(person.tg_id)} disabled />
+              <input value={telegramValue} disabled />
             </div>
 
             {skills.length > 0 && (
@@ -341,7 +366,7 @@ export function ProfileModal({ onClose }: Props) {
                     <span
                       key={s.id}
                       className={`cap-chip ${capabilities.includes(s.id) ? 'on' : 'off'}`}
-                      onClick={() => { if (!isFileBased) toggleCap(s.id); }}
+                      onClick={() => toggleCap(s.id)}
                     >
                       {s.name || s.id}
                     </span>
@@ -374,11 +399,9 @@ export function ProfileModal({ onClose }: Props) {
 
             <div className="profile-actions">
               <button type="button" className="btn-profile-cancel" onClick={onClose}>Отмена</button>
-              {!isFileBased && (
-                <button type="button" className="btn-profile-save" disabled={submitting} onClick={save}>
-                  {submitting ? 'Сохранение…' : 'Сохранить'}
-                </button>
-              )}
+              <button type="button" className="btn-profile-save" disabled={submitting} onClick={save}>
+                {submitting ? 'Сохранение…' : 'Сохранить'}
+              </button>
             </div>
           </div>
         )}

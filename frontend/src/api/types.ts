@@ -210,6 +210,19 @@ export interface AssistantWorkflowResponse {
   pending_confirmations: WorkflowPendingConfirmation[];
 }
 
+export interface DashboardProfile {
+  username: string;
+  display_name: string;
+  position?: string;
+  email?: string;
+  telegram_username?: string;
+  telegram_id?: number;
+  person_id?: string;
+  avatar_url?: string;
+  capabilities?: string[];
+  updated_at?: string;
+}
+
 export type AssignmentStrategy = 'round-robin' | 'load-balancing' | 'broadcast' | 'manual';
 
 export interface RoleDef {

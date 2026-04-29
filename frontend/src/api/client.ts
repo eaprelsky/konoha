@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse, DashboardProfile } from './types';
 export type { KibaAction, HighlightAction };
 
 export interface AttachmentRef { path: string; name: string; mime?: string; }
@@ -94,6 +94,26 @@ const BASE = '/api';
 // ── Workflows ─────────────────────────────────────────────────────────────────
 
 export const api = {
+  auth: {
+    me: () => apiFetch<{ authenticated: boolean; username: string; isAdmin: boolean; profile?: DashboardProfile }>(`${BASE}/auth/me`),
+  },
+
+  profile: {
+    me: () => apiFetch<DashboardProfile>(`${BASE}/profile/me`),
+    save: (p: Partial<DashboardProfile>) =>
+      apiFetch<DashboardProfile>(`${BASE}/profile/me`, { method: 'PUT', body: JSON.stringify(p) }),
+    generateAvatar: (params?: { style?: string; description?: string; prompt?: string }) =>
+      apiFetch<{ avatar_url: string }>(`${BASE}/profile/me/avatar`, { method: 'POST', body: JSON.stringify(params || {}) }),
+    uploadAvatar: (file: File) => {
+      const fd = new FormData(); fd.append('file', file);
+      return apiFetch<{ avatar_url: string }>(`${BASE}/profile/me/avatar`, { method: 'POST', body: fd });
+    },
+    generateAvatarImg2Img: (file: File, prompt: string) => {
+      const fd = new FormData(); fd.append('file', file); fd.append('prompt', prompt);
+      return apiFetch<{ avatar_url: string }>(`${BASE}/profile/me/avatar`, { method: 'POST', body: fd });
+    },
+  },
+
   workflows: {
     list: () => apiFetch<Workflow[]>(`${BASE}/workflows`),
     get: (id: string) => apiFetch<Workflow>(`${BASE}/workflows/${id}`),
