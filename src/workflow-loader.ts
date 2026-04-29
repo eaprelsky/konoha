@@ -4,6 +4,7 @@ import { redis } from "./redis";
 import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw, pgUpsertRole } from "./storage/pg";
 import { syncSchemaToRegistry, cleanupWorkflowRefs } from "./sync/schema-registry-sync";
 import { silentCatch, createLogger } from "./logger";
+import { upsertDoc, type DocType } from "./runtime/documents";
 
 const log = createLogger("workflow-loader");
 
@@ -75,6 +76,13 @@ export interface WorkflowTrigger {
   start_node: string; // element id to start from
 }
 
+export interface WorkflowDocumentSeed {
+  doc_id: string;
+  name: string;
+  type?: DocType;
+  content: string;
+}
+
 // Flow edge: [from, to] or [from, to, condition]
 // condition is a JS expression evaluated against case payload (e.g. "payload.qualified === true")
 export type FlowEdge = [string, string] | [string, string, string];
@@ -85,6 +93,7 @@ export interface WorkflowDefinition {
   name: string;
   description?: string;
   triggers?: WorkflowTrigger[];
+  documents?: WorkflowDocumentSeed[];
   elements: WorkflowElement[];
   flow: FlowEdge[]; // [from, to] or [from, to, condition]
   parent_id?: string;        // ID of the parent workflow (if this is a sub-process)
@@ -98,6 +107,20 @@ export interface ValidationError {
 
 const WORKFLOW_KEY_PREFIX = "workflow:";
 export const WORKFLOW_INDEX_KEY = "konoha:workflow:index";
+
+async function syncWorkflowDocuments(def: WorkflowDefinition): Promise<void> {
+  for (const doc of def.documents ?? []) {
+    if (!doc.doc_id || !doc.name || typeof doc.content !== "string") {
+      throw new Error(`Workflow "${def.id}" has an invalid document seed`);
+    }
+    await upsertDoc({
+      doc_id: doc.doc_id,
+      name: doc.name,
+      type: doc.type ?? "instruction",
+      content: doc.content,
+    });
+  }
+}
 
 // --- eEPC Validation (6 rules from spec 2.1) ---
 
@@ -373,6 +396,7 @@ export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: num
       errorCount++;
       continue;
     }
+    await syncWorkflowDocuments(def);
     await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
     await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
     await updateRoleWorkflowIndex(def);
@@ -422,6 +446,7 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
   def = normalizeSystems(def);
   if (opts.draft) {
     const saved = { ...def, status: 'draft' };
+    await syncWorkflowDocuments(saved as WorkflowDefinition);
     await redis.set(WORKFLOW_KEY_PREFIX + saved.id, JSON.stringify(saved));
     await redis.sadd(WORKFLOW_INDEX_KEY, saved.id);
     await updateRoleWorkflowIndex(saved as WorkflowDefinition);
@@ -431,6 +456,7 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
   }
   const errors = validateWorkflow(def);
   if (errors.length > 0) return { workflow: def, errors };
+  await syncWorkflowDocuments(def);
   await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
   await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
   await updateRoleWorkflowIndex(def);
@@ -456,6 +482,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
 
   if (opts.draft) {
     const saved = { ...normalized, status: 'draft' };
+    await syncWorkflowDocuments(saved as WorkflowDefinition);
     await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
     await updateRoleWorkflowIndex(saved as WorkflowDefinition);
     await pgUpsertWorkflow(saved as any);
@@ -466,6 +493,7 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   const errors = validateWorkflow(normalized);
   if (errors.length > 0) return { workflow: normalized, errors };
 
+  await syncWorkflowDocuments(normalized);
   await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(normalized));
   await updateRoleWorkflowIndex(normalized);
   // Notify hot-reload listener: agents with roles in this workflow need AGENTS.md refresh

@@ -79,6 +79,27 @@ export async function createDoc(params: { name: string; type: DocType; content: 
   return d;
 }
 
+export async function upsertDoc(params: {
+  doc_id: string;
+  name: string;
+  type?: DocType;
+  content: string;
+}): Promise<DocTemplate> {
+  const now = new Date().toISOString();
+  const existing = await loadDoc(params.doc_id);
+  const d: DocTemplate = {
+    doc_id: params.doc_id,
+    name: params.name,
+    type: params.type ?? "instruction",
+    content: params.content,
+    parameters: extractParameters(params.content),
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+  };
+  await saveDoc(d);
+  return d;
+}
+
 export async function listDocs(): Promise<DocTemplate[]> {
   if (PG_READ) {
     const rows = await pgListDocsRaw();

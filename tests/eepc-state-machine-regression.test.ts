@@ -6,6 +6,7 @@ import { createCase, deleteCasesByProcess, handleEventFired } from "../src/runti
 import { completeWorkItem } from "../src/runtime/work-items";
 import { loadActiveWaitsForCase } from "../src/runtime/event-waits";
 import { deleteReminder, listReminders } from "../src/runtime/reminders";
+import { loadInstructionText } from "../src/document-instructions";
 import { createWorkflow } from "../src/workflow-loader";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import type { WorkflowDefinition } from "../src/workflow-loader";
@@ -160,7 +161,9 @@ describe("eEPC state-machine regression suite", () => {
     const triage = await pendingWorkItemForCase(kase.case_id, "f1");
     expect(triage.assignee).toBe("sasuke");
     expect(triage.input.source_chat).toBe("coMind Лиды");
-    expect(triage.input._intent).toContain("Classify the Telegram signal");
+    expect(triage.input._intent).toBeUndefined();
+    const triageInstruction = await loadInstructionText(["sales.lead.triage"]);
+    expect(triageInstruction).toContain("Classify the Telegram signal");
 
     const afterTriage = await completeWorkItem(triage.work_item_id, {
       classification: "sales_lead",

@@ -89,14 +89,25 @@ describe("workflow-loader e2e: lead-qualification", () => {
   test("models Sasuke triage followed by human sales owner tasks", () => {
     const stages = def.elements
       .filter(el => el.type === "function")
-      .map(el => ({ id: el.id, label: el.label, role: el.role }));
+      .map(el => ({ id: el.id, label: el.label, role: el.role, documents: el.documents }));
     expect(stages).toEqual([
-      { id: "f1", label: "Triage lead signal", role: "sasuke" },
-      { id: "f2", label: "Review lead and decide next step", role: "sales_owner" },
-      { id: "f3", label: "Prepare content proposal", role: "sales_owner" },
-      { id: "f4", label: "Prepare estimate request", role: "sales_owner" },
-      { id: "f5", label: "Assemble commercial proposal and follow-up", role: "sales_owner" },
+      { id: "f1", label: "Triage lead signal", role: "sasuke", documents: ["sales.lead.triage"] },
+      { id: "f2", label: "Review lead and decide next step", role: "sales_owner", documents: ["sales.lead.human-review"] },
+      { id: "f3", label: "Prepare content proposal", role: "sales_owner", documents: ["sales.lead.content-proposal"] },
+      { id: "f4", label: "Prepare estimate request", role: "sales_owner", documents: ["sales.lead.estimate-request"] },
+      { id: "f5", label: "Assemble commercial proposal and follow-up", role: "sales_owner", documents: ["sales.lead.commercial-followup"] },
     ]);
+  });
+
+  test("keeps function instructions as workflow document seeds", () => {
+    expect(def.documents?.map(doc => doc.doc_id).sort()).toEqual([
+      "sales.lead.commercial-followup",
+      "sales.lead.content-proposal",
+      "sales.lead.estimate-request",
+      "sales.lead.human-review",
+      "sales.lead.triage",
+    ]);
+    expect(def.elements.filter(el => el.type === "function").every(el => !el.intent)).toBe(true);
   });
 
   test("has one terminal event for the prepared follow-up", () => {
