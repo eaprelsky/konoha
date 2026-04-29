@@ -10,7 +10,7 @@
 import { Hono } from "hono";
 import { config } from "../config";
 import { createLogger } from "../logger";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requireAdmin } from "../middleware/auth";
 import { redis } from "../redis";
 import {
   readAuditLog,
@@ -143,8 +143,9 @@ router.get("/branding", async (c) => {
   return c.json(await getBranding());
 });
 
-// PUT /branding (requireAuth)
-router.put("/branding", requireAuth, async (c) => {
+// PUT /branding — admin-only. Branding is user-visible and must not be writable
+// by regular agent tokens.
+router.put("/branding", requireAdmin, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "invalid body" }, 400);
   const current = await getBranding();

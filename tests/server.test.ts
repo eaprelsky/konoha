@@ -482,6 +482,76 @@ describe("Per-agent token access control", () => {
   });
 });
 
+// ── User-visible configuration access control ────────────────────────────────
+
+describe("User-visible configuration access control", () => {
+  test("agent token cannot update branding", async () => {
+    const agentId = id("branding-token");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "Branding Token" } });
+    const token: string = reg.body.token;
+
+    const { status } = await req("PUT", "/branding", {
+      body: { product_name: "Blocked Defacement" },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    expect(status).toBe(403);
+  });
+
+  test("admin token can update branding", async () => {
+    const { status, body } = await req("PUT", "/branding", {
+      body: { product_name: "Konoha WE", theme: { primary_color: "#6366f1" } },
+    });
+
+    expect(status).toBe(200);
+    expect(body.product_name).toBe("Konoha WE");
+    expect(body.theme.primary_color).toBe("#6366f1");
+  });
+
+  test("agent token cannot create custom people", async () => {
+    const agentId = id("people-token");
+    const personId = id("blocked-person");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "People Token" } });
+    const token: string = reg.body.token;
+
+    const { status } = await req("POST", "/people", {
+      body: { id: personId, name: "Blocked Person", position: "Blocked" },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    expect(status).toBe(403);
+    expect(await redis.hget("people:custom", personId)).toBeNull();
+  });
+
+  test("admin token can create and delete custom people", async () => {
+    const personId = id("custom-person");
+
+    const created = await req("POST", "/people", {
+      body: { id: personId, name: "Custom Person", position: "QA" },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.id).toBe(personId);
+
+    const deleted = await req("DELETE", `/people/${personId}`);
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.ok).toBe(true);
+  });
+
+  test("custom people cannot override file-based trusted users", async () => {
+    const listed = await req("GET", "/people");
+    const trusted = Array.isArray(listed.body)
+      ? listed.body.find((person: any) => person.id && person.source !== "custom")
+      : null;
+    if (!trusted) return;
+
+    const { status } = await req("POST", "/people", {
+      body: { id: trusted.id, name: "Blocked Override", position: "Blocked" },
+    });
+
+    expect(status).toBe(409);
+  });
+});
+
 // ── DELETE /agents/:id ────────────────────────────────────────────────────────
 
 describe("DELETE /agents/:id", () => {

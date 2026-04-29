@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { writeFileSync } from "fs";
 import { join, extname } from "path";
 import { loadTrustedPeople } from "../people-directory";
-import { requireAuth } from "../middleware/auth";
+import { requireAdmin } from "../middleware/auth";
 import { redis } from "../redis";
 import { generateAvatar, generateAvatarImg2Img } from "../adapters/image";
 
@@ -46,10 +46,14 @@ router.get("/", async (c) => {
   return c.json([...map.values()]);
 });
 
-router.post("/", async (c) => {
+router.post("/", requireAdmin, async (c) => {
   const body = await c.req.json<Partial<PersonRecord>>();
   if (!body.name?.trim()) return c.json({ error: "name required" }, 400);
   const id = body.id?.trim() || body.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9@.-]/g, "");
+  const trusted = loadTrustedPeople();
+  if (trusted.some(p => p.id === id)) {
+    return c.json({ error: "Cannot override file-based users" }, 409);
+  }
   const record: PersonRecord = {
     id,
     name: body.name.trim(),
@@ -68,7 +72,7 @@ router.post("/", async (c) => {
   return c.json(record, 201);
 });
 
-router.delete("/:id", requireAuth, async (c) => {
+router.delete("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const trusted = loadTrustedPeople();
   if (trusted.some(p => p.id === id)) {
@@ -79,7 +83,7 @@ router.delete("/:id", requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
-router.post("/:id/avatar", requireAuth, async (c) => {
+router.post("/:id/avatar", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const contentType = c.req.header("content-type") || "";
 
