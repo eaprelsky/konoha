@@ -17,23 +17,24 @@ After platform hardening (#543 epic), the workflow engine will be delegated to a
 The managed agent fleet runs on the `claude` runtime with provider resolution through `/home/ubuntu/.agent-env` and `scripts/claude-provider.sh`. The active provider is **DeepSeek V4**, served through an OpenAI-compatible adapter with Claude-compatible settings.
 
 **Rationale:**
-- Codex CLI (`codex-cli 0.122.0`) is installed and configured but blocked by geo-restriction: `unsupported_country_region_territory` from OpenAI (server in Vienna/VIA)
+- DeepSeek V4 is the stable default for persistent Telegram-facing agents because it is reachable directly and does not depend on the Codex proxy path
 - DeepSeek V4 provides equivalent coding capability without geo-restriction
-- Provider wrapper supports hot-switching to GLM as additional fallback
+- Provider wrapper supports hot-switching to GLM as additional Anthropic-compatible fallback
 
-### Fallback Runtime: `codex` (conditional)
+### Fallback Runtime: `codex` via GPT-5.5
 
 Codex CLI is the designated fallback runtime and is configured in AgentDef (`fallback_runtime: "codex"`). It will be activated when either:
-1. A supported network/auth path becomes available for the Vienna region
-2. The server is migrated to a supported OpenAI region
+1. The active LLM client profile is explicitly switched to `codex-gpt-5.5`
+2. Automatic runtime fallback selects `fallback_llm_client_profile: "codex-gpt-5.5"`
 
-As of 2026-04-28 the server has a local proxy chain (`sing-box` SOCKS on `127.0.0.1:1080`, `privoxy` HTTP proxy on `127.0.0.1:8118`), but its upstream credentials are not valid for Codex:
+As of 2026-04-29 the server has a working opt-in proxy chain for Codex/OpenAI traffic:
 
-- `breakfast` fails Reality verification
-- `vanya-ss` times out
-- `aeza` accepts SOCKS connections but returns empty TCP/TLS responses
+- `sing-box` SOCKS on `127.0.0.1:1080`
+- `privoxy` HTTP(S) proxy on `127.0.0.1:8118`
+- proxy env exported by `/home/ubuntu/.agent-env`
+- corporate VLESS+Reality upstream tagged `corporate-vless` in `/etc/sing-box/config.json`
 
-Therefore Codex must stay disabled until fresh proxy/VPN credentials are installed and `scripts/healthcheck-system.py` reports a healthy `codex_proxy.chatgpt` check.
+`/home/ubuntu/.npm-global/bin/codex` is on `codex-cli 0.125.0`. The verification command in `docs/codex-vpn-runbook.md` returns `codex-vpn-ok` with `--model gpt-5.5`, and `scripts/healthcheck-system.py` reports `OK llm_profiles.codex_fallback`.
 
 ### Profile Fields
 
@@ -66,6 +67,6 @@ The key distinction is that `claude` means the Claude Code CLI adapter, not Anth
 ## Consequences
 
 - Kakashi operates on `claude:opus` (DeepSeek V4) as the approved coding runtime for workflow-engine repair
-- Codex remains configured as fallback; activation is gated on network/auth resolution (tracked in #555)
+- Codex is an enabled fallback profile, but the default persistent fleet remains on Claude/DeepSeek unless an operator switches runtime profiles
 - Provider resolution path: `.agent-env` → `claude-provider.sh` → `apply-claude-profile.sh` → `agent-api-service.sh`
 - Runtime boundaries are inspectable via `GET /agents/:id` and `scripts/healthcheck-system.py`

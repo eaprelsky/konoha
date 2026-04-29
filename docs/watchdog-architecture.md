@@ -1,21 +1,25 @@
 # Watchdog architecture
 
-Three watchdog implementations deliver Konoha bus messages to agent tmux sessions. They share core logic via extracted modules but serve different consumers.
+Active watchdogs deliver Konoha bus messages and side-channel queues to agent tmux sessions. Lifecycle ownership stays in the TypeScript lifecycle API; watchdogs are delivery adapters only.
 
 ## Implementations
 
-### 1. `watchdog.py` (universal watchdog, 362 lines)
+### 1. Dedicated watchdog wrappers (`watchdog-naruto.py`, `watchdog-sasuke.py`, `watchdog-kakashi.py`, `watchdog-kiba.py`)
 
-Entry point for config-driven agents. Loads per-agent JSON from `scripts/agent-configs/{agent}.json`. Uses named tmux sockets (`-L {session}`).
+Permanent agents use small per-agent entrypoints under systemd:
 
-**Consumers**: naruto, sasuke (and any agent with a config file).
+- `agent-watchdog-naruto.service` → `scripts/watchdog-naruto.py`
+- `agent-watchdog-sasuke.service` → `scripts/watchdog-sasuke.py`
+- `agent-watchdog-kakashi.service` → `scripts/watchdog-kakashi.py`
+- `agent-watchdog-kiba.service` → `scripts/watchdog-kiba.py`
 
-**Imports from**: `watchdog_tmux`, `watchdog_format`, `watchdog_sources`
+Each wrapper configures `watchdog_base.py` and adds only the source-specific behavior it owns. This keeps Telegram bot delivery, Telegram userbot Redis streams, GitHub issue scanning, and Akamaru alerts explicit instead of hidden in one large universal process.
 
 **Unique features**:
-- Config-driven source selection (SSE, TG file, TG Redis, reactions, GitHub)
-- Kakashi-specific scan-only batch dropping when agent is busy
-- Health monitor with stuck-delivery detection and self-exit
+- Naruto: Telegram bot queue, reactions, owner-priority interrupt, Konoha echo dedup
+- Sasuke: Telegram Redis stream, reactions, mark-read commands, stuck-delivery monitor
+- Kakashi: Konoha SSE, GitHub issue scanner, auto-push loop
+- Kiba: Akamaru alert delivery, wake-on-demand, circuit breaker, git-push review poller
 
 ### 2. `watchdog_base.py` (shared library, 586 lines)
 
@@ -32,9 +36,9 @@ Module-level config pattern: per-agent scripts set `AGENT_ID`, `TMUX_SESSION`, e
 - **SSE_MAX_REPLAY_AGE guard (#521)**: clears stale Last-Event-ID to prevent massive replay on reconnect.
 - **KONOHA_TEXT_LIMIT truncation**: enforces char limit with "call konoha_read for full text" hint.
 
-### 3. `watchdog-lifecycle.py` (standalone watchdog, 692 lines)
+### 3. `watchdog-lifecycle.py` (generic lifecycle watchdog, 691 lines)
 
-Independent implementation for lifecycle-managed agents. Auto-discovers agents via `/agents` API, excluding dedicated-watchdog agents (naruto, sasuke, kakashi, kiba, jiraiya). Uses aiohttp for SSE instead of curl.
+Independent implementation for lifecycle-managed agents. The active systemd unit passes the watched set through `WATCHDOG_AGENTS` (`mirai,jiraiya,shino,hinata,ibiki,ino,inojin,guy,shikadai`). It uses aiohttp for SSE instead of curl.
 
 **Consumers**: All non-dedicated lifecycle-managed agents (shino, hinata, etc.).
 
@@ -56,26 +60,30 @@ Noise filter (`is_session_noise`), text sanitization (`sanitize_message_text`), 
 ### `watchdog_sources.py` (509 lines)
 Event source watchers: Konoha SSE (curl-based), Telegram file tailing, Telegram reactions file, Redis stream consumers, GitHub Issues scanner. Includes shared health tracker.
 
-## Why three implementations?
+### 4. `watchdog.py` (legacy universal watchdog, 362 lines)
 
-The duplication between `watchdog.py` and `watchdog_base.py` was resolved in #570 by making `watchdog_base` import from the shared modules. Remaining differences are genuine feature divergence:
+`watchdog.py` is retained as a reference/non-active fallback for config-driven delivery. `scripts/healthcheck-system.py` checks that active known watchdog units do not point at this legacy entrypoint.
 
-| Feature | watchdog.py | watchdog_base.py | watchdog-lifecycle.py |
+## Why keep separate implementations?
+
+The duplication between `watchdog.py` and `watchdog_base.py` was resolved in #570 by making both use shared modules. Remaining differences are genuine feature divergence:
+
+| Feature | dedicated wrappers + `watchdog_base.py` | `watchdog-lifecycle.py` | legacy `watchdog.py` |
 |---|---|---|---|
-| Config model | JSON file | Module variables | API auto-discovery |
-| Agent scope | One per process | One per process | Many per process |
-| SSE client | curl (shared) | curl (own, SSE_MAX_REPLAY_AGE) | aiohttp |
-| Desync recovery | No | Yes (#505) | Yes (simpler) |
-| Circuit breaker | No | Yes | No |
-| Auto-push | No | No | Yes (#367) |
-| Redis streams | Via config | No | Via AgentDef |
+| Config model | Module variables in small wrappers | `WATCHDOG_AGENTS` plus AgentDef streams | JSON file |
+| Agent scope | One per process | Many per process | One per process |
+| SSE client | curl with replay-age guard | aiohttp | curl via shared source module |
+| Desync recovery | Yes (#505) | Yes (simpler) | No active production use |
+| Circuit breaker | Optional per wrapper | No | No |
+| Auto-push | Kakashi-specific | Lifecycle generic loop | Config-driven |
+| Redis streams | Sasuke-specific | Via AgentDef | Via JSON config |
 
 `watchdog-lifecycle.py` cannot trivially merge into `watchdog_base.py` because:
 1. It watches multiple agents in one process (watchdog_base is single-agent)
 2. It uses aiohttp for SSE (different dependency, different error handling)
 3. It has auto-push logic unique to the lifecycle watchdog
-4. It auto-discovers agents from API rather than using static config
+4. It resolves the watched agent set from `WATCHDOG_AGENTS` and AgentDef metadata rather than per-agent module variables
 
 ## Systemd supervision
 
-All three watchdogs run under systemd with `Restart=always`. The TypeScript lifecycle API (`POST /agents/:id/start|stop|restart`) is the only control plane for agent lifecycle. Systemd unit files contain no business logic — they are thin wrappers that invoke the watchdog script.
+Active watchdogs run under systemd. The TypeScript lifecycle API (`POST /agents/:id/start|stop|restart`) is the only control plane for agent lifecycle. Systemd unit files contain no business logic beyond choosing the delivery adapter.

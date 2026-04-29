@@ -3,6 +3,15 @@
 > Issue: #525 | Priority: P1 | Date: 2026-04-15 | Author: Kakashi
 > Status: Decision Packet — awaiting Egor's review
 
+## 2026-04-29 Status Update
+
+Phase 1 has partially landed:
+- `api.tsunade.chat()` and `api.tsunade.processChat()` now declare `created_workflow`, `action_receipts`, `observable_result`, and `pending_confirmations`.
+- The canonical long-term direction remains a single action-based assistant surface, but legacy `/tsunade/chat` and `/ai/process-chat` are still active compatibility endpoints while the workflow editor is being repaired.
+- PR #536 attempted to remove those legacy paths in one step. It is stale against the current branch and should not be merged as-is; retire the paths only after the editor uses the canonical `AssistantWidget` path end-to-end.
+
+The root-cause analysis below is preserved as historical context from 2026-04-15. Treat statements about missing `created_workflow` frontend types as pre-fix context, not the current implementation.
+
 ## 1. Architecture Map — End-to-End Trace
 
 ### UI Entry Points (two active, one dead)

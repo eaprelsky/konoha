@@ -28,7 +28,7 @@ timeout 120 /home/ubuntu/.npm-global/bin/codex exec --model gpt-5.5 \
 
 The Codex fallback may be enabled only after the smoke returns the exact expected text.
 
-## Known Bad State
+## Historical Bad State
 
 On 2026-04-28 all configured sing-box upstreams failed:
 
@@ -78,7 +78,7 @@ Verification results:
 - `sing-box` and `privoxy` restarted and are active.
 - `curl` through `privoxy` and SOCKS reaches `https://chatgpt.com/` and receives HTTP 403 from the remote endpoint instead of timeout/TLS/proxy errors.
 - `scripts/healthcheck-system.py` reports `codex_proxy.chatgpt: OK`.
-- Codex CLI smoke with `gpt-5.4` returned `codex-vpn-ok`.
+- Initial Codex CLI smoke with `gpt-5.4` returned `codex-vpn-ok`.
 
 ## Codex CLI Upgrade Verified (2026-04-29)
 
