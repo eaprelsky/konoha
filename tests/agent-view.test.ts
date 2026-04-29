@@ -99,6 +99,6 @@ describe("agent view boundaries", () => {
     expect(view.template.protected).toBe(true);
     expect(view.active_runtime_profile).toBe("claude-deepseek-sonnet");
     expect(view.fallback_runtime_profile).toBe("codex-gpt-5.5");
-    expect(view.auto_runtime_fallback).toBe(false);
+    expect(view.auto_runtime_fallback).toBe(true);
   });
 });
