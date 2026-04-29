@@ -1,0 +1,46 @@
+# Persistence Source-of-Truth Rules
+
+Date: 2026-04-29
+
+This document defines which store is canonical for each entity in the Konoha system. Workflow/runtime entities are Redis-primary today; Konoha bus presence is PostgreSQL-primary with a legacy Redis compatibility hash. The default migration direction for workflow data is Redis -> PG until `PG_READ=true` cutover criteria are met.
+
+## Entity SOT Matrix
+
+| Entity | Primary (SOT) | Shadow | Redis Key Pattern | PG Table | Sync Mechanism |
+|--------|--------------|--------|-------------------|----------|----------------|
+| agent presence | PG | Redis compatibility | `konoha:registry` (hash, legacy) | `konoha_agents` | `pgRegisterAgent()` / `pgHeartbeat()` on register/heartbeat; hard unregister also cleans legacy Redis |
+| managed agent definitions | Redis | — | `konoha:agent-defs`, `konoha:agent-templates`, `konoha:agent-runtime-configs` | — | `src/agent-lifecycle.ts` split definition storage |
+| workflows | Redis | PG | `konoha:workflow:*` (JSON) | `workflows` | `pgWrite()` wrapper on create/update/delete |
+| cases | Redis | PG | `konoha:cases:*` (JSON) | `cases` | `pgWrite()` wrapper on save/advance |
+| work_items | Redis | PG | `konoha:workitem:*` (JSON) | `work_items` | `pgWrite()` wrapper on create/complete |
+| roles | Redis | PG | `konoha:roles:*` (hash) | `roles` | `pgWrite()` wrapper on CRUD |
+| documents | Redis | PG | `konoha:docs:*` (hash) | `documents` | `pgWrite()` wrapper on CRUD |
+| reminders | Redis | PG | `konoha:reminders:*` (hash) | `reminders` | `pgWrite()` wrapper on create/update |
+| messages | Redis | PG | `konoha:agent:*` (stream) | `konoha_messages` | `pgStoreMessage()` on send |
+| bus messages | Redis | PG | `konoha:bus` (stream) | `konoha_messages` | `pgStoreMessage()` on send |
+
+## Operational Rules
+
+1. **Workflow writes go to Redis first.** Redis is the system of record for active Workflow Engine data until the PG cutover.
+2. **Bus presence writes go to PostgreSQL first.** `konoha:registry` exists only for legacy compatibility and verification.
+3. **PG shadow for workflow data is async.** `pgWrite()` / `pgStoreMessage()` fire after Redis write succeeds. PG failures are logged but never block the Redis write path.
+4. **PG_READ feature flag** (`PG_READ=true`) switches workflow reads to PG for gradual cutover testing. When enabled, read paths query PG tables instead of Redis keys.
+5. **Verification** runs via `bun run scripts/pg-verify.ts`:
+   - `--strict`: onlyInPG > threshold is also an error
+   - `--fix`: sync onlyInRedis records to PG
+
+## Recovery Procedures
+
+### Redis → PG divergence (onlyInRedis)
+Records exist in Redis but not in PG.
+- **Risk**: data loss on Redis failure
+- **Fix**: `bun run scripts/migrate-redis-to-pg.ts`
+
+### PG → Redis divergence (onlyInPG)
+Records exist in PG but not in Redis.
+- **Risk**: stale data if PG_READ is enabled; otherwise benign (archived records)
+- **Threshold**: warn when onlyInPG > 100% of redisCount (bloat)
+- **Fix**: investigate with `bun run scripts/migrate-redis-to-pg.ts --dry-run`
+
+### Dual-write failures
+If `pgWrite()` fails, the Redis write succeeded but PG is missing the record. The next `pg-verify.ts` run will catch it.

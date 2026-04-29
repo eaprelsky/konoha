@@ -213,9 +213,13 @@ async function checkMessages(): Promise<CheckResult> {
   };
 }
 
+const STRICT = process.argv.includes("--strict");
+const FIX = process.argv.includes("--fix");
+
 // Warn if onlyInPg exceeds this fraction of redisCount.
 // At 1.0 (100%) PG has 2x Redis — possible phantom duplicates from dual-write.
-const PG_BLOAT_THRESHOLD = parseFloat(process.env.PG_BLOAT_THRESHOLD ?? "1.0");
+// In --strict mode, threshold is lowered to catch earlier.
+const PG_BLOAT_THRESHOLD = parseFloat(process.env.PG_BLOAT_THRESHOLD ?? (STRICT ? "0.5" : "1.0"));
 
 // Returns true if a bloat threshold was exceeded for this entity.
 function printResult(r: CheckResult): boolean {
@@ -226,10 +230,14 @@ function printResult(r: CheckResult): boolean {
     console.log(`  !! Only in Redis (${r.onlyInRedis.length}): ${r.onlyInRedis.slice(0, 5).join(", ")}${r.onlyInRedis.length > 5 ? " ..." : ""}`);
   }
   let bloat = false;
+  let onlyInPgIsError = false;
   if (r.onlyInPg.length > 0) {
-    // INFO: archived/historical data in PG no longer active in Redis — acceptable pre-migration
-    console.log(`  -- Only in PG (${r.onlyInPg.length}) [archived/historical, OK]: ${r.onlyInPg.slice(0, 3).join(", ")}${r.onlyInPg.length > 3 ? " ..." : ""}`);
-    // WARN: onlyInPg exceeds threshold — may indicate phantom duplicates from dual-write
+    if (STRICT) {
+      console.log(`  !! Only in PG (${r.onlyInPg.length}) [STRICT mode]: ${r.onlyInPg.slice(0, 5).join(", ")}${r.onlyInPg.length > 5 ? " ..." : ""}`);
+      onlyInPgIsError = true;
+    } else {
+      console.log(`  -- Only in PG (${r.onlyInPg.length}) [archived/historical, OK]: ${r.onlyInPg.slice(0, 3).join(", ")}${r.onlyInPg.length > 3 ? " ..." : ""}`);
+    }
     if (r.redisCount > 0 && r.onlyInPg.length > r.redisCount * PG_BLOAT_THRESHOLD) {
       const pct = Math.round((r.onlyInPg.length / r.redisCount) * 100);
       console.log(`  ⚠ BLOAT WARNING: onlyInPg (${r.onlyInPg.length}) is ${pct}% of redisCount (${PG_BLOAT_THRESHOLD * 100}% threshold).`);
@@ -237,7 +245,7 @@ function printResult(r: CheckResult): boolean {
       bloat = true;
     }
   }
-  return bloat;
+  return { bloat, onlyInPgIsError };
 }
 
 async function main(): Promise<void> {
@@ -258,13 +266,24 @@ async function main(): Promise<void> {
 
     let allOk = true;
     let hasBloat = false;
+    let hasOnlyInPg = false;
     for (const r of results) {
-      if (printResult(r)) hasBloat = true;
+      const { bloat, onlyInPgIsError } = printResult(r);
+      if (bloat) hasBloat = true;
+      if (onlyInPgIsError) hasOnlyInPg = true;
       if (!r.ok) allOk = false;
     }
 
-    if (!allOk) {
-      console.log("\n=== RESULT: MISMATCH — discrepancies found ===");
+    if (!allOk || (STRICT && hasOnlyInPg)) {
+      if (STRICT && hasOnlyInPg && allOk) {
+        console.log("\n=== RESULT: MISMATCH — onlyInPG records found (--strict mode) ===");
+      } else {
+        console.log("\n=== RESULT: MISMATCH — discrepancies found ===");
+      }
+      if (FIX) {
+        console.log("\n--fix mode: run migrate-redis-to-pg.ts to sync onlyInRedis records");
+        console.log("  bun run scripts/migrate-redis-to-pg.ts");
+      }
       process.exit(1);
     } else if (hasBloat) {
       console.log("\n=== RESULT: BLOAT — sync OK but PG exceeds bloat threshold ===");

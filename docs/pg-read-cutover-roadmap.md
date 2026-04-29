@@ -1,0 +1,92 @@
+# PG_READ Persistence Cutover Roadmap
+
+Date: 2026-04-29
+
+This document defines the phased plan for migrating read paths from Redis to PostgreSQL, using the `PG_READ=true` feature flag.
+
+## Current State
+
+- **Redis is primary**: All reads and writes go through Redis.
+- **PG is shadow**: Writes are dual-written via `pgWrite()` wrapper; failures are silently caught.
+- **PG_READ flag exists**: Individual read paths check `PG_READ=true` to switch to PG.
+- **pg-verify.ts**: Compares Redis ↔ PG for 8 entities; reports onlyInRedis (data loss risk) and onlyInPG (bloat).
+
+## Phased Rollout
+
+### Phase 1: Verification (current → 2026-05-15)
+
+**Goal**: Zero onlyInRedis records in production. PG shadow is consistently complete.
+
+- [x] `pg-verify.ts` with `--strict` mode
+- [ ] `pg-verify.ts` passes `--strict` for 7 consecutive days
+- [ ] Fix all onlyInRedis discrepancies through `--fix` or manual sync
+- [ ] Add pg-verify to preflight gate (#588)
+
+**Exit criteria**: `bun run scripts/pg-verify.ts --strict` exits 0 daily for one week.
+
+### Phase 2: Read-path profiling (2026-05-15 → 2026-06-01)
+
+**Goal**: Measure PG read performance against Redis baseline. No traffic shift.
+
+- [ ] Add latency instrumentation to all `PG_READ` code paths
+- [ ] Run read-only workload against PG mirror in staging
+- [ ] Document performance delta per entity:
+  - agents: expected <2ms for both (single-row PK lookup)
+  - workflows: PG may be slower (JSONB deserialization vs raw Redis GET)
+  - cases/work_items: PG may be faster for filtered list queries
+  - messages: PG may be faster for timestamp-sorted pagination
+
+**Exit criteria**: Performance baseline documented. No query >50ms at p99.
+
+### Phase 3: Gradual traffic shift (2026-06-01 → 2026-06-30)
+
+**Goal**: Shift read traffic incrementally, one entity at a time.
+
+1. **Week 1**: `PG_READ=true` for agents, roles, documents (static/low-volume)
+2. **Week 2**: + workflows (cached reads, moderate volume)
+3. **Week 3**: + cases, work_items (high volume, filtered queries)
+4. **Week 4**: + messages, reminders, audit (streaming/pagination)
+
+Each shift:
+- Deploy flag for specific entity subset
+- Monitor pg-verify for 24h
+- Roll back if onlyInRedis appears or latency spikes
+
+**Exit criteria**: All read paths on PG with zero regressions.
+
+### Phase 4: Write-path switch (2026-07-01 → 2026-07-31)
+
+**Goal**: PG becomes primary for writes. Redis becomes cache layer.
+
+- [ ] Implement PG-write-primary with Redis cache-invalidation
+- [ ] Dual-run for 2 weeks (write to both, verify consistency)
+- [ ] Switch primary writes to PG, Redis as read-through cache
+- [ ] Decommission Redis-only write paths
+
+**Exit criteria**: PG is primary for all CRUD. Redis is cache-only.
+
+### Phase 5: Redis decommissioning (2026-08-01+)
+
+**Goal**: Redis is optional. System runs on PG alone.
+
+- [ ] Remove Redis dependency from core paths
+- [ ] Redis becomes a configurable cache layer (like Memcached)
+- [ ] All message streaming moves to PG LISTEN/NOTIFY or alternative
+
+**Exit criteria**: System boots and operates correctly with Redis disconnected.
+
+## Rollback Procedures
+
+At any phase, rollback is:
+1. Set `PG_READ=false`
+2. Restart server
+3. All reads return to Redis
+
+No data migration is needed for rollback because Redis remains the write-primary through Phase 3.
+
+## Guardrails
+
+- `pg-verify.ts` runs in preflight; onlyInRedis blocks deployment
+- PG connection pool monitored; max 20 connections
+- All `pgWrite()` failures logged to `konoha:events:pg-errors` stream
+- Weekly audit of PG/Redis consistency during transition
