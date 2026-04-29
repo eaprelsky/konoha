@@ -12,6 +12,7 @@ import {
   slugify, saveBaseline, hasBaseline, compareWithBaseline, listBaselines,
   DIFF_THRESHOLD,
 } from "./visual";
+import { runActionScenario, type ActionScenario } from "./action-harness";
 
 const PORT = parseInt(process.env.TESTBENCH_PORT || "3201");
 const TOKEN = process.env.KONOHA_TOKEN || "";
@@ -529,6 +530,32 @@ app.post("/testbench/run-suite", async (c) => {
   }
 
   return c.json({ ok: passed, ...suiteResult });
+});
+
+// ── POST /testbench/run-actions ──────────────────────────────────────────────
+// Minimal Action Spine harness. Body:
+// { base_url, token?, scenario: { name, stop_on_failure?, steps: [{ name?, envelope, assertions? }] } }
+
+app.post("/testbench/run-actions", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const {
+    base_url = process.env.KONOHA_URL || "http://127.0.0.1:3200",
+    token = TOKEN,
+    scenario,
+  } = body as {
+    base_url?: string;
+    token?: string;
+    scenario?: ActionScenario;
+  };
+
+  if (!scenario) return c.json({ error: "scenario required" }, 400);
+
+  try {
+    const result = await runActionScenario({ base_url, token, scenario });
+    return c.json(result, 200);
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 400);
+  }
 });
 
 // ── Error handler ─────────────────────────────────────────────────────────────
