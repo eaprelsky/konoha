@@ -63,7 +63,11 @@ def is_agent_idle(session: str, stable_checks: int = 2) -> bool:
             or any("ctrl+c to stop" in l for l in last_lines)
             or any("▶︎ Auto-run everything" in l for l in last_lines)
         )
-        return has_claude_prompt or has_codex_prompt or has_cursor_ready
+        has_opencode_idle = (
+            any("ctrl+p commands" in l for l in last_lines)
+            or any("tab agents" in l for l in last_lines)
+        )
+        return has_claude_prompt or has_codex_prompt or has_cursor_ready or has_opencode_idle
     for _ in range(stable_checks):
         alive, content = tmux_pane_capture(session)
         if not alive or not has_prompt(content):
@@ -139,7 +143,7 @@ async def tmux_send(session: str, text: str) -> bool:
         await dismiss_pasted_dialog()
         return True
 
-    async def wait_for_submit(timeout_sec: float) -> bool:
+    async def wait_for_submit(timeout_sec: float, typed_pane: str) -> bool:
         deadline = time.monotonic() + timeout_sec
         while time.monotonic() < deadline:
             alive, pane = tmux_pane_capture(session)
@@ -151,6 +155,9 @@ async def tmux_send(session: str, text: str) -> bool:
                 await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
                 await asyncio.sleep(0.6)
                 continue
+            if pane != typed_pane:
+                log.info("Delivery confirmed: pane changed after submit")
+                return True
             if pane.strip() and not is_agent_idle(session, stable_checks=1):
                 log.info("Delivery confirmed: agent left idle state after submit")
                 return True
@@ -172,9 +179,10 @@ async def tmux_send(session: str, text: str) -> bool:
             if not await retype_prompt():
                 return False
 
+        typed_pane = tmux_pane_content(session)
         await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
         log.info(f"Sent prompt to {session} ({len(text)} chars), submit attempt {attempt + 1}")
-        if await wait_for_submit(4.0 if attempt == 0 else 3.0):
+        if await wait_for_submit(4.0 if attempt == 0 else 3.0, typed_pane):
             return True
 
     log.error(f"Delivery failed: agent {session} stayed idle after submit retries")

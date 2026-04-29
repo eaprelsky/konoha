@@ -20,3 +20,4 @@ export * from "./runtime";
 export * from "./prompt";
 export * from "./process";
 export * from "./crud";
+export * from "./healthcheck";

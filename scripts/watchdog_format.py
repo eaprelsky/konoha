@@ -24,6 +24,22 @@ def is_session_noise(data: dict) -> bool:
     )
 
 
+# ── Text sanitization ──────────────────────────────────────────────────────────
+
+def sanitize_message_text(text: str) -> str:
+    """Fix common text encoding issues before delivery:
+    1. Convert literal \\n (two chars) to real newlines — prevents double-escaping
+       in Telegram/JSON pipelines.
+    2. Remove MarkdownV2 escape artifacts like \\! → ! — plain-text safe.
+    """
+    if not text:
+        return text
+    import re
+    text = text.replace("\\n", "\n")
+    text = re.sub(r"\\([!./\-_{}()#>+*=|~`])", r"\1", text)
+    return text
+
+
 # ── Message formatting ────────────────────────────────────────────────────────
 
 def format_batch(events: list[dict], cfg: dict) -> str:
