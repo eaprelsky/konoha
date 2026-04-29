@@ -10,15 +10,16 @@ Permanent agents use small per-agent entrypoints under systemd:
 
 - `agent-watchdog-naruto.service` → `scripts/watchdog-naruto.py`
 - `agent-watchdog-sasuke.service` → `scripts/watchdog-sasuke.py`
-- `agent-watchdog-kakashi.service` → `scripts/watchdog-kakashi.py`
 - `agent-watchdog-kiba.service` → `scripts/watchdog-kiba.py`
+
+Kakashi has a dedicated wrapper (`agent-watchdog-kakashi.service` → `scripts/watchdog-kakashi.py`) but is operated as an on-demand worker. The unit is disabled by default and started only for an explicit bugfix/workflow task.
 
 Each wrapper configures `watchdog_base.py` and adds only the source-specific behavior it owns. This keeps Telegram bot delivery, Telegram userbot Redis streams, GitHub issue scanning, and Akamaru alerts explicit instead of hidden in one large universal process.
 
 **Unique features**:
 - Naruto: Telegram bot queue, reactions, owner-priority interrupt, Konoha echo dedup
 - Sasuke: Telegram Redis stream, reactions, mark-read commands, stuck-delivery monitor
-- Kakashi: Konoha SSE, GitHub issue scanner, auto-push loop
+- Kakashi: Konoha SSE, GitHub issue scanner, auto-push loop, on-demand only
 - Kiba: Akamaru alert delivery, wake-on-demand, circuit breaker, git-push review poller
 
 ### 2. `watchdog_base.py` (shared library, 586 lines)

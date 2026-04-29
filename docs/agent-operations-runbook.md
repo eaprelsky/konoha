@@ -7,7 +7,7 @@ Canonical lifecycle is owned by Konoha. Do not use retired files under `agents/s
 Permanent agents are supervised by systemd wrappers:
 
 ```bash
-sudo systemctl status agent-naruto.service agent-sasuke.service agent-kakashi.service agent-kiba.service
+sudo systemctl status agent-naruto.service agent-sasuke.service agent-kiba.service
 sudo systemctl restart agent-<id>.service
 ```
 
@@ -39,7 +39,9 @@ The shared watchdog core is `scripts/watchdog_base.py`. The legacy universal `sc
 
 ## On-Demand Agents
 
-On-demand agents are started through the Konoha lifecycle API:
+On-demand agents are normally inactive and must not carry the `autostart` tag. Current on-demand workers include Kakashi and the generic specialist pool (`mirai`, `jiraiya`, `shino`, `hinata`, `ibiki`, `ino`, `inojin`, `guy`, `shikadai`).
+
+Start an on-demand agent through the Konoha lifecycle API:
 
 ```bash
 source /home/ubuntu/.agent-env
@@ -51,6 +53,16 @@ curl -fsS -X POST \
 ```
 
 Delivery for on-demand agents is handled by `agent-watchdog-lifecycle.service`.
+
+Kakashi is a special on-demand interactive worker. His dedicated systemd units exist for manual starts, but are disabled by default:
+
+```bash
+sudo systemctl disable --now agent-kakashi.service agent-watchdog-kakashi.service
+sudo systemctl start agent-kakashi.service
+sudo systemctl stop agent-kakashi.service agent-watchdog-kakashi.service
+```
+
+When an agent is intentionally parked, add its short id and any dedicated units to `/opt/shared/kiba/paused-services.txt` so Akamaru suppresses expected inactive-state alerts.
 
 ## Stop
 

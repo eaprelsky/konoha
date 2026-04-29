@@ -28,15 +28,13 @@ CORE_SERVICES = [
     "agent-watchdog-lifecycle",
     "agent-naruto",
     "agent-sasuke",
-    "agent-kakashi",
     "agent-kiba",
     "agent-watchdog-naruto",
     "agent-watchdog-sasuke",
-    "agent-watchdog-kakashi",
     "agent-watchdog-kiba",
 ]
 PROXY_SERVICES = ["sing-box", "privoxy"]
-PERMANENT_AGENTS = ["naruto", "sasuke", "kakashi", "kiba"]
+PERMANENT_AGENTS = ["naruto", "sasuke", "kiba"]
 PERMANENT_AGENT_SERVICES = {agent: f"agent-{agent}.service" for agent in PERMANENT_AGENTS}
 WATCHDOG_ENTRYPOINTS = {
     "agent-watchdog-naruto.service": "scripts/watchdog-naruto.py",

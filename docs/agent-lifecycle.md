@@ -324,7 +324,9 @@ The following agents are seeded automatically on server start and are marked `pr
 |----|------|-------|---------------|
 | naruto | Наруто (Оркестратор) | claude-sonnet-4-6 | naruto |
 | sasuke | Саске | claude-sonnet-4-6 | sasuke |
-| kakashi | Какаши (Мастер багфиксинга) | claude-sonnet-4-6 | kakashi |
+| kakashi | Какаши (Мастер багфиксинга, on-demand) | claude-opus via DeepSeek profile | kakashi |
 | mirai | Мирай | claude-haiku-4-5-20251001 | mirai |
 
 Seed is idempotent — existing definitions are not overwritten. Can be re-run via `POST /admin/seed-system-agents`.
+
+Kakashi is seeded as a protected system agent but must not autostart. Keep `agent-kakashi.service` and `agent-watchdog-kakashi.service` disabled unless an operator explicitly starts him for a task.

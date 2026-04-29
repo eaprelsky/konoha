@@ -8,7 +8,7 @@ KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 WAIT_TIMEOUT_SEC = int(os.environ.get("AGENT_AUTOSTART_WAIT_TIMEOUT_SEC", "120"))
 START_DELAY_SEC = float(os.environ.get("AGENT_AUTOSTART_DELAY_SEC", "2"))
-BOOT_ORDER = ["naruto", "sasuke", "mirai", "kakashi", "kiba", "jiraiya"]
+BOOT_ORDER = ["naruto", "sasuke", "mirai", "kiba", "jiraiya"]
 
 
 def request(path: str, method: str = "GET", body: dict | None = None):

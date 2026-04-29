@@ -40,7 +40,6 @@ WATCHED_SERVICES = [
     "agent-watchdog-lifecycle.service",
     "agent-watchdog-naruto.service",
     "agent-watchdog-sasuke.service",
-    "agent-watchdog-kakashi.service",
     "agent-watchdog-kiba.service",
 ]
 
@@ -64,7 +63,7 @@ WATCHED_AGENTS   = [
 
 # On-demand agents: stop after mission complete — inactive state is expected, not a failure.
 # Do NOT alert when their sessions are missing. Still alert on failed watchdogs.
-ON_DEMAND_AGENTS = {"mirai", "jiraiya", "shino", "hinata", "ibiki", "ino", "inojin", "guy", "shikadai"}
+ON_DEMAND_AGENTS = {"mirai", "jiraiya", "shino", "hinata", "ibiki", "ino", "inojin", "guy", "kakashi", "shikadai"}
 
 # For each agent: watchdog service that MUST be running when the tmux session is alive (#98)
 AGENT_WATCHDOGS = {
