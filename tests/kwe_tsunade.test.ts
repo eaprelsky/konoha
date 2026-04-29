@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
+import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
 // Read the token from env (server.ts captures it at module-load time;
 // Bun caches the module across test files, so mutating process.env here
@@ -53,6 +54,7 @@ afterAll(async () => {
     }
   }
   redis.disconnect();
+  await cleanupGeneratedTestAgents();
   delete process.env.KONOHA_PORT;
 });
 

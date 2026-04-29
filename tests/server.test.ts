@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
+import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
 // Use the test admin token set by tests/setup.ts preload.
 // Setting KONOHA_PORT=0 prevents the server from binding a real port.
@@ -47,6 +48,7 @@ function id(name: string) { return `test-${name}-${RUN}`; }
 // ── cleanup ───────────────────────────────────────────────────────────────────
 
 async function cleanupTestAgents() {
+  await cleanupGeneratedTestAgents();
   const keys = await redis.hkeys("konoha:registry");
   for (const k of keys) {
     if (k.startsWith("test-")) await redis.hdel("konoha:registry", k);

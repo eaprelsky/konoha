@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
+import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
 // Read the token that the server module will use — don't override it,
 // because server.ts captures KONOHA_TOKEN at module-load time and Bun
@@ -38,6 +39,7 @@ async function req(
 }
 
 async function cleanup() {
+  await cleanupGeneratedTestAgents();
   const keys = await redis.hkeys("konoha:registry");
   for (const k of keys) {
     if (k.startsWith("test-")) await redis.hdel("konoha:registry", k);

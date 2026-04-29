@@ -37,6 +37,8 @@ CORE_SERVICES = [
 ]
 PROXY_SERVICES = ["sing-box", "privoxy"]
 PERMANENT_AGENTS = ["naruto", "sasuke", "kakashi", "kiba"]
+REGISTRY_WARN_TOTAL = 100
+REGISTRY_WARN_EPHEMERAL = 10
 STREAM_GROUPS = {
     "telegram:incoming": ["sasuke"],
     "telegram:bot:incoming": ["naruto"],
@@ -308,10 +310,63 @@ def check_codex_proxy() -> list[Check]:
     return checks
 
 
+def is_ephemeral_agent_id(agent_id: str) -> bool:
+    return agent_id.startswith("rtest-") or re.match(r"^test(?:-[a-z0-9-]+)?-t\d+$", agent_id) is not None
+
+
+def is_suspicious_agent_id(agent_id: str) -> bool:
+    lowered = agent_id.lower()
+    return is_ephemeral_agent_id(agent_id) or any(part in lowered for part in ("test", "smoke", "verify"))
+
+
+def check_agent_registry_hygiene() -> list[Check]:
+    try:
+        agents = api_get("/agents")
+    except Exception as exc:
+        return [Check("WARN", "agent_registry.hygiene", str(exc), "Check /agents API and KONOHA_TOKEN")]
+
+    ids = [str(agent.get("id") or "") for agent in agents if agent.get("id")]
+    ephemeral = [agent_id for agent_id in ids if is_ephemeral_agent_id(agent_id)]
+    suspicious = [agent_id for agent_id in ids if is_suspicious_agent_id(agent_id) and not is_ephemeral_agent_id(agent_id)]
+
+    checks: list[Check] = []
+    if len(ids) > REGISTRY_WARN_TOTAL:
+        checks.append(Check(
+            "WARN",
+            "agent_registry.total",
+            f"{len(ids)} agent records visible",
+            "Run: bun scripts/cleanup-agent-registry.ts --dry-run",
+        ))
+    else:
+        checks.append(Check("OK", "agent_registry.total", f"{len(ids)} agent records visible"))
+
+    if len(ephemeral) > REGISTRY_WARN_EPHEMERAL:
+        checks.append(Check(
+            "WARN",
+            "agent_registry.ephemeral",
+            f"{len(ephemeral)} generated test records visible",
+            "Run: bun scripts/cleanup-agent-registry.ts --apply",
+        ))
+    else:
+        checks.append(Check("OK", "agent_registry.ephemeral", f"{len(ephemeral)} generated test records visible"))
+
+    if suspicious:
+        sample = ", ".join(suspicious[:8])
+        checks.append(Check(
+            "WARN",
+            "agent_registry.suspicious",
+            f"{len(suspicious)} suspicious non-rtest ids; sample={sample}",
+            "Review manually before deleting non-rtest records",
+        ))
+    else:
+        checks.append(Check("OK", "agent_registry.suspicious", "no suspicious non-rtest ids"))
+    return checks
+
+
 def main() -> int:
     load_env_defaults()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine, check_codex_proxy):
+    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene):
         checks.extend(fn())
     return print_report(checks)
 

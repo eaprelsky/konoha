@@ -4,6 +4,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
+import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
 process.env.KONOHA_PORT = "0";
 const TEST_ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
@@ -13,6 +14,13 @@ const redis = new Redis({ host: "127.0.0.1", port: 6379 });
 
 const RUN = `t${Date.now()}`;
 function id(name: string) { return `test-${name}-${RUN}`; }
+
+beforeAll(cleanupGeneratedTestAgents);
+afterAll(async () => {
+  await cleanupGeneratedTestAgents();
+  redis.disconnect();
+  delete process.env.KONOHA_PORT;
+});
 
 async function req(
   method: string,
