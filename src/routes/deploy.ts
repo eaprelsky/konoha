@@ -14,7 +14,7 @@
  */
 
 import { Hono } from "hono";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requireAdmin } from "../middleware/auth";
 import { redis } from "../redis";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -67,7 +67,7 @@ app.get("/config/settings", requireAuth, async (c) => {
 
 // ── PUT /config/settings ──────────────────────────────────────────────────────
 
-app.put("/config/settings", requireAuth, async (c) => {
+app.put("/config/settings", requireAdmin, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const current = await getSettings();
   const updated = { ...current, ...body };
@@ -88,7 +88,7 @@ app.get("/deploy/status", requireAuth, async (c) => {
 
 // ── POST /deploy ──────────────────────────────────────────────────────────────
 
-app.post("/deploy", requireAuth, async (c) => {
+app.post("/deploy", requireAdmin, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { force = false, branch, commit_sha } = body as {
     force?: boolean;

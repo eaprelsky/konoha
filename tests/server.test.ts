@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
+import { rmSync, writeFileSync } from "fs";
 import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
 // Use the test admin token set by tests/setup.ts preload.
@@ -68,6 +69,7 @@ afterAll(async () => {
   await cleanupTestAgents();
   await redis.flushdb();
   redis.disconnect();
+  if (process.env.KONOHA_SETUP_FILE) rmSync(process.env.KONOHA_SETUP_FILE, { force: true });
   delete process.env.KONOHA_PORT;
 });
 
@@ -596,6 +598,84 @@ describe("User-visible configuration access control", () => {
     const { status } = await req("PUT", "/branding", {
       body: { product_name: "Blocked Defacement" },
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    expect(status).toBe(403);
+  });
+
+  test("agent token cannot update autonomy matrix", async () => {
+    const agentId = id("autonomy-token");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "Autonomy Token" } });
+    const token: string = reg.body.token;
+
+    const { status } = await req("PUT", "/config/autonomy", {
+      body: { "github.issue.create": "auto" },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    expect(status).toBe(403);
+  });
+
+  test("agent token cannot update deploy settings", async () => {
+    const agentId = id("deploy-settings-token");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "Deploy Settings Token" } });
+    const token: string = reg.body.token;
+
+    const { status } = await req("PUT", "/config/settings", {
+      body: { auto_deploy: true },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    expect(status).toBe(403);
+  });
+
+  test("agent token cannot trigger deploy", async () => {
+    const agentId = id("deploy-token");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "Deploy Token" } });
+    const token: string = reg.body.token;
+
+    const { status } = await req("POST", "/deploy", {
+      body: { force: false },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    expect(status).toBe(403);
+  });
+
+  test("agent token cannot mutate whitelist", async () => {
+    const agentId = id("whitelist-token");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "Whitelist Token" } });
+    const token: string = reg.body.token;
+
+    const { status } = await req("POST", "/whitelist/approve", {
+      body: { type: "user", telegram_id: 123456 },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    expect(status).toBe(403);
+  });
+
+  test("agent token cannot seed system agents", async () => {
+    const agentId = id("seed-token");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "Seed Token" } });
+    const token: string = reg.body.token;
+
+    const { status } = await req("POST", "/admin/seed-system-agents", {
+      body: {},
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    expect(status).toBe(403);
+  });
+
+  test("completed setup cannot be overwritten without admin auth", async () => {
+    const setupFile = process.env.KONOHA_SETUP_FILE;
+    if (!setupFile) throw new Error("KONOHA_SETUP_FILE must be set in tests");
+    writeFileSync(setupFile, JSON.stringify({ complete: true, owner_tg_id: "1" }));
+
+    const { status } = await req("POST", "/setup", {
+      body: { owner_tg_id: "2", github_pat: "blocked-token" },
+      headers: { "Content-Type": "application/json" },
     });
 
     expect(status).toBe(403);

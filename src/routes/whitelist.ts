@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requireAdmin } from "../middleware/auth";
 import type { HonoEnv } from "../types";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 
@@ -95,7 +95,7 @@ router.get("/", requireAuth, (c) => {
 });
 
 // POST /whitelist/approve — approve a pending entry (body: { type, telegram_id | chat_id })
-router.post("/approve", requireAuth, async (c) => {
+router.post("/approve", requireAdmin, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
 
@@ -136,7 +136,7 @@ router.post("/approve", requireAuth, async (c) => {
 });
 
 // POST /whitelist/reject — reject a pending entry (removes it + optionally blocks)
-router.post("/reject", requireAuth, async (c) => {
+router.post("/reject", requireAdmin, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
 
@@ -167,7 +167,7 @@ router.post("/reject", requireAuth, async (c) => {
 });
 
 // DELETE /whitelist/user/:telegram_id — remove user from trusted list
-router.delete("/user/:telegram_id", requireAuth, (c) => {
+router.delete("/user/:telegram_id", requireAdmin, (c) => {
   const raw = c.req.param("telegram_id");
   if (!raw) return c.json({ error: "telegram_id required" }, 400);
   const telegram_id = parseInt(raw, 10);
@@ -182,7 +182,7 @@ router.delete("/user/:telegram_id", requireAuth, (c) => {
 });
 
 // DELETE /whitelist/group/:chat_id — remove group from whitelist
-router.delete("/group/:chat_id", requireAuth, (c) => {
+router.delete("/group/:chat_id", requireAdmin, (c) => {
   const raw = c.req.param("chat_id");
   if (!raw) return c.json({ error: "chat_id required" }, 400);
   const chat_id = parseInt(raw, 10);

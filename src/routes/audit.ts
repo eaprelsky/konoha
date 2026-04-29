@@ -10,8 +10,9 @@
 import { Hono } from "hono";
 import { config } from "../config";
 import { createLogger } from "../logger";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireAdmin, resolveAuth } from "../middleware/auth";
 import { redis } from "../redis";
+import type { HonoEnv } from "../types";
 import {
   readAuditLog,
   auditLog,
@@ -22,7 +23,7 @@ import {
 } from "../assistant-actions";
 const log = createLogger("routes:audit");
 
-const router = new Hono();
+const router = new Hono<HonoEnv>();
 
 // ── Audit Log ──────────────────────────────────────────────────────────────────
 
@@ -90,7 +91,7 @@ router.get("/config/autonomy", async (c) => {
   }
 });
 
-router.put("/config/autonomy", async (c) => {
+router.put("/config/autonomy", requireAdmin, async (c) => {
   const body = await c.req.json<Record<string, AutonomyLevel>>().catch(() => null);
   if (!body || typeof body !== "object") return c.json({ error: "invalid body" }, 400);
   const errors: string[] = [];
@@ -211,7 +212,7 @@ router.get("/setup/status", async (c) => {
   return c.json({ complete: cfg.complete, missing_fields: missing });
 });
 
-// POST /setup — save wizard config (no auth required to allow first-time setup)
+// POST /setup — public only for first-time setup; completed installs require admin.
 router.post("/setup", async (c) => {
   const body = await c.req.json<{
     owner_tg_id?: string;
@@ -225,6 +226,10 @@ router.post("/setup", async (c) => {
   if (!body) return c.json({ error: "invalid body" }, 400);
 
   const existing = readSetup();
+  if (existing.complete) {
+    const caller = await resolveAuth(c);
+    if (!caller?.isAdmin) return c.json({ error: "Forbidden: setup is already complete" }, 403);
+  }
 
   // Write env-level secrets to shared credentials (append/update)
   // We store non-secret metadata in setup file; actual secrets go to .shared-credentials

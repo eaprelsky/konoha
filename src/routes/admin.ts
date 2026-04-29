@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { createLogger } from "../logger";
-import { requireAuth } from "../middleware/auth";
+import { requireAdmin } from "../middleware/auth";
 import { createCase } from "../runtime";
 import { upsertAgentDef } from "../agent-lifecycle";
 import { listAdapters, getAdapter } from "../adapters/index";
@@ -347,7 +347,7 @@ const router = new Hono();
 router.get("/health", (c) => c.json({ status: "ok", ts: new Date().toISOString() }));
 
 // POST /admin/seed-system-agents — re-run seed (idempotent)
-router.post("/admin/seed-system-agents", requireAuth, async (c) => {
+router.post("/admin/seed-system-agents", requireAdmin, async (c) => {
   const results: string[] = [];
   for (const ag of SYSTEM_AGENTS) {
     const action = await syncSystemAgent(ag);

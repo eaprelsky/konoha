@@ -11,9 +11,11 @@ process.env.KONOHA_DASHBOARD_USER = "test-admin";
 process.env.KONOHA_DASHBOARD_PASSWORD = "test-dashboard-password";
 process.env.KONOHA_DASHBOARD_HOSTS = "dashboard.test";
 process.env.KONOHA_DASHBOARD_AUTH_FILE = "/tmp/konoha-dashboard-auth-test.json";
+process.env.KONOHA_SETUP_FILE = "/tmp/konoha-setup-test.json";
 
 import { rmSync } from "fs";
 rmSync(process.env.KONOHA_DASHBOARD_AUTH_FILE, { force: true });
+rmSync(process.env.KONOHA_SETUP_FILE, { force: true });
 
 import Redis from "ioredis";
 
