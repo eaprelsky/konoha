@@ -211,7 +211,7 @@ Production hardening is enforced by `scripts/preflight.sh`:
 - Telegram smoke
 - PostgreSQL shadow verification
 
-Current rule before larger Workflow Engine changes: `preflight OK` is the local release gate. CI is portable and intentionally weaker until issue `#597` aligns it with the production gates.
+Current rule before larger Workflow Engine changes: `preflight OK` is the production release gate. CI runs the portable companion gate (`scripts/preflight-portable.sh`): the same typechecks/regression suites plus frontend tests/build, without production-only systemd, Telegram smoke, or live credential dependencies.
 
 ## Key Design Rules
 

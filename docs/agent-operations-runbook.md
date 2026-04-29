@@ -213,7 +213,7 @@ scripts/telegram-smoke.sh
 
 ```bash
 systemctl --failed --no-pager
-systemctl is-active konoha akamaru agent-watchdog-lifecycle agent-naruto agent-sasuke agent-kakashi agent-kiba
+systemctl is-active konoha akamaru agent-watchdog-lifecycle agent-naruto agent-sasuke agent-kiba
 python3 /home/ubuntu/konoha/scripts/healthcheck-system.py
 cd /home/ubuntu/konoha
 PATH=/home/ubuntu/.bun/bin:$PATH bun run preflight

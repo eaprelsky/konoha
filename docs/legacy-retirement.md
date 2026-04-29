@@ -41,10 +41,10 @@ This document bounds compatibility surfaces that remain after the workflow found
 
 ## Enforcement
 
-- `scripts/preflight.ts` includes `tests/ai-chat-contract.test.ts` in its gate test suite.
+- `scripts/preflight-portable.sh` and `scripts/preflight.sh` include `tests/ai-chat-contract.test.ts` in their gate suites.
 - Any reintroduction of `POST /tsunade/chat`, `POST /ai/process-chat`, or their DELETE counterparts will cause a typecheck or test failure.
 - Grep for `/tsunade/chat` and `/ai/process-chat` must return zero non-doc, non-test hits.
 
 ## Tests
 
-`tests/ai-chat-contract.test.ts` enforces that both legacy POST and DELETE routes advertise the canonical replacement. `scripts/preflight.sh` includes this contract test.
+`tests/ai-chat-contract.test.ts` enforces that both legacy POST and DELETE routes return 404. Both preflight scripts include this contract test.
