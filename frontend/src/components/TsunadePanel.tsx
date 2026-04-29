@@ -105,10 +105,11 @@ export function TsunadePanel({ schema, onClose, onSchemaPatch }: TsunadePanelPro
     setMsgs(prev => [...prev, { role: 'user', text: userText }]);
     setBusy(true);
     try {
-      const res = await api.tsunade.processChat({
+      const res = await api.assistant.chat({
         message: msg || '(см. вложения)',
         schema,
         chat_id: chatId ?? undefined,
+        mode: 'process',
         attachments: sentAttachments.length > 0 ? sentAttachments : undefined,
       });
       if (!chatId) setChatId(res.chat_id);

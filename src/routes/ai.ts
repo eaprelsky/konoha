@@ -10,6 +10,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createWorkflow, listWorkflows } from "../workflow-loader";
 import { getAgentDef, listAgentDefs } from "../agent-lifecycle";
 import { buildOperatorStatePromptBlock, getOperatorStateLabel } from "../operator-state";
+import type { AssistantResponse } from "../assistant-response";
 const log = createLogger("routes:ai");
 
 /** Build content blocks from text + optional attachment paths (closes #321) */
@@ -237,9 +238,13 @@ async function handleTsunadeChatRequest(
   await redis.ltrim(histKey, -CHAT_MAX_HISTORY * 2, -1);
   await redis.expire(histKey, 7 * 24 * 3600); // 7 days TTL
 
+  return toAssistantWorkflowResponse(normalized);
+}
+
+function toAssistantWorkflowResponse(normalized: AssistantResponse) {
   return {
     reply: normalized.reply,
-    chat_id: chatId,
+    chat_id: normalized.chat_id,
     schema_patch: normalized.schema_patch,
     created_workflow: normalized.created_workflow,
     actions: normalized.ui_actions,
@@ -444,10 +449,12 @@ router.post("/ai/chat", async (c) => {
     message: string;
     context?: string;
     operator_state?: unknown;
+    schema?: unknown;
     chat_id?: string;
     mode?: "process" | "admin";
     stream?: boolean;
     images?: InlineImage[];
+    attachments?: AttachmentRef[];
   }>().catch(() => null);
 
   if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
@@ -471,8 +478,12 @@ router.post("/ai/chat", async (c) => {
     .filter(Boolean);
 
   const operatorStateBlock = buildOperatorStatePromptBlock(body.operator_state);
+  const schemaContext = body.schema && mode === "process"
+    ? `\n<process_data>\n${JSON.stringify(body.schema, null, 2)}\n</process_data>`
+    : "";
   const contextBlock = [
     operatorStateBlock,
+    schemaContext,
     body.context ? `\n\n[Inspector telemetry]\n${body.context}` : "",
   ].filter(Boolean).join("");
 
@@ -491,7 +502,9 @@ router.post("/ai/chat", async (c) => {
   }
 
   const userMsg = body.message + contextBlock + processListContext;
-  const userContent = buildInlineContent(userMsg, body.images);
+  const userContent = body.attachments?.length
+    ? buildContent(userMsg, body.attachments)
+    : buildInlineContent(userMsg, body.images);
 
   const messages: Anthropic.MessageParam[] = [
     ...history,
@@ -583,6 +596,21 @@ router.post("/ai/chat", async (c) => {
       system: systemPrompt,
       messages,
     });
+    if (mode === "process") {
+      const { normalizeAssistantResponse } = await import("../assistant-response");
+      const normalized = await normalizeAssistantResponse(rawReply, {
+        chat_id: chatId,
+        execute_actions: true,
+        agent_id: "tsunade",
+        session_id: chatId,
+      });
+      await redis.rpush(histKey, JSON.stringify({ role: "user", content: body.message }));
+      await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));
+      await redis.ltrim(histKey, -maxHistory * 2, -1);
+      await redis.expire(histKey, 7 * 24 * 3600);
+      return c.json(toAssistantWorkflowResponse(normalized));
+    }
+
     let finalReply = rawReply;
     try {
       const parsed = JSON.parse(stripMarkdownFences(rawReply));

@@ -68,7 +68,7 @@ export function TsunadeChatPanel({
       };
     }
     try {
-      const res = await api.tsunade.processChat({ message: msg, schema, chat_id: chatId ?? undefined });
+      const res = await api.assistant.chat({ message: msg, schema, chat_id: chatId ?? undefined, mode: 'process' });
       if (!chatId) setChatId(res.chat_id);
       setChatMsgs(prev => [...prev, { role: 'assistant', text: res.reply }]);
       const patch = res.schema_patch as SchemaPatch | undefined;

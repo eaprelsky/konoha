@@ -5,10 +5,11 @@
 
 ## 2026-04-29 Status Update
 
-Phase 1 has partially landed:
-- `api.tsunade.chat()` and `api.tsunade.processChat()` now declare `created_workflow`, `action_receipts`, `observable_result`, and `pending_confirmations`.
-- The canonical long-term direction remains a single action-based assistant surface, but legacy `/tsunade/chat` and `/ai/process-chat` are still active compatibility endpoints while the workflow editor is being repaired.
-- PR #536 attempted to remove those legacy paths in one step. It is stale against the current branch and should not be merged as-is; retire the paths only after the editor uses the canonical `AssistantWidget` path end-to-end.
+Phase 1-3 have partially landed:
+- `/api/ai/chat` is the canonical assistant endpoint for process-mode workflow operations.
+- Non-streaming process responses now use the same canonical assistant envelope as streaming parsed events: `created_workflow`, `actions_taken`, `action_receipts`, `observable_result`, and `pending_confirmations`.
+- `api.assistant.chat({ mode: "process", ... })` is the preferred frontend client path. `api.tsunade.chat()` and `api.tsunade.processChat()` remain compatibility shims that call `/api/ai/chat`.
+- Legacy backend routes `/tsunade/chat` and `/ai/process-chat` are still active compatibility endpoints for external callers, but new UI code should not target them directly.
 
 The root-cause analysis below is preserved as historical context from 2026-04-15. Treat statements about missing `created_workflow` frontend types as pre-fix context, not the current implementation.
 
@@ -26,29 +27,30 @@ Entry Point A: AssistantWidget (global, fixed, SSE streaming)
           └── navigate(/editor/:id) if not already in editor ✓
 
 Entry Point B: TsunadeChatPanel (legacy, inside ProcessEditor, non-streaming)
-  └── api.tsunade.processChat() → POST /api/ai/process-chat { NO stream }
-      └── api client type: { reply, chat_id, schema_patch, actions }
-          └── NO created_workflow in TypeScript type ← GAP #1
-          └── Response body DOES contain created_workflow (backend sends it)
-          └── BUT frontend ignores it ← BUG
-          └── Only checks schema_patch and actions ← GAP #2
+  └── api.assistant.chat({ mode: "process" }) → POST /api/ai/chat { NO stream }
+      └── canonical assistant envelope
+      └── handles schema_patch, created_workflow, action_receipts, observable_result, pending_confirmations
 
 Entry Point C: /tsunade/chat (legacy HTTP endpoint, used by old chat)
-  └── Same backend handler as /ai/process-chat
-  └── Returns { reply, schema_patch, created_workflow, actions }
-  └── Frontend via api.tsunade.chat() — same type gap as Entry B
+  └── Compatibility backend path
+  └── Returns the canonical assistant envelope
+  └── Frontend shims should prefer /api/ai/chat
 ```
 
 ### Backend Response Contract (actual, not declared)
 
-Non-streaming (`POST /tsunade/chat` or `POST /ai/process-chat`):
+Non-streaming process chat (`POST /api/ai/chat`, with legacy shims still supported):
 ```typescript
 {
   reply: string;                    // human-readable text
   chat_id: string;
   schema_patch: SchemaPatch | null; // patch to current workflow
-  created_workflow: WorkflowDef | null;  // ← present but undeclared in frontend types
+  created_workflow: WorkflowDef | null;
   actions: HighlightAction[];
+  actions_taken: WorkflowAssistantAction[];
+  action_receipts: WorkflowActionReceipt[];
+  observable_result: WorkflowObservableResult;
+  pending_confirmations: WorkflowPendingConfirmation[];
 }
 ```
 
@@ -301,9 +303,9 @@ Tsunade's actions are visible in:
 
 ### Phase 3: Unify entry points (2-3 days)
 
-5. **Deprecate `/ai/process-chat`** — redirect to `/api/ai/chat` with `mode: "process"`
-6. **Remove `TsunadeChatPanel` as separate component** — it becomes a "docked mode" of `AssistantWidget`
-7. **Single streaming path** — all chat goes through `/api/ai/chat` SSE
+5. **Deprecate `/ai/process-chat`** — keep it as a compatibility route while new clients use `/api/ai/chat` with `mode: "process"`
+6. **Remove `TsunadeChatPanel` as separate component** — future cleanup: replace it with a docked mode of `AssistantWidget`
+7. **Single assistant path** — all new workflow chat goes through `/api/ai/chat`; streaming remains preferred for the global widget
 
 ### Phase 4: First-class operator surface (1 week)
 

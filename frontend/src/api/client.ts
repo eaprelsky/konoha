@@ -2,6 +2,17 @@ import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, Reminder
 export type { KibaAction, HighlightAction };
 
 export interface AttachmentRef { path: string; name: string; mime?: string; }
+export interface AssistantChatParams {
+  message: string;
+  context?: string;
+  operator_state?: unknown;
+  schema?: unknown;
+  chat_id?: string;
+  mode?: 'process' | 'admin';
+  stream?: false;
+  images?: Array<{ data: string; mime: string; name?: string }>;
+  attachments?: AttachmentRef[];
+}
 
 /** Upload a file to /attachments, returns AttachmentRef for use in chat requests */
 export async function uploadAttachment(file: File, from = 'user'): Promise<AttachmentRef> {
@@ -295,21 +306,33 @@ export const api = {
     search: (q: string) => apiFetch<{ path: string }[]>(`${BASE}/kb/search?q=${encodeURIComponent(q)}`),
   },
 
-  tsunade: {
-    chat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
-      apiFetch<AssistantWorkflowResponse>(`${BASE}/tsunade/chat`, {
+  assistant: {
+    chat: (params: AssistantChatParams) =>
+      apiFetch<AssistantWorkflowResponse>(`${BASE}/ai/chat`, {
         method: 'POST',
         body: JSON.stringify(params),
       }),
     clearChat: (chat_id: string) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/tsunade/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
-    processChat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
-      apiFetch<AssistantWorkflowResponse>(`${BASE}/ai/process-chat`, {
+      apiFetch<{ ok: boolean }>(`${BASE}/ai/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+  },
+
+  tsunade: {
+    /** @deprecated Compatibility shim. Use api.assistant.chat({ mode: 'process', ... }). */
+    chat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
+      apiFetch<AssistantWorkflowResponse>(`${BASE}/ai/chat`, {
         method: 'POST',
-        body: JSON.stringify(params),
+        body: JSON.stringify({ ...params, mode: 'process' }),
+      }),
+    clearChat: (chat_id: string) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/ai/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+    /** @deprecated Compatibility shim. Use api.assistant.chat({ mode: 'process', ... }). */
+    processChat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
+      apiFetch<AssistantWorkflowResponse>(`${BASE}/ai/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ ...params, mode: 'process' }),
       }),
     clearProcessChat: (chat_id: string) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/ai/process-chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+      apiFetch<{ ok: boolean }>(`${BASE}/ai/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
   },
 
   kiba: {
