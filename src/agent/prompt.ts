@@ -123,10 +123,10 @@ export async function buildRoleBlocks(agentId: string): Promise<string> {
  * Builds the complete agent system prompt: system template + user instructions + role blocks + skill snippets.
  * Used by startAgent() and GET /agents/:id/system-template.
  */
-export async function buildSystemPrompt(agentId: string, def: Pick<AgentDef, "id" | "name" | "model" | "runtime" | "system_prompt" | "capabilities">): Promise<string> {
+export async function buildSystemPrompt(agentId: string, def: Pick<AgentDef, "id" | "name" | "display_alias" | "model" | "runtime" | "system_prompt" | "capabilities">): Promise<string> {
   // Substitute {display_name} from branding config (closes #298)
   const branding = await getBranding().catch(() => null);
-  const displayName = branding?.agent_display_names?.[agentId] ?? def.name;
+  const displayName = branding?.agent_display_names?.[agentId] ?? def.display_alias ?? def.name;
 
   const base = renderSystemTemplate({ ...def, name: displayName });
   const userInstructions = (def.system_prompt?.trim() ?? "")

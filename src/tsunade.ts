@@ -197,6 +197,7 @@ export async function initTsunade(): Promise<void> {
   await registerAgent({
     id: TSUNADE_ID,
     name: `${tsunadeName} (Process Monitor)`,
+    display_alias: branding?.agent_display_names?.["tsunade"] ?? branding?.assistant_name ?? "Советник",
     roles: ["architect"],
     capabilities: ["process-monitoring", "event-handler"],
     eventSubscriptions: ["process.exception", "workitem.stuck", "workitem.overdue"],

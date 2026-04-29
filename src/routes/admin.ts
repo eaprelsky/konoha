@@ -121,6 +121,7 @@ const SYSTEM_AGENTS = [
   {
     id: "naruto",
     name: "Наруто (Оркестратор)",
+    display_alias: "Бот-агент",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     llm_client_profile: "claude-deepseek-sonnet",
@@ -141,6 +142,7 @@ const SYSTEM_AGENTS = [
   {
     id: "sasuke",
     name: "Саске",
+    display_alias: "Юзер-агент",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     llm_client_profile: "claude-deepseek-sonnet",
@@ -164,6 +166,7 @@ const SYSTEM_AGENTS = [
   {
     id: "kiba",
     name: "Киба (Страж)",
+    display_alias: "Страж надежности",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     llm_client_profile: "claude-deepseek-sonnet",
@@ -182,6 +185,7 @@ const SYSTEM_AGENTS = [
   {
     id: "kakashi",
     name: "Какаши (Мастер багфиксинга)",
+    display_alias: "Тимлид",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     llm_client_profile: "claude-deepseek-opus",
@@ -198,6 +202,7 @@ const SYSTEM_AGENTS = [
   {
     id: "mirai",
     name: "Мирай",
+    display_alias: "Пограничный агент",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     llm_client_profile: "claude-deepseek-haiku",
@@ -214,6 +219,7 @@ const SYSTEM_AGENTS = [
   {
     id: "jiraiya",
     name: "Дзирайя (Корпоративная память)",
+    display_alias: "Куратор знаний",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:haiku",
@@ -228,6 +234,7 @@ const SYSTEM_AGENTS = [
   {
     id: "shino",
     name: "Шино (Архитектор тестов)",
+    display_alias: "Тестлид",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:sonnet",
@@ -242,6 +249,7 @@ const SYSTEM_AGENTS = [
   {
     id: "hinata",
     name: "Хината (Исполнитель тестов)",
+    display_alias: "Исполнитель тестов",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:haiku",
@@ -256,6 +264,7 @@ const SYSTEM_AGENTS = [
   {
     id: "ibiki",
     name: "Ибики (Безопасность)",
+    display_alias: "Аудитор безопасности",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:sonnet",
@@ -270,6 +279,7 @@ const SYSTEM_AGENTS = [
   {
     id: "ino",
     name: "Ино (Маркетолог Ноктюрны)",
+    display_alias: "Маркетолог",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:sonnet",
@@ -284,6 +294,7 @@ const SYSTEM_AGENTS = [
   {
     id: "inojin",
     name: "Иноджин (Редактор Ноктюрны)",
+    display_alias: "Редактор",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:haiku",
@@ -298,6 +309,7 @@ const SYSTEM_AGENTS = [
   {
     id: "guy",
     name: "Гай (Разработчик)",
+    display_alias: "Разработчик",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:haiku",
@@ -312,6 +324,7 @@ const SYSTEM_AGENTS = [
   {
     id: "shikadai",
     name: "Шикадай (Советник)",
+    display_alias: "Советник",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:sonnet",
