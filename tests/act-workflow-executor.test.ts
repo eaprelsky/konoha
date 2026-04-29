@@ -267,4 +267,36 @@ describe("/act workflow executor", () => {
 
     expect(res.status).toBe(403);
   });
+
+  test("agent token cannot use /act to bypass workflow/case admin boundaries", async () => {
+    const reg = await app.fetch(new Request("http://localhost/agents/register", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ id: RBAC_AGENT_ID, name: "Act RBAC Agent" }),
+    }));
+    const agent = await reg.json();
+    const headers = { Authorization: `Bearer ${agent.token}`, "Content-Type": "application/json" };
+
+    const workflowCreate = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action: "workflow.create",
+        category: "act",
+        args: { id: `${RUN}-blocked`, name: "Blocked", elements: [], flow: [], draft: true },
+      }),
+    }));
+    expect(workflowCreate.status).toBe(403);
+
+    const caseList = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action: "case.list",
+        category: "inspect",
+        args: {},
+      }),
+    }));
+    expect(caseList.status).toBe(403);
+  });
 });

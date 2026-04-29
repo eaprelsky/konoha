@@ -11,6 +11,10 @@
  *   - Versioned: bump ACTION_VERSION when the vocabulary changes
  */
 
+import { classifyAction, getActionSecurity, type ActionCategory, type ActionSecurityPolicy } from "./action-policy";
+export { classifyAction, getActionSecurity } from "./action-policy";
+export type { ActionActorPolicy, ActionCategory, ActionSecurityPolicy } from "./action-policy";
+
 // ── Version ─────────────────────────────────────────────────────────────────
 
 export const ACTION_VERSION = 2;
@@ -38,7 +42,6 @@ export type ObjectScope =
   | "message";    // bus messages
 
 export type AutonomyLevel = "auto" | "confirm" | "disabled";
-export type ActionCategory = "act" | "inspect" | "drill";
 export type ActionImplementationKind = "direct" | "endpoint" | "registered-handler" | "planned";
 
 export interface ActionImplementation {
@@ -67,6 +70,8 @@ export interface ActionDef {
   currentEndpoint?: string;
   /** Explicit implementation metadata when currentEndpoint is not sufficient. */
   implementation?: ActionImplementation;
+  /** Actor policy enforced by /act. If omitted, inferred from scope/category. */
+  security?: ActionSecurityPolicy;
   /** Default autonomy level */
   autonomy: AutonomyLevel;
   /** Whether this action writes to the audit log */
@@ -76,25 +81,8 @@ export interface ActionDef {
 export interface ActionSurfaceEntry extends ActionDef {
   category: ActionCategory;
   implementation: ActionImplementation;
+  security: ActionSecurityPolicy;
   implemented: boolean;
-}
-
-const MUTATION_VERBS = new Set([
-  "create", "update", "delete", "remove", "close", "complete",
-  "cancel", "start", "stop", "restart", "register", "set",
-  "resolve", "send", "upsert", "approve", "reject",
-  "upsert_user", "remove_user", "add_group", "remove_group",
-]);
-
-const DRILL_VERBS = new Set([
-  "stream", "history", "versions", "tree",
-]);
-
-export function classifyAction(actionId: string): ActionCategory {
-  const verb = actionId.split(".")[1] ?? "";
-  if (MUTATION_VERBS.has(verb)) return "act";
-  if (DRILL_VERBS.has(verb)) return "drill";
-  return "inspect";
 }
 
 // ── Action definitions ──────────────────────────────────────────────────────
@@ -883,6 +871,7 @@ export function getActionSurface(action: ActionDef): ActionSurfaceEntry {
     ...action,
     category: classifyAction(action.id),
     implementation,
+    security: getActionSecurity(action),
     implemented: implementation.kind !== "planned",
   };
 }

@@ -177,6 +177,7 @@ describe("workflow action contract validation", () => {
     for (const action of surface) {
       expect(["act", "inspect", "drill"]).toContain(action.category);
       expect(["direct", "endpoint", "registered-handler", "planned"]).toContain(action.implementation.kind);
+      expect(["admin", "authenticated", "agent_self"]).toContain(action.security.actor);
       if (action.implementation.kind === "planned") {
         expect(planned.has(action.id)).toBe(true);
         expect(action.implementation.note?.length ?? 0).toBeGreaterThan(10);
@@ -187,5 +188,17 @@ describe("workflow action contract validation", () => {
         expect(action.audited).toBe(true);
       }
     }
+  });
+
+  it("exposes expected actor policies for sensitive and agent-safe actions", () => {
+    const byId = new Map(listActionSurface().map(action => [action.id, action]));
+    expect(byId.get("workflow.create")?.security.actor).toBe("admin");
+    expect(byId.get("case.list")?.security.actor).toBe("admin");
+    expect(byId.get("workitem.complete")?.security.actor).toBe("admin");
+    expect(byId.get("access.upsert_user")?.security.actor).toBe("admin");
+    expect(byId.get("audit.read")?.security.actor).toBe("admin");
+    expect(byId.get("message.send")?.security.actor).toBe("authenticated");
+    expect(byId.get("message.read")?.security).toEqual({ actor: "agent_self", selfArg: "agent_id" });
+    expect(byId.get("knowledge.read")?.security.actor).toBe("authenticated");
   });
 });

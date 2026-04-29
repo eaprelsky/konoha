@@ -21,6 +21,7 @@ import {
   ACTION_VERSION,
   classifyAction,
   getAction,
+  getActionSecurity,
   isValidAction,
   validateActionArgs,
   type ActionCategory,
@@ -28,6 +29,7 @@ import {
 } from "./action-registry";
 import { auditLog, checkAutonomy } from "./assistant-actions";
 import { assertActionArgs, executeActionDirect } from "./action-executor";
+import type { CallerInfo } from "./types";
 
 // ── Envelope types ───────────────────────────────────────────────────────────
 
@@ -128,6 +130,20 @@ function fail(action: string, error: string): ActResult {
 
 function needConfirm(action: string): ActResult {
   return { ok: false, action, requires_confirm: true, action_version: ACTION_VERSION };
+}
+
+function authorizeAction(action: ActionDef, args: Record<string, unknown>, caller: CallerInfo): string | null {
+  const policy = getActionSecurity(action);
+  if (policy.actor === "authenticated") return null;
+  if (caller.isAdmin) return null;
+  if (policy.actor === "admin") return "Forbidden: admin token required";
+  if (policy.actor === "agent_self") {
+    const selfArg = policy.selfArg ?? "agent_id";
+    const target = args[selfArg];
+    if (caller.agentId && typeof target === "string" && target === caller.agentId) return null;
+    return `Forbidden: agent can only access its own ${selfArg}`;
+  }
+  return "Forbidden";
 }
 
 // ── Action handlers ──────────────────────────────────────────────────────────
@@ -352,9 +368,9 @@ actRouter.post("/", requireAuth, async (c) => {
   const envelope = await c.req.json<ActEnvelope>();
   const caller = c.get("caller");
   const actionDef = getAction(envelope.action);
-  const category = actionDef ? classifyAction(actionDef.id) : classifyAction(envelope.action);
-  if (!caller?.isAdmin && category === "act" && (actionDef?.scope === "access" || actionDef?.scope === "person")) {
-    return c.json(fail(envelope.action, "Forbidden: admin token required"), 403);
+  if (actionDef) {
+    const authError = authorizeAction(actionDef, envelope.args ?? {}, caller);
+    if (authError) return c.json(fail(envelope.action, authError), 403);
   }
   const result = await executeAction(envelope, {
     agent_chain: envelope.meta?.agent_chain ?? "api",
