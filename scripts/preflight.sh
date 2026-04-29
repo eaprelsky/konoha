@@ -45,6 +45,7 @@ run_backend_tests() {
 cd "$ROOT"
 run_step "system health" python3 scripts/healthcheck-system.py
 run_step "backend typecheck" bun x tsc --noEmit
+run_step "action surface contract" bun run scripts/action-surface-report.ts --check
 run_step "backend tests" run_backend_tests
 run_step "frontend typecheck/build" run_frontend
 
