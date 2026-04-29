@@ -21,6 +21,8 @@ interface AgentDef {
   name: string;                       // display name
   runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
   fallback_runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
+  llm_client_profile?: string;          // preferred: runtime adapter + provider + model profile
+  fallback_llm_client_profile?: string;
   model: string;                      // provider-qualified model ID (e.g. "claude:sonnet", "codex:gpt-5.5")
   reasoning_effort?: string;          // provider-specific effort, e.g. "high" for Codex
   system_prompt?: string;             // user-editable instructions (appended after system template)

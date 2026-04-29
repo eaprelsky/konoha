@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import type { AgentProvider, AgentDef } from "./types";
 import { createLogger } from "../logger";
+import { profileAgentProvider, resolveLLMClientProfile } from "./llm-client-profiles";
 
 const log = createLogger("agent:runtime");
 
@@ -73,7 +74,16 @@ ${block}` : block;
 
 // ── Provider resolution ────────────────────────────────────────────────────
 
-export function resolveAgentRuntime(def: Pick<AgentDef, "model" | "runtime">): { provider: AgentProvider; runtimeModel: string } {
+export function resolveAgentRuntime(def: Pick<AgentDef, "model" | "runtime" | "llm_client_profile">): { provider: AgentProvider; runtimeModel: string } {
+  const profile = resolveLLMClientProfile(def);
+  const profileProvider = profile ? profileAgentProvider(profile) : undefined;
+  if (profile && profileProvider) {
+    return { provider: profileProvider, runtimeModel: profile.runtime_model ?? profile.model };
+  }
+  if (def.llm_client_profile) {
+    throw new Error(`Unknown LLM client profile: ${def.llm_client_profile}`);
+  }
+
   const raw = (def.model || DEFAULT_AGENT_MODEL).trim();
   const namespaced = raw.match(/^(claude|codex|cursor|glm):(.*)$/);
   if (def.runtime) {
@@ -351,12 +361,14 @@ function buildCodexMcpConfigArgs(mcpConfig: McpConfig): string[] {
 }
 
 export function buildLaunchCommand(
-  def: Pick<AgentDef, "model" | "runtime" | "reasoning_effort" | "codex_disable_features">,
+  def: Pick<AgentDef, "model" | "runtime" | "llm_client_profile" | "reasoning_effort" | "codex_disable_features">,
   workdir: string,
   mcpConfigPath: string,
   mcpConfig: McpConfig,
 ): { provider: AgentProvider; command: string } {
   const runtime = resolveAgentRuntime(def);
+  const profile = resolveLLMClientProfile(def);
+  const reasoningEffort = def.reasoning_effort ?? profile?.reasoning_effort;
 
   if (runtime.provider === "codex") {
     const args = [
@@ -365,7 +377,7 @@ export function buildLaunchCommand(
       "--model", runtime.runtimeModel,
       "--dangerously-bypass-approvals-and-sandbox",
       "-C", workdir,
-      ...(def.reasoning_effort ? ["-c", `model_reasoning_effort=${toToml(def.reasoning_effort)}`] : []),
+      ...(reasoningEffort ? ["-c", `model_reasoning_effort=${toToml(reasoningEffort)}`] : []),
       ...(def.codex_disable_features ?? []).flatMap(flag => ["--disable", flag]),
       ...buildCodexMcpConfigArgs(mcpConfig),
     ];

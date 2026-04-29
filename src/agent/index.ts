@@ -9,6 +9,7 @@
  *  agent/crud.ts     — agent definition CRUD
  */
 export * from "./types";
+export * from "./llm-client-profiles";
 export * from "./runtime";
 export * from "./prompt";
 export * from "./process";

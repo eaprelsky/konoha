@@ -26,6 +26,8 @@ import {
   restartAgent,
   buildSystemPrompt,
   isTmuxRunning,
+  listLLMClientProfiles,
+  getLLMClientProfile,
 } from "../agent-lifecycle";
 import { silentCatch } from "../logger";
 
@@ -37,6 +39,13 @@ const PROFILE_DEFAULT_MODELS: Record<string, string> = {
   cursor: "cursor:auto",
   glm: "glm:glm-5.1",
 };
+
+function validateLLMClientProfile(id: unknown, field: string): { error: string } | null {
+  if (id === undefined || id === null || id === "") return null;
+  if (typeof id !== "string") return { error: `${field} must be a string` };
+  if (!getLLMClientProfile(id)) return { error: `Unknown ${field}: ${id}` };
+  return null;
+}
 
 // Apply auth to all protected routes
 // /agents/register is handled inline (invite token logic, no middleware)
@@ -88,6 +97,8 @@ router.post("/", async (c) => {
     system_prompt,
     runtime,
     fallback_runtime,
+    llm_client_profile,
+    fallback_llm_client_profile,
     launch_strategy,
     startup_timeout_sec,
     model = "claude:sonnet",
@@ -98,12 +109,17 @@ router.post("/", async (c) => {
     memory,
   } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
+  const profileError = validateLLMClientProfile(llm_client_profile, "llm_client_profile")
+    ?? validateLLMClientProfile(fallback_llm_client_profile, "fallback_llm_client_profile");
+  if (profileError) return c.json(profileError, 400);
   const def = await createAgentDef({
     id,
     name,
     system_prompt,
     runtime,
     fallback_runtime,
+    llm_client_profile,
+    fallback_llm_client_profile,
     launch_strategy,
     startup_timeout_sec,
     model,
@@ -116,6 +132,11 @@ router.post("/", async (c) => {
   // Prepare personal memory directory
   mkdirSync(`/opt/shared/agent-memory/${id}`, { recursive: true });
   return c.json(def, 201);
+});
+
+// GET /agents/llm-client-profiles — available runtime adapter/provider/model profiles
+router.get("/llm-client-profiles", async (c) => {
+  return c.json(listLLMClientProfiles());
 });
 
 // GET /agents/:id/status — lifecycle status (tmux state, pid, uptime)
@@ -173,9 +194,13 @@ router.post("/:id/switch-runtime", async (c) => {
   if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON" }, 400);
-  const { profile, runtime, model, reasoning_effort, fallback_runtime, restart } = body;
+  const { profile, llm_client_profile, runtime, model, reasoning_effort, fallback_runtime, fallback_llm_client_profile, restart } = body;
+  const profileError = validateLLMClientProfile(llm_client_profile, "llm_client_profile")
+    ?? validateLLMClientProfile(fallback_llm_client_profile, "fallback_llm_client_profile");
+  if (profileError) return c.json(profileError, 400);
   const updates: Record<string, unknown> = {};
   const nextRuntime = runtime ?? profile;
+  if (llm_client_profile !== undefined) updates.llm_client_profile = llm_client_profile;
   if (nextRuntime !== undefined) updates.runtime = nextRuntime;
   if (model !== undefined) {
     updates.model = model;
@@ -184,6 +209,7 @@ router.post("/:id/switch-runtime", async (c) => {
   }
   if (reasoning_effort !== undefined) updates.reasoning_effort = reasoning_effort;
   if (fallback_runtime !== undefined) updates.fallback_runtime = fallback_runtime;
+  if (fallback_llm_client_profile !== undefined) updates.fallback_llm_client_profile = fallback_llm_client_profile;
   if (Object.keys(updates).length === 0) return c.json({ error: "No fields to update" }, 400);
   const updated = { ...def, ...updates, id, updated_at: new Date().toISOString() };
   await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));

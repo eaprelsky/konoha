@@ -23,6 +23,8 @@ export interface AgentDef {
   launch_strategy?: LaunchStrategy;
   startup_timeout_sec?: number;
   model: string;
+  llm_client_profile?: string; // runtime adapter + provider + model profile, e.g. "claude-deepseek-opus"
+  fallback_llm_client_profile?: string;
   reasoning_effort?: string;   // e.g. "high", "medium", "low" — provider-specific
   env?: Record<string, string>;
   tags?: string[];

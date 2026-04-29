@@ -37,7 +37,16 @@ Therefore Codex must stay disabled until fresh proxy/VPN credentials are install
 
 ### Profile Fields
 
-AgentDef expresses the runtime profile through:
+AgentDef is migrating from ambiguous `runtime`/`model` pairs to explicit LLM client profiles. During migration, both forms are supported.
+
+Preferred fields:
+
+| Field | Purpose | Example |
+|-------|---------|---------|
+| `llm_client_profile` | Runtime adapter + provider + model profile | `"claude-deepseek-opus"` |
+| `fallback_llm_client_profile` | Fallback LLM client profile | `"codex-gpt-5.5"` |
+
+Legacy compatibility fields:
 
 | Field | Purpose | Example |
 |-------|---------|---------|
@@ -46,9 +55,13 @@ AgentDef expresses the runtime profile through:
 | `model` | Model identifier | `"claude:opus"` |
 | `reasoning_effort` | Provider-specific effort level | `"high"` |
 
+The key distinction is that `claude` means the Claude Code CLI adapter, not Anthropic as a provider. The active Kakashi profile is `claude-deepseek-opus`: Claude Code CLI over the DeepSeek Anthropic-compatible endpoint, resolving to `deepseek-v4-pro`.
+
 ### Runtime Switching
 
-`POST /agents/:id/switch-runtime` accepts `runtime`, `model`, `reasoning_effort`, `fallback_runtime` and updates the agent definition. If `restart: true`, the agent is restarted with the new profile. No SSH/tmux manual intervention required.
+`POST /agents/:id/switch-runtime` accepts `llm_client_profile`, `fallback_llm_client_profile`, `runtime`, `model`, `reasoning_effort`, and `fallback_runtime`, then updates the agent definition. If `restart: true`, the agent is restarted with the new profile. No SSH/tmux manual intervention required.
+
+`GET /agents/llm-client-profiles` exposes the available client profiles for admin UI, healthcheck, and operator diagnostics.
 
 ## Consequences
 

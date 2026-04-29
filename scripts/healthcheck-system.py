@@ -363,10 +363,39 @@ def check_agent_registry_hygiene() -> list[Check]:
     return checks
 
 
+def check_llm_client_profiles() -> list[Check]:
+    try:
+        profiles = api_get("/agents/llm-client-profiles")
+    except Exception as exc:
+        return [Check("WARN", "llm_profiles.api", str(exc), "Check /agents/llm-client-profiles route and KONOHA_TOKEN")]
+
+    by_id = {str(profile.get("id")): profile for profile in profiles if profile.get("id")}
+    required = ["claude-deepseek-haiku", "claude-deepseek-sonnet", "claude-deepseek-opus", "codex-gpt-5.5"]
+    missing = [profile_id for profile_id in required if profile_id not in by_id]
+    checks: list[Check] = []
+    if missing:
+        checks.append(Check("FAIL", "llm_profiles.required", f"missing={','.join(missing)}", "Update src/agent/llm-client-profiles.ts"))
+    else:
+        checks.append(Check("OK", "llm_profiles.required", f"{len(required)} required profiles available"))
+
+    codex = by_id.get("codex-gpt-5.5") or {}
+    if codex.get("disabled") is True:
+        checks.append(Check("OK", "llm_profiles.codex_fallback", "codex-gpt-5.5 disabled until proxy/VPN is fixed"))
+    else:
+        checks.append(Check("WARN", "llm_profiles.codex_fallback", "codex-gpt-5.5 is enabled", "Enable only after #565 is resolved"))
+
+    deepseek_profiles = [profile for profile in by_id.values() if profile.get("provider_profile") == "deepseek"]
+    if deepseek_profiles:
+        checks.append(Check("OK", "llm_profiles.deepseek", f"{len(deepseek_profiles)} deepseek-backed profiles"))
+    else:
+        checks.append(Check("FAIL", "llm_profiles.deepseek", "no deepseek-backed profiles", "Add at least one default Anthropic-compatible DeepSeek profile"))
+    return checks
+
+
 def main() -> int:
     load_env_defaults()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene):
+    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_llm_client_profiles):
         checks.extend(fn())
     return print_report(checks)
 
