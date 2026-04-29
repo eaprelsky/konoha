@@ -5,6 +5,7 @@ import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { RoleDef, AssignmentStrategy, Agent, Person, Skill } from '../api/types';
+import { agentDisplayName, buildAgentLabelMap, roleAssigneeLabel } from '../utils/agentDisplay';
 
 const STRATEGIES: { value: AssignmentStrategy; label: string }[] = [
   { value: 'manual',          label: 'Вручную' },
@@ -207,7 +208,7 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
   }
 
   const assigneeOptions: AssigneeOption[] = [
-    ...agents.map(a => ({ id: a.id, label: a.name, group: 'Агенты' })),
+    ...agents.map(a => ({ id: a.id, label: agentDisplayName(a), group: 'Агенты' })),
     ...people.map(p => ({ id: p.id, label: `${p.name}${p.position ? ` (${p.position})` : ''}`, group: 'Люди' })),
   ];
 
@@ -330,6 +331,7 @@ export function Roles() {
   const [error,   setError]   = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editRole,  setEditRole]  = useState<RoleDef | null>(null);
+  const agentLabels = buildAgentLabelMap(agents);
   const load = useCallback(() => {
     if (!token) return;
     api.roles.list()
@@ -392,8 +394,13 @@ export function Roles() {
                     </td>
                     <td><span className="strategy-badge">{STRATEGY_LABELS[r.strategy] ?? r.strategy}</span></td>
                     <td>
-                      {r.assignees.map(a => <span key={a} className="tag">{a}</span>)}
+                      {r.assignees.map(a => <span key={a} className="tag" title={a}>{agentLabels[a] || a}</span>)}
                       {r.assignees.length === 0 && <span style={{ color: '#999' }}>—</span>}
+                      {r.assignees.length > 0 && (
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                          {r.name} -> {roleAssigneeLabel(r, agentLabels)}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div className="actions">

@@ -4,7 +4,8 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { WorkItem, WorkItemFilters, Case, Workflow, EventWait, EventWaitStatus } from '../api/types';
+import type { WorkItem, WorkItemFilters, Case, Workflow, EventWait, EventWaitStatus, Agent, RoleDef } from '../api/types';
+import { buildAgentLabelMap, buildRoleLabelMap, formatAssignee, type AssigneeOption } from '../utils/agentDisplay';
 
 const styles = `
   .wf-body { padding: 20px; }
@@ -90,7 +91,7 @@ function getStepLabel(kase: Case, wiId: string): string {
   return `step ${idx + 1}/${kase.history.length}`;
 }
 
-interface NewTaskModalProps { onClose: () => void; onCreated: () => void; assigneeOptions: string[]; workflows: Workflow[]; }
+interface NewTaskModalProps { onClose: () => void; onCreated: () => void; assigneeOptions: AssigneeOption[]; workflows: Workflow[]; }
 function NewTaskModal({ onClose, onCreated, assigneeOptions, workflows }: NewTaskModalProps) {
   const [label, setLabel] = useState('');
   const [assignee, setAssignee] = useState('');
@@ -141,7 +142,7 @@ function NewTaskModal({ onClose, onCreated, assigneeOptions, workflows }: NewTas
             <label htmlFor="ntAssignee">Исполнитель *</label>
             <select id="ntAssignee" value={assignee} onChange={e => setAssignee(e.target.value)} required>
               <option value="">— выберите исполнителя —</option>
-              {assigneeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              {assigneeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
           </div>
           <div className="form-group">
@@ -208,7 +209,9 @@ export function WorkItems() {
   const [showNewTask, setShowNewTask] = useState(false);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [assigneeOptions, setAssigneeOptions] = useState<string[]>([]);
+  const [assigneeOptions, setAssigneeOptions] = useState<AssigneeOption[]>([]);
+  const [agentLabels, setAgentLabels] = useState<Record<string, string>>({});
+  const [roleLabels, setRoleLabels] = useState<Record<string, string>>({});
   const [caseCache, setCaseCache] = useState<Record<string, Case>>({});
 
   // Load workflow names + agents + roles once
@@ -224,11 +227,20 @@ export function WorkItems() {
       api.agents.list().catch(() => [] as import('../api/types').Agent[]),
       api.roles.list().catch(() => [] as import('../api/types').RoleDef[]),
     ]).then(([agents, roles]) => {
+      const nextAgentLabels = buildAgentLabelMap(agents as Agent[]);
+      const nextRoleLabels = buildRoleLabelMap(roles as RoleDef[]);
       const opts = [
-        ...agents.map((a: import('../api/types').Agent) => a.id),
-        ...roles.map((r: import('../api/types').RoleDef) => r.role_id),
+        ...(agents as Agent[]).map((a: Agent) => ({ value: a.id, label: nextAgentLabels[a.id] || a.id })),
+        ...(roles as RoleDef[]).map((r: RoleDef) => ({
+          value: r.role_id,
+          label: r.assignees.length > 0
+            ? `${r.name} -> ${r.assignees.map(id => nextAgentLabels[id] || id).join(', ')}`
+            : r.name,
+        })),
       ];
-      setAssigneeOptions([...new Set(opts)].sort());
+      setAgentLabels(nextAgentLabels);
+      setRoleLabels(nextRoleLabels);
+      setAssigneeOptions([...new Map(opts.map(opt => [opt.value, opt])).values()].sort((a, b) => a.label.localeCompare(b.label)));
     });
   }, [token]);
 
@@ -321,7 +333,7 @@ export function WorkItems() {
                 value={filters.assignee || ''}
                 onChange={e => setFilters(f => ({ ...f, assignee: e.target.value || undefined }))}>
                 <option value="">Все исполнители</option>
-                {assigneeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                {assigneeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
             </div>
             <div className="filter-group">
@@ -384,10 +396,12 @@ export function WorkItems() {
                   const processCell = formatProcessCase(item, wfNameMap);
                   const fullTitle = [item.process_id, item.case_id].filter(Boolean).join(' / ');
                   const deadline = item.deadline ? new Date(item.deadline).toLocaleDateString() : '-';
+                  const inputRole = typeof item.input?.role === 'string' ? item.input.role : undefined;
+                  const assigneeLabel = formatAssignee(item.assignee, agentLabels, roleLabels, inputRole);
                   return (
                     <tr key={item.work_item_id}>
                       <td><span className="item-label">{item.label}</span></td>
-                      <td>{item.assignee || '-'}</td>
+                      <td title={item.assignee || ''}>{assigneeLabel}</td>
                       <td><StatusBadge status={item.status} /></td>
                       <td>
                         {(item.process_id || item.case_id)
@@ -469,7 +483,7 @@ export function WorkItems() {
                         </td>
                         <td>{wait.trigger_kind}</td>
                         <td><StatusBadge status={wait.status} /></td>
-                        <td>{wait.assignee || '-'}</td>
+                        <td title={wait.assignee || ''}>{formatAssignee(wait.assignee, agentLabels, roleLabels)}</td>
                         <td>{processCell}</td>
                         <td>{wait.deadline ? new Date(wait.deadline).toLocaleString() : '-'}</td>
                         <td className="item-actions">
