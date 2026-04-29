@@ -1,79 +1,160 @@
-# Konoha Bus — Architecture
+# Konoha Architecture
 
-## Overview
+Konoha is a multi-agent control plane for Telegram-facing assistants, coding agents, and Workflow Engine operators. It combines a Bun/Hono HTTP API, MCP tools, Redis streams, PostgreSQL shadow persistence, systemd-supervised agent runtimes, and a React dashboard.
 
-Konoha is a lightweight inter-agent communication bus designed for autonomous Claude Code agents. It provides message routing, file exchange, and presence tracking through a Redis-backed HTTP API.
+This document is the high-level map. Entity-level ownership rules live in `docs/entity-contracts.md`; agent startup/runtime details live in `docs/agent-lifecycle.md`; watchdog delivery details live in `docs/watchdog-architecture.md`.
 
-## Components
+## Current Shape
 
-### HTTP Server (`src/server.ts`)
-- **Runtime**: Bun + Hono framework
-- **Port**: configurable via `KONOHA_PORT` (default: 3100, production: 3200)
-- **Auth**: Bearer token via `KONOHA_TOKEN` env var
-- **Endpoints**: REST API for agents, messages, attachments, channels
+```text
+UI / HTTP / MCP / agents
+        |
+        v
+core/src/server.ts  (Hono composition root)
+        |
+        +-- src/routes/*                 API surfaces
+        +-- src/act-envelope.ts          typed action envelope
+        +-- modules/workflow-engine/src  workflow/case/work-item routes
+        +-- src/redis.ts                 bus facade + Redis stream operations
+        +-- src/storage/pg*.ts           PostgreSQL shadow/presence storage
+        +-- src/agent-lifecycle.ts       managed agent definitions/runtime state
+```
 
-### Redis Layer (`src/redis.ts`)
-- **Agent registry**: Redis hash (`konoha:registry`) — JSON-serialized agent metadata
-- **Message streams**: per-agent Redis streams (`konoha:agent:{id}`) with consumer groups for reliable delivery
-- **Bus stream**: `konoha:bus` — all messages for logging/audit
-- **Channel streams**: `konoha:channel:{name}` — topic-based pub/sub
-- **Pub/sub notifications**: `konoha:notify:{id}` — real-time push via Redis pub/sub
+The production server is started through `bun run start`, which resolves to `core/src/server.ts`.
 
-### MCP Server (`src/mcp.ts`)
-- MCP interface for Claude Code integration
-- Connects to HTTP API as a client
-- 8 tools: register, send, read, agents, channels, heartbeat, history, listen
-- Auto-heartbeat on registration
+## Component Boundaries
 
-### Shared Storage (`/opt/shared/attachments/`)
-- File-based attachment storage accessible to all agents
-- Files uploaded via POST /attachments or by telegram-bot-service
-- Referenced by absolute path in message attachments
+### HTTP Composition Root
+
+- File: `core/src/server.ts`
+- Runtime: Bun + Hono
+- Production port: `KONOHA_PORT=3200`
+- Local/default port: `3100`
+- Auth: Bearer token middleware from `src/middleware/auth.ts`
+- Responsibility: mount routes, initialize schedulers/listeners, and keep the composition layer thin.
+
+Domain logic should stay under `src/*` or `modules/*`, not in the composition root.
+
+### Action Spine
+
+- Files: `src/act-envelope.ts`, `src/action-registry.ts`, `src/action-executor.ts`, `src/action-handlers.ts`
+- Canonical direction: UI, HTTP wrappers, MCP tools, and agents should converge on typed action contracts.
+- `/act` is the public action envelope.
+- Legacy HTTP routes may remain as wrappers, but should not fork mutation logic.
+
+Target shape:
+
+```text
+UI / HTTP / MCP / agents
+        -> validated action contract
+        -> one executor path
+        -> storage/runtime side effects
+```
+
+See `docs/api-mcp-parity.md` for the current parity matrix.
+
+### Agent Lifecycle
+
+- Owner: `src/agent-lifecycle.ts`
+- Agent definitions: split Redis model (`konoha:agent-defs`, `konoha:agent-templates`, `konoha:agent-runtime-configs`)
+- Runtime state: Redis hash `konoha:agent-states`
+- Lifecycle audit: Redis stream `konoha:agent-audit`
+- Control plane: `/agents/:id/start|stop|restart|switch-runtime`
+
+Permanent agents are supervised by systemd wrappers that call lifecycle API routes. Manual tmux edits are not the control plane.
+
+### Agent Presence And Bus
+
+- Owner: `src/redis.ts` facade plus `src/storage/pg-bus.ts`
+- Presence/history: PostgreSQL table `konoha_agents`
+- Legacy compatibility: Redis hash `konoha:registry`
+- Direct messages: Redis streams `konoha:agent:{id}`
+- Bus audit stream: Redis stream `konoha:bus`
+- Channels: Redis streams `konoha:channel:{name}`
+- Push notifications: Redis pub/sub `konoha:notify:{id}`
+
+Important distinction: `AgentDef` is durable managed-agent configuration. Bus presence is online/offline history. Presence must not overwrite managed definitions.
+
+### Workflow Runtime Storage
+
+Workflow Engine entities are still Redis-primary unless a contract explicitly says otherwise:
+
+- Workflows, cases, work items, roles, reminders, documents: Redis active store.
+- PostgreSQL: shadow durability and analytics store.
+- `PG_READ=false`: current production default.
+- `PG_READ=true`: future cutover mode, gated by `docs/workflow-engine.md` and the persistence roadmap.
+
+`scripts/pg-verify.ts` is the current safety check: every active Redis entity must exist in PostgreSQL; extra PostgreSQL rows are treated as archived/historical unless they exceed bloat thresholds.
+
+### MCP Surface
+
+- File: `src/mcp.ts`
+- Purpose: expose Konoha operations to Claude Code, Codex, Cursor, and other MCP-capable agents.
+- Current stance: MCP parity means useful agent-facing operations, not automatic exposure of every admin route.
+- Workflow MCP tools are currently wrappers; new mutation work should prefer action contracts first.
+
+### LLM Client Profiles
+
+- Files: `src/agent/llm-client-profiles.ts`, `src/agent/runtime.ts`, `scripts/claude-provider.sh`
+- Preferred fields: `llm_client_profile`, `fallback_llm_client_profile`
+- Legacy compatibility fields: `runtime`, `model`, `fallback_runtime`, `reasoning_effort`
+
+The active persistent fleet uses Claude Code runtime adapters backed by DeepSeek profiles. Codex/GPT fallback is configured as an explicit profile and verified by healthcheck when the proxy path is available.
+
+See `docs/adr-003-agent-runtime-provider.md`.
+
+### Watchdogs
+
+Active watchdogs are delivery adapters, not lifecycle owners:
+
+- Dedicated wrappers: `watchdog-naruto.py`, `watchdog-sasuke.py`, `watchdog-kakashi.py`, `watchdog-kiba.py`
+- Shared single-agent library: `watchdog_base.py`
+- Generic multi-agent lifecycle watcher: `watchdog-lifecycle.py`
+- Legacy reference fallback: `watchdog.py`
+
+`scripts/healthcheck-system.py` verifies that active systemd units use the expected lifecycle/watchdog entrypoints.
 
 ## Message Flow
 
 ### Direct Message
-```
-Agent A → POST /messages {to: "agentB"} → Redis stream konoha:agent:agentB
-                                        → Redis pub/sub konoha:notify:agentB
-                                        → Redis stream konoha:bus (log)
+
+```text
+POST /messages {to: "agentB"}
+  -> Redis stream konoha:agent:agentB
+  -> Redis pub/sub konoha:notify:agentB
+  -> Redis stream konoha:bus
+  -> PostgreSQL shadow row in konoha_messages
 ```
 
 ### Broadcast
-```
-Agent A → POST /messages {to: "all"} → For each online agent (except A):
-                                         → Redis stream konoha:agent:{id}
-                                         → Redis pub/sub konoha:notify:{id}
-                                       → Redis stream konoha:bus (log)
-```
 
-### Role-based Routing
-```
-Agent A → POST /messages {to: "role:monitor"} → For each online agent with role "monitor":
-                                                  → Redis stream konoha:agent:{id}
-                                                  → Redis pub/sub konoha:notify:{id}
-                                                → Redis stream konoha:bus (log)
+```text
+POST /messages {to: "all"}
+  -> list online agents from presence
+  -> fan out to each recipient stream
+  -> write bus audit and PostgreSQL shadow rows
 ```
 
-## Message Delivery
+### Role Routing
 
-Messages are delivered via Redis streams with consumer groups:
+```text
+POST /messages {to: "role:monitor"}
+  -> resolve online agents with role "monitor"
+  -> fan out to matching agent streams
+  -> write bus audit and PostgreSQL shadow rows
+```
 
-1. **At-least-once delivery**: messages persist in the stream until acknowledged
-2. **Consumer groups**: each agent has its own consumer group, ensuring no message loss
-3. **Acknowledgment**: messages are ACKed when read via GET /messages/:agentId
-4. **History**: GET /messages/:agentId/history reads without ACK (non-destructive)
+## Delivery Semantics
 
-## Presence
-
-- Agents register via POST /agents/register (status: `online`)
-- Heartbeat via POST /agents/:id/heartbeat (updates `lastHeartbeat` timestamp)
-- Agents with no heartbeat for 10 minutes are reported as `offline`
-- MCP server auto-heartbeats every 5 minutes after registration
+- Redis streams provide at-least-once delivery.
+- Each agent stream has a consumer group.
+- `GET /messages/:agentId` reads and ACKs.
+- History reads are non-destructive.
+- Telegram stream lag/pending and dead-letter streams are checked by `scripts/healthcheck-system.py` and `scripts/telegram-smoke.sh`.
 
 ## Deployment
 
-### systemd Service
+### Production Service
 
 ```ini
 # /etc/systemd/system/konoha.service
@@ -85,7 +166,7 @@ After=redis-server.service
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/konoha
-ExecStart=/home/ubuntu/.bun/bin/bun run src/server.ts
+ExecStart=/home/ubuntu/.bun/bin/bun run start
 Environment=KONOHA_PORT=3200
 EnvironmentFile=/home/ubuntu/.agent-env
 Restart=always
@@ -95,9 +176,15 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-### MCP Configuration
+### Local Bus
 
-Add to Claude Code settings:
+```bash
+bun install
+KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run start
+```
+
+### MCP Client Configuration
+
 ```json
 {
   "mcpServers": {
@@ -113,11 +200,24 @@ Add to Claude Code settings:
 }
 ```
 
-## Current Agents
+## Operational Gates
 
-| ID | Name | Roles | Description |
-|----|------|-------|-------------|
-| naruto | Naruto (Agent #1) | orchestrator | Bot-based, main orchestrator |
-| sasuke | Sasuke (Agent #2) | monitor | Telegram user account monitor |
-| itachi | Itachi | coder, assistant | Local Claude Code (on-demand) |
-| shikamaru | Shikamaru | advisor | Strategy and analysis (on-demand) |
+Production hardening is enforced by `scripts/preflight.sh`:
+
+- system health: services, lifecycle wrappers, watchdogs, Telegram streams, source size, LLM profiles
+- backend typecheck
+- backend regression tests
+- frontend typecheck/build
+- Telegram smoke
+- PostgreSQL shadow verification
+
+Current rule before larger Workflow Engine changes: `preflight OK` is the local release gate. CI is portable and intentionally weaker until issue `#597` aligns it with the production gates.
+
+## Key Design Rules
+
+- Workflow before agent: deterministic business flows should live in Workflow Engine, not hidden in agent prompts.
+- Agent lifecycle through API: no manual tmux/systemd business logic.
+- One mutation path: action contracts first, wrappers second.
+- Redis-primary workflow runtime until `PG_READ=true` cutover criteria are met.
+- MCP tools expose stable agent-useful capabilities, not every admin endpoint.
+- Legacy compatibility surfaces are bounded by `docs/legacy-retirement.md`.

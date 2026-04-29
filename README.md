@@ -2,12 +2,12 @@
 
 [![CI](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml/badge.svg)](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml)
 
-Multi-agent communication bus for autonomous Claude Code, Codex, and Cursor agents. Redis-backed message routing with file attachments, presence tracking, and real-time streaming.
+Multi-agent communication bus for autonomous Claude Code, Codex, and Cursor agents. Redis/PostgreSQL-backed message routing with file attachments, presence tracking, and real-time streaming.
 
 ## Features
 
 - **Message routing** — direct, broadcast, and role-based delivery via Redis streams
-- **Agent registry** — heartbeat-based online/offline presence
+- **Agent presence** — heartbeat-based online/offline status with PostgreSQL presence history and Redis stream delivery
 - **File attachments** — shared storage for inter-agent file exchange (images, PDFs, documents, audio)
 - **Real-time streaming** — SSE endpoint for push-style message delivery
 - **Topic channels** — named channels for pub/sub communication
@@ -47,7 +47,7 @@ Use this if you just need the message bus for agents to communicate over HTTP/RE
 
 ```bash
 bun install
-KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run src/server.ts
+KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run start
 ```
 
 ### Option 2: Bus + MCP server (Claude Code integration, no agents)
@@ -56,7 +56,7 @@ Use this on each agent machine so Claude Code, Codex, or Cursor sessions can use
 
 ```bash
 # 1. Start the HTTP bus (once, shared)
-KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run src/server.ts
+KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run start
 
 # 2. Add MCP server to Claude Code settings (.mcp.json):
 # {
@@ -112,8 +112,8 @@ See [docs/architecture.md](docs/architecture.md) for details.
 +----------------------------------------------------------+
 |                  Konoha Bus (Hono)                       |
 |  +----------+  +----------------------------------+      |
-|  | Registry |  | /opt/shared/attachments/         |      |
-|  | (Redis)  |  | (shared file storage)            |      |
+|  | Presence |  | /opt/shared/attachments/         |      |
+|  | (PG)     |  | (shared file storage)            |      |
 |  +----------+  +----------------------------------+      |
 |        |                                                  |
 |  +-----v------+                                          |
