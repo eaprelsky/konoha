@@ -98,6 +98,9 @@ export interface AgentView extends AgentDef {
   runtime_config: AgentRuntimeConfig;
   template: AgentTemplate;
   runtime_state: AgentRuntimeState;
+  active_runtime_profile?: string;
+  fallback_runtime_profile?: string;
+  auto_runtime_fallback: boolean;
   lifecycle: {
     status: LifecycleStatus | string;
     pid?: number;

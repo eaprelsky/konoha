@@ -1,5 +1,6 @@
 import type { Agent } from "../redis";
 import type { AgentDef, AgentPresence, AgentRuntimeConfig, AgentRuntimeState, AgentTemplate, AgentView } from "./types";
+import { getLLMClientProfile } from "./llm-client-profiles";
 
 type LegacyBase = Partial<Agent> & { id: string; status?: Agent["status"] };
 
@@ -71,13 +72,21 @@ export function composeAgentView(input: {
 }): AgentView {
   const base = input.busAgent ?? { id: input.id, status: "offline" as const };
   const runtimeState = runtimeStateFromLifecycle(input.id, input.runtimeState);
+  const runtimeConfig = runtimeConfigFromAgentDef(input.def);
+  const activeRuntimeProfile = runtimeConfig.llm_client_profile ?? runtimeConfig.runtime;
+  const fallbackRuntimeProfile = runtimeConfig.fallback_llm_client_profile ?? runtimeConfig.fallback_runtime;
+  const fallbackProfile = getLLMClientProfile(runtimeConfig.fallback_llm_client_profile);
+  const fallbackDisabled = fallbackProfile?.disabled === true;
   return {
     ...base,
     ...input.def,
     presence: presenceFromBusAgent(base),
-    runtime_config: runtimeConfigFromAgentDef(input.def),
+    runtime_config: runtimeConfig,
     template: templateFromAgentDef(input.def),
     runtime_state: runtimeState,
+    active_runtime_profile: activeRuntimeProfile,
+    fallback_runtime_profile: fallbackRuntimeProfile,
+    auto_runtime_fallback: Boolean(runtimeConfig.fallback_llm_client_profile && activeRuntimeProfile !== fallbackRuntimeProfile && !fallbackDisabled),
     lifecycle: {
       status: runtimeState.status,
       pid: runtimeState.pid,

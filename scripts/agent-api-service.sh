@@ -78,7 +78,7 @@ except Exception:
 
 switch_runtime_profile() {
   local profile="$1"
-  printf '{"profile":"%s","restart":true}' "$profile" | \
+  printf '{"llm_client_profile":"%s","restart":true}' "$profile" | \
     curl -fsS -X POST \
       -H "Authorization: Bearer $KONOHA_TOKEN" \
       -H "Content-Type: application/json" \
