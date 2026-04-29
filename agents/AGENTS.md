@@ -158,7 +158,8 @@ Channel plugin: /home/ubuntu/telethon-mcp/channel-server.ts
 - Sasuke restart: `/home/ubuntu/konoha/scripts/restart-sasuke.sh [delay_sec]`
 - Default delay: 5 seconds (gives calling agent time to finish)
 - Agents can request each other's restarts via Konoha bus
-- systemd services: managed Naruto agent, managed Sasuke agent
+- Canonical restart path: `sudo systemctl restart agent-<id>.service` for permanent agents, or `POST /agents/<id>/restart` via Konoha lifecycle API.
+- Canonical unit files: `/home/ubuntu/konoha/systemd/`. The retired `agents/systemd/` and `agents/scripts/agent-*-service.sh` paths must not be used.
 
 ## Inter-Agent Communication (Konoha Bus)
 - HTTP API: http://127.0.0.1:3200 (github.com/eaprelsky/konoha)
@@ -187,6 +188,13 @@ Agents receive messages via systemd watchdog services — no /loop polling neede
   - Watches Konoha SSE `/messages/sasuke/stream`
 - IMPORTANT: Sasuke reads `telegram:incoming` (Telethon user account), NOT `telegram:bot:incoming`
 - **Do NOT run /loop check_bus_and_konoha** — watchdog handles both
+
+### Lifecycle model
+- Runtime sessions are created by Konoha lifecycle in `/opt/shared/agent-workdirs/<id>`.
+- tmux socket and session are both named `<id>`: use `tmux -L <id> ... -t <id>`.
+- Permanent agent wrappers call `scripts/agent-api-service.sh <id>`; they do not start Claude/Codex directly.
+- On-demand agents are woken by `agent-watchdog-lifecycle.service` through `POST /agents/<id>/start`.
+- Do not create or resurrect legacy per-agent shell loops.
 
 ## Callsigns (Internal)
 - Naruto — Agent #1, this session, bot-based, orchestrator

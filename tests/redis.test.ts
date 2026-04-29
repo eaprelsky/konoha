@@ -9,6 +9,7 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
 import { hasDatabaseCredentials } from "../src/storage/database-url";
 import { getDatabaseUrl } from "../src/storage/database-url";
+import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
 // Import functions under test
 import {
@@ -35,6 +36,7 @@ const HAS_DATABASE_CREDENTIALS = hasDatabaseCredentials();
 // ── cleanup ───────────────────────────────────────────────────────────────────
 
 async function cleanupTestData() {
+  if (HAS_DATABASE_CREDENTIALS) await cleanupGeneratedTestAgents();
   const regKeys = await redis.hkeys("konoha:registry");
   for (const k of regKeys) {
     if (k.startsWith("rtest-")) await redis.hdel("konoha:registry", k);

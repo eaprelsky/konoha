@@ -26,13 +26,14 @@ interface AuditEntry {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 
-const HARDCODED_ACTIONS = new Set(['data_delete']);
+const HARDCODED_ACTIONS = new Set(['data.delete']);
 
 const ACTION_LABELS: Record<string, string> = {
   'issue.create': 'Создание GitHub issue',
   'issue.label': 'Добавление меток к issue',
   'workflow.create': 'Создание workflow',
   'workflow.delete': 'Удаление workflow',
+  'data.delete': 'Удаление данных',
   'agent.restart': 'Перезапуск агента',
   'agent.deploy': 'Деплой агента',
   issue_create: 'Создание GitHub issue',

@@ -212,6 +212,28 @@ describe("XOR gateway", () => {
     const { case: updated } = await completeWorkItem(f1wi.work_item_id!, {});
     expect(updated!.status).toBe("error");
   });
+
+  // Regression: start_node at XOR gateway (trigger-based entry, e.g. lead.qualified event)
+  test("evaluates XOR gateway when case starts directly at gateway (regression #542-gw)", async () => {
+    const kase = await createCase(wfId("xor"), "xor-start-at-gw-path-a", { path: "a" }, "g1");
+    // Must route to Path A (f2), NOT blindly take first outgoing edge
+    expect(kase.status).toBe("running");
+    expect(kase.position).toBe("f2");
+    const histLabels = kase.history.map(h => h.label);
+    expect(histLabels).toContain("Route");      // gateway was evaluated
+    expect(histLabels).toContain("Path A");
+    expect(histLabels).not.toContain("Path B");
+  });
+
+  test("evaluates XOR gateway at start_node to second branch", async () => {
+    const kase = await createCase(wfId("xor"), "xor-start-at-gw-path-b", { path: "b" }, "g1");
+    expect(kase.status).toBe("running");
+    expect(kase.position).toBe("f3");
+    const histLabels = kase.history.map(h => h.label);
+    expect(histLabels).toContain("Route");      // gateway was evaluated
+    expect(histLabels).toContain("Path B");
+    expect(histLabels).not.toContain("Path A");
+  });
 });
 
 // ── AND gateway tests ─────────────────────────────────────────────────────────

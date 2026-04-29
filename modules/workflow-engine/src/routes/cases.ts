@@ -23,6 +23,14 @@ import {
   type ReminderChannel,
   type ReminderType,
 } from "../../../../src/runtime";
+import {
+  listEventWaits,
+  loadEventWait,
+  resolveEventWaitForNode,
+  type EventWaitStatus,
+} from "../../../../src/runtime/event-waits";
+import { getWorkflow } from "../../../../src/workflow-loader";
+import { emitEvent } from "../../../../src/runtime/event-log";
 
 // Cases router — mounted at /cases
 export const casesRouter = new Hono();
@@ -149,6 +157,7 @@ casesRouter.get("/:id/stream", async (c) => {
 
 // Work Items router — mounted at /workitems
 export const workitemsRouter = new Hono();
+export const waitsRouter = new Hono();
 
 workitemsRouter.post("/:id/complete", async (c) => {
   const id = c.req.param("id");
@@ -173,9 +182,9 @@ workitemsRouter.get("/", async (c) => {
 
 workitemsRouter.post("/", async (c) => {
   const body = await c.req.json();
-  const { label, assignee, input = {}, deadline } = body;
+  const { label, assignee, input = {}, deadline, process_id } = body;
   if (!label || !assignee) return c.json({ error: "label and assignee required" }, 400);
-  const wi = await createStandaloneWorkItem({ label, assignee, input, deadline });
+  const wi = await createStandaloneWorkItem({ label, assignee, input, deadline, process_id });
   return c.json(wi, 201);
 });
 
@@ -211,6 +220,72 @@ workitemsRouter.post("/healthcheck", requireAuth, async (c) => {
   const thresholdMs = parseInt(c.req.query("threshold_ms") || "60000");
   const result = await recoverStuckWorkItems(thresholdMs);
   return c.json(result);
+});
+
+waitsRouter.get("/", async (c) => {
+  const assignee = c.req.query("assignee") || undefined;
+  const process_id = c.req.query("process_id") || undefined;
+  const case_id = c.req.query("case_id") || undefined;
+  const status = (c.req.query("status") || undefined) as EventWaitStatus | undefined;
+  const waits = await listEventWaits({ assignee, process_id, case_id, status });
+
+  return c.json({
+    waits,
+    summary: {
+      total: waits.length,
+      active: waits.filter((wait) => wait.status === "active").length,
+      overdue: waits.filter((wait) => wait.status === "overdue").length,
+      escalated: waits.filter((wait) => wait.status === "escalated").length,
+      manual: waits.filter((wait) => wait.trigger_kind === "manual").length,
+    },
+  });
+});
+
+waitsRouter.post("/:id/confirm", async (c) => {
+  const wait_id = c.req.param("id");
+  const body: { comment?: string; confirmed_by?: string } =
+    await c.req.json<{ comment?: string; confirmed_by?: string }>().catch(() => ({}));
+  const wait = await loadEventWait(wait_id);
+  if (!wait) return c.json({ error: "Wait not found" }, 404);
+  if (!["active", "overdue", "escalated"].includes(wait.status)) {
+    return c.json({ error: "Wait is not actionable", status: wait.status }, 409);
+  }
+  if (wait.trigger_kind !== "manual") {
+    return c.json({ error: "Only manual waits can be confirmed", trigger_kind: wait.trigger_kind }, 400);
+  }
+
+  const kase = await getCase(wait.case_id);
+  if (!kase) return c.json({ error: "Case not found" }, 404);
+  if (kase.status !== "running") return c.json({ error: "Case is not running" }, 409);
+  if (kase.position !== wait.element_id) {
+    return c.json({ error: "Case is not waiting at this element", position: kase.position }, 409);
+  }
+
+  const def = await getWorkflow(kase.process_id);
+  if (!def) return c.json({ error: "Workflow not found" }, 404);
+
+  await emitEvent({
+    type: "event.confirmed",
+    case_id: wait.case_id,
+    process_id: wait.process_id,
+    element_id: wait.element_id,
+    timestamp: new Date().toISOString(),
+  });
+
+  await resolveEventWaitForNode(wait.case_id, wait.element_id, {
+    confirmed_by: body.confirmed_by,
+    comment: body.comment,
+  });
+
+  const { advanceCase } = await import("../../../../src/runtime/cases/advancement");
+  const updated = await advanceCase(kase, def);
+
+  return c.json({
+    ok: true,
+    wait_id,
+    case_id: wait.case_id,
+    status: updated.status,
+  });
 });
 
 // Reminders router — mounted at /reminders

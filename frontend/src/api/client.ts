@@ -1,7 +1,18 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse } from './types';
 export type { KibaAction, HighlightAction };
 
 export interface AttachmentRef { path: string; name: string; mime?: string; }
+export interface AssistantChatParams {
+  message: string;
+  context?: string;
+  operator_state?: unknown;
+  schema?: unknown;
+  chat_id?: string;
+  mode?: 'process' | 'admin';
+  stream?: false;
+  images?: Array<{ data: string; mime: string; name?: string }>;
+  attachments?: AttachmentRef[];
+}
 
 /** Upload a file to /attachments, returns AttachmentRef for use in chat requests */
 export async function uploadAttachment(file: File, from = 'user'): Promise<AttachmentRef> {
@@ -110,12 +121,29 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ output: output || {} }),
       }),
-    create: (params: { label: string; assignee: string; deadline?: string; input?: Record<string, unknown> }) =>
+    create: (params: { label: string; assignee: string; deadline?: string; input?: Record<string, unknown>; process_id?: string }) =>
       apiFetch<WorkItem>(`${BASE}/workitems`, {
         method: 'POST',
         body: JSON.stringify(params),
       }),
     deleteAll: () => apiFetch<{ deleted: number }>(`${BASE}/workitems/all`, { method: 'DELETE' }),
+  },
+
+  waits: {
+    list: (filters?: { assignee?: string; process_id?: string; case_id?: string; status?: EventWaitStatus | '' }) => {
+      const p = new URLSearchParams();
+      if (filters?.assignee) p.set('assignee', filters.assignee);
+      if (filters?.process_id) p.set('process_id', filters.process_id);
+      if (filters?.case_id) p.set('case_id', filters.case_id);
+      if (filters?.status) p.set('status', filters.status);
+      const qs = p.toString();
+      return apiFetch<{ waits: EventWait[]; summary: { total: number; active: number; overdue: number; escalated: number; manual: number } }>(`${BASE}/waits${qs ? '?' + qs : ''}`);
+    },
+    confirm: (id: string, params?: { comment?: string; confirmed_by?: string }) =>
+      apiFetch<{ ok: boolean; wait_id: string; case_id: string; status: string }>(`${BASE}/waits/${id}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify(params || {}),
+      }),
   },
 
   cases: {
@@ -164,8 +192,10 @@ export const api = {
     get: (id: string) => apiFetch<Agent>(`${BASE}/agents/${id}`),
     create: (params: { id: string; name: string; system_prompt?: string; model?: string }) =>
       apiFetch<Agent>(`${BASE}/agents`, { method: 'POST', body: JSON.stringify(params) }),
-    update: (id: string, patch: { name?: string; system_prompt?: string; model?: string; capabilities?: string[]; gender?: string }) =>
+    update: (id: string, patch: { name?: string; system_prompt?: string; runtime?: string; fallback_runtime?: string; model?: string; reasoning_effort?: string; capabilities?: string[]; gender?: string }) =>
       apiFetch<Agent>(`${BASE}/agents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    switchRuntime: (id: string, patch: { runtime?: string; fallback_runtime?: string; model?: string; reasoning_effort?: string; restart?: boolean }) =>
+      apiFetch<{ def: Agent; state?: AgentStatus | null; error?: string }>(`${BASE}/agents/${id}/switch-runtime`, { method: 'POST', body: JSON.stringify(patch) }),
     start: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/start`, { method: 'POST', body: '{}' }),
     stop: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/stop`, { method: 'POST', body: '{}' }),
     restart: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/restart`, { method: 'POST', body: '{}' }),
@@ -276,21 +306,33 @@ export const api = {
     search: (q: string) => apiFetch<{ path: string }[]>(`${BASE}/kb/search?q=${encodeURIComponent(q)}`),
   },
 
-  tsunade: {
-    chat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
-      apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null; created_workflow: { id: string; name: string } | null; actions?: HighlightAction[] }>(`${BASE}/tsunade/chat`, {
+  assistant: {
+    chat: (params: AssistantChatParams) =>
+      apiFetch<AssistantWorkflowResponse>(`${BASE}/ai/chat`, {
         method: 'POST',
         body: JSON.stringify(params),
       }),
     clearChat: (chat_id: string) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/tsunade/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
-    processChat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
-      apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null; created_workflow: { id: string; name: string } | null; actions?: HighlightAction[] }>(`${BASE}/ai/process-chat`, {
+      apiFetch<{ ok: boolean }>(`${BASE}/ai/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+  },
+
+  tsunade: {
+    /** @deprecated Compatibility shim. Use api.assistant.chat({ mode: 'process', ... }). */
+    chat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
+      apiFetch<AssistantWorkflowResponse>(`${BASE}/ai/chat`, {
         method: 'POST',
-        body: JSON.stringify(params),
+        body: JSON.stringify({ ...params, mode: 'process' }),
+      }),
+    clearChat: (chat_id: string) =>
+      apiFetch<{ ok: boolean }>(`${BASE}/ai/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+    /** @deprecated Compatibility shim. Use api.assistant.chat({ mode: 'process', ... }). */
+    processChat: (params: { message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }) =>
+      apiFetch<AssistantWorkflowResponse>(`${BASE}/ai/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ ...params, mode: 'process' }),
       }),
     clearProcessChat: (chat_id: string) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/ai/process-chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+      apiFetch<{ ok: boolean }>(`${BASE}/ai/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
   },
 
   kiba: {

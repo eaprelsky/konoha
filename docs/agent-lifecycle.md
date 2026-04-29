@@ -9,6 +9,18 @@ The agent lifecycle module manages two separate concerns:
 
 Both are stored in Redis and survive server restarts.
 
+The public `/agents` API is backward-compatible and still returns flattened fields, but internally new code should use explicit projections:
+
+| Boundary | Source | Meaning |
+|----------|--------|---------|
+| `AgentTemplate` | `AgentDef` | Durable identity and human-editable instructions |
+| `AgentRuntimeConfig` | `AgentDef` | Launch adapter, model profile, MCP/tool config, tmux hints |
+| `AgentPresence` | Konoha bus heartbeat registry | Online/offline presence and last heartbeat |
+| `AgentRuntimeState` | lifecycle manager/tmux/systemd | Process state, pid, uptime, startup errors |
+| `AgentView` | projection | Backward-compatible API view with structured boundaries |
+
+Use `composeAgentView()` for `/agents` responses instead of ad hoc object spreading. This keeps old clients working while the storage model is split.
+
 ---
 
 ## Data model
@@ -19,7 +31,14 @@ Both are stored in Redis and survive server restarts.
 interface AgentDef {
   id: string;                         // unique agent ID (e.g. "naruto", "kakashi")
   name: string;                       // display name
-  model: string;                      // Claude model ID (e.g. "claude-sonnet-4-6")
+  runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
+  fallback_runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
+  llm_client_profile?: string;          // preferred: runtime adapter + provider + model profile
+  fallback_llm_client_profile?: string;
+  tool_profile?: string;                // preferred: MCP/tool access boundary profile
+  sandbox_profile?: string;             // execution isolation profile, current default: "tmux"
+  model: string;                      // provider-qualified model ID (e.g. "claude:sonnet", "codex:gpt-5.5")
+  reasoning_effort?: string;          // provider-specific effort, e.g. "high" for Codex
   system_prompt?: string;             // user-editable instructions (appended after system template)
   env?: Record<string, string>;       // custom env vars for this agent's process
   tags?: string[];                    // labels (e.g. ["system"])
@@ -28,7 +47,7 @@ interface AgentDef {
   avatar_url?: string;
   gender?: 'male' | 'female' | 'neutral';
   protected?: boolean;                // system agents — cannot be deleted
-  tmux_session_override?: string;     // use this tmux session name instead of konoha-{id}
+  tmux_session_override?: string;     // compatibility/status hint; managed sessions use the agent id
   created_at: string;
   updated_at: string;
 }
@@ -134,26 +153,55 @@ Always includes the Konoha MCP server (so agents can call `konoha_register`, `ko
 
 For each skill in `capabilities[]`, its `mcp_servers` entries are merged in. Environment variable references (`${VAR}`) are resolved from `/opt/konoha/.env.global` and the agent's own `env` map.
 
-### 4. Launch tmux session with restart loop
+### Tool Profiles
+
+`tool_profile` is the preferred way to describe shared MCP access. It is separate from `capabilities[]`:
+
+- `capabilities[]` describes skills/roles that shape the system prompt and may add skill-local MCP servers.
+- `tool_profile` describes shared MCP boundaries such as `telegram-userbot`, `diagnostics`, `business-ops`, or `knowledge-readwrite`.
+- `shared_mcp_allowlist` is still supported and takes precedence over `tool_profile` for backward compatibility.
+
+Available profiles are exposed by:
 
 ```bash
-tmux new-session -d -s konoha-{id} -c /opt/shared/agent-workdirs/{id} bash -c "
+curl -H "Authorization: Bearer $KONOHA_TOKEN" \
+  http://127.0.0.1:3200/agents/tool-profiles
+```
+
+To add a tool profile safely:
+
+1. Add it in `src/agent/tool-profiles.ts` with explicit `mcp_servers`, `scopes`, and `dangerous_tools` if applicable.
+2. Prefer least privilege: do not use the `full` profile for new agents unless there is a written reason.
+3. Add or update a test in `tests/tool-profiles.test.ts`.
+4. Restart affected agents so `.mcp.json` is regenerated.
+
+### Sandbox Profiles
+
+`sandbox_profile` is separate from the LLM client and runtime adapter. Current production agents use `tmux`: isolated tmux socket/session named after the agent id, supervised through systemd and lifecycle API. `process`, `docker`, and `remote` are documented profiles for future migration, not active defaults.
+
+Move an agent to Docker/remote only when a tool profile requires stronger filesystem/network isolation than tmux/process can provide, and after adding lifecycle healthchecks for that sandbox type.
+
+### 4. Launch runtime in isolated tmux with restart loop
+
+```bash
+tmux -L {id} new-session -d -s {id} -c /opt/shared/agent-workdirs/{id} bash -c "
   while true; do
-    claude --model {model} --mcp-config .mcp.json
-    echo '[date] Claude exited (code $?), restarting in 5s...'
+    <runtime command built from AgentDef.runtime + AgentDef.model>
+    echo '[date] runtime exited (code $?), restarting in 5s...'
     sleep 5
   done
 "
 ```
 
-The `while true` loop ensures Claude Code automatically restarts after processing a startup message and exiting (fixes #236).
+The runtime command is built by `src/agent/runtime.ts` and may be Claude, Codex, Cursor, or GLM.
+The `while true` loop ensures the interactive CLI automatically restarts after processing a startup message or crashing.
 
 ### 5. Inject startup message
 
 After a 7-second wait (for Claude Code to initialize):
 
 ```bash
-tmux send-keys -t konoha-{id} "Прочитай AGENTS.md и выполни startup sequence." Enter
+tmux -L {id} send-keys -t {id} "Прочитай AGENTS.md и выполни startup sequence." Enter
 ```
 
 The agent reads its AGENTS.md, registers on the Konoha bus, and waits for tasks from the watchdog.
@@ -202,9 +250,14 @@ When a workflow or role assignment changes, managed agents get their AGENTS.md r
 
 ## tmux session naming
 
-Default: `konoha-{agent_id}` (e.g. `konoha-naruto`, `konoha-kakashi`).
+Every managed agent uses an isolated tmux socket and session named exactly as the agent id:
 
-System agents with `tmux_session_override` use their override name directly (e.g. `naruto`, `sasuke`, `kakashi`). This allows the UI to detect live status for manually started sessions.
+```bash
+tmux -L {agent_id} has-session -t {agent_id}
+tmux -L {agent_id} capture-pane -pt {agent_id}
+```
+
+The old `konoha-{agent_id}` session naming is retired. `tmux_session_override` remains in the API for compatibility/status display only; process management uses `src/agent/process.ts`.
 
 ---
 

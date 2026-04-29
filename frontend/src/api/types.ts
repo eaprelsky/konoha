@@ -110,11 +110,104 @@ export interface WorkItem {
   updated_at: string;
 }
 
+export type EventWaitStatus = 'active' | 'fired' | 'cancelled' | 'overdue' | 'escalated';
+
+export interface EventWait {
+  wait_id: string;
+  case_id: string;
+  process_id: string;
+  element_id: string;
+  element_label?: string;
+  trigger_kind: 'timer' | 'message' | 'condition' | 'delay_after' | 'manual';
+  status: EventWaitStatus;
+  created_at: string;
+  resolved_at?: string;
+  deadline?: string;
+  assignee?: string;
+  subscription_id?: string;
+  reminder_count?: number;
+  last_reminder_at?: string;
+  escalation_target?: string;
+  event_data?: Record<string, unknown>;
+}
+
 export interface WorkItemFilters {
   assignee?: string;
   process_id?: string;
   status?: WorkItemStatus | '';
   deadline_before?: string;
+}
+
+export type WorkflowActionStatus = 'executed' | 'needs_confirm' | 'failed' | 'skipped';
+export type WorkflowActionType = 'workflow.create' | 'workflow.update' | 'workflow.open' | 'workflow.save' | 'workflow.confirm';
+export type WorkflowReceiptStatus = 'succeeded' | 'pending_confirmation' | 'failed' | 'partial';
+export type WorkflowObservableStatus = WorkflowReceiptStatus | 'no_effect';
+export type WorkflowResourceKind = 'workflow' | 'element' | 'flow' | 'confirmation';
+export type WorkflowResourceChange = 'created' | 'updated' | 'opened' | 'pending' | 'failed';
+
+export interface WorkflowAssistantAction {
+  action: WorkflowActionType | string;
+  params: Record<string, unknown>;
+  status: WorkflowActionStatus;
+  description: string;
+  result?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface WorkflowPendingConfirmation {
+  id: string;
+  action: WorkflowActionType | string;
+  title: string;
+  summary: string;
+  status: 'required';
+  permission: {
+    actor_scope: 'assistant_on_behalf_of_user';
+    autonomy: 'confirm';
+    confirmation_required: true;
+  };
+  params: Record<string, unknown>;
+}
+
+export interface WorkflowActionReceipt {
+  id: string;
+  action: WorkflowActionType | string;
+  status: WorkflowReceiptStatus;
+  summary: string;
+  details?: string;
+  changed_resources: Array<{
+    kind: WorkflowResourceKind;
+    id: string;
+    label?: string;
+    change: WorkflowResourceChange;
+  }>;
+  audit: {
+    session_id: string;
+    action_type: WorkflowActionType | string;
+  };
+}
+
+export interface WorkflowObservableResult {
+  status: WorkflowObservableStatus;
+  summary: string;
+  receipts: WorkflowActionReceipt[];
+  counts: {
+    succeeded: number;
+    pending_confirmation: number;
+    failed: number;
+    partial: number;
+  };
+}
+
+export interface AssistantWorkflowResponse {
+  reply: string;
+  chat_id: string;
+  schema_patch: unknown | null;
+  created_workflow: { id: string; name: string } | null;
+  actions?: AssistantUiAction[];
+  actions_taken: WorkflowAssistantAction[];
+  action_receipts: WorkflowActionReceipt[];
+  observable_result: WorkflowObservableResult;
+  pending_confirmations: WorkflowPendingConfirmation[];
 }
 
 export type AssignmentStrategy = 'round-robin' | 'load-balancing' | 'broadcast' | 'manual';
@@ -185,6 +278,9 @@ export interface Agent {
   roles?: string[];
   capabilities?: string[];
   model?: string;
+  runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
+  fallback_runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
+  reasoning_effort?: string;
   system_prompt?: string;
   tags?: string[];
   lifecycle?: AgentLifecycle;
@@ -297,6 +393,17 @@ export interface KibaAction {
 export interface HighlightAction {
   type: 'highlight';
   selector: string;
+  target?: string;
   message?: string;
   style?: 'spotlight' | 'pointer' | 'outline';
 }
+
+export interface NavigateAction {
+  type: 'navigate';
+  target?: string;
+  path?: string;
+  workflow_id?: string;
+  message?: string;
+}
+
+export type AssistantUiAction = HighlightAction | NavigateAction;

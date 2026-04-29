@@ -129,7 +129,7 @@ konoha_listen(agentId: "naruto", seconds: 30)
 ### skill: testbench
 
 Activate: add "testbench" to KONOHA_SKILLS  
-Service: konoha-testbench.service (port 3201)
+Service: konoha-testbench.service (port 3203)
 
 **Tools:**
 - `konoha_testbench_navigate(url)` — navigate to URL

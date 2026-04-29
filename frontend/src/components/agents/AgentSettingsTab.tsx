@@ -6,8 +6,14 @@ interface AgentSettingsTabProps {
   agentId: string;
   name: string;
   setName: (v: string) => void;
+  runtime: string;
+  setRuntime: (v: string) => void;
+  fallbackRuntime: string;
+  setFallbackRuntime: (v: string) => void;
   model: string;
   setModel: (v: string) => void;
+  reasoningEffort: string;
+  setReasoningEffort: (v: string) => void;
   gender: 'male' | 'female' | 'neutral';
   setGender: (v: 'male' | 'female' | 'neutral') => void;
   prompt: string;
@@ -34,12 +40,13 @@ interface AgentSettingsTabProps {
   onSubmit: (e: React.FormEvent) => void;
   onAvatarAction: () => void;
   onAvatarUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  avatarFileRef: React.RefObject<HTMLInputElement | null>;
-  avatarImg2ImgRef: React.RefObject<HTMLInputElement | null>;
+  avatarFileRef: React.RefObject<HTMLInputElement>;
+  avatarImg2ImgRef: React.RefObject<HTMLInputElement>;
 }
 
 export function AgentSettingsTab({
-  agentId, name, setName, model, setModel, gender, setGender,
+  agentId, name, setName, runtime, setRuntime, fallbackRuntime, setFallbackRuntime,
+  model, setModel, reasoningEffort, setReasoningEffort, gender, setGender,
   prompt, setPrompt, sysTemplate, sysExpanded, setSysExpanded,
   avatarUrl, avatarMode, setAvatarMode, avatarStyle, setAvatarStyle,
   avatarPrompt, setAvatarPrompt, avatarFile, setAvatarFile,
@@ -120,17 +127,49 @@ export function AgentSettingsTab({
         <input type="text" value={name} onChange={e => setName(e.target.value)} required autoFocus />
       </div>
       <div className="form-group">
+        <label>Runtime</label>
+        <select value={runtime} onChange={e => setRuntime(e.target.value)}>
+          <option value="claude">Claude wrapper</option>
+          <option value="codex">Codex CLI</option>
+          <option value="cursor">Cursor CLI</option>
+          <option value="glm">Claude wrapper + GLM profile</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Fallback runtime</label>
+        <select value={fallbackRuntime} onChange={e => setFallbackRuntime(e.target.value)}>
+          <option value="">None</option>
+          <option value="claude">Claude wrapper</option>
+          <option value="codex">Codex CLI</option>
+          <option value="cursor">Cursor CLI</option>
+          <option value="glm">Claude wrapper + GLM profile</option>
+        </select>
+      </div>
+      <div className="form-group">
         <label>Модель</label>
         <select value={model} onChange={e => setModel(e.target.value)}>
           <option value="claude:claude-sonnet-4-6">Claude: Sonnet 4.6</option>
           <option value="claude:claude-haiku-4-5-20251001">Claude: Haiku 4.5</option>
           <option value="claude:claude-opus-4-6">Claude: Opus 4.6</option>
+          <option value="codex:gpt-5.5">Codex: GPT-5.5</option>
+          <option value="codex:gpt-5.4">Codex: GPT-5.4</option>
+          <option value="codex:gpt-5.3-codex">Codex: GPT-5.3 Codex</option>
           <option value="codex:gpt-5">Codex: GPT-5</option>
           <option value="codex:o4-mini">Codex: o4-mini</option>
           <option value="cursor:auto">Cursor: Auto</option>
           <option value="cursor:gpt-5.4-medium">Cursor: GPT-5.4</option>
           <option value="cursor:gpt-5.1">Cursor: GPT-5.1</option>
           <option value="cursor:gpt-5.3-codex">Cursor: Codex 5.3</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Reasoning effort</label>
+        <select value={reasoningEffort} onChange={e => setReasoningEffort(e.target.value)}>
+          <option value="">Provider default</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+          <option value="xhigh">xhigh</option>
         </select>
       </div>
       <div className="form-group">

@@ -9,6 +9,10 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   failed:    { bg: '#ef4444', color: '#fff' },
   error:     { bg: '#ef4444', color: '#fff' },
   cancelled: { bg: '#9ca3af', color: '#fff' },
+  active:    { bg: '#2563eb', color: '#fff' },
+  fired:     { bg: '#10b981', color: '#fff' },
+  overdue:   { bg: '#d97706', color: '#fff' },
+  escalated: { bg: '#dc2626', color: '#fff' },
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -20,6 +24,10 @@ const STATUS_LABELS: Record<string, string> = {
   failed:    'Ошибка',
   error:     'Ошибка',
   cancelled: 'Отменено',
+  active:    'Ожидает',
+  fired:     'Сработал',
+  overdue:   'Просрочено',
+  escalated: 'Эскалация',
 };
 
 export function StatusBadge({ status }: { status: string }) {

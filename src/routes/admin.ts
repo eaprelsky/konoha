@@ -2,9 +2,8 @@ import { Hono } from "hono";
 import { createLogger } from "../logger";
 import { requireAuth } from "../middleware/auth";
 import { createCase } from "../runtime";
-import { getAgentDef } from "../agent-lifecycle";
+import { upsertAgentDef } from "../agent-lifecycle";
 import { listAdapters, getAdapter } from "../adapters/index";
-import { redis } from "../redis";
 const log = createLogger("routes:admin");
 
 const NARUTO_PROMPT = `# Naruto — Main Orchestrator
@@ -21,6 +20,7 @@ Naruto is the main orchestrator of the Konoha system. He handles owner-facing co
 - Delegate work to other agents via Konoha
 - Handle escalations from operational agents
 - Coordinate feature requests, release approvals, and cross-agent follow-ups
+- Reply to bot-channel Telegram messages with: \`python3 /home/ubuntu/naruto-tg-send.py <chat_id> "<text>" [reply_to]\`
 
 ## Reminder Requests
 When a trusted user asks for a reminder:
@@ -37,6 +37,7 @@ When Sasuke forwards a feature request:
 
 ## Operational Rules
 - Use Konoha as the primary inter-agent channel
+- For Telegram bot replies, always call the absolute helper path \`/home/ubuntu/naruto-tg-send.py\`; do not assume it exists in the current working directory
 - Do not rely on legacy per-agent systemd services
 - If another managed agent is offline, recover it through Konoha-managed lifecycle, not old per-agent Claude services
 - Keep responses concise and operationally clear`;
@@ -99,87 +100,40 @@ Kiba is the guardian of the Konoha multi-agent system. He monitors agent health,
 - For agent lifecycle health, rely on the managed tmux session and service state
 - Keep responses concise and action-oriented`;
 
-const KAKASHI_PROMPT = `# Kakashi — Master Bug Fixer
+function agentFilePrompt(id: string, title: string): string {
+  return `# ${title}
 
-## Role
-Kakashi is the main bug-fixing and backlog-burning developer in Konoha. He works GitHub issues autonomously, makes targeted fixes, and keeps the queue moving without waiting for manual orchestration.
+## Managed Lifecycle
+This agent is managed by Konoha lifecycle, not by a legacy per-agent startup script.
 
-## Input Channels
-- Konoha bus messages for 'kakashi'
-- Watchdog-delivered GitHub issue triggers such as \`kakashi:fix issue=N\`
-
-## Startup and Backlog Rule
-Immediately after startup, Kakashi must check the open GitHub backlog in \`eaprelsky/konoha\`.
-- First resume issues he was already working on
-- If there are any open actionable issues, take the highest-priority one immediately
-- Do not wait for a fresh watchdog event or an explicit Naruto command if backlog already exists
-- If the queue is empty, stay idle and wait for tasks
-
-## Priority Rule
-Always take the highest-priority actionable issue first:
-- \`P0: critical\`
-- \`P1: high\`
-- \`P2: medium\`
-- \`P3: low\`
-
-Issues without a priority label are treated as \`P2\`.
-Skip issues labeled \`frozen\`, \`blocked\`, \`needs-info\`, or \`awaiting-test\`.
-
-## Architectural Issue Preflight
-Before taking an architectural, enhancement, refactor, or cross-cutting issue, first clean the tails from adjacent work:
-- Check \`git status --short\` and \`git branch --show-current\`
-- Check linked or nearby PRs/issues mentioned in the task
-- If the current branch or dirty worktree belongs to another issue, do not start free-form reasoning on top of that tail
-- First make the tail explicit: what belongs to the previous issue, what is still open, and what must be isolated before this issue
-- Then either switch to a clean issue branch or explicitly scope the new work around the unrelated dirty files
-
-Do not sit in a long reasoning loop while branch ownership, PR overlap, or dirty-tree boundaries are still ambiguous.
-
-## Tail Cleanup Rule
-Preflight is not a stopping point. It is an action step.
-
-If backlog is open, Kakashi must do one of these and then continue:
-- If dirty files are clearly unrelated to the next issue, mark them as unrelated and proceed with the next issue immediately
-- If dirty files are the tail of the current or previous Kakashi issue, finish the tail cleanup first: inspect the changed paths, determine ownership, and either commit the coherent tail or isolate it from the next issue
-- If there is a real blocker, report a concrete blocker through Konoha with file paths and the exact overlap, not a generic status update
-
-Kakashi must not end the turn with only “need to isolate tail” or similar wording while there is still an open actionable backlog item.
-Unrelated dirty files alone are not a blocker.
-
-## Workflow
-1. Read the full issue and comments
-2. Find the relevant code and confirm the root cause from the code, not by guess
-3. Make the smallest correct fix
-4. Verify the changed path
-5. Commit one fix per issue
-6. Close the issue and notify the team through Konoha
+## Startup
+1. Read /home/ubuntu/konoha/agents/${id}/AGENTS.md as the source of truth for role instructions.
+2. Register on Konoha bus with id=${id}.
+3. Wait for watchdog-delivered tasks; do not poll manually unless your role instructions explicitly require a loop.
 
 ## Operational Rules
-- Use \`gh\` against \`eaprelsky/konoha\` to inspect and close issues
-- Use \`git\` in \`/home/ubuntu/konoha\`
-- One commit = one fix = one issue
-- Do not wait for Naruto if there is open backlog you can take autonomously
-- Ignore watchdog noise events and skip \`kakashi:scan\` silently
-- Keep communication concise and operational`;
+- Use Konoha as the primary inter-agent channel.
+- Report results to the agent named in your role instructions.
+- Keep responses concise and practical.`;
+}
 
 const SYSTEM_AGENTS = [
   {
     id: "naruto",
     name: "Наруто (Оркестратор)",
-    runtime: "codex" as const,
+    runtime: "claude" as const,
     fallback_runtime: "codex" as const,
+    llm_client_profile: "claude-deepseek-sonnet",
+    fallback_llm_client_profile: "codex-gpt-5.5",
     launch_strategy: "persistent_interactive" as const,
     startup_timeout_sec: 180,
-    model: "gpt-5.4",
-    runtime_profiles: {
-      codex: { runtime: "codex" as const, model: "gpt-5.4" },
-    },
-    active_runtime_profile: "codex",
-    fallback_runtime_profile: "codex",
-    auto_runtime_fallback: false,
+    model: "claude:sonnet",
     system_prompt: NARUTO_PROMPT,
     tags: ["system", "autostart"],
     capabilities: ["naruto-infra", "github-issues"],
+    tool_profile: "telegram-bot",
+    sandbox_profile: "tmux",
+    shared_mcp_allowlist: [],
     redis_streams: [{ stream: "telegram:bot:incoming", group: "naruto", consumer: "naruto-lifecycle-watchdog" }],
     tmux_session_override: "naruto",
     gender: "male" as const,
@@ -187,21 +141,18 @@ const SYSTEM_AGENTS = [
   {
     id: "sasuke",
     name: "Саске",
-    runtime: "codex" as const,
+    runtime: "claude" as const,
     fallback_runtime: "codex" as const,
+    llm_client_profile: "claude-deepseek-sonnet",
+    fallback_llm_client_profile: "codex-gpt-5.5",
     launch_strategy: "persistent_interactive" as const,
     startup_timeout_sec: 180,
-    model: "gpt-5.4",
-    runtime_profiles: {
-      codex: { runtime: "codex" as const, model: "gpt-5.4", codex_disable_features: ["apps"] },
-    },
-    active_runtime_profile: "codex",
-    fallback_runtime_profile: "codex",
-    auto_runtime_fallback: false,
-    codex_disable_features: ["apps"],
+    model: "claude:sonnet",
     system_prompt: SASUKE_PROMPT,
     tags: ["system", "autostart"],
     capabilities: ["telethon", "telegram-monitor", "telegram-escalator", "telegram-responder", "telegram-router"],
+    tool_profile: "telegram-userbot",
+    sandbox_profile: "tmux",
     shared_mcp_allowlist: ["telethon-channel", "bitrix24"],
     redis_streams: [
       { stream: "telegram:incoming", group: "sasuke", consumer: "sasuke-lifecycle-watchdog" },
@@ -215,80 +166,170 @@ const SYSTEM_AGENTS = [
     name: "Киба (Страж)",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
+    llm_client_profile: "claude-deepseek-sonnet",
+    fallback_llm_client_profile: "codex-gpt-5.5",
     launch_strategy: "persistent_interactive" as const,
     startup_timeout_sec: 180,
-    model: "claude-sonnet-4-6",
-    runtime_profiles: {
-      claude: { runtime: "claude" as const, model: "claude-sonnet-4-6" },
-      codex: { runtime: "codex" as const, model: "gpt-5.4" },
-    },
-    active_runtime_profile: "claude",
-    fallback_runtime_profile: "codex",
-    auto_runtime_fallback: true,
+    model: "claude:sonnet",
     system_prompt: KIBA_PROMPT,
     tags: ["system", "autostart"],
     capabilities: ["health-check", "alert", "diagnose", "escalate"],
+    tool_profile: "diagnostics",
+    sandbox_profile: "tmux",
     tmux_session_override: "kiba",
     gender: "male" as const,
   },
   {
     id: "kakashi",
     name: "Какаши (Мастер багфиксинга)",
-    startup_sequence: [
-      "source /home/ubuntu/.agent-env",
-      "Read /opt/shared/agent-memory/kakashi/startup_memory.md",
-      "Register on Konoha bus: konoha_register(id=kakashi, name=Какаши (Мастер багфиксинга), model=codex:gpt-5.4)",
-      "Read your personal memory if it exists: /opt/shared/agent-memory/kakashi/MEMORY.md",
-      "Wait for tasks — watchdog delivers them via Konoha bus",
-    ],
-    runtime: "codex" as const,
-    fallback_runtime: "glm" as const,
-    model: "gpt-5.4",
-    runtime_profiles: {
-      codex: { runtime: "codex" as const, model: "gpt-5.4" },
-      glm: { runtime: "glm" as const, model: "glm-5.1" },
-    },
-    active_runtime_profile: "codex",
-    fallback_runtime_profile: "glm",
-    auto_runtime_fallback: false,
-    system_prompt: KAKASHI_PROMPT,
-    shared_mcp_allowlist: [],
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    llm_client_profile: "claude-deepseek-opus",
+    fallback_llm_client_profile: "codex-gpt-5.5",
+    model: "claude:opus",
     tags: ["system", "autostart"],
-    roles: ["developer"],
-    capabilities: ["bugfix", "code-review", "github-issues"],
+    tool_profile: "diagnostics",
+    sandbox_profile: "tmux",
+    shared_mcp_allowlist: [],
     tmux_session_override: "kakashi",
     gender: "male" as const,
   },
   {
     id: "mirai",
     name: "Мирай",
-    runtime: "cursor" as const,
+    runtime: "claude" as const,
     fallback_runtime: "codex" as const,
-    model: "gpt-5.1",
-    runtime_profiles: {
-      cursor: { runtime: "cursor" as const, model: "gpt-5.1" },
-      codex: { runtime: "codex" as const, model: "gpt-5.4-mini" },
-    },
-    active_runtime_profile: "cursor",
-    fallback_runtime_profile: "codex",
-    auto_runtime_fallback: true,
+    llm_client_profile: "claude-deepseek-haiku",
+    fallback_llm_client_profile: "codex-gpt-5.5",
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("mirai", "Mirai — Border Agent"),
     tags: ["system", "autostart"],
+    capabilities: ["email", "crm", "bitrix24"],
+    tool_profile: "business-ops",
+    sandbox_profile: "tmux",
     tmux_session_override: "mirai",
     gender: "female" as const,
+  },
+  {
+    id: "jiraiya",
+    name: "Дзирайя (Корпоративная память)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("jiraiya", "Jiraiya — Corporate Memory"),
+    tags: ["system", "on-demand"],
+    capabilities: ["digest", "search", "kb-authoring", "classify"],
+    tool_profile: "knowledge-readwrite",
+    sandbox_profile: "tmux",
+    tmux_session_override: "jiraiya",
+    gender: "male" as const,
+  },
+  {
+    id: "shino",
+    name: "Шино (Архитектор тестов)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:sonnet",
+    system_prompt: agentFilePrompt("shino", "Shino — Testing Architect"),
+    tags: ["system", "on-demand"],
+    capabilities: ["test-plan", "bug-analysis", "coordination"],
+    tool_profile: "default",
+    sandbox_profile: "tmux",
+    tmux_session_override: "shino",
+    gender: "male" as const,
+  },
+  {
+    id: "hinata",
+    name: "Хината (Исполнитель тестов)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("hinata", "Hinata — Test Executor"),
+    tags: ["system", "on-demand"],
+    capabilities: ["run-tests", "smoke", "regression", "report"],
+    tool_profile: "default",
+    sandbox_profile: "tmux",
+    tmux_session_override: "hinata",
+    gender: "female" as const,
+  },
+  {
+    id: "ibiki",
+    name: "Ибики (Безопасность)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:sonnet",
+    system_prompt: agentFilePrompt("ibiki", "Ibiki — Security Specialist"),
+    tags: ["system", "on-demand"],
+    capabilities: ["pentest", "audit", "scan", "report"],
+    tool_profile: "diagnostics",
+    sandbox_profile: "tmux",
+    tmux_session_override: "ibiki",
+    gender: "male" as const,
+  },
+  {
+    id: "ino",
+    name: "Ино (Маркетолог Ноктюрны)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:sonnet",
+    system_prompt: agentFilePrompt("ino", "Ino — Nocturna Marketing"),
+    tags: ["system", "on-demand"],
+    capabilities: ["content-strategy", "copywriting", "seo", "analytics"],
+    tool_profile: "business-ops",
+    sandbox_profile: "tmux",
+    tmux_session_override: "ino",
+    gender: "female" as const,
+  },
+  {
+    id: "inojin",
+    name: "Иноджин (Редактор Ноктюрны)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("inojin", "Inojin — Nocturna Editor"),
+    tags: ["system", "on-demand"],
+    capabilities: ["factcheck", "proofreading", "style-review", "verification"],
+    tool_profile: "default",
+    sandbox_profile: "tmux",
+    tmux_session_override: "inojin",
+    gender: "male" as const,
+  },
+  {
+    id: "guy",
+    name: "Гай (Разработчик)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:haiku",
+    system_prompt: agentFilePrompt("guy", "Guy — Kakashi Sub-Agent"),
+    tags: ["system", "on-demand"],
+    capabilities: ["translate", "scaffold", "search-replace", "boilerplate"],
+    tool_profile: "default",
+    sandbox_profile: "tmux",
+    tmux_session_override: "guy",
+    gender: "male" as const,
+  },
+  {
+    id: "shikadai",
+    name: "Шикадай (Советник)",
+    runtime: "claude" as const,
+    fallback_runtime: "codex" as const,
+    model: "claude:sonnet",
+    system_prompt: agentFilePrompt("shikadai", "Shikadai — Strategic Advisor"),
+    tags: ["system", "on-demand"],
+    capabilities: ["architecture", "process-analysis", "strategy", "code-review"],
+    tool_profile: "default",
+    sandbox_profile: "tmux",
+    tmux_session_override: "shikadai",
+    gender: "male" as const,
   },
 ];
 
 async function syncSystemAgent(ag: (typeof SYSTEM_AGENTS)[number]): Promise<"created" | "updated"> {
-  const existing = await getAgentDef(ag.id);
-  const now = new Date().toISOString();
-  const def = {
+  const { created } = await upsertAgentDef({
     ...ag,
     protected: true,
-    created_at: existing?.created_at ?? now,
-    updated_at: now,
-  };
-  await redis.hset("konoha:agent-defs", ag.id, JSON.stringify(def));
-  return existing ? "updated" : "created";
+  });
+  return created ? "created" : "updated";
 }
 
 export async function seedSystemAgents() {

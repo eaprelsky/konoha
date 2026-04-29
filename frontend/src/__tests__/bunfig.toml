@@ -1,0 +1,3 @@
+[test]
+pathIgnorePatterns = []
+preload = ["./happy-dom-setup.ts"]

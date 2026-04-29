@@ -1,6 +1,10 @@
 # Workflow Engine — Architecture
 
-> Source: `modules/workflow-engine/` (frontend) · `src/runtime/` · `src/dispatcher.ts`
+> Source: `frontend/src` (canonical workflow UI) · `modules/workflow-engine/` (plugin wrappers + runtime module) · `src/runtime/` · `src/dispatcher.ts`
+>
+> API/MCP/action coverage map: `docs/api-mcp-parity.md`.
+> Entity ownership contracts: `docs/entity-contracts.md`.
+> Legacy retirement inventory: `docs/legacy-retirement.md`.
 
 ## Overview
 
@@ -10,6 +14,31 @@ The Workflow Engine executes business processes modelled as **eEPC diagrams** (e
 - **Flow** — directed edges `[from, to, condition?]`
 
 At runtime the engine creates a **Case** (instance of a process) and advances it step by step until it reaches a terminal event.
+
+## Frontend Boundary
+
+`frontend/src` is the canonical source of truth for workflow editor UI behavior: editor state, canvas rendering, schema patch application, Tsunade chat panel compatibility, work item UI, and navigation events.
+
+`modules/workflow-engine/frontend` is a plugin boundary. Its editor-facing files are thin re-export wrappers to `@core/...` so the plugin keeps stable route/import paths without maintaining a second copy of workflow UI behavior. New workflow editor behavior must be added to `frontend/src` first; module-local forks are allowed only for genuinely module-specific pages.
+
+## Regression Gate
+
+Before delegating autonomous workflow-engine repair or merging workflow editor/action changes, run the canonical smoke suite:
+
+```bash
+cd /home/ubuntu/konoha
+PATH=/home/ubuntu/.bun/bin:$PATH bun run preflight
+```
+
+The suite covers:
+- `workflow.create` materialization and observable receipts.
+- `workflow.update` schema patches through API and operator evals.
+- `workflow.open` navigation actions and receipts.
+- Confirmation-required `workflow.create` without side effects.
+- Deterministic eEPC state-machine semantics: start/end, manual function pause/resume, XOR branch selection, AND split/join, manual waits, event idempotency, and sub-process spawning.
+- Wait hardening: terminal events and plain pass-through events do not create `EventWait` rows; active waits are unique per `case_id + element_id`.
+- Browser boundary: `AssistantWidget` consumes a canonical `/api/ai/chat` parsed event and applies the schema patch to `ProcessEditor`.
+- Operational boundary: system health, Telegram stream smoke, and Redis/PostgreSQL shadow verification.
 
 ---
 
@@ -146,11 +175,32 @@ The flag `PG_READ=true` switches reads to PostgreSQL (Phase 2 migration, issue #
 
 ### Write path
 
-All mutations go through `pgUpsertCase` / `pgUpsertWorkItem` / etc. Writes are fire-and-forget (`pgWrite`) to avoid blocking the runtime loop on DB latency.
+All mutations go through `pgUpsertCase` / `pgUpsertWorkItem` / etc. Most runtime writes are fire-and-forget (`pgWrite`) to avoid blocking the runtime loop on DB latency. Workflow definition writes are awaited by the workflow action executor so `workflow_snapshots` cannot race ahead of their parent `workflows` row.
 
 ### Read path
 
 When `PG_READ=true`, `loadCase` / `loadWorkItem` / `listCases` etc. query PostgreSQL instead of Redis. Row converters (`pgRowToCase`, `pgRowToWorkItem`) normalise DB rows to the runtime types.
+
+### Verification gate
+
+Before switching `PG_READ=true` or delegating runtime changes that affect persisted entities, run:
+
+```bash
+cd /home/ubuntu/konoha
+PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-verify.ts
+```
+
+The gate treats Redis as the active source of truth for Phase 1: every active Redis entity must exist in PostgreSQL. Extra PostgreSQL rows are allowed as archived or historical data, but `Only in Redis` means the migration shadow is incomplete. Message verification counts only Redis stream keys under `konoha:agent:*`, so metadata hashes such as agent definitions do not affect the stream check.
+
+If bus entities are out of sync, reconcile them without rotating agent tokens:
+
+```bash
+cd /home/ubuntu/konoha
+PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/reconcile-pg-bus.ts --dry-run
+PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/reconcile-pg-bus.ts
+```
+
+The bus reconciler copies `konoha:registry` into `konoha_agents` and per-agent Redis streams into `konoha_messages`. Message inserts are idempotent by `(recipient, stream_id)` and use the recipient implied by the stream key, which preserves broadcast/role fanout history correctly.
 
 ---
 

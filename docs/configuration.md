@@ -31,6 +31,9 @@ All configuration is done through environment variables. In production they are 
 | Variable | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key. Used by normalizer, trigger resolver, AI chat endpoint, and KB. |
+| `OPENROUTER_API_KEY` | Yes for Telegram router/packers | Primary OpenRouter key. |
+| `OPENROUTER_API_KEYS` | No | Optional comma-separated OpenRouter keys used after the primary key. |
+| `OPENROUTER_API_KEY_FALLBACK_1..5` | No | Optional fallback OpenRouter keys. Used when the primary key returns auth/payment/rate-limit/server errors or a network error. |
 
 ---
 
@@ -67,6 +70,20 @@ All configuration is done through environment variables. In production they are 
 | `TRACKER_CLOUD_ORG_ID` | — | Yandex Tracker cloud organisation ID. |
 | `YONOTE_BASE_URL` | `https://comindspace.yonote.ru` | Yonote base URL for the Yonote adapter. |
 | `YONOTE_API_KEY` | — | Yonote API key. |
+
+---
+
+## Shared Config Validation
+
+Production shared config is validated by:
+
+```bash
+python3 scripts/validate-shared-config.py --require-credentials --require-trusted-users
+```
+
+The validator checks `/opt/shared/.shared-credentials` and `/opt/shared/.trusted-users.json` without printing secret values. It fails on malformed env lines, shell syntax errors, conflicting duplicate keys, missing/empty required keys, invalid trust JSON, and an empty trusted-user list.
+
+Allowed duplicate keys are documented in the validator: `SERVICE_ACCOUNT_PATH` and `DRIVE_FOLDER_ID` may appear twice only when both values are identical. All other duplicate keys must be removed.
 
 ---
 

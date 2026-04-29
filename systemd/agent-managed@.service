@@ -1,0 +1,20 @@
+[Unit]
+Description=Konoha Managed Agent %i
+After=network.target konoha.service
+Wants=konoha.service
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.agent-env
+Environment=HOME=/home/ubuntu
+Environment=KONOHA_AGENT_ID=%i
+Environment=PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh %i
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

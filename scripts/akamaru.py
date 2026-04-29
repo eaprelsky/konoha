@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 # ── Config ──────────────────────────────────────────────────────────────────
 KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
+AUTO_REMEDIATE = os.environ.get("AKAMARU_AUTO_REMEDIATE", "1") == "1"
 
 CHECK_INTERVAL  = 60   # seconds between full checks
 HEARTBEAT_ALERT = 600  # seconds (10 min) without heartbeat → alert
@@ -34,29 +35,36 @@ WATCHED_SERVICES = [
     "konoha.service",
     "telegram-bot.service",
     "telegram-bus.service",
-    "agent-autostart.service",
+    "telegram-context-packer.service",
+    "telegram-vision-packer.service",
     "agent-watchdog-lifecycle.service",
     "agent-watchdog-naruto.service",
     "agent-watchdog-sasuke.service",
     "agent-watchdog-kakashi.service",
     "agent-watchdog-kiba.service",
-    "agent-watchdog-jiraiya.service",
 ]
+
+SAFE_RESTART_SERVICES = {
+    "telegram-bot.service",
+    "telegram-bus.service",
+    "telegram-context-packer.service",
+    "telegram-vision-packer.service",
+}
 
 WATCHED_SESSIONS = [
     "naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata",
     "kiba", "ibiki", "ino", "inojin", "guy", "kakashi",
-    "shikadai", "shikamaru", "tsunade",
+    "shikadai",
 ]
 WATCHED_AGENTS   = [
     "naruto", "sasuke", "mirai", "jiraiya", "shino", "hinata",
     "kiba", "ibiki", "ino", "inojin", "guy", "kakashi",
-    "shikadai", "shikamaru", "tsunade",
+    "shikadai",
 ]
 
 # On-demand agents: stop after mission complete — inactive state is expected, not a failure.
 # Do NOT alert when their sessions are missing. Still alert on failed watchdogs.
-ON_DEMAND_AGENTS = {"mirai", "shino", "hinata", "ibiki", "ino", "inojin", "guy", "shikadai", "shikamaru", "tsunade"}
+ON_DEMAND_AGENTS = {"mirai", "jiraiya", "shino", "hinata", "ibiki", "ino", "inojin", "guy", "shikadai"}
 
 # For each agent: watchdog service that MUST be running when the tmux session is alive (#98)
 AGENT_WATCHDOGS = {
@@ -64,7 +72,7 @@ AGENT_WATCHDOGS = {
     "sasuke":    "agent-watchdog-sasuke.service",
     "kakashi":   "agent-watchdog-kakashi.service",
     "kiba":      "agent-watchdog-kiba.service",
-    "jiraiya":   "agent-watchdog-jiraiya.service",
+    "jiraiya":   "agent-watchdog-lifecycle.service",
     "mirai":     "agent-watchdog-lifecycle.service",
     "shino":     "agent-watchdog-lifecycle.service",
     "hinata":    "agent-watchdog-lifecycle.service",
@@ -73,8 +81,6 @@ AGENT_WATCHDOGS = {
     "inojin":    "agent-watchdog-lifecycle.service",
     "guy":       "agent-watchdog-lifecycle.service",
     "shikadai":  "agent-watchdog-lifecycle.service",
-    "shikamaru": "agent-watchdog-lifecycle.service",
-    "tsunade":   "agent-watchdog-lifecycle.service",
 }
 
 PAUSED_FILE = os.getenv("AKAMARU_PAUSED_FILE", "/opt/shared/kiba/paused-services.txt")
@@ -197,10 +203,12 @@ async def watch_lifecycle() -> None:
                         sender = msg.get("from", "")
                         if _is_offline_event(text):
                             agent = _extract_agent_from_lifecycle(text, sender)
-                            if agent and agent not in _offline_agents:
+                            if agent and agent in ON_DEMAND_AGENTS and agent not in _offline_agents:
                                 _offline_agents.add(agent)
                                 log.info(f"Lifecycle: {agent} going offline — added to suppression")
                                 changed = True
+                            elif agent and agent not in ON_DEMAND_AGENTS:
+                                log.info(f"Lifecycle: {agent} offline event ignored for suppression (persistent agent)")
                         elif _is_online_event(text):
                             agent = _extract_agent_from_lifecycle(text, sender)
                             if agent and agent in _offline_agents:
@@ -217,7 +225,7 @@ async def watch_lifecycle() -> None:
             log.warning(f"watch_lifecycle error: {e}")
 
         # Periodically sync lifecycle.status from /agents API (#523)
-        # Agents with lifecycle.status=stopped are intentionally offline — suppress their alerts
+        # Only on-demand agents with lifecycle.status=stopped are intentionally offline.
         now = time.monotonic()
         if now - last_api_poll >= LIFECYCLE_API_POLL_INTERVAL:
             last_api_poll = now
@@ -241,9 +249,9 @@ async def watch_lifecycle() -> None:
                         if not aid or aid not in WATCHED_AGENTS:
                             continue
                         lc = agent.get("lifecycle", {})
-                        if lc.get("status") == "stopped":
+                        if lc.get("status") == "stopped" and aid in ON_DEMAND_AGENTS:
                             stopped_agents.add(aid)
-                        elif lc.get("status") == "running":
+                        elif lc.get("status") == "running" or aid not in ON_DEMAND_AGENTS:
                             running_agents.add(aid)
                     # Add stopped agents to suppression
                     changed = False
@@ -327,6 +335,7 @@ def is_alert_suppressed(alert: str, paused: set[str]) -> bool:
             f"session={agent}" in alert or
             f"service=agent-{agent}" in alert or
             f"service=agent-watchdog-{agent}" in alert or
+            # Retired unit names may still appear in old alert payloads.
             f"service=claude-{agent}" in alert or
             f"service=claude-watchdog-{agent}" in alert
         ):
@@ -358,6 +367,78 @@ def is_service_active(service: str) -> bool:
         return r.stdout.strip() in ("active", "activating")
     except Exception:
         return False
+
+
+def run_command(args: list[str], timeout: int = 15) -> tuple[bool, str]:
+    """Run a bounded local command for deterministic remediation."""
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        output = (r.stdout + r.stderr).strip()
+        return r.returncode == 0, output[:500]
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
+def restart_service(service: str) -> tuple[bool, str]:
+    return run_command(["sudo", "-n", "systemctl", "restart", service], timeout=30)
+
+
+def nudge_tmux(session: str) -> tuple[bool, str]:
+    return run_command(["tmux", "-L", session, "send-keys", "-t", session, "Enter"], timeout=5)
+
+
+def restart_agent_session(agent: str) -> tuple[bool, str]:
+    if agent not in WATCHED_AGENTS:
+        return False, f"unknown agent {agent}"
+    # Kill only this agent's isolated tmux socket/session. Its systemd/API manager recreates it.
+    run_command(["tmux", "-L", agent, "kill-session", "-t", agent], timeout=10)
+    service = f"agent-{agent}.service"
+    ok, output = restart_service(service)
+    if ok:
+        return True, f"restarted {service}"
+    return False, f"failed to restart {service}: {output}"
+
+
+def extract_field(alert: str, name: str) -> str | None:
+    import re
+    match = re.search(rf"(?:^|\s){name}=([^\s]+)", alert)
+    return match.group(1) if match else None
+
+
+def remediate_alert(alert: str) -> str | None:
+    """Apply narrow, deterministic fixes before waking Kiba.
+
+    Akamaru may restart obviously dead transport/watchdog components or recycle an
+    agent session with a clear terminal-level failure. It deliberately does not
+    auto-approve permission prompts and does not restart konoha.service.
+    """
+    if not AUTO_REMEDIATE:
+        return None
+
+    service = extract_field(alert, "service")
+    if service:
+        if service.startswith("agent-watchdog-") or service in SAFE_RESTART_SERVICES:
+            ok, output = restart_service(service)
+            return f"auto_restart_service={service} ok={int(ok)} detail={output[:160]!r}"
+        return None
+
+    agent = extract_field(alert, "agent")
+    if agent and "watchdog=dead" in alert:
+        watchdog = AGENT_WATCHDOGS.get(agent)
+        if watchdog:
+            ok, output = restart_service(watchdog)
+            return f"auto_restart_watchdog={watchdog} ok={int(ok)} detail={output[:160]!r}"
+
+    session = extract_field(alert, "session")
+    if session and "tmux=stuck_paste" in alert:
+        ok, output = nudge_tmux(session)
+        return f"auto_nudge_tmux={session} ok={int(ok)} detail={output[:160]!r}"
+
+    if agent and ("token_exhausted=true" in alert or "compacting_loop" in alert):
+        ok, output = restart_agent_session(agent)
+        return f"auto_restart_agent={agent} ok={int(ok)} detail={output[:160]!r}"
+
+    return None
 
 
 # ── Check functions ───────────────────────────────────────────────────────────
@@ -479,35 +560,6 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                                     f"kiba:alert agent={session} token_exhausted=true action=restart"
                                 )
 
-                    # Detect permission prompt freeze (#69)
-                    # Filter out status-bar lines (e.g. "bypass permissions on (shift+tab to cycle)")
-                    # and MemPalace write-progress lines (e.g. "Doodling…").
-                    STATUS_BAR_NOISE = ["bypass permissions", "shift+tab", "bypassPermissions", "Doodling"]
-                    prompt_lines = [l for l in lines[-15:] if not any(n in l for n in STATUS_BAR_NOISE)]
-                    pane_text = "\n".join(prompt_lines)
-                    PERMISSION_PATTERNS = [
-                        "Do you want to proceed",
-                        "(Y/n)",
-                        "(y/N)",
-                    ]
-                    # Require at least one of these to confirm the Claude Code permission UI is
-                    # actually rendered — prevents false positives when jiraiya writes/displays
-                    # documents that happen to contain "(Y/n)" or "Do you want to proceed" in their
-                    # text content (repeating false alerts for jiraiya MemPalace operations, issue #XXX).
-                    #
-                    # MAINTENANCE NOTE: these strings are sourced from Claude Code's permission
-                    # prompt UI (verified 2026-04-11, claude-sonnet-4-6). If Claude Code is
-                    # upgraded and the prompt wording changes (e.g. "❯ 1. Yes" → different format),
-                    # these markers may silently stop matching — real frozen prompts will go
-                    # undetected. After any Claude Code update, run:
-                    #   tmux -L <agent> capture-pane -pt <agent>
-                    # while an agent is at a permission prompt, and verify the markers below
-                    # still appear verbatim in the pane output. Update if needed.
-                    PERMISSION_UI_MARKERS = [
-                        "don't ask again",
-                        "Esc to cancel",
-                        "\u276f 1. Yes",   # ❯ 1. Yes  — Claude Code choice cursor
-                    ]
                     # Skip check when the agent is visibly doing active work (MCP calls, MemPalace
                     # writes, etc.). False positives occur when tool output happens to contain
                     # prompt-like strings ("(Y/n)" in a document being written, for example).
@@ -525,10 +577,7 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                         any(ind in l for ind in ACTIVE_WORK_INDICATORS)
                         for l in lines[-20:]
                     )
-                    is_permission_prompt = (
-                        any(p in pane_text for p in PERMISSION_PATTERNS) and
-                        any(m in pane_text for m in PERMISSION_UI_MARKERS)
-                    )
+                    is_permission_prompt = is_permission_prompt_state(lines[-15:])
                     if not is_actively_working and is_permission_prompt:
                         key = f"tmux:{session}:permission_prompt"
                         if should_alert(key):
@@ -540,6 +589,47 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
     except Exception as e:
         log.warning(f"Error checking tmux: {e}")
     return alerts
+
+
+def is_permission_prompt_state(lines: list[str]) -> bool:
+    """Return True only for real Claude Code permission prompts, not idle shortcut hints."""
+    status_bar_noise = ["bypass permissions", "shift+tab", "bypasspermissions", "doodling"]
+    prompt_lines = [l for l in lines if not any(noise in l.lower() for noise in status_bar_noise)]
+    pane_text = "\n".join(prompt_lines)
+    pane_text_lower = pane_text.lower()
+
+    permission_patterns = [
+        "do you want to proceed",
+        "(y/n)",
+    ]
+    # Require UI markers from the Claude Code prompt rather than matching bare "(Y/n)"
+    # anywhere in the scrollback.
+    permission_ui_markers = [
+        "don't ask again",
+        "esc to cancel",
+        "\u276f 1. yes",
+    ]
+    # Idle prompt "❯ ? for shortcuts" may coexist with stale "(Y/n)" scrollback and
+    # "Esc to cancel", causing a false-positive frozen=permission_prompt alert. Exclude
+    # that state unless an explicit permission choice UI is also visible.
+    idle_shortcut_markers = [
+        "? for shortcuts",
+    ]
+    explicit_choice_markers = [
+        "\u276f 1. yes",
+        "1. yes",
+        "2. no",
+    ]
+
+    has_permission_pattern = any(pattern in pane_text_lower for pattern in permission_patterns)
+    has_permission_ui = any(marker in pane_text_lower for marker in permission_ui_markers)
+    has_explicit_choice_ui = any(marker in pane_text_lower for marker in explicit_choice_markers)
+    is_idle_shortcuts_only = (
+        any(marker in pane_text_lower for marker in idle_shortcut_markers)
+        and not has_explicit_choice_ui
+    )
+
+    return has_permission_pattern and has_permission_ui and not is_idle_shortcuts_only
 
 
 def check_orphaned_sessions(paused: set[str] = frozenset()) -> list[str]:
@@ -716,7 +806,11 @@ async def main() -> None:
 
     # Load persisted offline suppression list from previous run
     global _offline_agents
-    _offline_agents = load_offline_agents()
+    loaded_offline = load_offline_agents()
+    _offline_agents = {agent for agent in loaded_offline if agent in ON_DEMAND_AGENTS}
+    if _offline_agents != loaded_offline:
+        save_offline_agents(_offline_agents)
+        log.info(f"Removed persistent agents from offline suppression: {loaded_offline - _offline_agents}")
     if _offline_agents:
         log.info(f"Loaded offline suppression list: {_offline_agents}")
 
@@ -752,6 +846,10 @@ async def main() -> None:
         if alerts:
             log.warning(f"Found {len(alerts)} alert(s): {alerts}")
             for alert in alerts:
+                remediation = remediate_alert(alert)
+                if remediation:
+                    log.warning(f"Remediation for {alert}: {remediation}")
+                    alert = f"{alert} {remediation}"
                 await send_alert(alert)
         else:
             log.debug(f"Check #{check_count}: all systems OK")

@@ -2,9 +2,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { config, requireConfig, type LlmProvider } from "./config";
 import { ConfigError, ExternalServiceError } from "./errors";
 
+export type LlmContent = string | Anthropic.MessageParam["content"];
+
 export interface LlmMessage {
   role: "user" | "assistant";
-  content: string;
+  content: LlmContent;
 }
 
 export interface GenerateTextParams {
@@ -31,6 +33,19 @@ async function generateAnthropicText(params: GenerateTextParams): Promise<string
   return ((response.content[0] as any)?.text ?? "").trim();
 }
 
+function contentToText(content: LlmContent): string {
+  if (typeof content === "string") return content;
+  return content
+    .map(block => {
+      if (block.type === "text") return block.text;
+      if (block.type === "image") return "[image]";
+      if (block.type === "document") return "[document]";
+      if (block.type === "search_result") return block.title ?? block.source ?? "[search_result]";
+      return `[${block.type}]`;
+    })
+    .join("\n");
+}
+
 async function generateGlmText(params: GenerateTextParams): Promise<string> {
   const apiKey = requireConfig("GLM_API_KEY", config.llm.glmApiKey);
   const response = await fetch(`${config.llm.glmBaseUrl}/chat/completions`, {
@@ -45,7 +60,10 @@ async function generateGlmText(params: GenerateTextParams): Promise<string> {
       ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
       messages: [
         ...(params.system ? [{ role: "system", content: params.system }] : []),
-        ...params.messages,
+        ...params.messages.map(message => ({
+          ...message,
+          content: contentToText(message.content),
+        })),
       ],
     }),
   });

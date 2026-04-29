@@ -68,7 +68,7 @@ export function TsunadeChatPanel({
       };
     }
     try {
-      const res = await api.tsunade.processChat({ message: msg, schema, chat_id: chatId ?? undefined });
+      const res = await api.assistant.chat({ message: msg, schema, chat_id: chatId ?? undefined, mode: 'process' });
       if (!chatId) setChatId(res.chat_id);
       setChatMsgs(prev => [...prev, { role: 'assistant', text: res.reply }]);
       const patch = res.schema_patch as SchemaPatch | undefined;
@@ -80,6 +80,18 @@ export function TsunadeChatPanel({
           setChatMsgs(prev => [...prev, { role: 'system', text: 'Схема обновлена. Нажмите 💾 для сохранения.' }]);
         }
       }
+      if (Array.isArray(res.pending_confirmations) && res.pending_confirmations.length > 0) {
+        const labels = res.pending_confirmations.map(item => item.action).join(', ');
+        setChatMsgs(prev => [...prev, { role: 'system', text: `Требуется подтверждение: ${labels}` }]);
+      }
+      const actionReceipts = res.action_receipts ?? [];
+      if (actionReceipts.length > 0) {
+        setChatMsgs(prev => [...prev, ...actionReceipts
+          .filter(r => typeof r.summary === 'string' && r.summary)
+          .map(r => ({ role: 'system' as const, text: `[${r.status}] ${r.summary}` }))]);
+      } else if (res.observable_result?.summary) {
+        setChatMsgs(prev => [...prev, { role: 'system', text: res.observable_result!.summary }]);
+      }
       if (res.created_workflow) {
         window.dispatchEvent(new CustomEvent('konoha:workflow_created', { detail: res.created_workflow }));
         navigate(`/editor/${res.created_workflow.id}`);
@@ -88,6 +100,9 @@ export function TsunadeChatPanel({
         const act = res.actions[0];
         if (act.type === 'highlight') {
           showHighlight({ selector: act.selector, style: act.style ?? 'spotlight', message: act.message });
+        } else if (act.type === 'navigate') {
+          const target = typeof act.path === 'string' ? act.path : typeof act.target === 'string' ? act.target : null;
+          if (target) navigate(target);
         }
       }
     } catch (e: any) {

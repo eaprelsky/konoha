@@ -4,6 +4,8 @@
  * Uses Symbol.for('konoha.inspector') instead of window.__konoha_inspector
  * to prevent XSS via global namespace.
  */
+import type { OperatorStateEnvelope } from '../operatorState';
+import { summarizeOperatorState } from '../operatorState';
 
 const INSPECTOR_KEY = Symbol.for('konoha.inspector');
 
@@ -16,6 +18,7 @@ class InspectorImpl {
   private _selectedElement: string | null = null;
   private _processName: string | null = null;
   private _processSchema: string | null = null;
+  private _operatorState: OperatorStateEnvelope | null = null;
 
   constructor() {
     this._hookConsole();
@@ -80,6 +83,8 @@ class InspectorImpl {
   setSelectedElement(selector: string | null) { this._selectedElement = selector; }
   setProcessName(name: string | null) { this._processName = name; }
   setProcessSchema(schema: string | null) { this._processSchema = schema; }
+  setOperatorState(state: OperatorStateEnvelope | null) { this._operatorState = state; }
+  operatorState(): OperatorStateEnvelope | null { return this._operatorState; }
 
   /**
    * Returns a compact 500-800 token context summary for every /ai/chat request.
@@ -87,10 +92,14 @@ class InspectorImpl {
   snapshot(): string {
     const lines: string[] = [];
 
-    lines.push(`URL: ${location.pathname}${location.search}`);
-    if (this._processName) lines.push(`Process: ${this._processName}`);
-    if (this._processSchema) lines.push(this._processSchema);
-    if (this._selectedElement) lines.push(`Selected element: ${this._selectedElement}`);
+    if (this._operatorState) {
+      lines.push(summarizeOperatorState(this._operatorState));
+    } else {
+      lines.push(`URL: ${location.pathname}${location.search}`);
+      if (this._processName) lines.push(`Process: ${this._processName}`);
+      if (this._processSchema) lines.push(this._processSchema);
+      if (this._selectedElement) lines.push(`Selected element: ${this._selectedElement}`);
+    }
 
     const panels = [...this._openPanels];
     if (panels.length) lines.push(`Open panels: ${panels.join(', ')}`);
@@ -136,10 +145,12 @@ function getInspector(): InspectorImpl {
 /** Public Inspector API */
 export const Inspector = {
   snapshot: (): string => getInspector().snapshot(),
+  operatorState: (): OperatorStateEnvelope | null => getInspector().operatorState(),
   registerPanel: (name: string): void => getInspector().registerPanel(name),
   unregisterPanel: (name: string): void => getInspector().unregisterPanel(name),
   trackAction: (action: string): void => getInspector().trackAction(action),
   setSelectedElement: (selector: string | null): void => getInspector().setSelectedElement(selector),
   setProcessName: (name: string | null): void => getInspector().setProcessName(name),
   setProcessSchema: (schema: string | null): void => getInspector().setProcessSchema(schema),
+  setOperatorState: (state: OperatorStateEnvelope | null): void => getInspector().setOperatorState(state),
 };

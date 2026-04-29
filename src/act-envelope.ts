@@ -1,5 +1,5 @@
 /**
- * act-envelope.ts — Unified action envelope for system operations (#500, #527)
+ * act-envelope.ts — Unified action envelope for system operations (#500)
  *
  * A single external action shape that maps to current handlers/endpoints.
  * Used by API, MCP, assistant, and UI layers.
@@ -12,10 +12,6 @@
  * Migration path:
  *   Phase 1: envelope wraps current endpoints — no behavior change
  *   Phase 2: envelope becomes the primary API, old endpoints deprecated
- *
- * #527 adds programmatic executeAction() so server-side callers (assistant,
- * event handlers) route through the same validate → autonomy → audit pipeline
- * as the HTTP /act endpoint. No parallel mutation contracts.
  */
 
 import { Hono } from "hono";
@@ -25,9 +21,11 @@ import {
   ACTION_VERSION,
   getAction,
   isValidAction,
+  validateActionArgs,
   type ActionDef,
 } from "./action-registry";
 import { auditLog, checkAutonomy } from "./assistant-actions";
+import { assertActionArgs, executeActionDirect } from "./action-executor";
 
 // ── Envelope types ───────────────────────────────────────────────────────────
 
@@ -53,6 +51,7 @@ export interface ActResult {
   action: string;
   data?: unknown;
   error?: string;
+  status?: number;
   /** Whether the action requires confirmation before execution */
   requires_confirm?: boolean;
   /** The action definition used for this request */
@@ -119,13 +118,12 @@ export function validateEnvelope(envelope: ActEnvelope): ValidationError[] {
     return errors;
   }
 
-  const def = getAction(envelope.action)!;
-  for (const arg of def.args) {
-    if (arg.required && !(arg.name in envelope.args)) {
-      errors.push({ field: `args.${arg.name}`, message: `Required argument missing: ${arg.name}` });
-    }
+  const argsValidation = validateActionArgs(envelope.action, envelope.args);
+  for (const message of argsValidation.errors) {
+    errors.push({ field: "args", message });
   }
 
+  // Verify category matches action
   const expectedCategory = classifyAction(envelope.action);
   if (envelope.category && envelope.category !== expectedCategory) {
     errors.push({
@@ -137,10 +135,10 @@ export function validateEnvelope(envelope: ActEnvelope): ValidationError[] {
   return errors;
 }
 
-// ── Response helpers ─────────────────────────────────────────────────────────
+// ── Response builder ─────────────────────────────────────────────────────────
 
-function ok(action: string, data: unknown): ActResult {
-  return { ok: true, action, data, action_version: ACTION_VERSION };
+function ok(action: string, data: unknown, status = 200): ActResult {
+  return { ok: true, action, data, status, action_version: ACTION_VERSION };
 }
 
 function fail(action: string, error: string): ActResult {
@@ -151,7 +149,9 @@ function needConfirm(action: string): ActResult {
   return { ok: false, action, requires_confirm: true, action_version: ACTION_VERSION };
 }
 
-// ── Direct action handlers (Phase 2 of #527) ────────────────────────────────
+// ── Action handlers ──────────────────────────────────────────────────────────
+// Workflow core actions execute directly. Remaining actions temporarily delegate
+// to existing endpoints until their contracts are migrated.
 
 const actionHandlers = new Map<string, ActionHandler>();
 
@@ -172,7 +172,6 @@ async function executeRegisteredHandler(
 
   try {
     const data = await handler(args, ctx);
-
     if (classifyAction(action.id) === "act" && action.audited) {
       await auditLog({
         timestamp: new Date().toISOString(),
@@ -183,8 +182,7 @@ async function executeRegisteredHandler(
         agent_chain: ctx.agent_chain,
       });
     }
-
-    return ok(action.id, data);
+    return ok(action.id, data, action.id === "workflow.create" ? 201 : 200);
   } catch (e: any) {
     if (classifyAction(action.id) === "act" && action.audited) {
       await auditLog({
@@ -208,19 +206,13 @@ export interface ExecuteActionOptions {
   authHeader?: string;
 }
 
-/**
- * Execute an action programmatically through the canonical spine.
- *
- * Flow: validate → autonomy check → direct handler (if registered) or
- * HTTP fallback → audit log → ActResult.
- */
 export async function executeAction(
   envelope: ActEnvelope,
   opts: ExecuteActionOptions = {},
 ): Promise<ActResult> {
   const errors = validateEnvelope(envelope);
   if (errors.length > 0) {
-    return fail(envelope.action ?? "unknown", `Validation: ${errors.map((e) => e.message).join("; ")}`);
+    return fail(envelope.action ?? "unknown", `Validation: ${errors.map(e => e.message).join("; ")}`);
   }
 
   const action = getAction(envelope.action)!;
@@ -255,13 +247,31 @@ export async function executeAction(
     }
   }
 
-  const direct = await executeRegisteredHandler(action, envelope.args, ctx);
-  if (direct) return direct;
+  const direct = await executeActionDirect(envelope.action, assertActionArgs(envelope.args));
+  if (direct) {
+    if (category === "act" && action.audited) {
+      await auditLog({
+        timestamp: new Date().toISOString(),
+        session_id: sessionId,
+        action_type: envelope.action,
+        parameters: JSON.stringify(envelope.args),
+        result: direct.status >= 200 && direct.status < 300 ? "ok" : "error",
+        agent_chain: agentChain,
+        error: direct.status >= 200 && direct.status < 300 ? undefined : JSON.stringify(direct.data),
+      });
+    }
+    return direct.status >= 200 && direct.status < 300
+      ? ok(envelope.action, direct.data, direct.status)
+      : fail(envelope.action, isRecordWithError(direct.data) ? direct.data.error : JSON.stringify(direct.data));
+  }
+
+  const registered = await executeRegisteredHandler(action, envelope.args, ctx);
+  if (registered) return registered;
 
   const endpoint = resolveEndpoint(action, envelope.args);
   if (!endpoint) {
     return ok(envelope.action, {
-      note: "Action registered but not yet wired to a direct handler",
+      note: "Action registered but not yet wired to a direct handler or endpoint",
       definition: action,
     });
   }
@@ -271,18 +281,12 @@ export async function executeAction(
     const url = `${baseUrl}${endpoint.path}`;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (opts.authHeader) headers.Authorization = opts.authHeader;
-
-    const fetchOpts: RequestInit = {
-      method: endpoint.method,
-      headers,
-    };
+    const fetchOpts: RequestInit = { method: endpoint.method, headers };
     if (endpoint.body && ["POST", "PUT", "PATCH"].includes(endpoint.method)) {
       fetchOpts.body = JSON.stringify(endpoint.body);
     }
-
     const response = await fetch(url, fetchOpts);
     const data = await response.json().catch(() => null);
-
     if (category === "act" && action.audited) {
       await auditLog({
         timestamp: new Date().toISOString(),
@@ -294,11 +298,10 @@ export async function executeAction(
         error: response.ok ? undefined : JSON.stringify(data),
       });
     }
-
     if (!response.ok) {
       return fail(envelope.action, JSON.stringify(data ?? { status: response.status }));
     }
-    return ok(envelope.action, data);
+    return ok(envelope.action, data, response.status);
   } catch (e: any) {
     return fail(envelope.action, `Internal routing error: ${e.message}`);
   }
@@ -319,32 +322,36 @@ function resolveEndpoint(action: ActionDef, args: Record<string, unknown>): {
   const [method, pathTemplate] = ep.split(" ");
   if (!method || !pathTemplate) return null;
 
+  // Replace path parameters (e.g. :id → actual value)
   let path = pathTemplate;
   const pathParams = pathTemplate.match(/:(\w+)/g) ?? [];
   for (const param of pathParams) {
-    const key = param.slice(1);
+    const key = param.slice(1); // remove colon
+    // Map common param names to arg names
     const argKey = key === "id" ? findIdArg(action, args) : key;
     const value = args[argKey];
     if (value == null) return null;
     path = path.replace(param, String(value));
   }
 
-  const pathKeys = new Set(pathParams.map((param) => {
-    const key = param.slice(1);
+  // Build body from non-path arguments
+  const pathKeys = new Set(pathParams.map(p => {
+    const key = p.slice(1);
     return key === "id" ? findIdArg(action, args) : key;
   }));
 
   const body: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (!pathKeys.has(key)) body[key] = value;
+  for (const [k, v] of Object.entries(args)) {
+    if (!pathKeys.has(k)) body[k] = v;
   }
 
   return { method, path, body: Object.keys(body).length > 0 ? body : undefined };
 }
 
 function findIdArg(action: ActionDef, args: Record<string, unknown>): string {
-  const idArg = action.args.find((arg) =>
-    arg.name.endsWith("_id") || arg.name === "id" || arg.name === "process_id"
+  // Try to find the right ID arg
+  const idArg = action.args.find(a =>
+    a.name.endsWith("_id") || a.name === "id" || a.name === "process_id"
   );
   if (idArg && args[idArg.name] != null) return idArg.name;
   return "id";
@@ -354,21 +361,30 @@ function findIdArg(action: ActionDef, args: Record<string, unknown>): string {
 
 export const actRouter = new Hono<HonoEnv>();
 
+/**
+ * POST /act — Unified action endpoint.
+ *
+ * Accepts an ActEnvelope, validates it against the registry,
+ * checks autonomy, and routes to the appropriate handler.
+ */
 actRouter.post("/", requireAuth, async (c) => {
   const envelope = await c.req.json<ActEnvelope>();
   const result = await executeAction(envelope, {
     agent_chain: envelope.meta?.agent_chain ?? "api",
     authHeader: c.req.header("Authorization"),
   });
-
   if (!result.ok && result.requires_confirm) {
     return c.json(result, 202);
   }
   if (!result.ok) {
     return c.json(result, result.error?.startsWith("Validation") ? 400 : 500);
   }
-  return c.json(result, 200);
+  return c.json(result, (result.status ?? 200) as any);
 });
+
+function isRecordWithError(value: unknown): value is { error: string } {
+  return value !== null && typeof value === "object" && "error" in value && typeof (value as any).error === "string";
+}
 
 /**
  * POST /act/intent — Decompose a high-level intent into an action sequence.
@@ -384,23 +400,33 @@ actRouter.post("/intent", requireAuth, async (c) => {
   const { decomposeIntent, listIntents } = await import("./intent-decomposer");
   const plan = decomposeIntent(intent, params ?? {});
   if (!plan) {
-    return c.json(fail(intent, `Unknown intent: ${intent}. Available: ${listIntents().map((i) => i.id).join(", ")}`), 404);
+    return c.json(fail(intent, `Unknown intent: ${intent}. Available: ${listIntents().map(i => i.id).join(", ")}`), 404);
   }
   return c.json({ ok: true, action: `intent.${intent}`, data: plan, action_version: ACTION_VERSION });
 });
 
+/**
+ * GET /act/intent — List available intents.
+ */
 actRouter.get("/intent", requireAuth, async (c) => {
   const { listIntents } = await import("./intent-decomposer");
   return c.json(listIntents());
 });
 
+/**
+ * GET /act — List available actions.
+ */
 actRouter.get("/", requireAuth, async (c) => {
   const { dumpRegistry } = await import("./action-registry");
   return c.json(dumpRegistry());
 });
 
+/**
+ * GET /act/:actionId — Get action definition.
+ */
 actRouter.get("/:actionId", requireAuth, async (c) => {
-  const actionId = c.req.param("actionId") ?? "";
+  const actionId = c.req.param("actionId");
+  if (!actionId) return c.json({ error: "actionId required" }, 400);
   const action = getAction(actionId);
   if (!action) {
     return c.json(fail(actionId, `Unknown action: ${actionId}`), 404);

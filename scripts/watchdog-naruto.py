@@ -2,7 +2,7 @@
 """
 Watchdog for Naruto (Claude Agent #1).
 Watches two sources in parallel:
-  1. ~/.claude/channels/telegram/message-queue.jsonl  (tail -F)
+  1. Redis stream telegram:bot:incoming  (consumer group naruto)
   2. Konoha SSE stream /messages/naruto/stream
 
 When events arrive, batches them (2s debounce window) and sends to the
@@ -11,7 +11,7 @@ naruto tmux session only when the agent is idle (❯ prompt visible).
 Special features not in watchdog_base:
   - L1 interrupt: Ctrl+C after 30s if owner message is pending (#320)
   - Adaptive paste_wait: longer wait for messages ≥800 chars (#288, #300)
-  - TG delivery state: persists last_delivered_id for at-least-once delivery (#318)
+  - TG delivery state: Redis ack only after tmux delivery
   - Konoha echo dedup: drops Konoha echoes of TG messages we already have
   - Multi-source format_batch (TG + Konoha + reactions)
 """
@@ -22,8 +22,10 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import time
 sys.path.insert(0, os.path.dirname(__file__))
 import watchdog_base as _b
+import redis.asyncio as aioredis
 
 # ── Config ───────────────────────────────────────────────────────────────────
 _b.AGENT_ID          = "naruto"
@@ -33,8 +35,14 @@ _b.IDLE_TIMEOUT_SEC  = 600
 _b.STARTUP_GRACE_SEC = 90     # give startup sequence time to read memory before backlog delivery
 # No circuit breaker / wake-up — naruto is always running
 
-MESSAGE_QUEUE   = Path(os.path.expanduser("~/.claude/channels/telegram/message-queue.jsonl"))
 REACTION_QUEUE  = Path(os.path.expanduser("~/.claude/channels/telegram/reaction-queue.jsonl"))
+
+REDIS_HOST    = "127.0.0.1"
+REDIS_PORT    = 6379
+TG_STREAM     = "telegram:bot:incoming"
+TG_GROUP      = "naruto"
+TG_CONSUMER   = "naruto-watchdog"
+STALE_PENDING_MAX_AGE_SEC = int(os.environ.get("NARUTO_STALE_PENDING_MAX_AGE_SEC", "600"))
 
 L1_INTERRUPT_AFTER_SEC = 30   # interrupt agent with Ctrl+C if L1 (owner) message waits this long (#320)
 OWNER_TG_ID = "93791246"      # Yegor Aprelsky — Level 1 trust
@@ -60,6 +68,9 @@ async def tmux_send(session: str, text: str) -> bool:
     text = text.replace("\n", " ").replace("\r", " ")
     compacting_waited = 0
     while compacting_waited < 120:
+        if not _b.is_session_alive(session):
+            _b.log.error(f"Delivery failed: tmux session {session} is missing before send")
+            return False
         if _b.is_agent_idle(session, stable_checks=1):
             break
         _b.log.info(f"Agent {session} compacting — waiting (waited {compacting_waited}s)")
@@ -71,54 +82,75 @@ async def tmux_send(session: str, text: str) -> bool:
         _b.log.info(f"Compacting done after {compacting_waited}s — proceeding")
         await asyncio.sleep(1.0)
 
-    content_before = _b.tmux_pane_content(session)
+    async def dismiss_pasted_dialog() -> None:
+        for _ in range(5):
+            if not _b.is_session_alive(session):
+                return
+            content = _b.tmux_pane_content(session)
+            if "Pasted text" not in content:
+                return
+            _b.log.warning(f"[Pasted text] dialog detected in {session} — sending Enter")
+            await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
+            await asyncio.sleep(0.6)
+
+
+    async def retype_prompt() -> bool:
+        await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "C-u", timeout=5.0)
+        await asyncio.sleep(0.15)
+        ok_local = await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
+        if not ok_local:
+            _b.log.error(f"Retype timed out for {session}")
+            return False
+        await asyncio.sleep(paste_wait)
+        await dismiss_pasted_dialog()
+        return True
+
+    async def wait_for_submit(timeout_sec: float) -> bool:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if not _b.is_session_alive(session):
+                _b.log.error(f"Delivery failed: tmux session {session} disappeared during submit")
+                return False
+            content = _b.tmux_pane_content(session)
+            if "Pasted text" in content:
+                _b.log.warning(f"[Pasted text] dialog appeared after submit in {session} — sending Enter")
+                await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
+                await asyncio.sleep(0.6)
+                continue
+            if content.strip() and not _b.is_agent_idle(session, stable_checks=1):
+                _b.log.info("Delivery confirmed: agent left idle state after submit")
+                return True
+            await asyncio.sleep(0.4)
+        return False
+
+
     ok = await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
     if not ok:
         _b.log.error(f"send-keys timed out for {session} — skipping delivery")
         return False
 
-    # Adaptive paste_wait — dialog appears only for longer inputs (#288, #300)
     if len(text) >= PASTE_DIALOG_THRESHOLD:
         paste_wait = max(1.5, min(len(text) / 3000.0, 3.0))
     else:
         paste_wait = 0.5
     await asyncio.sleep(paste_wait)
+    await dismiss_pasted_dialog()
 
-    for _ in range(5):
-        content = _b.tmux_pane_content(session)
-        if "Pasted text" in content:
-            _b.log.warning(f"[Pasted text] dialog detected in {session} — sending Enter to dismiss")
-            await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
-            await asyncio.sleep(paste_wait)
-        else:
-            break
-    await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
-    _b.log.info(f"Sent prompt to {session} ({len(text)} chars)")
-    await asyncio.sleep(2.0)
-    for attempt in range(3):
-        content_after = _b.tmux_pane_content(session)
-        if content_after != content_before:
-            _b.log.info("Delivery confirmed: pane content changed after send")
-            break
-        if not _b.is_agent_idle(session, stable_checks=2):
-            break
-        _b.log.warning(f"Pane unchanged and agent idle (attempt {attempt+1}), resending")
-        await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "C-u", timeout=5.0)
-        ok = await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
-        if not ok:
-            _b.log.error(f"Resend attempt {attempt+1} timed out for {session}")
-            break
-        await asyncio.sleep(paste_wait)
-        for _ in range(5):
-            retry_content = _b.tmux_pane_content(session)
-            if "Pasted text" in retry_content:
-                await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter")
-                await asyncio.sleep(paste_wait)
-            else:
-                break
+    for attempt in range(4):
+        if attempt == 1:
+            _b.log.warning("Agent stayed idle after submit attempt 1 — retrying Enter")
+        elif attempt >= 2:
+            _b.log.warning(f"Agent stayed idle after submit attempt {attempt} — clearing input and retyping prompt")
+            if not await retype_prompt():
+                return False
+
         await _b.tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
-        await asyncio.sleep(2.0)
-    return True
+        _b.log.info(f"Sent prompt to {session} ({len(text)} chars), submit attempt {attempt + 1}")
+        if await wait_for_submit(4.0 if attempt == 0 else 3.0):
+            return True
+
+    _b.log.error(f"Delivery failed: agent {session} stayed idle after submit retries")
+    return False
 
 
 # ── Message formatting (multi-source) ────────────────────────────────────────
@@ -157,7 +189,7 @@ def format_batch(events: list[dict]) -> str:
             text = d.get("text", "")
             ts = d.get("ts", "")[:16] if d.get("ts") else ""
             lines.append(f"\n[{ts}] {sender}: {text}")
-        lines.append("\nОбработай и ответь через naruto-tg-send.py.")
+        lines.append("\nОбработай и ответь через: python3 /home/ubuntu/naruto-tg-send.py <chat_id> \"<text>\" [reply_to].")
 
     if konoha_deduped:
         if lines:
@@ -190,16 +222,51 @@ def format_batch(events: list[dict]) -> str:
     return "\n".join(lines)
 
 
-# ── Custom send loop (L1 interrupt + TG delivery state) ───────────────────────
+# ── Custom send loop (L1 interrupt + Redis ack after delivery) ────────────────
 
-async def send_loop(batched_queue: asyncio.Queue, tg_delivery_state: dict) -> None:
+def _stream_batch_has_messages(results: list) -> bool:
+    """Return True only when XREADGROUP returned at least one message."""
+    return any(messages for _stream_name, messages in results)
+
+
+def _is_stale_pending_id(redis_id: str, *, now_ms: int | None = None) -> bool:
+    """Return True for old pending stream IDs that should not be replayed."""
+    try:
+        created_ms = int(str(redis_id).split("-", 1)[0])
+    except (TypeError, ValueError):
+        return False
+    current_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+    return (current_ms - created_ms) > STALE_PENDING_MAX_AGE_SEC * 1000
+
+
+async def _ack_telegram_events(events: list[dict], rd: aioredis.Redis) -> bool:
+    """Ack delivered Telegram Redis events after they reached the agent."""
+    ids = [ev.get("redis_id") for ev in events if ev.get("source") == "telegram" and ev.get("redis_id")]
+    if not ids:
+        return True
+    try:
+        await rd.xack(TG_STREAM, TG_GROUP, *ids)
+        _b.log.info(f"Acked {len(ids)} Telegram event(s) after delivery")
+        return True
+    except Exception as e:
+        _b.log.error(f"Failed to ack {len(ids)} Telegram event(s): {e}")
+        return False
+
+async def send_loop(batched_queue: asyncio.Queue) -> None:
     """Wait for idle, then flush the pending batch.
-    Supports L1 (owner) interrupt (#320) and persists last_delivered_id (#318).
+    Supports L1 (owner) interrupt and Redis ack-after-delivery.
     """
     pending: list[dict] = []
-    delivered_id_file = Path(f"/tmp/watchdog-{_b.AGENT_ID}-last-tg-delivered")
+    rd = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
     while True:
+        if pending and any(ev.get("_delivered_to_agent") for ev in pending):
+            if await _ack_telegram_events(pending, rd):
+                pending.clear()
+            else:
+                await asyncio.sleep(1.0)
+            continue
+
         try:
             timeout = 1.0 if pending else None
             batch = await asyncio.wait_for(batched_queue.get(), timeout=timeout)
@@ -217,8 +284,7 @@ async def send_loop(batched_queue: asyncio.Queue, tg_delivery_state: dict) -> No
             if waited >= _b.IDLE_TIMEOUT_SEC:
                 _b.log.warning(f"Agent {_b.TMUX_SESSION} busy >{_b.IDLE_TIMEOUT_SEC}s — dropping {len(pending)} msgs")
                 await _b.send_freeze_alert(_b.TMUX_SESSION, waited, len(pending))
-                pending.clear()
-                break
+                sys.exit(1)
             # L1 priority interrupt (#320): owner message waiting too long
             if waited >= L1_INTERRUPT_AFTER_SEC and has_l1_message(pending):
                 _b.log.warning(f"L1 (owner) message pending {int(waited)}s — sending Ctrl+C to interrupt agent")
@@ -233,22 +299,16 @@ async def send_loop(batched_queue: asyncio.Queue, tg_delivery_state: dict) -> No
                 prompt = format_batch(pending)
                 delivered = await tmux_send(_b.TMUX_SESSION, prompt)
                 if delivered is not False:
-                    pending.clear()
-                    last_seen = tg_delivery_state.get("last_seen_id", 0)
-                    if last_seen > 0:
-                        try:
-                            delivered_id_file.write_text(str(last_seen))
-                            _b.log.debug(f"Confirmed delivery: last_tg_delivered={last_seen}")
-                        except Exception as e:
-                            _b.log.warning(f"Could not write delivered_id: {e}")
+                    for ev in pending:
+                        ev["_delivered_to_agent"] = True
                 else:
                     _b.log.warning(f"tmux_send timed out — retrying {len(pending)} msg(s) on next idle")
             except Exception as e:
                 _b.log.error(f"tmux send failed: {e}")
-                pending.clear()
+                await asyncio.sleep(1.0)
 
 
-# ── Telegram message-queue.jsonl watcher ─────────────────────────────────────
+# ── Telegram Redis stream watcher ────────────────────────────────────────────
 
 SEEN_REACTIONS_FILE = Path(f"/tmp/watchdog-naruto-seen-reactions.json")
 MAX_SEEN_REACTIONS = 500
@@ -270,71 +330,85 @@ def _save_seen_reactions(seen: set) -> None:
         _b.log.warning(f"Could not persist seen reactions: {e}")
 
 
-async def telegram_queue_watcher(raw_queue: asyncio.Queue, tg_delivery_state: dict) -> None:
-    """
-    Tail message-queue.jsonl and emit new messages.
-    Tracks last_delivered_id for at-least-once delivery on restart (#318).
-    """
-    seen_id_file      = Path(f"/tmp/watchdog-{_b.AGENT_ID}-last-tg-id")
-    delivered_id_file = Path(f"/tmp/watchdog-{_b.AGENT_ID}-last-tg-delivered")
-
-    def _read_id(path: Path) -> int:
-        if path.exists():
-            try:
-                return int(path.read_text().strip())
-            except Exception:
-                pass
-        return 0
-
-    last_id = _read_id(delivered_id_file)
-    if last_id == 0:
-        last_id = _read_id(seen_id_file)
-
-    if last_id == 0 and MESSAGE_QUEUE.exists():
-        try:
-            lines = MESSAGE_QUEUE.read_text().strip().splitlines()
-            if lines:
-                last_line = json.loads(lines[-1])
-                last_id = int(last_line.get("message_id", 0))
-                seen_id_file.write_text(str(last_id))
-                delivered_id_file.write_text(str(last_id))
-                _b.log.info(f"Seeded last Telegram message_id={last_id} (first run)")
-        except Exception as e:
-            _b.log.warning(f"Could not seed last_id: {e}")
-
-    tg_delivery_state["last_seen_id"] = last_id
-    _b.log.info(f"Watching {MESSAGE_QUEUE}, last_delivered_id={last_id}")
-
+async def telegram_redis_watcher(raw_queue: asyncio.Queue) -> None:
+    """Read telegram:bot:incoming via Redis consumer group."""
     backoff = 1
+    r = None
+    replay_pending = True
+    pending_replay_seen: set[str] = set()
+
     while True:
         try:
-            if not MESSAGE_QUEUE.exists():
-                await asyncio.sleep(5)
-                continue
-            lines = MESSAGE_QUEUE.read_text().strip().splitlines()
-            new_events = []
-            for line in lines:
-                try:
-                    msg = json.loads(line)
-                    mid = int(msg.get("message_id", 0))
-                    if mid > last_id and msg.get("action_hint") in ("respond", "observe"):
-                        new_events.append(msg)
-                        if mid > last_id:
-                            last_id = mid
-                except Exception:
-                    pass
-            if new_events:
-                seen_id_file.write_text(str(last_id))
-                tg_delivery_state["last_seen_id"] = last_id
-                for msg in new_events:
-                    _b.log.info(f"TG message from {msg.get('user','?')}: {msg.get('text','')[:60]}")
-                    await raw_queue.put({"source": "telegram", "data": msg})
+            if r is None:
+                r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+
+            try:
+                await r.xgroup_create(TG_STREAM, TG_GROUP, id="$", mkstream=True)
+                _b.log.info(f"Created consumer group {TG_GROUP} on {TG_STREAM}")
+            except Exception as e:
+                if "BUSYGROUP" not in str(e):
+                    raise
+
+            _b.log.info(f"Listening on Redis stream {TG_STREAM} (group={TG_GROUP}, consumer={TG_CONSUMER})")
             backoff = 1
-            await asyncio.sleep(1.0)
+
+            while True:
+                stream_id = "0" if replay_pending else ">"
+                results = await r.xreadgroup(
+                    TG_GROUP,
+                    TG_CONSUMER,
+                    {TG_STREAM: stream_id},
+                    count=10,
+                    block=100 if replay_pending else 5000,
+                )
+                if not _stream_batch_has_messages(results):
+                    if replay_pending:
+                        replay_pending = False
+                        pending_replay_seen.clear()
+                        _b.log.info(f"Pending replay drained for {TG_STREAM} ({TG_GROUP}/{TG_CONSUMER})")
+                    continue
+
+                emitted = False
+                acked_stale = False
+                for _stream_name, messages in results:
+                    for msg_id, fields in messages:
+                        if replay_pending:
+                            if msg_id in pending_replay_seen:
+                                continue
+                            pending_replay_seen.add(msg_id)
+                            if _is_stale_pending_id(msg_id):
+                                await r.xack(TG_STREAM, TG_GROUP, msg_id)
+                                acked_stale = True
+                                _b.log.info(f"Acked stale pending Telegram event {msg_id}")
+                                continue
+                        try:
+                            action = fields.get("action_hint", "respond")
+                            if action == "ignore":
+                                await r.xack(TG_STREAM, TG_GROUP, msg_id)
+                                continue
+                            _b.log.info(f"TG Redis msg from {fields.get('user','?')}: {fields.get('text','')[:60]}")
+                            await raw_queue.put({"source": "telegram", "data": fields, "redis_id": msg_id})
+                            emitted = True
+                        except Exception as e:
+                            _b.log.error(f"Error processing TG msg {msg_id}: {e}")
+                if replay_pending and not emitted:
+                    if acked_stale:
+                        continue
+                    replay_pending = False
+                    pending_replay_seen.clear()
+                    _b.log.info(f"Pending replay deduped/drained for {TG_STREAM} ({TG_GROUP}/{TG_CONSUMER})")
         except asyncio.CancelledError:
+            if r:
+                await r.aclose()
             raise
         except Exception as e:
-            _b.log.warning(f"TG watcher error: {e!r}, retrying in {backoff}s")
+            _b.log.warning(f"TG Redis watcher error: {e!r}, retrying in {backoff}s")
+            if r:
+                try:
+                    await r.aclose()
+                except Exception:
+                    pass
+            r = None
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 
@@ -405,14 +479,13 @@ async def main() -> None:
 
     raw_queue     = asyncio.Queue()
     batched_queue = asyncio.Queue()
-    tg_delivery_state: dict = {"last_seen_id": 0}
 
     await asyncio.gather(
         _b.konoha_sse_watcher(raw_queue),
-        telegram_queue_watcher(raw_queue, tg_delivery_state),
+        telegram_redis_watcher(raw_queue),
         reaction_queue_watcher(raw_queue),
         _b.debouncer(raw_queue, batched_queue),
-        send_loop(batched_queue, tg_delivery_state),
+        send_loop(batched_queue),
         _b.heartbeat_loop(),
     )
 

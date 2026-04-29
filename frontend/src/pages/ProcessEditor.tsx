@@ -23,15 +23,17 @@ import { Inspector } from '../components/Inspector';
 import './ProcessEditor.css';
 import { EW, EH, GR, CW, CH, orthogonalPath, snap, type Pos } from './ArrowRouter';
 import { ElShape, PALETTE } from './ElementShape';
-import { MiningOverlay, formatDuration } from './MiningOverlay';
+import { MiningOverlay } from './MiningOverlay';
 import { useProcessEditor } from './useProcessEditor';
 import { ProcessTree } from './ProcessTree';
 import { PropertiesPanel } from './PropertiesPanel';
+import { ProcessEditorSidebar } from './ProcessEditorSidebar';
 import { RegistryPicker } from './RegistryPicker';
 import { Minimap } from './Minimap';
 import { TriggerBadge } from './TriggerBadge';
 import { TriggerPopup } from './TriggerPopup';
 import { EditorToolbar } from './EditorToolbar';
+import { buildProcessEditorOperatorState, summarizeOperatorState } from '../operatorState';
 
 function isMobile() { return window.innerWidth <= 767; }
 
@@ -43,7 +45,13 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
   const [triggerPopupId, setTriggerPopupId] = React.useState<string | null>(null);
   // Load workflow from URL param on mount
   const { loadWorkflow } = s;
-  useEffect(() => { if (initialId) loadWorkflow(initialId); }, [initialId, loadWorkflow]);
+  const loadedInitialIdRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialId || loadedInitialIdRef.current === initialId) return;
+    if (!s.workflows.some(w => w.id === initialId)) return;
+    loadWorkflow(initialId);
+    loadedInitialIdRef.current = initialId;
+  }, [initialId, s.workflows, loadWorkflow]);
 
   // Load newly created workflow dispatched by AssistantWidget (#416)
   useEffect(() => {
@@ -57,38 +65,54 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
 
   // Sync current process schema to Inspector so AssistantWidget (Tsunade) has context (#413)
   useEffect(() => {
+    const operatorState = buildProcessEditorOperatorState({
+      readOnly,
+      wfId: s.wfId,
+      wfName: s.wfName,
+      isKnown: s.isKnown,
+      elements: s.elements,
+      positions: s.positions,
+      flow: s.flow,
+      selected: s.selected,
+      multiSelected: s.multiSelected,
+      hoveredEl: s.hoveredEl,
+      connectFrom: s.connectFrom,
+      editingId: s.editingId,
+      gatewayPickerId: s.gatewayPickerId,
+      mode: s.mode,
+      breadcrumb: s.breadcrumb,
+      viewingVersion: s.viewingVersion,
+      panX: s.panX,
+      panY: s.panY,
+      zoom: s.zoom,
+      saving: s.saving,
+      autosavePending: s.autosavePending,
+      draftWarning: s.draftWarning,
+      triggerResolving: s.triggerResolving,
+      undoDepth: s.undoStack.length,
+      redoDepth: s.redoStack.length,
+      roles: s.roles,
+      docs: s.docs,
+      adapters: s.adapters,
+    });
+
+    Inspector.setOperatorState(operatorState);
+
     if (!s.wfId) {
       Inspector.setProcessName(null);
       Inspector.setProcessSchema(null);
-      return;
+      return () => Inspector.setOperatorState(null);
     }
-    Inspector.setProcessName(`${s.wfName} (${s.wfId})`);
 
-    // Build compact schema summary (includes element IDs and positions so LLM can generate valid schema_patch)
-    const lines: string[] = [
-      `Current process schema — "${s.wfName}" (id: ${s.wfId}):`,
-      `Elements (${s.elements.length}):`,
-    ];
-    for (const el of s.elements) {
-      const pos = s.positions[el.id];
-      const posStr = pos ? ` at (${Math.round(pos.x)},${Math.round(pos.y)})` : '';
-      const parts = [`  [${el.type}] id="${el.id}" label="${el.label || el.id}"${posStr}`];
-      if (el.role)   parts.push(`role: ${el.role}`);
-      if (el.system) parts.push(`system: ${el.system}`);
-      if (el.trigger?.kind) parts.push(`trigger: ${el.trigger.kind}${el.trigger.confidence != null ? ` (${Math.round(el.trigger.confidence * 100)}%)` : ''}`);
-      if (el.intent) parts.push(`intent: ${el.intent}`);
-      if (el.operator) parts.push(`op: ${el.operator}`);
-      lines.push(parts.join(' · '));
-    }
-    if (s.flow.length > 0) {
-      lines.push(`Flow (${s.flow.length} edges, format: from_id → to_id):`);
-      const edgeMap: Record<string, string> = {};
-      s.elements.forEach(e => { edgeMap[e.id] = e.label || e.id; });
-      s.flow.slice(0, 40).forEach(([f, t]) => lines.push(`  ${f} → ${t}  (${edgeMap[f] ?? f} → ${edgeMap[t] ?? t})`));
-      if (s.flow.length > 40) lines.push(`  … (${s.flow.length - 40} more)`);
-    }
-    Inspector.setProcessSchema(lines.join('\n'));
-  }, [s.wfId, s.wfName, s.elements, s.flow, s.positions]);
+    Inspector.setProcessName(`${s.wfName} (${s.wfId})`);
+    Inspector.setProcessSchema(summarizeOperatorState(operatorState));
+    return () => Inspector.setOperatorState(null);
+  }, [
+    readOnly, s.wfId, s.wfName, s.isKnown, s.elements, s.positions, s.flow, s.selected,
+    s.multiSelected, s.hoveredEl, s.connectFrom, s.editingId, s.gatewayPickerId, s.mode,
+    s.breadcrumb, s.viewingVersion, s.panX, s.panY, s.zoom, s.saving, s.autosavePending,
+    s.draftWarning, s.triggerResolving, s.undoStack, s.redoStack, s.roles, s.docs, s.adapters,
+  ]);
 
   // Sync selected element to Inspector
   useEffect(() => {
@@ -118,103 +142,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
 
           {/* ── Sidebar ── */}
           <div className="ipe-side" style={{ width: s.sideW }}>
-
-            <ProcessTree
-              workflows={s.workflows}
-              wfId={s.wfId}
-              sideSearch={s.sideSearch}
-              filteredWorkflows={s.filteredWorkflows}
-              workflowTree={s.workflowTree}
-              creatingNew={s.creatingNew}
-              newProcName={s.newProcName}
-              renamingWfId={s.renamingWfId}
-              renamingVal={s.renamingVal}
-              collapsedTree={s.collapsedTree}
-              onSideSearch={s.setSideSearch}
-              onLoadWorkflow={s.loadWorkflow}
-              onStartCreatingNew={s.startCreatingNew}
-              onCommitNewProc={s.commitNewProc}
-              onNewProcNameChange={s.setNewProcName}
-              onStartRename={s.startRename}
-              onCommitRename={s.commitRename}
-              onRenamingValChange={s.setRenamingVal}
-              onDupWorkflow={s.dupWorkflow}
-              onDelWorkflow={s.delWorkflow}
-              onCollapsedTreeChange={s.setCollapsedTree}
-              onCancelCreating={() => { s.setCreatingNew(false); s.setNewProcName(''); }}
-              onCancelRename={() => s.setRenamingVal('')}
-            />
-
-            {/* Element palette */}
-            <div>
-              <h3>Добавить элемент</h3>
-              {PALETTE.map(p => (
-                <div key={p.type} className="pal-item" onClick={() => s.paletteClick(p.type)}>
-                  <div className="pal-dot" style={{ background: p.fill, border: `1px solid ${p.stroke}` }} />
-                  <span style={{ flex: 1 }}>{p.label}</span>
-                  {(p.type === 'role' && s.roles.length > 0) ||
-                   (p.type === 'document' && s.docs.length > 0) ||
-                   (p.type === 'information_system' && s.adapters.length > 0)
-                    ? <span style={{ fontSize: 10, color: '#94a3b8' }}>▾</span> : null}
-                </div>
-              ))}
-              <div style={{ marginTop: 8, padding: '6px 8px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: 5, fontSize: 10, color: '#64748b', lineHeight: 1.5 }}>
-                <span style={{ color: '#94a3b8', fontWeight: 600 }}>Подпроцесс:</span> наведите курсор на функцию → нажмите <span style={{ color: '#93c5fd', fontWeight: 700 }}>+</span> в правом нижнем углу
-              </div>
-            </div>
-
-            {/* Properties panel */}
-            {s.selEl && (
-              <PropertiesPanel
-                selEl={s.selEl}
-                flow={s.flow}
-                roles={s.roles}
-                docs={s.docs}
-                wsFiles={s.wsFiles}
-                wfId={s.wfId}
-                onUpdate={s.updateElement}
-                onDelete={s.deleteElement}
-              />
-            )}
-
-            {/* Connection list */}
-            {s.flow.length > 0 && (
-              <div>
-                <h3>Связи ({s.flow.length})</h3>
-                {s.flow.map(([f, t], i) => (
-                  <div key={i} className="edge-item">
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f} → {t}</span>
-                    <button className="edge-del" onClick={() => s.removeEdge(f, t)}>✕</button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Mining summary */}
-            {s.showMining && s.miningData && (
-              <div>
-                <h3>⛏ Майнинг — {s.miningData.case_count} прогон(ов)</h3>
-                {s.miningData.bottleneck_element_id && (
-                  <div style={{ fontSize: 11, color: '#fca5a5', background: '#450a0a', padding: '4px 8px', borderRadius: 4, marginBottom: 6 }}>
-                    🔥 Узкое место: {s.miningData.elements[s.miningData.bottleneck_element_id]?.label || s.miningData.bottleneck_element_id}
-                    {s.miningData.elements[s.miningData.bottleneck_element_id]?.avg_duration_ms != null && (
-                      <span> — {formatDuration(s.miningData.elements[s.miningData.bottleneck_element_id]!.avg_duration_ms!)}</span>
-                    )}
-                  </div>
-                )}
-                {s.miningData.skipped_elements.length > 0 && (
-                  <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
-                    ⬜ Пропущено: {s.miningData.skipped_elements.map(id => s.miningData!.elements[id]?.label || id).join(', ')}
-                  </div>
-                )}
-                {s.miningData.deviation_elements.length > 0 && (
-                  <div style={{ fontSize: 11, color: '#fbbf24', marginBottom: 4 }}>
-                    ⚠ Отклонения: {s.miningData.deviation_elements.map(id => s.miningData!.elements[id]?.label || id).join(', ')}
-                  </div>
-                )}
-                <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>Наведите на элемент на схеме для статистики</div>
-              </div>
-            )}
+            <ProcessEditorSidebar s={s} />
           </div>
 
           {/* ── Resize handle ── */}
@@ -505,7 +433,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                 renamingVal={s.renamingVal}
                 collapsedTree={s.collapsedTree}
                 onSideSearch={s.setSideSearch}
-                onLoadWorkflow={(id, bc) => { s.loadWorkflow(id, bc); setShowMobSide(false); }}
+                onLoadWorkflow={(id) => { s.loadWorkflow(id); setShowMobSide(false); }}
                 onStartCreatingNew={s.startCreatingNew}
                 onCommitNewProc={() => { s.commitNewProc(); setShowMobSide(false); }}
                 onNewProcNameChange={s.setNewProcName}

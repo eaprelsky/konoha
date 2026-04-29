@@ -1,5 +1,5 @@
 /**
- * assistant-response.ts — Canonical server-side response normalization (#528, #527)
+ * assistant-response.ts — Canonical server-side response normalization (#528)
  *
  * Transforms raw LLM output into a structured AssistantResponse envelope.
  * The frontend never receives raw LLM text — only normalized responses
@@ -12,24 +12,19 @@
  */
 
 import { executeAction } from "./act-envelope";
-import { registerAllHandlers } from "./action-handlers";
+import { auditLog, checkAutonomy } from "./assistant-actions";
+import type { AutonomyLevel } from "./assistant-actions";
+import {
+  buildWorkflowObservableResult,
+  type WorkflowActionReceipt as ActionReceipt,
+  type WorkflowActionReceiptResource as ActionReceiptResource,
+  type WorkflowAssistantAction as AssistantAction,
+  type WorkflowObservableResult as ObservableResult,
+  type WorkflowPendingConfirmation as PendingConfirmation,
+} from "./workflow-action-contract";
+import { randomUUID } from "crypto";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface AssistantAction {
-  /** Action ID from the action registry */
-  action: string;
-  /** Parameters for the action */
-  params: Record<string, unknown>;
-  /** Execution status */
-  status: "executed" | "needs_confirm" | "failed" | "skipped";
-  /** Human-readable description of what was done */
-  description: string;
-  /** Result data (e.g. created workflow id) */
-  result?: Record<string, unknown>;
-  /** Error message if status is "failed" */
-  error?: string;
-}
 
 export interface AssistantResponse {
   /** Clean human-readable reply text — never raw JSON */
@@ -42,6 +37,12 @@ export interface AssistantResponse {
   created_workflow: { id: string; name: string; [key: string]: unknown } | null;
   /** Actions executed during this response */
   actions_taken: AssistantAction[];
+  /** Explicit confirmations required before risky assistant actions may proceed */
+  pending_confirmations: PendingConfirmation[];
+  /** Canonical post-action receipts for observable operator results */
+  action_receipts: ActionReceipt[];
+  /** Aggregate observable result surface for the whole assistant turn */
+  observable_result: ObservableResult;
   /** UI actions (highlights, etc.) */
   ui_actions: UiAction[];
 }
@@ -60,6 +61,8 @@ export interface NormalizeOptions {
   agent_id?: string;
   /** Session ID for audit trail */
   session_id?: string;
+  /** Deterministic autonomy overrides used by operator eval harnesses and tests */
+  autonomy_overrides?: Partial<Record<string, AutonomyLevel>>;
 }
 
 // ── Normalization ─────────────────────────────────────────────────────────────
@@ -76,6 +79,8 @@ export async function normalizeAssistantResponse(
 ): Promise<AssistantResponse> {
   const executeActions = opts.execute_actions !== false;
   const actionsTaken: AssistantAction[] = [];
+  const pendingConfirmations: PendingConfirmation[] = [];
+  const actionReceipts: ActionReceipt[] = [];
   let reply = rawText;
   let schemaPatch: unknown = null;
   let createdWorkflow: AssistantResponse["created_workflow"] = null;
@@ -91,6 +96,30 @@ export async function normalizeAssistantResponse(
     // Extract schema patch
     if (parsed.schema_patch && typeof parsed.schema_patch === "object") {
       schemaPatch = parsed.schema_patch;
+      const schemaPatchReceipt = await buildSchemaPatchReceipt(parsed.schema_patch, opts);
+      actionReceipts.push(schemaPatchReceipt);
+    }
+
+    const openWorkflow = extractOpenWorkflow(parsed.open_workflow);
+    if (openWorkflow) {
+      const action = buildWorkflowOpenAction(openWorkflow);
+      await auditLog({
+        timestamp: new Date().toISOString(),
+        session_id: opts.session_id ?? opts.chat_id,
+        action_type: "workflow.open",
+        parameters: JSON.stringify(openWorkflow),
+        result: "ok",
+        agent_chain: opts.agent_id ?? "tsunade",
+      }).catch(() => {});
+      actionsTaken.push(action);
+      actionReceipts.push(buildWorkflowOpenReceipt(action, opts));
+      uiActions.push({
+        type: "navigate",
+        target: `/editor/${openWorkflow.id}`,
+        path: `/editor/${openWorkflow.id}`,
+        workflow_id: openWorkflow.id,
+        ...(openWorkflow.name ? { message: `Открыть процесс "${openWorkflow.name}"` } : {}),
+      });
     }
 
     // Extract UI actions (highlights, etc.)
@@ -108,7 +137,13 @@ export async function normalizeAssistantResponse(
       actionsTaken.push(action);
       if (action.status === "executed" && action.result) {
         createdWorkflow = { id: action.result.id as string, name: action.result.name as string, ...action.result };
+        actionReceipts.push(buildWorkflowCreateReceipt(action, opts, "succeeded"));
+      } else if (action.status === "needs_confirm") {
+        pendingConfirmations.push(buildPendingConfirmation("workflow.create", action.params));
+        actionReceipts.push(buildWorkflowCreateReceipt(action, opts, "pending_confirmation"));
+        reply = reply + `\n\nТребуется подтверждение перед выполнением действия: workflow.create.`;
       } else if (action.status === "failed") {
+        actionReceipts.push(buildWorkflowCreateReceipt(action, opts, "failed"));
         reply = reply + `\n\n⚠️ Ошибка создания процесса: ${action.error}`;
       }
     }
@@ -116,6 +151,7 @@ export async function normalizeAssistantResponse(
 
   // If reply still looks like JSON, sanitize it
   reply = sanitizeReply(reply);
+  const observableResult = buildWorkflowObservableResult(actionReceipts);
 
   return {
     reply,
@@ -123,20 +159,60 @@ export async function normalizeAssistantResponse(
     schema_patch: schemaPatch,
     created_workflow: createdWorkflow,
     actions_taken: actionsTaken,
+    pending_confirmations: pendingConfirmations,
+    action_receipts: actionReceipts,
+    observable_result: observableResult,
     ui_actions: uiActions,
   };
 }
 
-// ── Action Executors (#527: route through act-envelope spine) ─────────────────
+// ── Action Executors ──────────────────────────────────────────────────────────
 
 async function executeWorkflowCreation(
   def: unknown,
   opts: NormalizeOptions,
 ): Promise<AssistantAction> {
   const params = def as Record<string, unknown>;
+  const sessionId = opts.session_id ?? "assistant";
+  const agentChain = opts.agent_id ?? "tsunade";
+  const autonomy = opts.autonomy_overrides?.["workflow.create"] ?? await checkAutonomy("workflow.create");
+
+  if (autonomy === "disabled") {
+    await auditLog({
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      action_type: "workflow.create",
+      parameters: JSON.stringify(params),
+      result: "blocked",
+      agent_chain: agentChain,
+    }).catch(() => {});
+    return {
+      action: "workflow.create",
+      params,
+      status: "failed",
+      description: "Create draft workflow",
+      error: "workflow.create is disabled by assistant permissions",
+    };
+  }
+
+  if (autonomy === "confirm") {
+    await auditLog({
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      action_type: "workflow.create",
+      parameters: JSON.stringify(params),
+      result: "requires_confirm",
+      agent_chain: agentChain,
+    }).catch(() => {});
+    return {
+      action: "workflow.create",
+      params,
+      status: "needs_confirm",
+      description: "Create draft workflow requires confirmation",
+    };
+  }
+
   try {
-    registerAllHandlers();
-    const actionId = "workflow.create";
     const actionArgs = {
       ...(typeof params === "object" ? params : {}),
       id: (params?.id as string) || `proc_${Date.now().toString(36)}`,
@@ -147,7 +223,7 @@ async function executeWorkflowCreation(
       draft: true,
     };
     const result = await executeAction({
-      action: actionId,
+      action: "workflow.create",
       category: "act",
       args: actionArgs,
       meta: {
@@ -162,16 +238,16 @@ async function executeWorkflowCreation(
 
     if (result.requires_confirm) {
       return {
-        action: actionId,
+        action: "workflow.create",
         params: actionArgs,
         status: "needs_confirm",
-        description: "Create draft workflow (requires confirmation)",
+        description: "Create draft workflow requires confirmation",
       };
     }
 
     if (!result.ok || !result.data || typeof result.data !== "object") {
       return {
-        action: actionId,
+        action: "workflow.create",
         params: actionArgs,
         status: "failed",
         description: "Create draft workflow",
@@ -179,8 +255,9 @@ async function executeWorkflowCreation(
       };
     }
     const data = result.data as Record<string, unknown>;
+
     return {
-      action: actionId,
+      action: "workflow.create",
       params: actionArgs,
       status: "executed",
       description: `Created draft workflow "${String(data.name ?? "Новый процесс")}"`,
@@ -199,6 +276,207 @@ async function executeWorkflowCreation(
       error: e.message,
     };
   }
+}
+
+function buildPendingConfirmation(action: string, params: Record<string, unknown>): PendingConfirmation {
+  return {
+    id: randomUUID(),
+    action,
+    title: `Confirmation required: ${action}`,
+    summary: `Assistant requested ${action} and this action is configured as confirm-required.`,
+    status: "required",
+    permission: {
+      actor_scope: "assistant_on_behalf_of_user",
+      autonomy: "confirm",
+      confirmation_required: true,
+    },
+    params,
+  };
+}
+
+function buildWorkflowCreateReceipt(
+  action: AssistantAction,
+  opts: NormalizeOptions,
+  status: ActionReceipt["status"],
+): ActionReceipt {
+  const workflowId = typeof action.result?.id === "string"
+    ? action.result.id
+    : typeof action.params.id === "string"
+    ? action.params.id
+    : "workflow.create";
+  const workflowName = typeof action.result?.name === "string"
+    ? action.result.name
+    : typeof action.params.name === "string"
+    ? action.params.name
+    : undefined;
+  return {
+    id: randomUUID(),
+    action: "workflow.create",
+    status,
+    summary:
+      status === "succeeded"
+        ? `Создан черновик процесса${workflowName ? ` "${workflowName}"` : ""}.`
+        : status === "pending_confirmation"
+        ? `Создание процесса${workflowName ? ` "${workflowName}"` : ""} ожидает подтверждения.`
+        : `Создание процесса${workflowName ? ` "${workflowName}"` : ""} завершилось ошибкой.`,
+    ...(action.error ? { details: action.error } : {}),
+    changed_resources: [
+      {
+        kind: "workflow",
+        id: workflowId,
+        ...(workflowName ? { label: workflowName } : {}),
+        change: status === "succeeded" ? "created" : status === "pending_confirmation" ? "pending" : "failed",
+      },
+    ],
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: "workflow.create",
+    },
+  };
+}
+
+async function buildSchemaPatchReceipt(
+  schemaPatch: unknown,
+  opts: NormalizeOptions,
+): Promise<ActionReceipt> {
+  const patch = schemaPatch as Record<string, unknown>;
+  const changedResources: ActionReceiptResource[] = [];
+
+  if (Array.isArray(patch.update_elements)) {
+    for (const item of patch.update_elements) {
+      if (item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string") {
+        changedResources.push({
+          kind: "element",
+          id: (item as Record<string, unknown>).id as string,
+          change: "updated",
+        });
+      }
+    }
+  }
+  if (patch.update_positions && typeof patch.update_positions === "object") {
+    for (const id of Object.keys(patch.update_positions as Record<string, unknown>)) {
+      changedResources.push({ kind: "element", id, change: "updated" });
+    }
+  }
+  if (Array.isArray(patch.add_elements)) {
+    for (const item of patch.add_elements) {
+      if (item && typeof item === "object") {
+        const id = typeof (item as Record<string, unknown>).id === "string"
+          ? (item as Record<string, unknown>).id as string
+          : `new-element-${changedResources.length + 1}`;
+        changedResources.push({
+          kind: "element",
+          id,
+          ...(typeof (item as Record<string, unknown>).label === "string" ? { label: (item as Record<string, unknown>).label as string } : {}),
+          change: "created",
+        });
+      }
+    }
+  }
+  if (Array.isArray(patch.remove_elements)) {
+    for (const id of patch.remove_elements) {
+      if (typeof id === "string") {
+        changedResources.push({ kind: "element", id, change: "updated" });
+      }
+    }
+  }
+  if (Array.isArray(patch.add_flow)) {
+    for (const edge of patch.add_flow) {
+      if (Array.isArray(edge) && typeof edge[0] === "string" && typeof edge[1] === "string") {
+        changedResources.push({ kind: "flow", id: `${edge[0]}:${edge[1]}`, change: "created" });
+      }
+    }
+  }
+  if (Array.isArray(patch.remove_flow)) {
+    for (const edge of patch.remove_flow) {
+      if (Array.isArray(edge) && typeof edge[0] === "string" && typeof edge[1] === "string") {
+        changedResources.push({ kind: "flow", id: `${edge[0]}:${edge[1]}`, change: "updated" });
+      }
+    }
+  }
+
+  await auditLog({
+    timestamp: new Date().toISOString(),
+    session_id: opts.session_id ?? opts.chat_id,
+    action_type: "workflow.update",
+    parameters: JSON.stringify(schemaPatch),
+    result: "ok",
+    agent_chain: opts.agent_id ?? "tsunade",
+  }).catch(() => {});
+
+  return {
+    id: randomUUID(),
+    action: "workflow.update",
+    status: "succeeded",
+    summary: `Подготовлено изменение схемы: ${changedResources.length} объект(ов) затронуто.`,
+    changed_resources: changedResources,
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: "workflow.update",
+    },
+  };
+}
+
+function extractOpenWorkflow(raw: unknown): { id: string; name?: string } | null {
+  if (typeof raw === "string" && raw.trim()) return { id: raw.trim() };
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const id = typeof obj.id === "string"
+    ? obj.id
+    : typeof obj.workflow_id === "string"
+    ? obj.workflow_id
+    : null;
+  if (!id) return null;
+  return {
+    id,
+    ...(typeof obj.name === "string" ? { name: obj.name } : {}),
+  };
+}
+
+function buildWorkflowOpenAction(workflow: { id: string; name?: string }): AssistantAction {
+  return {
+    action: "workflow.open",
+    params: workflow,
+    status: "executed",
+    description: "Open workflow in editor",
+    result: {
+      id: workflow.id,
+      path: `/editor/${workflow.id}`,
+      ...(workflow.name ? { name: workflow.name } : {}),
+    },
+  };
+}
+
+function buildWorkflowOpenReceipt(action: AssistantAction, opts: NormalizeOptions): ActionReceipt {
+  const workflowId = typeof action.result?.id === "string"
+    ? action.result.id
+    : typeof action.params.id === "string"
+    ? action.params.id
+    : "workflow.open";
+  const workflowName = typeof action.result?.name === "string"
+    ? action.result.name
+    : typeof action.params.name === "string"
+    ? action.params.name
+    : undefined;
+
+  return {
+    id: randomUUID(),
+    action: "workflow.open",
+    status: "succeeded",
+    summary: `Открыт процесс${workflowName ? ` "${workflowName}"` : ""}.`,
+    changed_resources: [
+      {
+        kind: "workflow",
+        id: workflowId,
+        ...(workflowName ? { label: workflowName } : {}),
+        change: "opened",
+      },
+    ],
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: "workflow.open",
+    },
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -282,5 +560,8 @@ export function buildSseParsedEvent(resp: AssistantResponse): Record<string, unk
     created_workflow: resp.created_workflow,
     actions: resp.ui_actions,
     actions_taken: resp.actions_taken,
+    pending_confirmations: resp.pending_confirmations,
+    action_receipts: resp.action_receipts,
+    observable_result: resp.observable_result,
   };
 }

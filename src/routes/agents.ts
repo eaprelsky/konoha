@@ -12,7 +12,6 @@ import {
   unregisterAgent,
   heartbeat,
   listAgents,
-  redis,
 } from "../redis";
 import { consumeInvite, createInvite } from "../redis";
 import {
@@ -20,16 +19,58 @@ import {
   getAgentDef,
   deleteAgentDef,
   listAgentDefs,
+  updateAgentDef,
   getAgentState,
   startAgent,
   stopAgent,
   restartAgent,
   buildSystemPrompt,
   isTmuxRunning,
+  listLLMClientProfiles,
+  getLLMClientProfile,
+  resolveLLMClientProfile,
+  listToolProfiles,
+  getToolProfile,
+  listSandboxProfiles,
+  getSandboxProfile,
+  composeAgentView,
 } from "../agent-lifecycle";
+import type { AgentRuntimeState, LifecycleStatus, AgentProvider, AgentView } from "../agent-lifecycle";
 import { silentCatch } from "../logger";
 
 const router = new Hono<HonoEnv>();
+
+type LifecycleProjection = Pick<AgentRuntimeState, "pid" | "uptime_seconds"> & { status: LifecycleStatus };
+
+function routeRuntimeState(agentId: string, lifecycle: LifecycleProjection): AgentRuntimeState {
+  return {
+    agent_id: agentId,
+    status: lifecycle.status,
+    pid: lifecycle.pid,
+    uptime_seconds: lifecycle.uptime_seconds,
+  };
+}
+
+function validateLLMClientProfile(id: unknown, field: string): { error: string } | null {
+  if (id === undefined || id === null || id === "") return null;
+  if (typeof id !== "string") return { error: `${field} must be a string` };
+  if (!getLLMClientProfile(id)) return { error: `Unknown ${field}: ${id}` };
+  return null;
+}
+
+function validateToolProfile(id: unknown): { error: string } | null {
+  if (id === undefined || id === null || id === "") return null;
+  if (typeof id !== "string") return { error: "tool_profile must be a string" };
+  if (!getToolProfile(id)) return { error: `Unknown tool_profile: ${id}` };
+  return null;
+}
+
+function validateSandboxProfile(id: unknown): { error: string } | null {
+  if (id === undefined || id === null || id === "") return null;
+  if (typeof id !== "string") return { error: "sandbox_profile must be a string" };
+  if (!getSandboxProfile(id)) return { error: `Unknown sandbox_profile: ${id}` };
+  return null;
+}
 
 // Apply auth to all protected routes
 // /agents/register is handled inline (invite token logic, no middleware)
@@ -38,7 +79,6 @@ router.use("/:id/heartbeat", requireAuth);
 router.use("/:id/start", requireAuth);
 router.use("/:id/stop", requireAuth);
 router.use("/:id/restart", requireAuth);
-router.use("/:id/switch-runtime", requireAuth);
 router.use("/:id/status", requireAuth);
 router.use("/:id", (c, next) => {
   // /agents/register has its own auth — skip middleware for it
@@ -83,20 +123,29 @@ router.post("/", async (c) => {
     startup_sequence,
     runtime,
     fallback_runtime,
+    llm_client_profile = (!runtime ? "claude-deepseek-sonnet" : undefined),
+    fallback_llm_client_profile,
     runtime_profiles,
     active_runtime_profile,
     fallback_runtime_profile,
     auto_runtime_fallback,
     launch_strategy,
     startup_timeout_sec,
-    model = "claude:claude-sonnet-4-6",
+    model = "claude:sonnet",
+    reasoning_effort,
     env,
     tags,
     capabilities,
-    codex_disable_features,
+    tool_profile,
+    sandbox_profile = "tmux",
     memory,
   } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
+  const profileError = validateLLMClientProfile(llm_client_profile, "llm_client_profile")
+    ?? validateLLMClientProfile(fallback_llm_client_profile, "fallback_llm_client_profile")
+    ?? validateToolProfile(tool_profile)
+    ?? validateSandboxProfile(sandbox_profile);
+  if (profileError) return c.json(profileError, 400);
   const def = await createAgentDef({
     id,
     name,
@@ -104,6 +153,8 @@ router.post("/", async (c) => {
     startup_sequence,
     runtime,
     fallback_runtime,
+    llm_client_profile,
+    fallback_llm_client_profile,
     runtime_profiles,
     active_runtime_profile,
     fallback_runtime_profile,
@@ -111,15 +162,31 @@ router.post("/", async (c) => {
     launch_strategy,
     startup_timeout_sec,
     model,
+    reasoning_effort,
     env,
     tags,
     capabilities,
-    codex_disable_features,
+    tool_profile,
+    sandbox_profile,
     memory,
   });
   // Prepare personal memory directory
   mkdirSync(`/opt/shared/agent-memory/${id}`, { recursive: true });
   return c.json(def, 201);
+});
+
+// GET /agents/llm-client-profiles — available runtime adapter/provider/model profiles
+router.get("/llm-client-profiles", async (c) => {
+  return c.json(listLLMClientProfiles());
+});
+
+// GET /agents/tool-profiles — available tool/plugin profiles (#571)
+router.get("/tool-profiles", async (c) => {
+  return c.json(listToolProfiles());
+});
+
+router.get("/sandbox-profiles", async (c) => {
+  return c.json(listSandboxProfiles());
 });
 
 // GET /agents/:id/status — lifecycle status (tmux state, pid, uptime)
@@ -170,48 +237,71 @@ router.post("/:id/restart", async (c) => {
   }
 });
 
-// POST /agents/:id/switch-runtime
+// POST /agents/:id/switch-runtime — change runtime/profile and optionally restart
 router.post("/:id/switch-runtime", async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
-  if (!def) return c.json({ error: "Agent not found" }, 404);
-
-  const body = await c.req.json().catch(() => ({}));
-  const profile = typeof body.profile === "string" ? body.profile.trim() : "";
-  const restart = body.restart !== false;
-  if (!profile) return c.json({ error: "profile is required" }, 400);
-
-  const preset = def.runtime_profiles?.[profile];
-  if (!preset) {
+  if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
+  const body = await c.req.json().catch(() => null);
+  if (!body) return c.json({ error: "Invalid JSON" }, 400);
+  const { profile, llm_client_profile, runtime, model, reasoning_effort, fallback_runtime, fallback_llm_client_profile, tool_profile, sandbox_profile, restart } = body;
+  const profileError = validateLLMClientProfile(llm_client_profile, "llm_client_profile")
+    ?? validateLLMClientProfile(fallback_llm_client_profile, "fallback_llm_client_profile")
+    ?? validateToolProfile(tool_profile)
+    ?? validateSandboxProfile(sandbox_profile);
+  if (profileError) return c.json(profileError, 400);
+  const updates: Record<string, unknown> = {};
+  const legacyProfile = typeof profile === "string" ? def.runtime_profiles?.[profile] : undefined;
+  if (profile && def.runtime_profiles && !legacyProfile && runtime === undefined && llm_client_profile === undefined) {
     return c.json({ error: `Runtime profile not found: ${profile}` }, 404);
   }
-
-  const updated = {
-    ...def,
-    runtime: preset.runtime,
-    model: preset.model,
-    codex_disable_features: preset.codex_disable_features ?? def.codex_disable_features,
-    active_runtime_profile: profile,
-    updated_at: new Date().toISOString(),
-  };
-  await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
-
-  let lifecycle = await getAgentState(id);
-  if (restart) {
-    try {
-      lifecycle = await restartAgent(id, updated);
-    } catch (e: any) {
-      return c.json({ error: e.message, updated }, 500);
+  if (legacyProfile) {
+    updates.runtime = legacyProfile.runtime;
+    updates.model = legacyProfile.model;
+    updates.active_runtime_profile = profile;
+    if (legacyProfile.codex_disable_features !== undefined) {
+      updates.codex_disable_features = legacyProfile.codex_disable_features;
     }
   }
 
+  const nextRuntime = runtime ?? (legacyProfile ? undefined : profile);
+  if (llm_client_profile !== undefined) {
+    updates.llm_client_profile = llm_client_profile;
+  } else if (profile && !legacyProfile) {
+    const resolved = resolveLLMClientProfile({ runtime: profile as AgentProvider, model: profile });
+    if (resolved) updates.llm_client_profile = resolved.id;
+  }
+  if (nextRuntime !== undefined) updates.runtime = nextRuntime;
+  if (model !== undefined) {
+    updates.model = model;
+  } else if (typeof updates.llm_client_profile === "string") {
+    const prof = getLLMClientProfile(updates.llm_client_profile);
+    if (prof) updates.model = prof.runtime_adapter === "codex" ? prof.model : `${prof.runtime_adapter}:${prof.runtime_model || prof.model}`;
+  }
+  if (reasoning_effort !== undefined) updates.reasoning_effort = reasoning_effort;
+  if (fallback_runtime !== undefined) updates.fallback_runtime = fallback_runtime;
+  if (fallback_llm_client_profile !== undefined) updates.fallback_llm_client_profile = fallback_llm_client_profile;
+  if (tool_profile !== undefined) updates.tool_profile = tool_profile;
+  if (sandbox_profile !== undefined) updates.sandbox_profile = sandbox_profile;
+  if (Object.keys(updates).length === 0) return c.json({ error: "No fields to update" }, 400);
+  const updated = await updateAgentDef(id, updates);
+  if (!updated) return c.json({ error: "Agent not found or not managed" }, 404);
+  let state = null;
+  if (restart) {
+    try {
+      state = await restartAgent(id, updated);
+    } catch (e: any) {
+      return c.json({ def: updated, error: `Profile updated but restart failed: ${e.message}` }, 500);
+    }
+  }
   return c.json({
     ok: true,
     agent_id: id,
-    active_runtime_profile: profile,
+    active_runtime_profile: updated.active_runtime_profile,
     runtime: updated.runtime,
     model: updated.model,
-    lifecycle,
+    def: updated,
+    state,
   });
 });
 
@@ -243,7 +333,7 @@ router.get("/tmux/:id", async (c) => {
 router.get("/:id/system-template", async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
-  const base = def ?? { id, name: id, runtime: "claude" as const, model: "claude-sonnet-4-6", system_prompt: undefined, capabilities: [] };
+  const base = def ?? { id, name: id, runtime: "claude" as const, model: "claude:sonnet", system_prompt: undefined, capabilities: [] };
   const template = await buildSystemPrompt(id, base);
   return c.json({ template });
 });
@@ -328,7 +418,7 @@ router.get("/:id", async (c) => {
   const base = busAgent ?? { id, status: "offline" };
   if (!def) return c.json(base);
 
-  let lifecycle: { status: string; pid?: number; uptime_seconds?: number };
+  let lifecycle: LifecycleProjection;
   if (def.tmux_session_override) {
     const sess = def.tmux_session_override;
     const runningNamedSocket = await execFileAsync("tmux", ["-L", sess, "has-session", "-t", sess]).then(() => true).catch(() => false);
@@ -339,7 +429,12 @@ router.get("/:id", async (c) => {
     lifecycle = { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds };
   }
 
-  return c.json({ ...base, ...def, lifecycle });
+  return c.json(composeAgentView({
+    id,
+    def,
+    busAgent: base,
+    runtimeState: routeRuntimeState(id, lifecycle),
+  }));
 });
 
 // PUT /agents/:id — update agent definition fields (name, system_prompt, model)
@@ -349,8 +444,8 @@ router.put("/:id", async (c) => {
   if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON" }, 400);
-  const updated = { ...def, ...body, id, updated_at: new Date().toISOString() };
-  await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+  const updated = await updateAgentDef(id, body);
+  if (!updated) return c.json({ error: "Agent not found or not managed" }, 404);
   return c.json(updated);
 });
 
@@ -376,7 +471,7 @@ router.delete("/:id", async (c) => {
 
 // GET /agents — list with lifecycle status merged in
 // In-memory cache for tmux lifecycle status — avoids spawning N processes per request
-const _lifecycleCache = new Map<string, { data: object; ts: number }>();
+const _lifecycleCache = new Map<string, { data: LifecycleProjection; ts: number }>();
 const LIFECYCLE_CACHE_TTL_MS = 5_000;
 
 router.get("/", async (c) => {
@@ -387,13 +482,13 @@ router.get("/", async (c) => {
   ]);
   // Build a map from managed defs for quick lookup
   const defMap = new Map(defs.map(d => [d.id, d]));
-  async function lifecycleForDef(id: string, def: { protected?: boolean; tmux_session_override?: string }) {
+  async function lifecycleForDef(id: string, def: { protected?: boolean; tmux_session_override?: string }): Promise<LifecycleProjection> {
     const cacheKey = def.tmux_session_override ? `tmux:${def.tmux_session_override}` : `agent:${id}`;
     const cached = _lifecycleCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < LIFECYCLE_CACHE_TTL_MS) {
       return cached.data;
     }
-    let result: object;
+    let result: LifecycleProjection;
     if (def.tmux_session_override) {
       const sess = def.tmux_session_override;
       // System agents (naruto/sasuke/mirai) use named tmux sockets (-L <session>)
@@ -414,7 +509,12 @@ router.get("/", async (c) => {
       const def = defMap.get(a.id);
       if (!def) return a;
       const lifecycle = await lifecycleForDef(a.id, def);
-      return { ...a, ...def, lifecycle };
+      return composeAgentView({
+        id: a.id,
+        def,
+        busAgent: a,
+        runtimeState: routeRuntimeState(a.id, lifecycle),
+      });
     })
   );
   // Also include managed agents not yet on the bus
@@ -423,10 +523,26 @@ router.get("/", async (c) => {
   const unmatchedWithState = await Promise.all(
     unmatchedDefs.map(async (d) => {
       const lifecycle = await lifecycleForDef(d.id, d);
-      return { ...d, status: "offline", lifecycle };
+      return composeAgentView({
+        id: d.id,
+        def: d,
+        busAgent: { id: d.id, status: "offline" },
+        runtimeState: routeRuntimeState(d.id, lifecycle),
+      });
     })
   );
-  return c.json([...agentsWithState, ...unmatchedWithState]);
+  const allViews = [...agentsWithState, ...unmatchedWithState];
+
+  // ?format=v2 — return split boundaries: templates, presences, runtime_states
+  if (c.req.query("format") === "v2") {
+    return c.json({
+      templates: allViews.map(v => "template" in v ? (v as AgentView).template : null).filter(Boolean),
+      presences: allViews.map(v => "presence" in v ? (v as AgentView).presence : null).filter(Boolean),
+      runtime_states: allViews.map(v => "runtime_state" in v ? (v as AgentView).runtime_state : null).filter(Boolean),
+    });
+  }
+
+  return c.json(allViews);
 });
 
 router.post("/:id/heartbeat", async (c) => {

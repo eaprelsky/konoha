@@ -1,0 +1,23 @@
+[Unit]
+Description=Telegram Vision Packer - converts image events into text packets
+After=network.target redis-server.service telegram-bus.service
+Wants=redis-server.service telegram-bus.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/konoha
+EnvironmentFile=/opt/shared/.shared-credentials
+EnvironmentFile=/home/ubuntu/.agent-env
+UnsetEnvironment=http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+Environment=PYTHONUNBUFFERED=1
+Environment=TELEGRAM_VISION_MODEL=qwen/qwen3.5-flash
+Environment=TELEGRAM_VISION_TIMEOUT_SEC=20.0
+ExecStart=/usr/bin/python3 -u /home/ubuntu/konoha/scripts/telegram-vision-packer.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

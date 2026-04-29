@@ -20,13 +20,103 @@ export type AutonomyLevel = "auto" | "confirm" | "disabled";
 
 export const AUTONOMY_KEY = "konoha:config:autonomy";
 
+/** Complete mapping from legacy snake_case action IDs to canonical {scope}.{verb} format */
+const LEGACY_TO_CANONICAL_ACTION: Record<string, string> = {
+  // Issue
+  issue_create: "issue.create",
+  issue_label: "issue.label",
+
+  // Workflow
+  workflow_create: "workflow.create",
+  workflow_update: "workflow.update",
+  workflow_delete: "workflow.delete",
+  workflow_list: "workflow.list",
+  workflow_get: "workflow.get",
+
+  // Element
+  element_add: "element.add",
+  element_update: "element.update",
+  element_remove: "element.remove",
+
+  // Flow
+  flow_add: "flow.add",
+  flow_remove: "flow.remove",
+
+  // Trigger
+  trigger_set: "trigger.set",
+  trigger_resolve: "trigger.resolve",
+
+  // Case
+  case_start: "case.start",
+  case_get: "case.get",
+  case_list: "case.list",
+  case_close: "case.close",
+  event_confirm: "event.confirm",
+
+  // Work item
+  workitem_complete: "workitem.complete",
+  workitem_create: "workitem.create",
+  workitem_update: "workitem.update",
+  workitem_list: "workitem.list",
+  workitem_cancel: "workitem.cancel",
+
+  // Role
+  role_create: "role.create",
+  role_list: "role.list",
+  role_update: "role.update",
+  role_delete: "role.delete",
+
+  // Agent
+  agent_register: "agent.register",
+  agent_start: "agent.start",
+  agent_stop: "agent.stop",
+  agent_restart: "agent.restart",
+  agent_deploy: "agent.deploy",
+
+  // Subscription
+  subscription_create: "subscription.create",
+  subscription_cancel: "subscription.cancel",
+  subscription_list: "subscription.list",
+
+  // Reminder
+  reminder_create: "reminder.create",
+  reminder_list: "reminder.list",
+  reminder_update_status: "reminder.update_status",
+  reminder_delete: "reminder.delete",
+
+  // Message
+  message_send: "message.send",
+  message_read: "message.read",
+
+  // Audit / Knowledge
+  audit_read: "audit.read",
+  knowledge_tree: "knowledge.tree",
+  knowledge_read: "knowledge.read",
+  knowledge_search: "knowledge.search",
+
+  // Legacy non-standard
+  data_delete: "data.delete",
+};
+
+/** Self-mapping: canonical IDs map to themselves so canonicalActionType is idempotent */
+for (const id of Object.keys(LEGACY_TO_CANONICAL_ACTION)) {
+  const canonical = LEGACY_TO_CANONICAL_ACTION[id];
+  if (!LEGACY_TO_CANONICAL_ACTION[canonical]) {
+    LEGACY_TO_CANONICAL_ACTION[canonical] = canonical;
+  }
+}
+
+export function canonicalActionType(actionType: string): string {
+  return LEGACY_TO_CANONICAL_ACTION[actionType] ?? actionType;
+}
+
 /** Default autonomy levels per action type */
 const AUTONOMY_DEFAULTS: Record<string, AutonomyLevel> = {
   "issue.create":    "auto",
   "issue.label":     "auto",
   "workflow.create": "confirm",
   "workflow.delete": "confirm",
-  data_delete:       "confirm",  // HARDCODED — never overridable
+  "data.delete":     "confirm",  // HARDCODED — never overridable
   "agent.restart":   "confirm",
   "agent.deploy":    "confirm",
   highlight:         "auto",
@@ -36,28 +126,15 @@ const AUTONOMY_DEFAULTS: Record<string, AutonomyLevel> = {
 
 /** Permanently enforced levels — cannot be changed via UI */
 const HARDCODED: Record<string, AutonomyLevel> = {
-  data_delete: "confirm",
+  "data.delete": "confirm",
 };
-
-const LEGACY_ACTION_ALIASES: Record<string, string> = {
-  issue_create: "issue.create",
-  issue_label: "issue.label",
-  workflow_create: "workflow.create",
-  workflow_delete: "workflow.delete",
-  agent_restart: "agent.restart",
-  agent_deploy: "agent.deploy",
-};
-
-function canonicalizeActionType(actionType: string): string {
-  return LEGACY_ACTION_ALIASES[actionType] ?? actionType;
-}
 
 export async function getAutonomyMatrix(): Promise<Record<string, AutonomyLevel>> {
   const stored = await redis.hgetall(AUTONOMY_KEY).catch(() => ({}));
   const result: Record<string, AutonomyLevel> = { ...AUTONOMY_DEFAULTS };
   for (const [k, v] of Object.entries(stored || {})) {
     if (v === "auto" || v === "confirm" || v === "disabled") {
-      result[canonicalizeActionType(k)] = v as AutonomyLevel;
+      result[canonicalActionType(k)] = v as AutonomyLevel;
     }
   }
   // Re-apply hardcoded overrides
@@ -66,7 +143,7 @@ export async function getAutonomyMatrix(): Promise<Record<string, AutonomyLevel>
 }
 
 export async function setAutonomyLevel(actionType: string, level: AutonomyLevel): Promise<void> {
-  const canonical = canonicalizeActionType(actionType);
+  const canonical = canonicalActionType(actionType);
   if (HARDCODED[canonical] !== undefined) {
     throw new Error(`Action "${actionType}" autonomy level is hardcoded and cannot be changed`);
   }
@@ -75,7 +152,7 @@ export async function setAutonomyLevel(actionType: string, level: AutonomyLevel)
 
 export async function checkAutonomy(actionType: string): Promise<AutonomyLevel> {
   const matrix = await getAutonomyMatrix();
-  return matrix[canonicalizeActionType(actionType)] ?? "confirm";
+  return matrix[canonicalActionType(actionType)] ?? "confirm";
 }
 
 // ── Audit Log ──────────────────────────────────────────────────────────────────
@@ -154,7 +231,7 @@ export async function assistantCreateIssue(params: CreateIssueParams): Promise<C
     await auditLog({
       timestamp: new Date().toISOString(),
       session_id: sessionId,
-      action_type: "issue.create",
+        action_type: "issue.create",
       parameters: JSON.stringify({ title: params.title, priority: params.priority }),
       result: "blocked",
       agent_chain: agentChain,
@@ -166,7 +243,7 @@ export async function assistantCreateIssue(params: CreateIssueParams): Promise<C
     await auditLog({
       timestamp: new Date().toISOString(),
       session_id: sessionId,
-      action_type: "issue.create",
+        action_type: "issue.create",
       parameters: JSON.stringify({ title: params.title, priority: params.priority }),
       result: "requires_confirm",
       agent_chain: agentChain,

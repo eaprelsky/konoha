@@ -201,7 +201,8 @@ miningRouter.get("/case/:id/waits", async (c) => {
 // Confirm a manual event — human confirms, case advances
 miningRouter.post("/case/:id/confirm-event", async (c) => {
   const case_id = c.req.param("id");
-  const body = await c.req.json<{ element_id?: string; comment?: string; confirmed_by?: string }>().catch(() => ({}));
+  type ConfirmEventBody = { element_id?: string; comment?: string; confirmed_by?: string };
+  const body = await c.req.json<ConfirmEventBody>().catch((): ConfirmEventBody => ({}));
   const kase = await getCase(case_id);
   if (!kase) return c.json({ error: "Case not found" }, 404);
   if (kase.status !== "running") return c.json({ error: "Case is not running" }, 409);

@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { WorkItem, WorkItemFilters, Case, Workflow } from '../api/types';
+import type { WorkItem, WorkItemFilters, Case, Workflow, EventWait, EventWaitStatus } from '../api/types';
 
 const styles = `
   .wf-body { padding: 20px; }
@@ -48,6 +48,17 @@ const styles = `
   .refresh-info { font-size: 12px; color: #999; margin-top: 12px; text-align: right; }
   .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
   .page-header h1 { margin-bottom: 0; }
+  .page-subtitle { color: #64748b; font-size: 14px; margin-top: 4px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 12px; margin-bottom: 18px; }
+  .summary-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; }
+  .summary-card .summary-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: 6px; }
+  .summary-card .summary-value { font-size: 28px; font-weight: 700; color: #0f172a; }
+  .summary-card.warn .summary-value { color: #d97706; }
+  .summary-card.err .summary-value { color: #dc2626; }
+  .summary-card.info .summary-value { color: #2563eb; }
+  .section-card { margin-top: 18px; border-top: 1px solid #e5e7eb; padding-top: 18px; }
+  .section-card h2 { font-size: 18px; color: #1f2937; margin-bottom: 4px; }
+  .section-card p { color: #6b7280; font-size: 13px; margin-bottom: 12px; }
   .btn-new-task { padding: 8px 18px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; }
   .btn-new-task:hover { background: #059669; }
   .standalone-badge { display: inline-block; padding: 2px 7px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; border-radius: 10px; font-size: 11px; font-weight: 600; }
@@ -105,7 +116,7 @@ function NewTaskModal({ onClose, onCreated, assigneeOptions, workflows }: NewTas
         assignee: assignee.trim(),
         deadline: deadline || undefined,
         ...(processId ? { process_id: processId } : {}),
-      } as any);
+      });
       onCreated();
       onClose();
     } catch (err: any) {
@@ -187,10 +198,12 @@ function DetailsModal({ item, onClose }: DetailsModalProps) {
 export function WorkItems() {
   const token = useToken();
   const [items, setItems] = useState<WorkItem[]>([]);
+  const [waits, setWaits] = useState<EventWait[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string>('-');
   const [filters, setFilters] = useState<WorkItemFilters>({});
+  const [waitStatusFilter, setWaitStatusFilter] = useState<EventWaitStatus | ''>('');
   const [detailItem, setDetailItem] = useState<WorkItem | null>(null);
   const [showNewTask, setShowNewTask] = useState(false);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
@@ -221,22 +234,31 @@ export function WorkItems() {
 
   const loadItems = useCallback(() => {
     if (!token) return;
-    api.workitems.list(filters)
-      .then(data => {
-        setItems(data);
+    Promise.all([
+      api.workitems.list(filters),
+      api.waits.list({
+        assignee: filters.assignee,
+        process_id: filters.process_id,
+        status: waitStatusFilter || undefined,
+      }),
+    ]).then(([workItemsData, waitsData]) => {
+        setItems(workItemsData);
+        setWaits(waitsData.waits);
         setLastUpdate(new Date().toLocaleTimeString());
         setError(null);
         setLoading(false);
-        // Fetch case data for step progress
-        const newCaseIds = data.filter((i: WorkItem) => i.case_id && !caseCache[i.case_id!]).map((i: WorkItem) => i.case_id!);
-        newCaseIds.forEach((caseId: string) => {
+        const allCaseIds = [
+          ...workItemsData.filter((i: WorkItem) => i.case_id && !caseCache[i.case_id!]).map((i: WorkItem) => i.case_id!),
+          ...waitsData.waits.filter((wait: EventWait) => wait.case_id && !caseCache[wait.case_id]).map((wait: EventWait) => wait.case_id),
+        ];
+        [...new Set(allCaseIds)].forEach((caseId: string) => {
           api.cases.get(caseId).then(kase => {
             setCaseCache(prev => ({ ...prev, [caseId]: kase }));
           }).catch(() => {});
         });
       })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [token, filters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [token, filters, waitStatusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadItems(); }, [loadItems]);
   useInterval(loadItems, 10000);
@@ -248,16 +270,49 @@ export function WorkItems() {
       .catch(e => setError(`Ошибка завершения: ${e.message}`));
   }
 
+  function confirmWait(wait: EventWait) {
+    if (!confirm(`Подтвердить ожидание "${wait.element_label || wait.element_id}"?`)) return;
+    api.waits.confirm(wait.wait_id, { confirmed_by: 'workbench' })
+      .then(() => loadItems())
+      .catch(e => setError(`Ошибка подтверждения: ${e.message}`));
+  }
+
+  const activeTasks = items.filter(item => item.status === 'pending' || item.status === 'running').length;
+  const overdueWaits = waits.filter(wait => wait.status === 'overdue').length;
+  const escalatedWaits = waits.filter(wait => wait.status === 'escalated').length;
+
   return (
     <>
       <style>{styles}</style>
       <div className="wf-body">
         <div className="container">
           <div className="page-header">
-            <h1>Задачи</h1>
+            <div>
+              <h1>Executor Workbench</h1>
+              <div className="page-subtitle">Очередь шагов и ожиданий на canonical runtime objects</div>
+            </div>
             <button className="btn-new-task" onClick={() => setShowNewTask(true)}>+ Новая задача</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
+
+          <div className="summary-grid">
+            <div className="summary-card info">
+              <div className="summary-label">Активные задачи</div>
+              <div className="summary-value">{activeTasks}</div>
+            </div>
+            <div className="summary-card info">
+              <div className="summary-label">Активные ожидания</div>
+              <div className="summary-value">{waits.length}</div>
+            </div>
+            <div className={`summary-card${overdueWaits > 0 ? ' warn' : ''}`}>
+              <div className="summary-label">Просроченные ожидания</div>
+              <div className="summary-value">{overdueWaits}</div>
+            </div>
+            <div className={`summary-card${escalatedWaits > 0 ? ' err' : ''}`}>
+              <div className="summary-label">Эскалированные ожидания</div>
+              <div className="summary-value">{escalatedWaits}</div>
+            </div>
+          </div>
 
           <div className="filters">
             <div className="filter-group">
@@ -358,6 +413,77 @@ export function WorkItems() {
 
           <div className="refresh-info">
             Авто-обновление 10с • Последнее: <span id="lastUpdate">{lastUpdate}</span>
+          </div>
+
+          <div className="section-card">
+            <h2>Ожидания</h2>
+            <p>Manual waits и runtime ожидания с дедлайнами, эскалацией и быстрым подтверждением.</p>
+            <div className="filters" style={{ paddingBottom: 12, marginBottom: 12 }}>
+              <div className="filter-group">
+                <label htmlFor="waitStatus">Статус ожидания</label>
+                <select id="waitStatus" value={waitStatusFilter} onChange={e => setWaitStatusFilter((e.target.value || '') as EventWaitStatus | '')}>
+                  <option value="">Активные / проблемные</option>
+                  <option value="active">Ожидает</option>
+                  <option value="overdue">Просрочено</option>
+                  <option value="escalated">Эскалация</option>
+                </select>
+              </div>
+            </div>
+
+            {!loading && waits.length === 0 && (
+              <div className="empty">Активные ожидания не найдены.</div>
+            )}
+
+            {waits.length > 0 && (
+              <table className="items-table">
+                <thead>
+                  <tr>
+                    <th>Ожидание</th>
+                    <th>Тип</th>
+                    <th>Статус</th>
+                    <th>Исполнитель</th>
+                    <th>Процесс / Кейс</th>
+                    <th>Срок</th>
+                    <th>Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {waits.map(wait => {
+                    const processCell = formatProcessCase({
+                      work_item_id: wait.wait_id,
+                      case_id: wait.case_id,
+                      process_id: wait.process_id,
+                      element_id: wait.element_id,
+                      label: wait.element_label || wait.element_id,
+                      assignee: wait.assignee || '-',
+                      status: 'pending',
+                      input: {},
+                      created_at: wait.created_at,
+                      updated_at: wait.created_at,
+                    }, wfNameMap);
+                    return (
+                      <tr key={wait.wait_id}>
+                        <td>
+                          <span className="item-label">{wait.element_label || wait.element_id}</span>
+                          <div className="step-progress">{wait.wait_id.slice(0, 8)}</div>
+                        </td>
+                        <td>{wait.trigger_kind}</td>
+                        <td><StatusBadge status={wait.status} /></td>
+                        <td>{wait.assignee || '-'}</td>
+                        <td>{processCell}</td>
+                        <td>{wait.deadline ? new Date(wait.deadline).toLocaleString() : '-'}</td>
+                        <td className="item-actions">
+                          {wait.trigger_kind === 'manual' && (
+                            <button className="complete" onClick={() => confirmWait(wait)}>Подтвердить</button>
+                          )}
+                          <button onClick={() => wait.case_id && api.cases.get(wait.case_id).then(kase => setCaseCache(prev => ({ ...prev, [wait.case_id]: kase }))).catch(() => {})}>Обновить кейс</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>

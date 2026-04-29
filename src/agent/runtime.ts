@@ -7,12 +7,20 @@ import { existsSync, readFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import type { AgentProvider, AgentDef } from "./types";
 import { createLogger } from "../logger";
+import { profileAgentProvider, resolveLLMClientProfile } from "./llm-client-profiles";
 
 const log = createLogger("agent:runtime");
 
-const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_AGENT_MODEL = "sonnet";
 const CODEX_CONFIG_PATH = "/home/ubuntu/.codex/config.toml";
+const CODEX_BIN_CANDIDATES = [
+  process.env.CODEX_BIN,
+  "/home/ubuntu/.npm-global/bin/codex",
+  "/home/ubuntu/.bun/bin/codex",
+  "codex",
+].filter(Boolean) as string[];
 const AGENT_WORKDIR_ROOT = "/opt/shared/agent-workdirs";
+const CLAUDE_WRAPPER_PATH = "/home/ubuntu/konoha/scripts/run-claude-agent.sh";
 
 export { AGENT_WORKDIR_ROOT, DEFAULT_AGENT_MODEL };
 
@@ -41,6 +49,13 @@ function codexServerName(value: string): string {
   return normalized || "mcp_server";
 }
 
+export function resolveCodexBinary(): string {
+  for (const candidate of CODEX_BIN_CANDIDATES) {
+    if (candidate === "codex" || existsSync(candidate)) return candidate;
+  }
+  return "codex";
+}
+
 function ensureCodexProjectTrusted(workdir: string): void {
   const section = `[projects.${JSON.stringify(workdir)}]`;
   const block = `${section}
@@ -59,7 +74,16 @@ ${block}` : block;
 
 // ── Provider resolution ────────────────────────────────────────────────────
 
-export function resolveAgentRuntime(def: Pick<AgentDef, "model" | "runtime">): { provider: AgentProvider; runtimeModel: string } {
+export function resolveAgentRuntime(def: Pick<AgentDef, "model" | "runtime" | "llm_client_profile">): { provider: AgentProvider; runtimeModel: string } {
+  const profile = resolveLLMClientProfile(def);
+  const profileProvider = profile ? profileAgentProvider(profile) : undefined;
+  if (profile && profileProvider) {
+    return { provider: profileProvider, runtimeModel: profile.runtime_model ?? profile.model };
+  }
+  if (def.llm_client_profile) {
+    throw new Error(`Unknown LLM client profile: ${def.llm_client_profile}`);
+  }
+
   const raw = (def.model || DEFAULT_AGENT_MODEL).trim();
   const namespaced = raw.match(/^(claude|codex|cursor|glm):(.*)$/);
   if (def.runtime) {
@@ -92,6 +116,28 @@ export function formatAgentModel(def: Pick<AgentDef, "model" | "runtime">): stri
   if (/^(claude|codex|cursor|glm):/.test(raw)) return raw;
   if (def.runtime) return `${def.runtime}:${raw}`;
   return raw;
+}
+
+function normalizeClaudeRuntimeModel(value: string): string {
+  const raw = value.trim();
+  switch (raw) {
+    case "":
+    case "auto":
+    case "claude":
+    case "sonnet":
+    case "claude-sonnet-4-6":
+    case "glm-5.1":
+      return "sonnet";
+    case "haiku":
+    case "claude-haiku-4-5-20251001":
+    case "glm-4.5-air":
+      return "haiku";
+    case "opus":
+    case "claude-opus-4-6":
+      return "opus";
+    default:
+      return raw;
+  }
 }
 
 // ── MCP config ─────────────────────────────────────────────────────────────
@@ -186,6 +232,8 @@ function loadSharedMcpServers(
   const globalEnv = loadGlobalEnv();
   const vars = { ...loadProcessEnv(), ...globalEnv, ...agentEnv };
   const merged: Record<string, ResolvedMcpServerDef> = {};
+  // Distinguish between "no allowlist provided" (include all shared MCPs)
+  // and "explicit empty allowlist" (include none of the shared MCPs).
   const allowed = allowlist ? new Set(allowlist) : null;
 
   for (const configPath of SHARED_MCP_CONFIG_PATHS) {
@@ -313,20 +361,26 @@ function buildCodexMcpConfigArgs(mcpConfig: McpConfig): string[] {
 }
 
 export function buildLaunchCommand(
-  def: Pick<AgentDef, "model" | "runtime" | "codex_disable_features">,
+  def: Pick<AgentDef, "model" | "runtime" | "llm_client_profile" | "reasoning_effort" | "codex_disable_features" | "sandbox_profile">,
   workdir: string,
   mcpConfigPath: string,
   mcpConfig: McpConfig,
 ): { provider: AgentProvider; command: string } {
+  // #572: sandbox_profile is always "tmux" for now — all agents run in tmux sessions.
+  // When Docker/remote sandboxes are implemented, this function will dispatch
+  // to the appropriate launch path based on def.sandbox_profile.
   const runtime = resolveAgentRuntime(def);
+  const profile = resolveLLMClientProfile(def);
+  const reasoningEffort = def.reasoning_effort ?? profile?.reasoning_effort;
 
   if (runtime.provider === "codex") {
     const args = [
-      "codex",
+      resolveCodexBinary(),
       "--no-alt-screen",
       "--model", runtime.runtimeModel,
       "--dangerously-bypass-approvals-and-sandbox",
       "-C", workdir,
+      ...(reasoningEffort ? ["-c", `model_reasoning_effort=${toToml(reasoningEffort)}`] : []),
       ...(def.codex_disable_features ?? []).flatMap(flag => ["--disable", flag]),
       ...buildCodexMcpConfigArgs(mcpConfig),
     ];
@@ -348,8 +402,9 @@ export function buildLaunchCommand(
   }
 
   const args = [
-    "claude",
-    "--model", runtime.runtimeModel,
+    ...(runtime.provider === "glm" ? ["env", "KONOHA_CLAUDE_PROVIDER_PROFILE=glm"] : []),
+    CLAUDE_WRAPPER_PATH,
+    normalizeClaudeRuntimeModel(runtime.runtimeModel),
     "--dangerously-skip-permissions",
     "--mcp-config", mcpConfigPath,
   ];

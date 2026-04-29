@@ -14,11 +14,14 @@ fi
 KONOHA_URL="${KONOHA_URL:-http://127.0.0.1:3200}"
 STATUS_URL="$KONOHA_URL/agents/$AGENT_ID/status"
 START_URL="$KONOHA_URL/agents/$AGENT_ID/start"
+STOP_URL="$KONOHA_URL/agents/$AGENT_ID/stop"
 AGENT_URL="$KONOHA_URL/agents/$AGENT_ID"
 SWITCH_URL="$KONOHA_URL/agents/$AGENT_ID/switch-runtime"
 NO_PROXY_VALUE="${no_proxy:-127.0.0.1,localhost}"
 POLL_SEC="${AGENT_SERVICE_POLL_SEC:-10}"
 FAILOVER_THRESHOLD="${AGENT_SERVICE_FAILOVER_THRESHOLD:-3}"
+TMUX_SOCKET="$AGENT_ID"
+TMUX_SESSION="$AGENT_ID"
 
 request() {
   local method="$1"
@@ -75,7 +78,7 @@ except Exception:
 
 switch_runtime_profile() {
   local profile="$1"
-  printf '{"profile":"%s","restart":true}' "$profile" | \
+  printf '{"llm_client_profile":"%s","restart":true}' "$profile" | \
     curl -fsS -X POST \
       -H "Authorization: Bearer $KONOHA_TOKEN" \
       -H "Content-Type: application/json" \
@@ -83,16 +86,46 @@ switch_runtime_profile() {
       "$SWITCH_URL"
 }
 
+tmux_alive() {
+  tmux -L "$TMUX_SOCKET" has-session -t "$TMUX_SESSION" >/dev/null 2>&1
+}
+
 export no_proxy="$NO_PROXY_VALUE"
+
+cleanup() {
+  echo "[$(date)] agent-api-service: stopping $AGENT_ID via Konoha API"
+  request POST "$STOP_URL" '{}' >/dev/null || true
+  exit 0
+}
+
+trap cleanup TERM INT
 
 echo "[$(date)] agent-api-service: managing $AGENT_ID via Konoha API"
 FAILURES=0
 
 while true; do
+  # The local tmux session is the strongest signal that the interactive agent is alive.
+  # Konoha status can lag or temporarily report stopped/starting during recovery.
+  if tmux_alive; then
+    FAILURES=0
+    sleep "$POLL_SEC"
+    continue
+  fi
+
   status="$(agent_status || true)"
+  if [ "$status" = "starting" ]; then
+    FAILURES=$((FAILURES + 1))
+    echo "[$(date)] agent-api-service: $AGENT_ID status=starting but tmux missing, waiting before /start (attempt $FAILURES)"
+    sleep 5
+    if [ "$FAILURES" -lt "$FAILOVER_THRESHOLD" ]; then
+      sleep "$POLL_SEC"
+      continue
+    fi
+  fi
+
   if [ "$status" != "running" ]; then
     FAILURES=$((FAILURES + 1))
-    echo "[$(date)] agent-api-service: $AGENT_ID status=$status, requesting /start"
+    echo "[$(date)] agent-api-service: $AGENT_ID status=$status, tmux missing, requesting /start"
     request POST "$START_URL" '{}' >/dev/null || true
 
     auto_fallback="$(agent_field auto_runtime_fallback || true)"

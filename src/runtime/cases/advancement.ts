@@ -14,7 +14,7 @@ import { dispatchWorkItem } from "../../dispatcher";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByInstance, type TriggerDef } from "../../event-manager";
 import { emitEvent } from "../event-log";
 import { createLogger } from "../../logger";
-import { createEventWait, loadActiveWaitsForCase, cancelEventWaitsForCase } from "../event-waits";
+import { createEventWait, loadActiveWaitsForCase } from "../event-waits";
 import { scheduleWaitReminders } from "../event-waits";
 import { saveCase, loadCase, saveWorkItem, loadWorkItem, CASES_IDX_PROCESS, WORKITEMS_IDX_CASE, WORKITEM_KEY_PREFIX } from "./persistence";
 import type { Case, WorkItem, ActiveBranch } from "./types";
@@ -204,6 +204,119 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
   let forcedNextId: string | null = null;
 
   while (true) {
+    // When current position is a gateway (e.g. start_node from trigger), evaluate it first.
+    // Otherwise the loop skips to the first outgoing edge without checking conditions.
+    if (forcedNextId === null) {
+      const curEl = byId.get(current);
+      if (curEl?.type === "gateway") {
+        const gwOuts = outEdges.get(current) || [];
+        const operator = curEl.operator;
+        const gwTs = new Date().toISOString();
+        kase.history.push({ element_id: current, element_type: "gateway", label: curEl.label, timestamp: gwTs });
+        kase.position = current;
+        await emitEvent({ type: "gateway.evaluated", case_id: kase.case_id, process_id: kase.process_id, element_id: current, label: curEl.label, timestamp: gwTs });
+
+        if (operator === "XOR") {
+          if (gwOuts.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
+          if (gwOuts.length === 1) {
+            forcedNextId = gwOuts[0];
+            continue;
+          }
+          let takenBranch: string | null = null;
+          for (const outId of gwOuts) {
+            const cond = edgeConditions.get(`${current}->${outId}`);
+            if (!cond || evalCondition(cond, kase.payload)) {
+              takenBranch = outId;
+              break;
+            }
+          }
+          if (!takenBranch) { kase.status = "error"; await saveCase(kase); return kase; }
+          await saveCase(kase);
+          forcedNextId = takenBranch;
+          continue;
+        }
+
+        if (operator === "AND" || operator === "OR") {
+          const gwIns = inEdges.get(current) || [];
+          if (gwIns.length > 1) {
+            // join gateway at current: pass through
+            if (gwOuts.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
+            await saveCase(kase);
+            forcedNextId = gwOuts[0];
+            continue;
+          }
+          // split gateway at current: create branches (same logic as below)
+          let activeBranchIds: string[];
+          if (operator === "AND") {
+            activeBranchIds = gwOuts;
+          } else {
+            activeBranchIds = gwOuts.filter(outId => {
+              const cond = edgeConditions.get(`${current}->${outId}`);
+              return !cond || evalCondition(cond, kase.payload);
+            });
+            if (activeBranchIds.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
+          }
+          const branches: ActiveBranch[] = [];
+          for (const branchStartId of activeBranchIds) {
+            let branchEl = byId.get(branchStartId);
+            let branchElId = branchStartId;
+            while (branchEl?.type === "event") {
+              kase.history.push({ element_id: branchElId, element_type: "event", label: branchEl.label, timestamp: new Date().toISOString() });
+              const nextsOfBranch = outEdges.get(branchElId) || [];
+              if (nextsOfBranch.length === 0) break;
+              branchElId = nextsOfBranch[0];
+              branchEl = byId.get(branchElId);
+            }
+            if (branchEl?.type !== "function") continue;
+            const wi = await createWorkItemForElement(kase, branchElId, branchEl);
+            kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
+            const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
+            if (branchBindings.length > 0) {
+              const labelSlug = branchEl.label.toLowerCase().replace(/\s+/g, "_");
+              let mergedOut: Record<string, unknown> = {};
+              let branchErr = false;
+              for (const binding of branchBindings) {
+                const adapter = getAdapter(binding.connector);
+                if (!adapter) continue;
+                try {
+                  const op = (binding.operation && binding.operation !== "default") ? binding.operation : labelSlug;
+                  const out = await adapter.execute(op, kase.payload);
+                  mergedOut = { ...mergedOut, ...out };
+                } catch (e: any) {
+                  log.error("adapter error in branch", { element_id: branchElId, error: e.message });
+                  branchErr = true;
+                  break;
+                }
+              }
+              if (!branchErr && branchBindings.some(b => getAdapter(b.connector))) {
+                wi.status = "done"; wi.output = mergedOut; wi.updated_at = new Date().toISOString();
+                await saveWorkItem(wi, "pending");
+                const h = kase.history.find(h => h.work_item_id === wi.work_item_id);
+                if (h) h.output = mergedOut;
+                branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: true });
+                continue;
+              }
+            }
+            branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: false });
+          }
+          kase.position = current;
+          kase.active_branches = branches;
+          kase.history.push({ element_id: current, element_type: "gateway", label: `${operator} split (${branches.length} branches)`, timestamp: new Date().toISOString() });
+          await saveCase(kase);
+          if (branches.length === 0 && activeBranchIds.length > 0) {
+            const joinId = findJoinGateway(activeBranchIds, outEdges, byId);
+            if (joinId) return advancePastJoin(kase, def, activeBranchIds);
+            if (gwOuts.length > 0) { forcedNextId = gwOuts[0]; continue; }
+            kase.status = "error"; await saveCase(kase); return kase;
+          }
+          if (branches.every(b => b.done)) return advancePastJoin(kase, def, branches.map(b => b.element_id));
+          return kase;
+        }
+
+        kase.status = "error"; await saveCase(kase); return kase;
+      }
+    }
+
     let nextId: string;
     if (forcedNextId !== null) {
       nextId = forcedNextId;
@@ -369,31 +482,35 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       kase.position = nextId;
       kase.history.push({ element_id: nextId, element_type: "event", label: nextEl.label, timestamp: new Date().toISOString() });
 
-      const isIntermediate = (inEdges.get(nextId) || []).length > 0;
+      const isIntermediate = (inEdges.get(nextId) || []).length > 0 && (outEdges.get(nextId) || []).length > 0;
       const trigger = nextEl.trigger;
       const triggerKind = trigger?.kind || "manual";
+      const shouldWait =
+        isIntermediate &&
+        Boolean(trigger?.kind || trigger?.manual_override);
 
-      if (isIntermediate) {
-        // Create an EventWait for this intermediate event node
-        const waitPromise = createEventWait({
-          case_id: kase.case_id,
-          process_id: kase.process_id,
-          element_id: nextId,
-          element_label: nextEl.label,
-          trigger_kind: triggerKind as any,
-          deadline: nextEl.trigger?.deadline,
-          assignee: nextEl.role,
-          escalation_target: nextEl.trigger?.escalation_target,
-        });
+      if (shouldWait) {
+        const activeWaits = await loadActiveWaitsForCase(kase.case_id);
+        let wait = activeWaits.find(w => w.element_id === nextId);
+        if (!wait) {
+          wait = await createEventWait({
+            case_id: kase.case_id,
+            process_id: kase.process_id,
+            element_id: nextId,
+            element_label: nextEl.label,
+            trigger_kind: triggerKind as any,
+            deadline: nextEl.trigger?.deadline,
+            assignee: nextEl.role,
+            escalation_target: nextEl.trigger?.escalation_target,
+          });
 
-        // Schedule reminders for manual waits (notification only, not process advancement)
-        waitPromise.then(wait => {
+          // Schedule reminders for manual waits (notification only, not process advancement)
           if (triggerKind === "manual" || trigger?.manual_override) {
             scheduleWaitReminders(wait).catch(e =>
               log.warn("failed to schedule wait reminders", { case_id: kase.case_id, element_id: nextId, error: e?.message }),
             );
           }
-        }).catch(e => log.warn("failed to create event wait", { case_id: kase.case_id, element_id: nextId, error: e?.message }));
+        }
 
         if (trigger?.kind && trigger.kind !== "manual" && trigger.kind !== "ambiguous" && !trigger.manual_override) {
           await saveCase(kase);
@@ -574,7 +691,7 @@ export async function advancePastJoin(kase: Case, def: WorkflowDefinition, branc
 
 // ── Inner createCase (used by advanceCase for sub-process spawning) ──────────
 
-async function createCaseInner(
+export async function createCaseInner(
   process_id: string,
   subject: string,
   payload: Record<string, unknown> = {},

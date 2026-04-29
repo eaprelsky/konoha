@@ -42,6 +42,14 @@ function extractStreamingText(raw: string): string {
   return raw;
 }
 
+function formatReceiptSummary(receipt: any): string {
+  if (!receipt || typeof receipt !== 'object') return '';
+  const summary = typeof receipt.summary === 'string' ? receipt.summary : '';
+  const status = typeof receipt.status === 'string' ? receipt.status : 'unknown';
+  if (!summary) return '';
+  return `[${status}] ${summary}`;
+}
+
 export interface UseAssistantChatResult {
   msgs: Msg[];
   input: string;
@@ -95,6 +103,7 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
     setBusy(true);
 
     const context = Inspector.snapshot();
+    const operatorState = Inspector.operatorState();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
@@ -108,6 +117,7 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
         body: JSON.stringify({
           message: msg || '(см. вложения)',
           context,
+          operator_state: operatorState || undefined,
           chat_id: chatId || undefined,
           mode: 'process',
           stream: true,
@@ -161,9 +171,25 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
                 if (ev.schema_patch || ev.created_workflow) {
                   updated.push({ role: 'system' as const, text: 'Схема обновлена. Нажмите 💾 для сохранения.' });
                 }
+                if (Array.isArray(ev.pending_confirmations) && ev.pending_confirmations.length > 0) {
+                  const labels = ev.pending_confirmations
+                    .map((item: any) => typeof item?.action === 'string' ? item.action : 'unknown')
+                    .join(', ');
+                  updated.push({ role: 'system' as const, text: `Требуется подтверждение: ${labels}` });
+                }
+                if (Array.isArray(ev.action_receipts) && ev.action_receipts.length > 0) {
+                  for (const receipt of ev.action_receipts) {
+                    const text = formatReceiptSummary(receipt);
+                    if (text) updated.push({ role: 'system' as const, text });
+                  }
+                } else if (ev.observable_result && typeof ev.observable_result.summary === 'string' && ev.observable_result.summary) {
+                  updated.push({ role: 'system' as const, text: ev.observable_result.summary });
+                }
                 return updated;
               });
               if (ev.schema_patch) {
+                const applySchemaPatch = (window as any).__konoha_apply_schema_patch;
+                if (typeof applySchemaPatch === 'function') applySchemaPatch(ev.schema_patch);
                 window.dispatchEvent(new CustomEvent('konoha:schema_patch', { detail: ev.schema_patch }));
               }
               if (ev.created_workflow) {
@@ -176,6 +202,9 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
                 const act = ev.actions[0];
                 if (act.type === 'highlight' && act.target) {
                   showHighlight({ selector: act.target, style: act.style ?? 'spotlight', message: act.message });
+                } else if (act.type === 'navigate') {
+                  const target = typeof act.path === 'string' ? act.path : typeof act.target === 'string' ? act.target : null;
+                  if (target) navigate(target);
                 }
               }
             } else if (ev.type === 'chat_id') {

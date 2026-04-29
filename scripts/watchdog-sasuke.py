@@ -19,6 +19,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(__file__))
 import watchdog_base as _b
@@ -42,6 +43,7 @@ REACTION_GROUP    = "sasuke-reactions"
 REACTION_CONSUMER = "sasuke-reaction-watchdog"
 
 HEALTH_STUCK_TIMEOUT = 720  # seconds: must be > IDLE_TIMEOUT_SEC (600) + buffer (#54, #148)
+STALE_PENDING_MAX_AGE_SEC = int(os.environ.get("SASUKE_STALE_PENDING_MAX_AGE_SEC", "600"))
 
 _health: dict = {
     "last_received_at": 0.0,
@@ -145,6 +147,65 @@ async def _mark_read_telegram(events: list[dict], rd: aioredis.Redis) -> None:
             _b.log.warning(f"Failed to send mark_read for {chat_id}/{msg_id}: {e}")
 
 
+async def _ack_stream_events(
+    events: list[dict],
+    *,
+    source: str,
+    stream: str,
+    group: str,
+    rd: aioredis.Redis,
+) -> bool:
+    """Ack delivered Redis-backed events after they reached the agent."""
+    ids = [ev.get("redis_id") for ev in events if ev.get("source") == source and ev.get("redis_id")]
+    if not ids:
+        return True
+    try:
+        await rd.xack(stream, group, *ids)
+        _b.log.info(f"Acked {len(ids)} {source} event(s) after delivery")
+        return True
+    except Exception as e:
+        _b.log.error(f"Failed to ack {len(ids)} {source} event(s): {e}")
+        return False
+
+
+async def _finalize_delivered_events(events: list[dict], rd: aioredis.Redis) -> bool:
+    """Finalize Redis-backed events after successful tmux delivery."""
+    telegram_acked = await _ack_stream_events(
+        events,
+        source="telegram",
+        stream=TG_STREAM,
+        group=TG_GROUP,
+        rd=rd,
+    )
+    reaction_acked = await _ack_stream_events(
+        events,
+        source="reaction",
+        stream=REACTION_STREAM,
+        group=REACTION_GROUP,
+        rd=rd,
+    )
+    if not telegram_acked or not reaction_acked:
+        return False
+
+    await _mark_read_telegram(events, rd)
+    return True
+
+
+def _stream_batch_has_messages(results: list) -> bool:
+    """Return True only when XREADGROUP returned at least one message."""
+    return any(messages for _stream_name, messages in results)
+
+
+def _is_stale_pending_id(redis_id: str, *, now_ms: int | None = None) -> bool:
+    """Return True for old pending stream IDs that should not be replayed."""
+    try:
+        created_ms = int(str(redis_id).split("-", 1)[0])
+    except (TypeError, ValueError):
+        return False
+    current_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+    return (current_ms - created_ms) > STALE_PENDING_MAX_AGE_SEC * 1000
+
+
 async def send_loop(batched_queue: asyncio.Queue) -> None:
     """Wait for idle, then flush the pending batch.
     Sends mark_read to Redis after delivery and tracks health state.
@@ -153,6 +214,14 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
     rd = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
     while True:
+        if pending and any(ev.get("_delivered_to_agent") for ev in pending):
+            finalized = await _finalize_delivered_events(pending, rd)
+            if finalized:
+                pending.clear()
+            else:
+                await asyncio.sleep(1.0)
+            continue
+
         try:
             timeout = 1.0 if pending else None
             batch = await asyncio.wait_for(batched_queue.get(), timeout=timeout)
@@ -164,11 +233,33 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             continue
 
         waited = 0.0
+        grace_deadline = 0.0
         while True:
             if _b.is_agent_idle(_b.TMUX_SESSION):
                 break
+            now = asyncio.get_running_loop().time()
+            if grace_deadline > now:
+                await asyncio.sleep(min(_b.IDLE_POLL_SEC, max(0.2, grace_deadline - now)))
+                continue
+            if grace_deadline > 0.0:
+                _b.log.info(f"Startup grace elapsed for {_b.TMUX_SESSION} — resuming desync timer")
+                grace_deadline = 0.0
+                waited = 0.0
             if waited >= _b.IDLE_TIMEOUT_SEC:
-                _b.log.warning(f"Agent {_b.TMUX_SESSION} busy >{_b.IDLE_TIMEOUT_SEC}s — dropping {len(pending)} msgs")
+                _b.log.warning(
+                    f"Agent {_b.TMUX_SESSION} busy >{_b.IDLE_TIMEOUT_SEC}s — attempting desync recovery (#505)"
+                )
+                await _b._send_desync_audit("agent unresponsive", f"waited={waited:.0f}s msgs={len(pending)}")
+                recovered = await _b.try_desync_recovery()
+                if recovered:
+                    _b.log.info(f"Desync recovery succeeded — retrying delivery of {len(pending)} msg(s)")
+                    waited = 0.0
+                    grace_deadline = max(
+                        grace_deadline,
+                        asyncio.get_running_loop().time() + _b.DESYNC_RECOVERY_GRACE_SEC,
+                    )
+                    continue
+                _b.log.warning(f"Desync recovery failed — dropping {len(pending)} msgs")
                 await _b.send_freeze_alert(_b.TMUX_SESSION, waited, len(pending))
                 pending.clear()
                 break
@@ -178,12 +269,16 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
         if pending:
             try:
                 prompt = format_batch(pending)
-                await _b.tmux_send(_b.TMUX_SESSION, prompt)
-                _health["last_delivered_at"] = asyncio.get_running_loop().time()
-                await _mark_read_telegram(pending, rd)
+                delivered = await _b.tmux_send(_b.TMUX_SESSION, prompt)
+                if delivered is not False:
+                    _health["last_delivered_at"] = asyncio.get_running_loop().time()
+                    for ev in pending:
+                        ev["_delivered_to_agent"] = True
+                else:
+                    _b.log.warning(f"tmux_send timed out — retrying delivery of {len(pending)} msg(s) on next idle")
             except Exception as e:
                 _b.log.error(f"tmux send failed: {e}")
-            pending.clear()
+                await asyncio.sleep(1.0)
 
 
 # ── Redis stream watchers ─────────────────────────────────────────────────────
@@ -195,6 +290,8 @@ async def telegram_redis_watcher(raw_queue: asyncio.Queue) -> None:
     """
     backoff = 1
     r = None
+    replay_pending = True
+    pending_replay_seen: set[str] = set()
 
     while True:
         try:
@@ -212,17 +309,32 @@ async def telegram_redis_watcher(raw_queue: asyncio.Queue) -> None:
             backoff = 1
 
             while True:
+                stream_id = "0" if replay_pending else ">"
                 results = await r.xreadgroup(
                     TG_GROUP, TG_CONSUMER,
-                    {TG_STREAM: ">"},
+                    {TG_STREAM: stream_id},
                     count=10,
-                    block=5000,
+                    block=100 if replay_pending else 5000,
                 )
-                if not results:
+                if not _stream_batch_has_messages(results):
+                    if replay_pending:
+                        replay_pending = False
+                        _b.log.info(f"Pending replay drained for {TG_STREAM} ({TG_GROUP}/{TG_CONSUMER})")
                     continue
 
+                emitted = False
+                acked_stale = False
                 for stream_name, messages in results:
                     for msg_id, fields in messages:
+                        if replay_pending:
+                            if msg_id in pending_replay_seen:
+                                continue
+                            pending_replay_seen.add(msg_id)
+                            if _is_stale_pending_id(msg_id):
+                                await r.xack(TG_STREAM, TG_GROUP, msg_id)
+                                acked_stale = True
+                                _b.log.info(f"Acked stale pending Telegram event {msg_id}")
+                                continue
                         try:
                             text = fields.get("text", "")
                             user = fields.get("user_name") or fields.get("user", "?")
@@ -232,10 +344,16 @@ async def telegram_redis_watcher(raw_queue: asyncio.Queue) -> None:
                                 continue
                             _b.log.info(f"TG Redis msg from {user}: {text[:60]}")
                             _health["last_received_at"] = asyncio.get_running_loop().time()
-                            await raw_queue.put({"source": "telegram", "data": fields})
-                            await r.xack(TG_STREAM, TG_GROUP, msg_id)
+                            await raw_queue.put({"source": "telegram", "data": fields, "redis_id": msg_id})
+                            emitted = True
                         except Exception as e:
                             _b.log.error(f"Error processing TG msg {msg_id}: {e}")
+                if replay_pending and not emitted:
+                    if acked_stale:
+                        continue
+                    replay_pending = False
+                    pending_replay_seen.clear()
+                    _b.log.info(f"Pending replay deduped/drained for {TG_STREAM} ({TG_GROUP}/{TG_CONSUMER})")
 
         except asyncio.CancelledError:
             if r:
@@ -257,6 +375,8 @@ async def reaction_redis_watcher(raw_queue: asyncio.Queue) -> None:
     """Read telegram:reaction_updates Redis stream via consumer group."""
     backoff = 1
     r = None
+    replay_pending = True
+    pending_replay_seen: set[str] = set()
 
     while True:
         try:
@@ -274,26 +394,53 @@ async def reaction_redis_watcher(raw_queue: asyncio.Queue) -> None:
             backoff = 1
 
             while True:
+                stream_id = "0" if replay_pending else ">"
                 results = await r.xreadgroup(
                     REACTION_GROUP, REACTION_CONSUMER,
-                    {REACTION_STREAM: ">"},
+                    {REACTION_STREAM: stream_id},
                     count=10,
-                    block=5000,
+                    block=100 if replay_pending else 5000,
                 )
-                if not results:
+                if not _stream_batch_has_messages(results):
+                    if replay_pending:
+                        replay_pending = False
+                        _b.log.info(
+                            f"Pending replay drained for {REACTION_STREAM} "
+                            f"({REACTION_GROUP}/{REACTION_CONSUMER})"
+                        )
                     continue
 
+                emitted = False
+                acked_stale = False
                 for stream_name, messages in results:
                     for msg_id, fields in messages:
+                        if replay_pending:
+                            if msg_id in pending_replay_seen:
+                                continue
+                            pending_replay_seen.add(msg_id)
+                            if _is_stale_pending_id(msg_id):
+                                await r.xack(REACTION_STREAM, REACTION_GROUP, msg_id)
+                                acked_stale = True
+                                _b.log.info(f"Acked stale pending reaction event {msg_id}")
+                                continue
                         try:
                             user = fields.get("user", "?")
                             new_r = fields.get("new_reaction", "")
                             _b.log.info(f"Reaction from {user}: {new_r}")
                             _health["last_received_at"] = asyncio.get_running_loop().time()
-                            await raw_queue.put({"source": "reaction", "data": fields})
-                            await r.xack(REACTION_STREAM, REACTION_GROUP, msg_id)
+                            await raw_queue.put({"source": "reaction", "data": fields, "redis_id": msg_id})
+                            emitted = True
                         except Exception as e:
                             _b.log.error(f"Error processing reaction {msg_id}: {e}")
+                if replay_pending and not emitted:
+                    if acked_stale:
+                        continue
+                    replay_pending = False
+                    pending_replay_seen.clear()
+                    _b.log.info(
+                        f"Pending replay deduped/drained for {REACTION_STREAM} "
+                        f"({REACTION_GROUP}/{REACTION_CONSUMER})"
+                    )
 
         except asyncio.CancelledError:
             if r:

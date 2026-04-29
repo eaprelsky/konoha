@@ -312,13 +312,18 @@ export function useProcessEditor(readOnly = false) {
 
   // Listen for patches dispatched by AssistantWidget
   useEffect(() => {
+    (window as any).__konoha_apply_schema_patch = applyPatch;
     function onPatch(e: Event) {
       applyPatch((e as CustomEvent).detail);
     }
     window.addEventListener('konoha:schema_patch', onPatch);
-    return () => window.removeEventListener('konoha:schema_patch', onPatch);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readOnly]);
+    return () => {
+      window.removeEventListener('konoha:schema_patch', onPatch);
+      if ((window as any).__konoha_apply_schema_patch === applyPatch) {
+        delete (window as any).__konoha_apply_schema_patch;
+      }
+    };
+  }, [readOnly, elements, flow, positions]);
 
   // ── Zoom controls (issue #414) ───────────────────────────────────────────────
   function zoomBy(factor: number) {

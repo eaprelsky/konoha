@@ -7,11 +7,12 @@
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
+import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
-// Set env before importing server so ADMIN_TOKEN is predictable
-const TEST_ADMIN_TOKEN = "test-admin-token-kakashi";
-process.env.KONOHA_TOKEN = TEST_ADMIN_TOKEN;
-process.env.KONOHA_PORT = "0"; // don't actually bind a port
+// Use the test admin token set by tests/setup.ts preload.
+// Setting KONOHA_PORT=0 prevents the server from binding a real port.
+const TEST_ADMIN_TOKEN = process.env.KONOHA_TOKEN || "test-admin-token-preload";
+process.env.KONOHA_PORT = "0";
 
 const { app } = await import("../core/src/server");
 
@@ -47,6 +48,7 @@ function id(name: string) { return `test-${name}-${RUN}`; }
 // ── cleanup ───────────────────────────────────────────────────────────────────
 
 async function cleanupTestAgents() {
+  await cleanupGeneratedTestAgents();
   const keys = await redis.hkeys("konoha:registry");
   for (const k of keys) {
     if (k.startsWith("test-")) await redis.hdel("konoha:registry", k);
@@ -64,7 +66,9 @@ async function cleanupTestAgents() {
 beforeAll(cleanupTestAgents);
 afterAll(async () => {
   await cleanupTestAgents();
+  await redis.flushdb();
   redis.disconnect();
+  delete process.env.KONOHA_PORT;
 });
 
 // ── /health ───────────────────────────────────────────────────────────────────

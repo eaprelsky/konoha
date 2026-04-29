@@ -22,11 +22,11 @@ from trusted users.
 - Konoha SSE `/messages/sasuke/stream` — messages from other agents
 
 ## Infrastructure
-- tmux session: `sasuke`
-- Systemd: `managed Sasuke agent`, `agent-watchdog-sasuke.service`
+- tmux socket/session: `sasuke` (`tmux -L sasuke ... -t sasuke`)
+- Systemd: `agent-sasuke.service`, `agent-watchdog-sasuke.service`
 - MCP: konoha, telethon-channel
 - Watchdog: `/home/ubuntu/konoha/scripts/watchdog-sasuke.py`
-- Startup script: `Konoha managed lifecycle`
+- Startup path: `agent-sasuke.service` → `scripts/agent-api-service.sh sasuke` → Konoha lifecycle API
 - Log: `/tmp/watchdog-sasuke.log`
 - Telethon bus: `/home/ubuntu/telethon-mcp/bus.py`
 

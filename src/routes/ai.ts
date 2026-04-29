@@ -9,6 +9,8 @@ import { redis } from "../redis";
 import Anthropic from "@anthropic-ai/sdk";
 import { createWorkflow, listWorkflows } from "../workflow-loader";
 import { getAgentDef, listAgentDefs } from "../agent-lifecycle";
+import { buildOperatorStatePromptBlock, getOperatorStateLabel } from "../operator-state";
+import type { AssistantResponse } from "../assistant-response";
 const log = createLogger("routes:ai");
 
 /** Build content blocks from text + optional attachment paths (closes #321) */
@@ -228,6 +230,7 @@ async function handleTsunadeChatRequest(
   const normalized = await normalizeAssistantResponse(rawReply, {
     chat_id: chatId,
     agent_id: agentId,
+    session_id: chatId,
   });
 
   await redis.rpush(histKey, JSON.stringify({ role: "user", content: message }));
@@ -235,17 +238,32 @@ async function handleTsunadeChatRequest(
   await redis.ltrim(histKey, -CHAT_MAX_HISTORY * 2, -1);
   await redis.expire(histKey, 7 * 24 * 3600); // 7 days TTL
 
+  return toAssistantWorkflowResponse(normalized);
+}
+
+function toAssistantWorkflowResponse(normalized: AssistantResponse) {
   return {
     reply: normalized.reply,
-    chat_id: chatId,
+    chat_id: normalized.chat_id,
     schema_patch: normalized.schema_patch,
     created_workflow: normalized.created_workflow,
     actions: normalized.ui_actions,
     actions_taken: normalized.actions_taken,
+    action_receipts: normalized.action_receipts,
+    observable_result: normalized.observable_result,
+    pending_confirmations: normalized.pending_confirmations,
   };
 }
 
 const router = new Hono();
+const PROCESS_CHAT_SUNSET = "Sat, 31 May 2026 00:00:00 GMT";
+const PROCESS_CHAT_CANONICAL_LINK = '</api/ai/chat?mode=process>; rel="canonical"';
+
+function markDeprecatedProcessChat(c: { header: (name: string, value: string) => void }) {
+  c.header("Deprecation", "true");
+  c.header("Sunset", PROCESS_CHAT_SUNSET);
+  c.header("Link", PROCESS_CHAT_CANONICAL_LINK);
+}
 
 router.use("/tsunade/chat", requireAuth);
 router.post("/tsunade/chat", async (c) => {
@@ -255,6 +273,7 @@ router.post("/tsunade/chat", async (c) => {
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
     const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
+    markDeprecatedProcessChat(c);
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -264,10 +283,11 @@ router.post("/tsunade/chat", async (c) => {
 router.delete("/tsunade/chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
   await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
+  markDeprecatedProcessChat(c);
   return c.json({ ok: true });
 });
 
-// Alias: /ai/process-chat → same Tsunade logic
+// Deprecated alias: use POST /ai/chat?mode=process instead (Sunset: 31 May 2026)
 router.use("/ai/process-chat", requireAuth);
 router.post("/ai/process-chat", async (c) => {
   const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }>().catch(() => null);
@@ -276,6 +296,7 @@ router.post("/ai/process-chat", async (c) => {
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
     const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
+    markDeprecatedProcessChat(c);
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -285,6 +306,7 @@ router.post("/ai/process-chat", async (c) => {
 router.delete("/ai/process-chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
   await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
+  markDeprecatedProcessChat(c);
   return c.json({ ok: true });
 });
 
@@ -438,10 +460,13 @@ router.post("/ai/chat", async (c) => {
   const body = await c.req.json<{
     message: string;
     context?: string;
+    operator_state?: unknown;
+    schema?: unknown;
     chat_id?: string;
     mode?: "process" | "admin";
     stream?: boolean;
     images?: InlineImage[];
+    attachments?: AttachmentRef[];
   }>().catch(() => null);
 
   if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
@@ -464,7 +489,15 @@ router.post("/ai/chat", async (c) => {
     .map(r => { try { return JSON.parse(r); } catch { return null; } })
     .filter(Boolean);
 
-  const contextBlock = body.context ? `\n\n[Inspector context]\n${body.context}` : "";
+  const operatorStateBlock = buildOperatorStatePromptBlock(body.operator_state);
+  const schemaContext = body.schema && mode === "process"
+    ? `\n<process_data>\n${JSON.stringify(body.schema, null, 2)}\n</process_data>`
+    : "";
+  const contextBlock = [
+    operatorStateBlock,
+    schemaContext,
+    body.context ? `\n\n[Inspector telemetry]\n${body.context}` : "",
+  ].filter(Boolean).join("");
 
   // Inject compact workflow list for process mode so Tsunade can answer questions about existing processes
   let processListContext = "";
@@ -481,7 +514,9 @@ router.post("/ai/chat", async (c) => {
   }
 
   const userMsg = body.message + contextBlock + processListContext;
-  const userContent = buildInlineContent(userMsg, body.images);
+  const userContent = body.attachments?.length
+    ? buildContent(userMsg, body.attachments)
+    : buildInlineContent(userMsg, body.images);
 
   const messages: Anthropic.MessageParam[] = [
     ...history,
@@ -528,6 +563,7 @@ router.post("/ai/chat", async (c) => {
               chat_id: chatId,
               execute_actions: mode === "process",
               agent_id: mode === "admin" ? "kiba" : "tsunade",
+              session_id: chatId,
             });
             ctrl.enqueue(sse(JSON.stringify(buildSseParsedEvent(normalized))));
           } catch { /* not JSON — delta stream is fine as-is */ }
@@ -543,7 +579,7 @@ router.post("/ai/chat", async (c) => {
 
           // Emit inspector event to Konoha bus (separate channel, non-blocking)
           redis.xadd("inspector", "*",
-            "page", body.context?.split('\n')[0] ?? "",
+            "page", getOperatorStateLabel(body.operator_state) || body.context?.split('\n')[0] || "",
             "chat_id", chatId,
             "mode", mode,
           ).catch(silentCatch("stream ack"));
@@ -572,6 +608,21 @@ router.post("/ai/chat", async (c) => {
       system: systemPrompt,
       messages,
     });
+    if (mode === "process") {
+      const { normalizeAssistantResponse } = await import("../assistant-response");
+      const normalized = await normalizeAssistantResponse(rawReply, {
+        chat_id: chatId,
+        execute_actions: true,
+        agent_id: "tsunade",
+        session_id: chatId,
+      });
+      await redis.rpush(histKey, JSON.stringify({ role: "user", content: body.message }));
+      await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));
+      await redis.ltrim(histKey, -maxHistory * 2, -1);
+      await redis.expire(histKey, 7 * 24 * 3600);
+      return c.json(toAssistantWorkflowResponse(normalized));
+    }
+
     let finalReply = rawReply;
     try {
       const parsed = JSON.parse(stripMarkdownFences(rawReply));

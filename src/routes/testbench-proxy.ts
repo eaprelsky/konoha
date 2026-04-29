@@ -1,7 +1,7 @@
 /**
  * testbench-proxy.ts — Reverse proxy for konoha-testbench (closes #323)
  *
- * Forwards /testbench/* (port 3200) → http://127.0.0.1:3201/testbench/*
+ * Forwards /testbench/* (port 3200) → http://127.0.0.1:3203/testbench/*
  * so callers only need one base URL (the main Konoha API).
  *
  * Auth: passes the same Bearer token through. Testbench validates it with
@@ -10,7 +10,7 @@
 
 import { Hono } from "hono";
 
-const TESTBENCH_URL = process.env.TESTBENCH_URL || "http://127.0.0.1:3201";
+const TESTBENCH_URL = process.env.TESTBENCH_URL || "http://127.0.0.1:3203";
 
 const app = new Hono();
 
@@ -44,7 +44,7 @@ app.all("/testbench/*", async (c) => {
     });
   } catch (e: any) {
     const msg = e.message?.includes("ECONNREFUSED")
-      ? "TestBench service unavailable (port 3201 not responding)"
+      ? "TestBench service unavailable (port 3203 not responding)"
       : e.message;
     return c.json({ error: msg }, 502);
   }
