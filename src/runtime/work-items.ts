@@ -120,6 +120,26 @@ export async function completeWorkItem(
       branch.done = true;
       await saveCase(kase);
 
+      // Reload to detect concurrent branch completions (join race protection).
+      // If another completion cleared active_branches via advancePastJoin, use that result.
+      const reloaded = await loadCase(wi.case_id);
+      if (reloaded && (!reloaded.active_branches || reloaded.active_branches.length === 0)) {
+        return { workItem: wi, case: reloaded };
+      }
+      if (reloaded?.active_branches) {
+        // Merge: ensure our branch is marked done in the reloaded copy
+        const rb = reloaded.active_branches.find((b: ActiveBranch) => b.work_item_id === work_item_id);
+        if (rb && !rb.done) {
+          rb.done = true;
+          await saveCase(reloaded);
+        }
+        if (reloaded.active_branches.every((b: ActiveBranch) => b.done)) {
+          const updatedCase = await advancePastJoin(reloaded, def, reloaded.active_branches.map((b: ActiveBranch) => b.element_id));
+          return { workItem: wi, case: updatedCase };
+        }
+        return { workItem: wi, case: reloaded };
+      }
+
       if (kase.active_branches.every((b: ActiveBranch) => b.done)) {
         const updatedCase = await advancePastJoin(kase, def, kase.active_branches.map((b: ActiveBranch) => b.element_id));
         return { workItem: wi, case: updatedCase };

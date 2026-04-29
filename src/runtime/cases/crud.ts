@@ -44,12 +44,23 @@ export async function forceCloseCase(case_id: string, _depth = 0): Promise<Case 
   if (!kase) return null;
   if (kase.status !== "running") return kase;
 
-  // Cascade: close any child cases spawned by sub-process calls
+  // Cascade: close any child cases spawned by sub-process calls.
+  // Path 1: work items with child_case_id set
   const wiIds = await redis.smembers(WORKITEMS_IDX_CASE + case_id).catch(() => [] as string[]);
   for (const wiId of wiIds) {
     const wi = await (await import("./persistence")).loadWorkItem(wiId);
     if (wi?.child_case_id) {
       await forceCloseCase(wi.child_case_id, _depth + 1);
+    }
+  }
+
+  // Path 2: cases whose parent_case_id points to this case (orphan-proof)
+  const siblingIds = await redis.smembers(CASES_IDX_PROCESS + kase.process_id).catch(() => [] as string[]);
+  for (const siblingId of siblingIds) {
+    if (siblingId === case_id) continue;
+    const sibling = await loadCase(siblingId);
+    if (sibling?.parent_case_id === case_id && sibling.status === "running") {
+      await forceCloseCase(sibling.case_id, _depth + 1);
     }
   }
 

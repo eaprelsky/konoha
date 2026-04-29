@@ -165,6 +165,18 @@ function startWorkItemHealthcheck(): void {
     setInterval(check, HEALTHCHECK_INTERVAL_MS);
   }, 10_000);
 
+  // Flush stale agent status to PG
+  const flushStale = async () => {
+    try {
+      const { pgFlushStaleAgents } = await import("./storage/pg-bus");
+      const count = await pgFlushStaleAgents();
+      if (count > 0) log.info("flushed stale agent statuses to PG", { count });
+    } catch (e: any) {
+      // ignore — best-effort
+    }
+  };
+  setInterval(flushStale, HEALTHCHECK_INTERVAL_MS);
+
   log.info("work item healthcheck timer started", { interval_ms: 30000 });
 }
 

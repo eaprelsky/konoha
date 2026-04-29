@@ -9,10 +9,16 @@ import {
   type WorkflowElement,
 } from "./workflow-loader";
 import { normalizeElementNames } from "./normalizer";
-import { deleteCasesByProcess } from "./runtime";
+import { deleteCasesByProcess, createCase, getCase, listCases, forceCloseCase } from "./runtime";
 import { resolveBatchProgrammatic, type ProcessContext } from "./trigger-resolver";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByProcessAndInstance, type TriggerDef } from "./event-manager";
 import { validateActionArgs } from "./action-registry";
+import {
+  createStandaloneWorkItem,
+  updateWorkItem,
+  completeWorkItem,
+  listWorkItems,
+} from "./runtime/work-items";
 
 export interface ActionExecution {
   status: number;
@@ -242,6 +248,114 @@ export async function executeWorkflowAction(
   }
 }
 
+async function executeCaseAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "case.start": {
+      const invalid = validationFailure("case.start", args);
+      if (invalid) return invalid;
+      const kase = await createCase(
+        String(args.process_id),
+        String(args.subject),
+        (args.payload as Record<string, unknown>) ?? {},
+        args.start_node ? String(args.start_node) : undefined,
+      );
+      return { status: 201, data: kase };
+    }
+    case "case.get": {
+      const invalid = validationFailure("case.get", args);
+      if (invalid) return invalid;
+      const kase = await getCase(String(args.id));
+      if (!kase) return { status: 404, data: { error: "Case not found" } };
+      return { status: 200, data: kase };
+    }
+    case "case.list": {
+      const filters: Record<string, unknown> = {};
+      if (args.status) filters.status = args.status;
+      if (args.process_id) filters.process_id = args.process_id;
+      if (args.limit) filters.limit = Number(args.limit);
+      if (args.offset) filters.offset = Number(args.offset);
+      return { status: 200, data: await listCases(filters as any) };
+    }
+    case "case.close": {
+      const invalid = validationFailure("case.close", args);
+      if (invalid) return invalid;
+      const kase = await forceCloseCase(String(args.id));
+      if (!kase) return { status: 404, data: { error: "Case not found" } };
+      return { status: 200, data: kase };
+    }
+    default:
+      return null;
+  }
+}
+
+async function executeWorkItemAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "workitem.complete": {
+      const invalid = validationFailure("workitem.complete", args);
+      if (invalid) return invalid;
+      try {
+        const result = await completeWorkItem(
+          String(args.id),
+          (args.output as Record<string, unknown>) ?? {},
+        );
+        return { status: 200, data: result };
+      } catch (e: any) {
+        if (e.message?.includes("not found")) return { status: 404, data: { error: e.message } };
+        if (e.message?.includes("already done")) return { status: 409, data: { error: e.message } };
+        throw e;
+      }
+    }
+    case "workitem.create": {
+      const invalid = validationFailure("workitem.create", args);
+      if (invalid) return invalid;
+      const wi = await createStandaloneWorkItem({
+        label: String(args.label),
+        assignee: String(args.assignee),
+        input: args.input as Record<string, unknown> | undefined,
+        deadline: args.deadline ? String(args.deadline) : undefined,
+      });
+      return { status: 201, data: wi };
+    }
+    case "workitem.update": {
+      const invalid = validationFailure("workitem.update", args);
+      if (invalid) return invalid;
+      try {
+        const patch: Record<string, unknown> = {};
+        if (args.status !== undefined) patch.status = args.status;
+        if (args.assignee !== undefined) patch.assignee = args.assignee;
+        if (args.deadline !== undefined) patch.deadline = args.deadline;
+        if (args.output !== undefined) patch.output = args.output;
+        const wi = await updateWorkItem(String(args.id), patch as any);
+        return { status: 200, data: wi };
+      } catch (e: any) {
+        if (e.message?.includes("not found")) return { status: 404, data: { error: e.message } };
+        throw e;
+      }
+    }
+    case "workitem.list": {
+      const filters: Record<string, unknown> = {};
+      if (args.assignee) filters.assignee = args.assignee;
+      if (args.status) filters.status = args.status;
+      if (args.process_id) filters.process_id = args.process_id;
+      if (args.deadline_before) filters.deadline_before = args.deadline_before;
+      return { status: 200, data: await listWorkItems(filters as any) };
+    }
+    case "workitem.cancel": {
+      const invalid = validationFailure("workitem.cancel", args);
+      if (invalid) return invalid;
+      try {
+        const wi = await updateWorkItem(String(args.id), { status: "cancelled" } as any);
+        return { status: 200, data: wi };
+      } catch (e: any) {
+        if (e.message?.includes("not found")) return { status: 404, data: { error: e.message } };
+        throw e;
+      }
+    }
+    default:
+      return null;
+  }
+}
+
 export async function executeActionDirect(
   action: string,
   args: Record<string, unknown>,
@@ -249,6 +363,12 @@ export async function executeActionDirect(
 ): Promise<ActionExecution | null> {
   if (action.startsWith("workflow.")) {
     return executeWorkflowAction(action, args, opts);
+  }
+  if (action.startsWith("case.")) {
+    return executeCaseAction(action, args);
+  }
+  if (action.startsWith("workitem.")) {
+    return executeWorkItemAction(action, args);
   }
   return null;
 }

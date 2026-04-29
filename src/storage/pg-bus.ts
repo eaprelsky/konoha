@@ -344,3 +344,22 @@ export async function pgListChannels(): Promise<string[]> {
   `;
   return rows.map(r => r.channel);
 }
+
+/**
+ * Flush stale agent statuses to PG. Agents whose last heartbeat is older than
+ * HEARTBEAT_TTL_MS and still show as 'online' are marked 'offline'.
+ * Called periodically by the Tsunade healthcheck timer.
+ * Returns the number of agents marked offline.
+ */
+export async function pgFlushStaleAgents(): Promise<number> {
+  await ensureBusSchema();
+  const sql = getSql();
+  const cutoff = Date.now() - HEARTBEAT_TTL_MS;
+  const rows = await sql<{ id: string }[]>`
+    UPDATE konoha_agents
+    SET status = 'offline', updated_at = NOW()
+    WHERE status = 'online' AND last_heartbeat < ${cutoff}
+    RETURNING id
+  `;
+  return rows.length;
+}

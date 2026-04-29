@@ -12,6 +12,7 @@ const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.en
 const RUN = `act-wf-${Date.now()}`;
 const ACT_WORKFLOW_ID = `${RUN}-direct`;
 const HTTP_WORKFLOW_ID_PREFIX = `${RUN}-http`;
+let actWorkItemId: string | null = null;
 const savedAutonomy: Record<string, string | null> = {};
 
 function adminHeaders() {
@@ -24,7 +25,14 @@ async function cleanupWorkflow(id: string) {
 }
 
 beforeAll(async () => {
-  for (const action of ["workflow.create", "workflow.update", "workflow.delete"]) {
+  for (const action of [
+    "workflow.create",
+    "workflow.update",
+    "workflow.delete",
+    "workitem.create",
+    "workitem.update",
+    "workitem.cancel",
+  ]) {
     savedAutonomy[action] = await redis.hget(AUTONOMY_KEY, action);
     await redis.hset(AUTONOMY_KEY, action, "auto");
   }
@@ -40,6 +48,13 @@ afterAll(async () => {
   const ids = await redis.smembers("konoha:workflow:index");
   for (const id of ids) {
     if (id.startsWith(HTTP_WORKFLOW_ID_PREFIX)) await cleanupWorkflow(id);
+  }
+  if (actWorkItemId) {
+    await redis.del(`workitem:${actWorkItemId}`);
+    await redis.srem("konoha:workitems:assignee:act-test", actWorkItemId);
+    await redis.srem("konoha:workitems:status:pending", actWorkItemId);
+    await redis.srem("konoha:workitems:status:cancelled", actWorkItemId);
+    await redis.zrem("konoha:workitems:all", actWorkItemId);
   }
   redis.disconnect();
   delete process.env.KONOHA_PORT;
@@ -108,5 +123,75 @@ describe("/act workflow executor", () => {
     expect(body.id).toBe(id);
     expect(body.elements).toEqual([]);
     expect(body.flow).toEqual([]);
+  });
+
+  test("executes case.list directly through the action envelope", async () => {
+    const res = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "case.list",
+        category: "inspect",
+        args: { process_id: ACT_WORKFLOW_ID, limit: 1 },
+        meta: { session_id: `${RUN}-case-list-test` },
+      }),
+    }));
+
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.action).toBe("case.list");
+    expect(Array.isArray(body.data.cases)).toBe(true);
+  });
+
+  test("executes workitem create/update/cancel directly through the action envelope", async () => {
+    const createRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workitem.create",
+        category: "act",
+        args: {
+          label: "Action executor work item",
+          assignee: "act-test",
+          input: { source: "act-workflow-executor.test" },
+        },
+        meta: { session_id: `${RUN}-workitem-create-test` },
+      }),
+    }));
+
+    const created = await createRes.json();
+    expect(createRes.status).toBe(201);
+    expect(created.ok).toBe(true);
+    expect(created.data.assignee).toBe("act-test");
+    actWorkItemId = created.data.work_item_id;
+
+    const updateRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workitem.update",
+        category: "act",
+        args: { id: actWorkItemId, deadline: "2030-01-01T00:00:00.000Z" },
+        meta: { session_id: `${RUN}-workitem-update-test` },
+      }),
+    }));
+    const updated = await updateRes.json();
+    expect(updateRes.status).toBe(200);
+    expect(updated.data.deadline).toBe("2030-01-01T00:00:00.000Z");
+
+    const cancelRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workitem.cancel",
+        category: "act",
+        args: { id: actWorkItemId },
+        meta: { session_id: `${RUN}-workitem-cancel-test` },
+      }),
+    }));
+    const cancelled = await cancelRes.json();
+    expect(cancelRes.status).toBe(200);
+    expect(cancelled.data.status).toBe("cancelled");
   });
 });
