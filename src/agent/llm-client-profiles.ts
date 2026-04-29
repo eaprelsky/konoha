@@ -77,7 +77,7 @@ const PROFILES: Record<string, LLMClientProfile> = {
     reasoning_effort: "high",
     capabilities: ["text", "tool_use", "code", "long_context", "reasoning"],
     disabled: true,
-    disabled_reason: "Blocked until Codex proxy/VPN upstream credentials are refreshed (#565).",
+    disabled_reason: "Codex CLI upgraded to 0.125.0 (#574). Blocked until proxy/VPN upstream credentials are refreshed (#565).",
   },
 };
 
