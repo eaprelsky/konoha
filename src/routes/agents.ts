@@ -31,7 +31,7 @@ import {
   resolveLLMClientProfile,
   composeAgentView,
 } from "../agent-lifecycle";
-import type { AgentRuntimeState, LifecycleStatus, AgentProvider } from "../agent-lifecycle";
+import type { AgentRuntimeState, LifecycleStatus, AgentProvider, AgentView } from "../agent-lifecycle";
 import { silentCatch } from "../logger";
 
 const router = new Hono<HonoEnv>();
@@ -463,7 +463,18 @@ router.get("/", async (c) => {
       });
     })
   );
-  return c.json([...agentsWithState, ...unmatchedWithState]);
+  const allViews = [...agentsWithState, ...unmatchedWithState];
+
+  // ?format=v2 — return split boundaries: templates, presences, runtime_states
+  if (c.req.query("format") === "v2") {
+    return c.json({
+      templates: allViews.map(v => "template" in v ? (v as AgentView).template : null).filter(Boolean),
+      presences: allViews.map(v => "presence" in v ? (v as AgentView).presence : null).filter(Boolean),
+      runtime_states: allViews.map(v => "runtime_state" in v ? (v as AgentView).runtime_state : null).filter(Boolean),
+    });
+  }
+
+  return c.json(allViews);
 });
 
 router.post("/:id/heartbeat", async (c) => {
