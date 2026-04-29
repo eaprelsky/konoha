@@ -233,6 +233,47 @@ describe("eEPC state-machine regression suite", () => {
     expect(items[0].element_id).toBe("pathB");
   });
 
+  test("function output updates case payload before gateway evaluation", async () => {
+    const id = wfId("function-output-gateway");
+    await registerWorkflow({
+      id,
+      version: "1.0.0",
+      name: "Function output gateway regression",
+      elements: [
+        { id: "start", type: "event", label: "Started" },
+        { id: "triage", type: "function", label: "Triage", role: "sasuke" },
+        { id: "route", type: "gateway", label: "Route", operator: "XOR" },
+        { id: "accept", type: "function", label: "Accept lead", role: "sales_owner" },
+        { id: "reject", type: "function", label: "Reject lead", role: "sales_owner" },
+        { id: "end", type: "event", label: "Finished" },
+      ],
+      flow: [
+        ["start", "triage"],
+        ["triage", "route"],
+        ["route", "accept", "payload.lead_relevant === true"],
+        ["route", "reject", "payload.lead_relevant === false"],
+        ["accept", "end"],
+        ["reject", "end"],
+      ],
+    });
+
+    const kase = await createCase(id, "function-output-gateway", { source_chat: "coMind Лиды" });
+    const triage = await pendingWorkItemForCase(kase.case_id, "triage");
+
+    const afterTriage = await completeWorkItem(triage.work_item_id, {
+      lead_relevant: true,
+      lead_type: "sales_lead",
+    });
+
+    expect(afterTriage.case?.payload.lead_relevant).toBe(true);
+    expect(afterTriage.case?.payload.lead_type).toBe("sales_lead");
+    expect(afterTriage.case?.position).toBe("accept");
+
+    const accept = await pendingWorkItemForCase(kase.case_id, "accept");
+    expect(accept.assignee).toBe("sales_owner");
+    expect(accept.input.lead_type).toBe("sales_lead");
+  });
+
   test("AND split waits for all active branches before passing the join", async () => {
     const id = wfId("and-join");
     await registerWorkflow({

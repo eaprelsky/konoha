@@ -109,6 +109,8 @@ export async function completeWorkItem(
 
   const histEntry = kase.history.find(h => h.work_item_id === work_item_id);
   if (histEntry) histEntry.output = output;
+  // Function output is process state: downstream gateways and functions must see it.
+  kase.payload = { ...kase.payload, ...output };
 
   const { getWorkflow } = await import("../workflow-loader");
   const def = await getWorkflow(kase.process_id);
