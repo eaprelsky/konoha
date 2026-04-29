@@ -393,6 +393,16 @@ def check_security_hygiene() -> list[Check]:
     else:
         checks.append(Check("OK", "security.nginx_secret_backups", "no nginx bearer backups found"))
 
+    repo = Path(__file__).resolve().parent.parent
+    rc, stdout, stderr = run(["git", "-C", str(repo), "remote", "-v"], timeout=5)
+    remote_output = stdout + stderr
+    if rc != 0:
+        checks.append(Check("WARN", "security.git_remote_urls", remote_output[:180], "Inspect git remote -v"))
+    elif re.search(r"https://[^/\s]+@", remote_output) or re.search(r"(github_pat_|ghp_|gho_|ghu_|ghs_)", remote_output):
+        checks.append(Check("FAIL", "security.git_remote_urls", "credential embedded in git remote URL", "Run: git remote set-url origin https://github.com/eaprelsky/konoha.git"))
+    else:
+        checks.append(Check("OK", "security.git_remote_urls", "no credentials embedded in git remote URLs"))
+
     return checks
 
 
