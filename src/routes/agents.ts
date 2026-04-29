@@ -47,13 +47,6 @@ function routeRuntimeState(agentId: string, lifecycle: LifecycleProjection): Age
   };
 }
 
-const PROFILE_DEFAULT_MODELS: Record<string, string> = {
-  claude: "claude:sonnet",
-  codex: "codex:gpt-5.4",
-  cursor: "cursor:auto",
-  glm: "glm:glm-5.1",
-};
-
 function validateLLMClientProfile(id: unknown, field: string): { error: string } | null {
   if (id === undefined || id === null || id === "") return null;
   if (typeof id !== "string") return { error: `${field} must be a string` };
