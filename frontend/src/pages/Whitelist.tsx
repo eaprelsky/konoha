@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import type React from 'react';
 import { api } from '../api/client';
 
 interface TrustedUserEntry {
@@ -71,6 +72,13 @@ const styles = `
   .refresh-btn { padding: 5px 12px; border: 1px solid #e2e8f0; background: white; border-radius: 4px; font-size: 12px; cursor: pointer; color: #475569; }
   .refresh-btn:hover { background: #f8fafc; }
   .section-header { display: flex; justify-content: space-between; align-items: center; }
+  .quick-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 8px; align-items: end; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+  .quick-form.group { grid-template-columns: minmax(180px, 260px) auto; }
+  .quick-field { display: flex; flex-direction: column; gap: 4px; }
+  .quick-field label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+  .quick-field input { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
+  .btn-add { padding: 8px 14px; border-radius: 4px; border: 1px solid #93c5fd; background: #eff6ff; color: #1d4ed8; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .btn-add:hover { background: #dbeafe; }
 `;
 
 export function Whitelist() {
@@ -78,6 +86,8 @@ export function Whitelist() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [newUser, setNewUser] = useState({ name: '', telegram_id: '', username: '', position: '' });
+  const [newGroup, setNewGroup] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -99,16 +109,22 @@ export function Whitelist() {
     setTimeout(() => setSuccess(null), 3000);
   }
 
+  function applyActionResult(result: { state?: WhitelistData } | undefined) {
+    if (result?.state) setData(result.state);
+    else void load();
+  }
+
   async function approve(entry: PendingEntry) {
     try {
       if (entry.type === 'user' && entry.telegram_id) {
-        await api.whitelist.approve({ type: 'user', telegram_id: entry.telegram_id });
+        const result = await api.whitelist.approve({ type: 'user', telegram_id: entry.telegram_id });
+        applyActionResult(result);
         flash(`Пользователь ${entry.name ?? entry.telegram_id} одобрен`);
       } else if (entry.type === 'group' && entry.chat_id) {
-        await api.whitelist.approve({ type: 'group', chat_id: entry.chat_id });
+        const result = await api.whitelist.approve({ type: 'group', chat_id: entry.chat_id });
+        applyActionResult(result);
         flash(`Группа ${entry.chat_id} одобрена`);
       }
-      await load();
     } catch (e: any) {
       setError(e.message);
     }
@@ -117,13 +133,53 @@ export function Whitelist() {
   async function reject(entry: PendingEntry) {
     try {
       if (entry.type === 'user' && entry.telegram_id) {
-        await api.whitelist.reject({ type: 'user', telegram_id: entry.telegram_id });
+        const result = await api.whitelist.reject({ type: 'user', telegram_id: entry.telegram_id });
+        applyActionResult(result);
         flash(`Пользователь ${entry.name ?? entry.telegram_id} отклонён`);
       } else if (entry.type === 'group' && entry.chat_id) {
-        await api.whitelist.reject({ type: 'group', chat_id: entry.chat_id });
+        const result = await api.whitelist.reject({ type: 'group', chat_id: entry.chat_id });
+        applyActionResult(result);
         flash(`Группа ${entry.chat_id} отклонена`);
       }
-      await load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function addUser(e: React.FormEvent) {
+    e.preventDefault();
+    const telegram_id = Number(newUser.telegram_id);
+    if (!newUser.name.trim() || Number.isNaN(telegram_id)) {
+      setError('Имя и числовой Telegram ID обязательны');
+      return;
+    }
+    try {
+      const result = await api.whitelist.upsertUser({
+        name: newUser.name.trim(),
+        telegram_id,
+        username: newUser.username.trim().replace(/^@/, '') || undefined,
+        position: newUser.position.trim() || undefined,
+      });
+      applyActionResult(result);
+      setNewUser({ name: '', telegram_id: '', username: '', position: '' });
+      flash('Доверенный пользователь сохранён');
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function addGroup(e: React.FormEvent) {
+    e.preventDefault();
+    const chat_id = Number(newGroup);
+    if (Number.isNaN(chat_id)) {
+      setError('Chat ID должен быть числом');
+      return;
+    }
+    try {
+      const result = await api.whitelist.addGroup({ chat_id });
+      applyActionResult(result);
+      setNewGroup('');
+      flash('Группа добавлена');
     } catch (e: any) {
       setError(e.message);
     }
@@ -132,9 +188,9 @@ export function Whitelist() {
   async function deleteUser(telegram_id: number) {
     if (!confirm('Удалить пользователя из белого списка?')) return;
     try {
-      await api.whitelist.deleteUser(telegram_id);
+      const result = await api.whitelist.deleteUser(telegram_id);
+      applyActionResult(result);
       flash('Пользователь удалён');
-      await load();
     } catch (e: any) {
       setError(e.message);
     }
@@ -143,9 +199,9 @@ export function Whitelist() {
   async function deleteGroup(chat_id: number) {
     if (!confirm('Удалить группу из белого списка?')) return;
     try {
-      await api.whitelist.deleteGroup(chat_id);
+      const result = await api.whitelist.deleteGroup(chat_id);
+      applyActionResult(result);
       flash('Группа удалена');
-      await load();
     } catch (e: any) {
       setError(e.message);
     }
@@ -174,6 +230,27 @@ export function Whitelist() {
               </div>
             </div>
           )}
+
+          <div className="section-title">Добавить доверенного пользователя</div>
+          <form className="quick-form" onSubmit={addUser}>
+            <div className="quick-field">
+              <label>Имя *</label>
+              <input value={newUser.name} onChange={e => setNewUser(v => ({ ...v, name: e.target.value }))} placeholder="Наташа Апрельская" />
+            </div>
+            <div className="quick-field">
+              <label>Telegram ID *</label>
+              <input value={newUser.telegram_id} onChange={e => setNewUser(v => ({ ...v, telegram_id: e.target.value }))} placeholder="123456789" />
+            </div>
+            <div className="quick-field">
+              <label>Username</label>
+              <input value={newUser.username} onChange={e => setNewUser(v => ({ ...v, username: e.target.value }))} placeholder="@username" />
+            </div>
+            <div className="quick-field">
+              <label>Должность</label>
+              <input value={newUser.position} onChange={e => setNewUser(v => ({ ...v, position: e.target.value }))} placeholder="Sales / PM / Founder" />
+            </div>
+            <button className="btn-add" type="submit">Добавить</button>
+          </form>
 
           {/* Pending section */}
           {(pendingUsers.length > 0 || pendingGroups.length > 0) && (
@@ -295,6 +372,13 @@ export function Whitelist() {
             Разрешённые группы
             <span className="badge">{data?.whitelisted_groups.length ?? 0}</span>
           </div>
+          <form className="quick-form group" onSubmit={addGroup}>
+            <div className="quick-field">
+              <label>Chat ID *</label>
+              <input value={newGroup} onChange={e => setNewGroup(e.target.value)} placeholder="-1001234567890" />
+            </div>
+            <button className="btn-add" type="submit">Добавить группу</button>
+          </form>
           <table className="table">
             <thead>
               <tr>

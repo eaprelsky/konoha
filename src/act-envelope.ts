@@ -73,7 +73,8 @@ export type ActionHandler = (
 const MUTATION_VERBS = new Set([
   "create", "update", "delete", "remove", "close", "complete",
   "cancel", "start", "stop", "restart", "register", "set",
-  "resolve", "send",
+  "resolve", "send", "upsert", "approve", "reject",
+  "upsert_user", "remove_user", "add_group", "remove_group",
 ]);
 
 const DRILL_VERBS = new Set([
@@ -369,9 +370,16 @@ export const actRouter = new Hono<HonoEnv>();
  */
 actRouter.post("/", requireAuth, async (c) => {
   const envelope = await c.req.json<ActEnvelope>();
+  const caller = c.get("caller");
+  const actionDef = getAction(envelope.action);
+  const category = actionDef ? classifyAction(actionDef.id) : classifyAction(envelope.action);
+  if (!caller?.isAdmin && category === "act" && (actionDef?.scope === "access" || actionDef?.scope === "person")) {
+    return c.json(fail(envelope.action, "Forbidden: admin token required"), 403);
+  }
   const result = await executeAction(envelope, {
     agent_chain: envelope.meta?.agent_chain ?? "api",
     authHeader: c.req.header("Authorization"),
+    skipAutonomy: caller?.isAdmin === true,
   });
   if (!result.ok && result.requires_confirm) {
     return c.json(result, 202);

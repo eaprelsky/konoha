@@ -13,7 +13,7 @@
 
 // ── Version ─────────────────────────────────────────────────────────────────
 
-export const ACTION_VERSION = 1;
+export const ACTION_VERSION = 2;
 
 // ── Core types ──────────────────────────────────────────────────────────────
 
@@ -28,6 +28,7 @@ export type ObjectScope =
   | "agent"       // agent lifecycle (register, start, stop, restart)
   | "skill"       // skill CRUD
   | "person"      // people directory
+  | "access"      // trusted users and Telegram group access
   | "adapter"     // data adapter operations
   | "reminder"    // scheduled reminders
   | "issue"       // GitHub issue operations
@@ -441,6 +442,139 @@ const ACTIONS: ActionDef[] = [
       { name: "id", type: "string", required: true, description: "Agent ID to restart." },
     ],
     currentEndpoint: "POST /agents/:id/restart",
+    autonomy: "confirm",
+    audited: true,
+  },
+
+  // ── Person Directory ──────────────────────────────────────────────────────
+  {
+    id: "person.list",
+    description: "List people from trusted-users file and custom dashboard records.",
+    scope: "person",
+    args: [],
+    currentEndpoint: "GET /people",
+    autonomy: "auto",
+    audited: false,
+  },
+  {
+    id: "person.upsert",
+    description: "Create or update a custom person record. File-backed trusted users cannot be overridden.",
+    scope: "person",
+    args: [
+      { name: "id",             type: "string", required: false, description: "Stable person ID. Generated from name if omitted." },
+      { name: "name",           type: "string", required: true,  description: "Display name." },
+      { name: "tg_id",          type: "number", required: false, description: "Telegram numeric user ID." },
+      { name: "tg_username",    type: "string", required: false, description: "Telegram username without @." },
+      { name: "position",       type: "string", required: false, description: "Role or job title." },
+      { name: "email",          type: "string", required: false, description: "Email address." },
+      { name: "bitrix24_id",    type: "string", required: false, description: "Bitrix24 user ID." },
+      { name: "tracker_login",  type: "string", required: false, description: "Yandex Tracker login." },
+      { name: "yonote_id",      type: "string", required: false, description: "Yonote user ID." },
+      { name: "channel",        type: "string", required: false, description: "Preferred notification channel: telegram | email." },
+      { name: "capabilities",   type: "array",  required: false, description: "Capability/skill IDs." },
+      { name: "avatar_url",     type: "string", required: false, description: "Avatar URL." },
+    ],
+    currentEndpoint: "POST /people",
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
+    id: "person.delete",
+    description: "Delete a custom person record. File-backed trusted users cannot be deleted here.",
+    scope: "person",
+    args: [
+      { name: "id", type: "string", required: true, description: "Person ID to delete." },
+    ],
+    currentEndpoint: "DELETE /people/:id",
+    autonomy: "confirm",
+    audited: true,
+  },
+
+  // ── Access Control ────────────────────────────────────────────────────────
+  {
+    id: "access.list",
+    description: "List owner, trusted users, whitelisted Telegram groups, and pending access requests.",
+    scope: "access",
+    args: [],
+    currentEndpoint: "GET /whitelist",
+    autonomy: "auto",
+    audited: false,
+  },
+  {
+    id: "access.approve",
+    description: "Approve a pending user or group access request.",
+    scope: "access",
+    args: [
+      { name: "type",        type: "string", required: true,  description: "Entry type: user | group." },
+      { name: "telegram_id", type: "number", required: false, description: "Telegram user ID for user approvals." },
+      { name: "chat_id",     type: "number", required: false, description: "Telegram chat ID for group approvals." },
+    ],
+    currentEndpoint: "POST /whitelist/approve",
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
+    id: "access.reject",
+    description: "Reject a pending user or group access request, optionally blocking it.",
+    scope: "access",
+    args: [
+      { name: "type",        type: "string",  required: true,  description: "Entry type: user | group." },
+      { name: "telegram_id", type: "number",  required: false, description: "Telegram user ID for user rejections." },
+      { name: "chat_id",     type: "number",  required: false, description: "Telegram chat ID for group rejections." },
+      { name: "block",       type: "boolean", required: false, description: "Add ID to blocked list." },
+    ],
+    currentEndpoint: "POST /whitelist/reject",
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
+    id: "access.upsert_user",
+    description: "Create or update a trusted Telegram user in the file-backed access list.",
+    scope: "access",
+    args: [
+      { name: "name",        type: "string", required: true,  description: "Display name." },
+      { name: "telegram_id", type: "number", required: true,  description: "Telegram numeric user ID." },
+      { name: "username",    type: "string", required: false, description: "Telegram username without @." },
+      { name: "email",       type: "string", required: false, description: "Email address." },
+      { name: "phone",       type: "string", required: false, description: "Phone number." },
+      { name: "position",    type: "string", required: false, description: "Role or job title." },
+      { name: "relation",    type: "string", required: false, description: "Relation/group label." },
+      { name: "level",       type: "number", required: false, description: "Trust level." },
+    ],
+    currentEndpoint: "POST /whitelist/user",
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
+    id: "access.remove_user",
+    description: "Remove a trusted Telegram user from the access list.",
+    scope: "access",
+    args: [
+      { name: "telegram_id", type: "number", required: true, description: "Telegram numeric user ID." },
+    ],
+    currentEndpoint: "DELETE /whitelist/user/:telegram_id",
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
+    id: "access.add_group",
+    description: "Add a Telegram group to the whitelist.",
+    scope: "access",
+    args: [
+      { name: "chat_id", type: "number", required: true, description: "Telegram chat ID." },
+    ],
+    currentEndpoint: "POST /whitelist/group",
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
+    id: "access.remove_group",
+    description: "Remove a Telegram group from the whitelist.",
+    scope: "access",
+    args: [
+      { name: "chat_id", type: "number", required: true, description: "Telegram chat ID." },
+    ],
+    currentEndpoint: "DELETE /whitelist/group/:chat_id",
     autonomy: "confirm",
     audited: true,
   },

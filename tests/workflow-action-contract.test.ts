@@ -127,8 +127,21 @@ describe("workflow action contract validation", () => {
   });
 
   it("dumpRegistry version matches ACTION_VERSION", () => {
-    expect(dump.version).toBe(1);
+    expect(dump.version).toBe(2);
     expect(dump.actions.length).toBeGreaterThan(30);
+  });
+
+  it("registers people and access actions for API/agent parity", () => {
+    expect(isValidAction("person.list")).toBe(true);
+    expect(isValidAction("person.upsert")).toBe(true);
+    expect(isValidAction("person.delete")).toBe(true);
+    expect(isValidAction("access.list")).toBe(true);
+    expect(isValidAction("access.approve")).toBe(true);
+    expect(isValidAction("access.reject")).toBe(true);
+    expect(isValidAction("access.upsert_user")).toBe(true);
+    expect(isValidAction("access.add_group")).toBe(true);
+    expect(isValidAction("access.remove_user")).toBe(true);
+    expect(isValidAction("access.remove_group")).toBe(true);
   });
 
   it("every registered action has a valid contract", () => {

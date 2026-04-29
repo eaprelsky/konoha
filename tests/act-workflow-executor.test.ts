@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import Redis from "ioredis";
 import { AUTONOMY_KEY } from "../src/assistant-actions";
+import { unregisterAgent } from "../src/redis";
 import { pgDeleteWorkflow, pgDeleteWorkItem } from "../src/storage/pg";
 
 process.env.KONOHA_PORT = "0";
@@ -14,6 +15,8 @@ const RUN = `act-wf-${Date.now()}`;
 const ACT_WORKFLOW_ID = `${RUN}-direct`;
 const HTTP_WORKFLOW_ID_PREFIX = `${RUN}-http`;
 let actWorkItemId: string | null = null;
+const ACT_PERSON_ID = `${RUN}-person`;
+const RBAC_AGENT_ID = `${RUN}-rbac-agent`;
 const savedAutonomy: Record<string, string | null> = {};
 
 function adminHeaders() {
@@ -59,6 +62,8 @@ afterAll(async () => {
     await redis.zrem("konoha:workitems:all", actWorkItemId);
     await pgDeleteWorkItem(actWorkItemId);
   }
+  await redis.hdel("people:custom", ACT_PERSON_ID);
+  await unregisterAgent(RBAC_AGENT_ID, true).catch(() => {});
   redis.disconnect();
   delete process.env.KONOHA_PORT;
 });
@@ -196,5 +201,70 @@ describe("/act workflow executor", () => {
     const cancelled = await cancelRes.json();
     expect(cancelRes.status).toBe(200);
     expect(cancelled.data.status).toBe("cancelled");
+  });
+
+  test("executes person actions directly through the action envelope", async () => {
+    const createRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "person.upsert",
+        category: "act",
+        args: { id: ACT_PERSON_ID, name: "Act Person", tg_id: 9876501, position: "QA" },
+        meta: { session_id: `${RUN}-person-upsert-test` },
+      }),
+    }));
+    const created = await createRes.json();
+    expect(createRes.status).toBe(201);
+    expect(created.ok).toBe(true);
+    expect(created.data.id).toBe(ACT_PERSON_ID);
+
+    const listRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "person.list",
+        category: "inspect",
+        args: {},
+      }),
+    }));
+    const listed = await listRes.json();
+    expect(listRes.status).toBe(200);
+    expect(listed.data.some((p: any) => p.id === ACT_PERSON_ID)).toBe(true);
+
+    const deleteRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "person.delete",
+        category: "act",
+        args: { id: ACT_PERSON_ID },
+        meta: { session_id: `${RUN}-person-delete-test` },
+      }),
+    }));
+    const deleted = await deleteRes.json();
+    expect(deleteRes.status).toBe(200);
+    expect(deleted.data.ok).toBe(true);
+  });
+
+  test("agent token cannot mutate admin-only access/person actions through /act", async () => {
+    const reg = await app.fetch(new Request("http://localhost/agents/register", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ id: RBAC_AGENT_ID, name: "Act RBAC Agent" }),
+    }));
+    const agent = await reg.json();
+
+    const res = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${agent.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "access.upsert_user",
+        category: "act",
+        args: { name: "Blocked", telegram_id: 123456789 },
+      }),
+    }));
+
+    expect(res.status).toBe(403);
   });
 });

@@ -19,6 +19,17 @@ import {
   completeWorkItem,
   listWorkItems,
 } from "./runtime/work-items";
+import { deleteCustomPerson, listPeople, upsertCustomPerson } from "./people-service";
+import {
+  addWhitelistedGroup,
+  approvePendingAccess,
+  listAccess,
+  rejectPendingAccess,
+  removeTrustedUser,
+  removeWhitelistedGroup,
+  upsertTrustedUser,
+} from "./access-control";
+import { ServiceError } from "./errors";
 
 export interface ActionExecution {
   status: number;
@@ -356,6 +367,82 @@ async function executeWorkItemAction(action: string, args: Record<string, unknow
   }
 }
 
+function serviceFailure(error: unknown): ActionExecution {
+  if (error instanceof ServiceError) return { status: error.status, data: { error: error.message } };
+  const message = error instanceof Error ? error.message : "Internal error";
+  return { status: 500, data: { error: message } };
+}
+
+async function executePersonAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "person.list":
+      return { status: 200, data: await listPeople() };
+    case "person.upsert": {
+      const invalid = validationFailure("person.upsert", args);
+      if (invalid) return invalid;
+      try {
+        return { status: 201, data: await upsertCustomPerson(args as any) };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    case "person.delete": {
+      const invalid = validationFailure("person.delete", args);
+      if (invalid) return invalid;
+      try {
+        return { status: 200, data: await deleteCustomPerson(String(args.id)) };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    default:
+      return null;
+  }
+}
+
+async function executeAccessAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  try {
+    switch (action) {
+      case "access.list":
+        return { status: 200, data: listAccess() };
+      case "access.approve": {
+        const invalid = validationFailure("access.approve", args);
+        if (invalid) return invalid;
+        return { status: 200, data: approvePendingAccess(args as any) };
+      }
+      case "access.reject": {
+        const invalid = validationFailure("access.reject", args);
+        if (invalid) return invalid;
+        return { status: 200, data: rejectPendingAccess(args as any) };
+      }
+      case "access.upsert_user": {
+        const invalid = validationFailure("access.upsert_user", args);
+        if (invalid) return invalid;
+        return { status: 200, data: upsertTrustedUser(args as any) };
+      }
+      case "access.remove_user": {
+        const invalid = validationFailure("access.remove_user", args);
+        if (invalid) return invalid;
+        return { status: 200, data: removeTrustedUser(Number(args.telegram_id)) };
+      }
+      case "access.add_group": {
+        const invalid = validationFailure("access.add_group", args);
+        if (invalid) return invalid;
+        return { status: 200, data: addWhitelistedGroup(Number(args.chat_id)) };
+      }
+      case "access.remove_group": {
+        const invalid = validationFailure("access.remove_group", args);
+        if (invalid) return invalid;
+        return { status: 200, data: removeWhitelistedGroup(Number(args.chat_id)) };
+      }
+      default:
+        return null;
+    }
+  } catch (e) {
+    return serviceFailure(e);
+  }
+}
+
 export async function executeActionDirect(
   action: string,
   args: Record<string, unknown>,
@@ -369,6 +456,12 @@ export async function executeActionDirect(
   }
   if (action.startsWith("workitem.")) {
     return executeWorkItemAction(action, args);
+  }
+  if (action.startsWith("person.")) {
+    return executePersonAction(action, args);
+  }
+  if (action.startsWith("access.")) {
+    return executeAccessAction(action, args);
   }
   return null;
 }

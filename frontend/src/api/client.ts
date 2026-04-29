@@ -91,6 +91,17 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 const BASE = '/api';
 
+type ActCategory = 'act' | 'inspect' | 'drill';
+
+async function act<T>(action: string, args: Record<string, unknown>, category: ActCategory = 'act'): Promise<T> {
+  const result = await apiFetch<{ ok: boolean; data?: T; error?: string }>(`${BASE}/act`, {
+    method: 'POST',
+    body: JSON.stringify({ action, category, args }),
+  });
+  if (!result.ok) throw new Error(result.error || `Action failed: ${action}`);
+  return result.data as T;
+}
+
 // ── Workflows ─────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -302,8 +313,16 @@ export const api = {
 
   people: {
     list: () => apiFetch<Person[]>(`${BASE}/people`),
-    save: (p: Partial<Person>) => apiFetch<Person>(`${BASE}/people`, { method: 'POST', body: JSON.stringify(p) }),
-    delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/people/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    save: async (p: Partial<Person>) => {
+      const saved = await act<Person>('person.upsert', p as Record<string, unknown>);
+      _cache.delete(`${BASE}/people`);
+      return saved;
+    },
+    delete: async (id: string) => {
+      const deleted = await act<{ ok: boolean }>('person.delete', { id });
+      _cache.delete(`${BASE}/people`);
+      return deleted;
+    },
     generateAvatar: (id: string, params?: { style?: string; description?: string; prompt?: string }) =>
       apiFetch<{ avatar_url: string }>(`${BASE}/people/${encodeURIComponent(id)}/avatar`, { method: 'POST', body: JSON.stringify(params || {}) }),
     uploadAvatar: (id: string, file: File) => {
@@ -442,13 +461,37 @@ export const api = {
 
   whitelist: {
     get: () => apiFetch<any>(`${BASE}/whitelist`),
-    approve: (body: { type: string; telegram_id?: number; chat_id?: number }) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/whitelist/approve`, { method: 'POST', body: JSON.stringify(body) }),
-    reject: (body: { type: string; telegram_id?: number; chat_id?: number; block?: boolean }) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/whitelist/reject`, { method: 'POST', body: JSON.stringify(body) }),
-    deleteUser: (telegram_id: number) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/whitelist/user/${telegram_id}`, { method: 'DELETE' }),
-    deleteGroup: (chat_id: number) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/whitelist/group/${chat_id}`, { method: 'DELETE' }),
+    approve: async (body: { type: string; telegram_id?: number; chat_id?: number }) => {
+      const res = await act<{ ok: boolean; state?: any }>('access.approve', body as Record<string, unknown>);
+      _cache.delete(`${BASE}/whitelist`);
+      return res;
+    },
+    reject: async (body: { type: string; telegram_id?: number; chat_id?: number; block?: boolean }) => {
+      const res = await act<{ ok: boolean; state?: any }>('access.reject', body as Record<string, unknown>);
+      _cache.delete(`${BASE}/whitelist`);
+      return res;
+    },
+    upsertUser: async (body: { name: string; telegram_id: number; username?: string; email?: string; phone?: string; position?: string; relation?: string; level?: number }) => {
+      const res = await act<{ ok: boolean; state?: any }>('access.upsert_user', body as Record<string, unknown>);
+      _cache.delete(`${BASE}/whitelist`);
+      _cache.delete(`${BASE}/people`);
+      return res;
+    },
+    addGroup: async (body: { chat_id: number }) => {
+      const res = await act<{ ok: boolean; state?: any }>('access.add_group', body as Record<string, unknown>);
+      _cache.delete(`${BASE}/whitelist`);
+      return res;
+    },
+    deleteUser: async (telegram_id: number) => {
+      const res = await act<{ ok: boolean; state?: any }>('access.remove_user', { telegram_id });
+      _cache.delete(`${BASE}/whitelist`);
+      _cache.delete(`${BASE}/people`);
+      return res;
+    },
+    deleteGroup: async (chat_id: number) => {
+      const res = await act<{ ok: boolean; state?: any }>('access.remove_group', { chat_id });
+      _cache.delete(`${BASE}/whitelist`);
+      return res;
+    },
   },
 };

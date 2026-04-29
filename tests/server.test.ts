@@ -764,8 +764,8 @@ describe("User-visible configuration access control", () => {
 
     const audit = await req("GET", "/audit?limit=20");
     const actions = audit.body.map((entry: any) => entry.action_type);
-    expect(actions).toContain("people.upsert");
-    expect(actions).toContain("people.delete");
+    expect(actions).toContain("person.upsert");
+    expect(actions).toContain("person.delete");
   });
 
   test("custom people cannot override file-based trusted users", async () => {

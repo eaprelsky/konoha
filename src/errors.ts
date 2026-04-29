@@ -51,3 +51,20 @@ export class AgentError extends KonohaError {
     super(message, "AGENT_ERROR", details);
   }
 }
+
+export class ServiceError extends KonohaError {
+  readonly status: number;
+
+  constructor(status: number, message: string, details?: Record<string, unknown>) {
+    super(message, "SERVICE_ERROR", details);
+    this.status = status;
+  }
+}
+
+export function errorResponse(error: unknown): { status: number; body: { error: string } } {
+  if (error instanceof ServiceError) {
+    return { status: error.status, body: { error: error.message } };
+  }
+  const message = error instanceof Error ? error.message : "Internal error";
+  return { status: 500, body: { error: message } };
+}
