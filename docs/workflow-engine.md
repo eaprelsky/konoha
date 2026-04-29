@@ -181,6 +181,17 @@ All mutations go through `pgUpsertCase` / `pgUpsertWorkItem` / etc. Writes are f
 
 When `PG_READ=true`, `loadCase` / `loadWorkItem` / `listCases` etc. query PostgreSQL instead of Redis. Row converters (`pgRowToCase`, `pgRowToWorkItem`) normalise DB rows to the runtime types.
 
+### Verification gate
+
+Before switching `PG_READ=true` or delegating runtime changes that affect persisted entities, run:
+
+```bash
+cd /home/ubuntu/konoha
+PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-verify.ts
+```
+
+The gate treats Redis as the active source of truth for Phase 1: every active Redis entity must exist in PostgreSQL. Extra PostgreSQL rows are allowed as archived or historical data, but `Only in Redis` means the migration shadow is incomplete. Message verification counts only Redis stream keys under `konoha:agent:*`, so metadata hashes such as agent definitions do not affect the stream check.
+
 ---
 
 ## Key Types

@@ -29,6 +29,32 @@ interface CheckResult {
   ok: boolean;
 }
 
+async function scanKeys(match: string): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor = "0";
+
+  do {
+    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", match, "COUNT", 100);
+    cursor = nextCursor;
+    keys.push(...batch);
+  } while (cursor !== "0");
+
+  return keys.sort();
+}
+
+async function scanStreamKeys(match: string): Promise<string[]> {
+  const keys = await scanKeys(match);
+  const streamKeys: string[] = [];
+
+  for (const key of keys) {
+    if ((await redis.type(key)) === "stream") {
+      streamKeys.push(key);
+    }
+  }
+
+  return streamKeys;
+}
+
 async function checkCases(): Promise<CheckResult> {
   const redisIds = await redis.zrange("konoha:cases:all", 0, -1);
   const pgRows = await sql<{ case_id: string }[]>`SELECT case_id FROM cases`;
@@ -168,7 +194,7 @@ async function checkAgents(): Promise<CheckResult> {
 }
 
 async function checkMessages(): Promise<CheckResult> {
-  const streamKeys = await redis.keys("konoha:agent:*");
+  const streamKeys = await scanStreamKeys("konoha:agent:*");
   let redisCount = 0;
   for (const key of streamKeys) {
     const n = await redis.xlen(key);
