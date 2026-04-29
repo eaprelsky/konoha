@@ -40,8 +40,8 @@ interface AgentSettingsTabProps {
   onSubmit: (e: React.FormEvent) => void;
   onAvatarAction: () => void;
   onAvatarUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  avatarFileRef: React.RefObject<HTMLInputElement | null>;
-  avatarImg2ImgRef: React.RefObject<HTMLInputElement | null>;
+  avatarFileRef: React.RefObject<HTMLInputElement>;
+  avatarImg2ImgRef: React.RefObject<HTMLInputElement>;
 }
 
 export function AgentSettingsTab({
