@@ -21,6 +21,10 @@ The public `/agents` API is backward-compatible and still returns flattened fiel
 
 Use `composeAgentView()` for `/agents` responses instead of ad hoc object spreading. This keeps old clients working while the storage model is split.
 
+See `docs/agent-naming.md` for the canonical split between runtime `id`, portable
+corporate `name`, mutable `display_alias`, workflow roles, and assignment
+policies.
+
 ---
 
 ## Data model
@@ -30,7 +34,8 @@ Use `composeAgentView()` for `/agents` responses instead of ad hoc object spread
 ```ts
 interface AgentDef {
   id: string;                         // unique agent ID (e.g. "naruto", "kakashi")
-  name: string;                       // display name
+  name: string;                       // canonical portable product/corporate name
+  display_alias?: string;             // mutable tenant-local callsign/persona alias
   runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
   fallback_runtime?: 'claude' | 'codex' | 'cursor' | 'glm';
   llm_client_profile?: string;          // preferred: runtime adapter + provider + model profile
@@ -95,7 +100,7 @@ Every lifecycle event (created, started, stopped, restarted, error) is appended 
 
 ```
 [Layer 1+2: System Template]
-  - Agent identity (id, name, model)
+  - Agent identity (id, canonical name, display alias, model)
   - Startup sequence (source /home/ubuntu/.agent-env, read MEMORY.md, konoha_register, wait for tasks)
   - Konoha bus connection info + watchdog behavior
 ---
@@ -320,12 +325,12 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3200/agents/kakashi/syst
 
 The following agents are seeded automatically on server start and are marked `protected: true` (cannot be deleted via API):
 
-| ID | Name | Model | tmux override |
-|----|------|-------|---------------|
-| naruto | Наруто (Оркестратор) | claude-sonnet-4-6 | naruto |
-| sasuke | Саске | claude-sonnet-4-6 | sasuke |
-| kakashi | Какаши (Мастер багфиксинга, on-demand) | claude-opus via DeepSeek profile | kakashi |
-| mirai | Мирай | claude-haiku-4-5-20251001 | mirai |
+| ID | Canonical name | Default alias | Model | tmux override |
+|----|----------------|---------------|-------|---------------|
+| naruto | Бот-агент | Наруто | claude-sonnet-4-6 | naruto |
+| sasuke | Юзер-агент | Саске | claude-sonnet-4-6 | sasuke |
+| kakashi | Тимлид | Какаши | claude-opus via DeepSeek profile | kakashi |
+| mirai | Исследователь | Мирай | claude-haiku-4-5-20251001 | mirai |
 
 Seed is idempotent — existing definitions are not overwritten. Can be re-run via `POST /admin/seed-system-agents`.
 

@@ -2,6 +2,11 @@
 
 Canonical lifecycle is owned by Konoha. Do not use retired files under `agents/systemd/` or `agents/scripts/agent-*-service.sh`.
 
+Agent ids such as `naruto` and `sasuke` are runtime compatibility ids, not
+product-facing names. Use `docs/agent-naming.md` when deciding whether a string
+belongs in lifecycle/service tooling (`id`), customer UI (`name`), or local
+persona copy (`display_alias`).
+
 ## Permanent Agents
 
 Permanent agents are supervised by systemd wrappers:
@@ -129,7 +134,7 @@ The healthcheck covers:
 - `systemctl --failed` and core services: Konoha, Akamaru, Telegram bus/bot, context packer, vision packer, permanent agents, per-agent watchdogs
 - Konoha `/health` and `/agents`
 - Redis stream lag/pending/dead-letter for Telegram routing streams
-- tmux session presence and obvious stuck signals for Naruto, Sasuke, Kakashi, Kiba
+- tmux session presence and obvious stuck signals for runtime ids `naruto`, `sasuke`, `kakashi`, `kiba`
 - shared credentials and trusted-user config without printing secrets
 
 ## Common Failures

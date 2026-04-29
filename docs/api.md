@@ -286,12 +286,17 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 Create a new agent definition.
 
+`id` is the technical runtime id. `name` is the canonical portable
+product/corporate label. `display_alias` is an optional mutable tenant-local
+callsign. See `docs/agent-naming.md`.
+
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "id": "my-agent",
-    "name": "My Agent",
+    "name": "Intake Agent",
+    "display_alias": "Alice",
     "model": "claude-sonnet-4-6",
     "system_prompt": "You are a helpful assistant.",
     "capabilities": ["yandex-tracker"]
@@ -309,7 +314,8 @@ Get a single agent definition with its current runtime state.
 
 ### PUT /agents/:id
 
-Update agent definition fields (name, model, system_prompt, capabilities, etc.).
+Update agent definition fields (`name`, `display_alias`, `model`,
+`system_prompt`, `capabilities`, etc.).
 
 ### DELETE /agents/:id
 
