@@ -7,6 +7,13 @@ process.env.PG_READ = "false";
 // Use a stable test admin token. Server.test.ts restores it in afterAll if it
 // mutates it, but the preload must set it first so all files see the same token.
 process.env.KONOHA_TOKEN = "test-admin-token-preload";
+process.env.KONOHA_DASHBOARD_USER = "test-admin";
+process.env.KONOHA_DASHBOARD_PASSWORD = "test-dashboard-password";
+process.env.KONOHA_DASHBOARD_HOSTS = "dashboard.test";
+process.env.KONOHA_DASHBOARD_AUTH_FILE = "/tmp/konoha-dashboard-auth-test.json";
+
+import { rmSync } from "fs";
+rmSync(process.env.KONOHA_DASHBOARD_AUTH_FILE, { force: true });
 
 import Redis from "ioredis";
 

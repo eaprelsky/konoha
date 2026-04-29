@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import type React from 'react';
 
-// Credentials are validated client-side; nginx handles API auth independently.
-const VALID_USER = 'eaprelsky';
-const VALID_PASS = 'Ufkbvfnm9';
-
 const styles = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -102,20 +98,25 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    setTimeout(() => {
-      if (username === VALID_USER && password === VALID_PASS) {
-        localStorage.setItem('konoha_dash_auth', '1');
-        localStorage.setItem('konoha_dash_user', username);
-        window.location.replace('/ui/');
-      } else {
-        setError('Invalid username or password');
-        setLoading(false);
-      }
-    }, 300);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) throw new Error('Invalid username or password');
+      localStorage.setItem('konoha_dash_auth', '1');
+      localStorage.setItem('konoha_dash_user', username);
+      window.location.replace('/ui/');
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
+      setLoading(false);
+    }
   }
 
   return (

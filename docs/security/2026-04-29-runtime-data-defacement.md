@@ -49,6 +49,7 @@ Code hardening:
 - `PUT /branding` now requires the admin token.
 - People mutation routes now require the admin token.
 - `POST /people` rejects custom records that try to override file-based trusted users by id.
+- Successful admin writes to branding and people now emit audit events.
 
 Regression coverage:
 
@@ -56,8 +57,8 @@ Regression coverage:
 - Added tests proving regular agent tokens cannot create custom people.
 - Added tests for admin branding updates and custom people create/delete.
 - Added a guard test for trusted-user override protection when trusted users are present.
+- Added tests proving branding and people admin writes are present in the audit stream.
 
 ## Residual Risk
 
-Attribution is limited because these routes did not previously emit a dedicated audit event, and Redis does not preserve key modification timestamps. If stronger forensic attribution is needed, add structured audit logging for all user-visible configuration writes and include caller identity, route, target id, and request id.
-
+Attribution for the original incident is limited because these routes did not previously emit a dedicated audit event, and Redis does not preserve key modification timestamps. New writes are audited, but the historical writer cannot be recovered from the cleaned Redis values alone.

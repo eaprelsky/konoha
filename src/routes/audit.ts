@@ -14,6 +14,7 @@ import { requireAuth, requireAdmin } from "../middleware/auth";
 import { redis } from "../redis";
 import {
   readAuditLog,
+  auditLog,
   assistantCreateIssue,
   getAutonomyMatrix,
   setAutonomyLevel,
@@ -156,6 +157,19 @@ router.put("/branding", requireAdmin, async (c) => {
     agent_display_names: { ...current.agent_display_names, ...(body.agent_display_names ?? {}) },
   };
   await redis.set(BRANDING_KEY, JSON.stringify(updated));
+  const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
+  await auditLog({
+    timestamp: new Date().toISOString(),
+    session_id: c.req.header("x-request-id") ?? `branding:${Date.now()}`,
+    action_type: "branding.update",
+    parameters: JSON.stringify({
+      product_name: updated.product_name,
+      theme_fields: Object.keys(body.theme ?? {}),
+      agent_display_name_ids: Object.keys(body.agent_display_names ?? {}),
+    }),
+    result: "ok",
+    agent_chain: caller.isAdmin ? "admin->api" : `${caller.agentId ?? "unknown"}->api`,
+  });
   return c.json(updated);
 });
 

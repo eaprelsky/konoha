@@ -27,6 +27,7 @@ import whitelistRouter from "../../src/routes/whitelist";
 import adminRouter from "../../src/routes/admin";
 import githubRouter from "../../src/routes/github";
 import auditRouter from "../../src/routes/audit";
+import authRouter from "../../src/routes/auth";
 import deployRouter from "../../src/routes/deploy";
 import testbenchProxyRouter from "../../src/routes/testbench-proxy";
 import { seedSystemAgents } from "../../src/routes/admin";
@@ -97,6 +98,7 @@ app.route("/ui", staticRouter);
 
 // Admin + health + webhook trigger + adapters (mixed auth, see admin.ts)
 app.route("/", adminRouter);
+app.route("/", authRouter);
 
 // Auth-protected route groups
 app.use("/messages/*", requireAuth);

@@ -14,6 +14,16 @@ All configuration is done through environment variables. In production they are 
 | `KONOHA_SETUP_FILE` | `/opt/shared/.konoha-setup.json` | Path to the setup JSON written by the Setup Wizard. |
 | `KONOHA_REPO` | `eaprelsky/konoha` | GitHub repository for issue creation by agents. |
 
+## Dashboard Auth
+
+| Variable | Default | Description |
+|---|---|---|
+| `KONOHA_DASHBOARD_USER` | `admin` | Dashboard login username. |
+| `KONOHA_DASHBOARD_PASSWORD` | — | One-time bootstrap password. On successful login the backend writes a hashed password file; do not keep this in long-lived env if not needed. |
+| `KONOHA_DASHBOARD_AUTH_FILE` | `/opt/shared/.dashboard-auth.json` | Local hashed dashboard credential file. Must be mode `0600`. |
+| `KONOHA_DASHBOARD_HOSTS` | — | Comma-separated dashboard hostnames. Requests for these hosts require the dashboard session cookie and cannot authenticate with bearer token alone. |
+| `KONOHA_SESSION_SECRET` | `KONOHA_TOKEN` | Optional signing secret for dashboard session cookies. |
+
 ---
 
 ## Database

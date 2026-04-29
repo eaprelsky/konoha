@@ -38,6 +38,7 @@ const styles = `
   .btn-profile-cancel { background: #f1f5f9; color: #374151; }
   .btn-profile-cancel:hover { background: #e2e8f0; }
   .profile-error { background: #fef2f2; color: #dc2626; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; border-left: 3px solid #dc2626; }
+  .profile-success { background: #ecfdf5; color: #047857; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; border-left: 3px solid #10b981; }
   .profile-picker { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
   .profile-picker p { font-size: 14px; color: #475569; margin-bottom: 8px; }
   .picker-item { padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: border-color .15s; }
@@ -73,6 +74,10 @@ export function ProfileModal({ onClose }: Props) {
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [passwordStatus, setPasswordStatus] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordRepeat, setNewPasswordRepeat] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const img2ImgRef = useRef<HTMLInputElement>(null);
@@ -179,6 +184,34 @@ export function ProfileModal({ onClose }: Props) {
     }
   }
 
+  async function changePassword() {
+    setError(null);
+    setPasswordStatus(null);
+    if (newPassword !== newPasswordRepeat) {
+      setError('Новый пароль и подтверждение не совпадают');
+      return;
+    }
+    if (newPassword.length < 12) {
+      setError('Новый пароль должен быть не короче 12 символов');
+      return;
+    }
+    const res = await fetch('/api/auth/password', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(body.error || `Ошибка смены пароля: HTTP ${res.status}`);
+      return;
+    }
+    setCurrentPassword('');
+    setNewPassword('');
+    setNewPasswordRepeat('');
+    setPasswordStatus('Пароль обновлён');
+  }
+
   const initials = name.charAt(0).toUpperCase() || '?';
 
   return (
@@ -215,6 +248,7 @@ export function ProfileModal({ onClose }: Props) {
           <form onSubmit={save}>
             <h2>Мой профиль</h2>
             {error && <div className="profile-error">{error}</div>}
+            {passwordStatus && <div className="profile-success">{passwordStatus}</div>}
 
             <div className="profile-avatar-row">
               {avatarUrl
@@ -306,6 +340,28 @@ export function ProfileModal({ onClose }: Props) {
                 </div>
               </>
             )}
+
+            <div className="profile-section">Безопасность</div>
+            <div className="profile-field">
+              <label>Текущий пароль</label>
+              <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} autoComplete="current-password" />
+            </div>
+            <div className="profile-field">
+              <label>Новый пароль</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} autoComplete="new-password" placeholder="Минимум 12 символов" />
+            </div>
+            <div className="profile-field">
+              <label>Повтор нового пароля</label>
+              <input type="password" value={newPasswordRepeat} onChange={e => setNewPasswordRepeat(e.target.value)} autoComplete="new-password" />
+            </div>
+            <button
+              type="button"
+              className="btn-profile-cancel"
+              onClick={changePassword}
+              disabled={!currentPassword || !newPassword || !newPasswordRepeat}
+            >
+              Сменить пароль
+            </button>
 
             <div className="profile-actions">
               <button type="button" className="btn-profile-cancel" onClick={onClose}>Отмена</button>

@@ -9,6 +9,13 @@ export function isLoggedIn(): boolean {
   return localStorage.getItem('konoha_dash_auth') === '1';
 }
 
+async function logout(navigate: ReturnType<typeof useNavigate>) {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+  localStorage.removeItem('konoha_dash_auth');
+  localStorage.removeItem('konoha_dash_user');
+  navigate('/login');
+}
+
 // ── Group-based navigation (3-layer redesign, closes #295) ───────────────────
 
 type NavGroup = 'processes' | 'team' | 'settings';
@@ -192,7 +199,7 @@ export function Layout({ children }: LayoutProps) {
             <button className={`lang-btn${lang === 'ru' ? ' active' : ''}`} onClick={() => setLang('ru')}>RU</button>
           </div>
           <button className="profile-btn" onClick={() => setShowProfile(true)}>👤</button>
-          <button className="logout-btn" onClick={() => { localStorage.removeItem('konoha_dash_auth'); navigate('/login'); }}>
+          <button className="logout-btn" onClick={() => logout(navigate)}>
             {lang === 'ru' ? 'Выйти' : 'Logout'}
           </button>
         </div>
@@ -232,7 +239,7 @@ export function Layout({ children }: LayoutProps) {
               <button className="kw-drawer-action" onClick={() => { setShowDrawer(false); setShowProfile(true); }}>
                 👤 {lang === 'ru' ? 'Профиль' : 'Profile'}
               </button>
-              <button className="kw-drawer-action" onClick={() => { localStorage.removeItem('konoha_dash_auth'); navigate('/login'); }}>
+              <button className="kw-drawer-action" onClick={() => logout(navigate)}>
                 {lang === 'ru' ? 'Выйти' : 'Logout'}
               </button>
             </div>

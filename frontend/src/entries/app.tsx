@@ -51,7 +51,20 @@ function useSetupStatus() {
 }
 
 function ProtectedLayout() {
-  const auth = localStorage.getItem('konoha_dash_auth') === '1';
+  const [auth, setAuth] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(r => {
+        if (!r.ok) throw new Error('unauthorized');
+        localStorage.setItem('konoha_dash_auth', '1');
+        setAuth(true);
+      })
+      .catch(() => {
+        localStorage.removeItem('konoha_dash_auth');
+        setAuth(false);
+      });
+  }, []);
+  if (auth === null) return null;
   if (!auth) return <Navigate to="/login" replace />;
   return <Layout><Outlet /></Layout>;
 }

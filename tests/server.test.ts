@@ -83,6 +83,59 @@ describe("GET /health", () => {
   });
 });
 
+// ── Dashboard auth ───────────────────────────────────────────────────────────
+
+describe("Dashboard auth", () => {
+  test("rejects wrong dashboard password", async () => {
+    const { status } = await req("POST", "/auth/login", {
+      body: { username: "test-admin", password: "wrong-password" },
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(status).toBe(401);
+  });
+
+  test("creates httpOnly dashboard session and authenticates API without bearer", async () => {
+    const login = await req("POST", "/auth/login", {
+      body: { username: "test-admin", password: "test-dashboard-password" },
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(login.status).toBe(200);
+
+    const cookie = login.body ? "" : "";
+    const rawLogin = await app.fetch(new Request("http://localhost/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "test-admin", password: "test-dashboard-password" }),
+    }));
+    const setCookie = rawLogin.headers.get("set-cookie") || cookie;
+    expect(setCookie).toContain("konoha_dash_session=");
+    expect(setCookie.toLowerCase()).toContain("httponly");
+
+    const sessionCookie = setCookie.split(";")[0];
+    const me = await req("GET", "/auth/me", {
+      headers: { Cookie: sessionCookie, "Content-Type": "application/json" },
+    });
+    expect(me.status).toBe(200);
+    expect(me.body.authenticated).toBe(true);
+
+    const agents = await req("GET", "/agents", {
+      headers: { Cookie: sessionCookie, "Content-Type": "application/json" },
+    });
+    expect(agents.status).toBe(200);
+  });
+
+  test("dashboard host rejects injected bearer without dashboard session", async () => {
+    const { status } = await req("GET", "/agents", {
+      headers: {
+        Host: "dashboard.test",
+        Authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    });
+    expect(status).toBe(401);
+  });
+});
+
 // ── /agents/register ─────────────────────────────────────────────────────────
 
 describe("POST /agents/register", () => {
@@ -506,6 +559,10 @@ describe("User-visible configuration access control", () => {
     expect(status).toBe(200);
     expect(body.product_name).toBe("Konoha WE");
     expect(body.theme.primary_color).toBe("#6366f1");
+
+    const audit = await req("GET", "/audit?action_type=branding.update&limit=5");
+    expect(audit.status).toBe(200);
+    expect(audit.body.some((entry: any) => entry.action_type === "branding.update" && entry.result === "ok")).toBe(true);
   });
 
   test("agent token cannot create custom people", async () => {
@@ -535,6 +592,11 @@ describe("User-visible configuration access control", () => {
     const deleted = await req("DELETE", `/people/${personId}`);
     expect(deleted.status).toBe(200);
     expect(deleted.body.ok).toBe(true);
+
+    const audit = await req("GET", "/audit?limit=20");
+    const actions = audit.body.map((entry: any) => entry.action_type);
+    expect(actions).toContain("people.upsert");
+    expect(actions).toContain("people.delete");
   });
 
   test("custom people cannot override file-based trusted users", async () => {

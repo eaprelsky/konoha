@@ -15,6 +15,13 @@ export const config = {
   auth: {
     adminToken: readString("KONOHA_TOKEN", "konoha-dev-token"),
   },
+  dashboard: {
+    user: readString("KONOHA_DASHBOARD_USER", "admin"),
+    hosts: readString("KONOHA_DASHBOARD_HOSTS")
+      .split(",")
+      .map(host => host.trim().toLowerCase())
+      .filter(Boolean),
+  },
   llm: {
     provider: normalizeProvider(readString("KONOHA_LLM_PROVIDER", readString("LLM_PROVIDER", "anthropic"))),
     anthropicApiKey: readString("ANTHROPIC_API_KEY"),

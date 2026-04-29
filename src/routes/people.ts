@@ -4,6 +4,7 @@ import { join, extname } from "path";
 import { loadTrustedPeople } from "../people-directory";
 import { requireAdmin } from "../middleware/auth";
 import { redis } from "../redis";
+import { auditLog } from "../assistant-actions";
 import { generateAvatar, generateAvatarImg2Img } from "../adapters/image";
 
 const PEOPLE_CUSTOM_KEY = "people:custom";
@@ -20,6 +21,15 @@ type PersonRecord = {
 };
 
 const router = new Hono();
+
+function auditBase(c: any, sessionPrefix: string) {
+  const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
+  return {
+    timestamp: new Date().toISOString(),
+    session_id: c.req.header("x-request-id") ?? `${sessionPrefix}:${Date.now()}`,
+    agent_chain: caller.isAdmin ? "admin->api" : `${caller.agentId ?? "unknown"}->api`,
+  };
+}
 
 router.get("/", async (c) => {
   const trusted = loadTrustedPeople();
@@ -69,6 +79,12 @@ router.post("/", requireAdmin, async (c) => {
     capabilities: Array.isArray(body.capabilities) ? body.capabilities : undefined,
   };
   await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(record));
+  await auditLog({
+    ...auditBase(c, "people"),
+    action_type: "people.upsert",
+    parameters: JSON.stringify({ id, source: "custom" }),
+    result: "ok",
+  });
   return c.json(record, 201);
 });
 
@@ -80,6 +96,12 @@ router.delete("/:id", requireAdmin, async (c) => {
   }
   const deleted = await redis.hdel(PEOPLE_CUSTOM_KEY, id);
   if (!deleted) return c.json({ error: "Not found" }, 404);
+  await auditLog({
+    ...auditBase(c, "people"),
+    action_type: "people.delete",
+    parameters: JSON.stringify({ id }),
+    result: "ok",
+  });
   return c.json({ ok: true });
 });
 
@@ -102,6 +124,12 @@ router.post("/:id/avatar", requireAdmin, async (c) => {
       (person as PersonRecord).avatar_url = avatar_url;
       await redis.hset(PEOPLE_CUSTOM_KEY, id, JSON.stringify(person));
     }
+    await auditLog({
+      ...auditBase(c, "people-avatar"),
+      action_type: "people.avatar.update",
+      parameters: JSON.stringify({ id, file_based: isFileBased }),
+      result: "ok",
+    });
   }
 
   if (contentType.includes("multipart/form-data")) {

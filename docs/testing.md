@@ -31,19 +31,22 @@ npx playwright test
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `KONOHA_TOKEN` | No | `konoha-dev-token` | Auth token for API calls. E2E uses dev fallback — no setup needed for local runs. |
+| `KONOHA_TOKEN` | No | `konoha-dev-token` | Auth token for non-dashboard API calls. Production must set a strong value. |
 | `KONOHA_PORT` | No | `3100` | Backend server port. E2E uses `3202` (isolated from dashboard on 3201). |
+| `KONOHA_DASHBOARD_USER` | No | `admin` | Dashboard login username. Tests override it with `test-admin`. |
+| `KONOHA_DASHBOARD_PASSWORD` | No | — | Bootstrap password used only to create the local password hash file. |
+| `KONOHA_DASHBOARD_HOSTS` | No | — | Comma-separated dashboard hostnames where bearer tokens are not accepted without a dashboard session cookie. Tests use `dashboard.test`. |
 
 ## E2E auth architecture
 
-Auth is **client-side only** — no server sessions or cookies.
+Dashboard auth is server-side:
 
-- `frontend/src/pages/Login.tsx` validates credentials and sets `localStorage['konoha_dash_auth'] = '1'`
-- `frontend/src/entries/app.tsx:54` checks this flag; redirects to `/login` if absent
-- `playwright/global-setup.ts` sets localStorage directly via `page.evaluate()` — no form login, no `E2E_PASSWORD` needed
-- `playwright/.auth/user.json` stores the resulting `storageState` (localStorage snapshot)
+- `frontend/src/pages/Login.tsx` posts credentials to `/api/auth/login`
+- the backend sets an httpOnly `konoha_dash_session` cookie
+- `frontend/src/entries/app.tsx` verifies the cookie through `/api/auth/me`
+- dashboard-host requests reject bearer-token auth unless a valid dashboard session cookie is present
 
-API auth (`requireAuth` in `src/middleware/auth.ts`) uses **only** `Authorization: Bearer <token>` — cookies are not checked. `extraHTTPHeaders` in `playwright.config.ts` injects the token into all Playwright requests (page + request fixture).
+Non-dashboard API auth (`requireAuth` in `src/middleware/auth.ts`) still accepts `Authorization: Bearer <token>` for agents, MCP clients, and internal services.
 
 ## E2E server isolation
 
@@ -52,5 +55,5 @@ Port `3201` is reserved by `konoha-dashboard` — see `docs/ports.md`. E2E test 
 ## Key lessons learned
 
 - **#435**: `reuseExistingServer: true` caused Playwright to attach to konoha-dashboard (port 3201) instead of the backend. Always use `reuseExistingServer: false` for isolated test runs.
-- **#438**: `E2E_PASSWORD` approach failed because login is client-side. Use `page.evaluate()` to set localStorage directly.
+- **Dashboard auth hardening**: do not put real usernames, passwords, or dashboard hostnames in tests. Use `KONOHA_DASHBOARD_*` env vars and neutral test values.
 - **#440**: `widgetState` and `showMobSide` are React state — components are conditionally rendered. Tests must trigger UI interactions before asserting component presence.

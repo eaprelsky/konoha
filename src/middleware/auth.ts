@@ -2,6 +2,7 @@ import type { Context, Next } from "hono";
 import { config } from "../config";
 import type { CallerInfo, HonoEnv } from "../types";
 import { getAgentIdByToken } from "../redis";
+import { verifyDashboardCookie } from "../dashboard-auth";
 
 export const ADMIN_TOKEN = config.auth.adminToken;
 
@@ -9,6 +10,13 @@ export const ADMIN_TOKEN = config.auth.adminToken;
 // Returns { isAdmin: true } for master token, or { isAdmin: false, agentId } for per-agent token.
 // Returns null if token is missing or invalid.
 export async function resolveAuth(c: Context<HonoEnv>): Promise<CallerInfo | null> {
+  const dashboardSession = verifyDashboardCookie(c.req.header("cookie"));
+  if (dashboardSession) return { isAdmin: true, agentId: null };
+
+  const host = (c.req.header("host") || "").split(":")[0].toLowerCase();
+  const isDashboardRequest = c.req.header("x-konoha-dashboard") === "1" || config.dashboard.hosts.includes(host);
+  if (isDashboardRequest) return null;
+
   const auth = c.req.header("Authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return null;
