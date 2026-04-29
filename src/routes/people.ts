@@ -36,7 +36,7 @@ router.get("/", async (c) => {
   const map = new Map<string, PersonRecord>(
     trusted
       .filter((p): p is PersonRecord & { id: string } => typeof p.id === "string" && p.id.length > 0)
-      .map(p => [p.id, p]),
+      .map(p => [p.id, { ...p, source: "file" }]),
   );
   try {
     const custom = await redis.hgetall(PEOPLE_CUSTOM_KEY);

@@ -161,9 +161,12 @@ export function ProfileModal({ onClose }: Props) {
     }
   }
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
+  async function save() {
     if (!person || !name.trim()) { setError('Имя обязательно'); return; }
+    if (person.source === 'file') {
+      setError('Профиль из trusted users редактируется в источнике данных; здесь можно менять пароль и аватар.');
+      return;
+    }
     setSubmitting(true); setError(null);
     try {
       await api.people.save({
@@ -213,6 +216,7 @@ export function ProfileModal({ onClose }: Props) {
   }
 
   const initials = name.charAt(0).toUpperCase() || '?';
+  const isFileBased = person?.source === 'file';
 
   return (
     <div className="profile-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -245,10 +249,15 @@ export function ProfileModal({ onClose }: Props) {
         )}
 
         {phase === 'edit' && person && (
-          <form onSubmit={save}>
+          <div>
             <h2>Мой профиль</h2>
             {error && <div className="profile-error">{error}</div>}
             {passwordStatus && <div className="profile-success">{passwordStatus}</div>}
+            {isFileBased && (
+              <div className="profile-success">
+                Этот профиль загружен из trusted users. Имя, должность и навыки редактируются в источнике данных; пароль и аватар можно менять здесь.
+              </div>
+            )}
 
             <div className="profile-avatar-row">
               {avatarUrl
@@ -313,11 +322,11 @@ export function ProfileModal({ onClose }: Props) {
             <div className="profile-section">Основное</div>
             <div className="profile-field">
               <label>Имя *</label>
-              <input value={name} onChange={e => setName(e.target.value)} required />
+              <input value={name} onChange={e => setName(e.target.value)} required disabled={isFileBased} />
             </div>
             <div className="profile-field">
               <label>Должность</label>
-              <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Например: CTO" />
+              <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Например: CTO" disabled={isFileBased} />
             </div>
             <div className="profile-field">
               <label>Telegram</label>
@@ -332,7 +341,7 @@ export function ProfileModal({ onClose }: Props) {
                     <span
                       key={s.id}
                       className={`cap-chip ${capabilities.includes(s.id) ? 'on' : 'off'}`}
-                      onClick={() => toggleCap(s.id)}
+                      onClick={() => { if (!isFileBased) toggleCap(s.id); }}
                     >
                       {s.name || s.id}
                     </span>
@@ -365,11 +374,13 @@ export function ProfileModal({ onClose }: Props) {
 
             <div className="profile-actions">
               <button type="button" className="btn-profile-cancel" onClick={onClose}>Отмена</button>
-              <button type="submit" className="btn-profile-save" disabled={submitting}>
-                {submitting ? 'Сохранение…' : 'Сохранить'}
-              </button>
+              {!isFileBased && (
+                <button type="button" className="btn-profile-save" disabled={submitting} onClick={save}>
+                  {submitting ? 'Сохранение…' : 'Сохранить'}
+                </button>
+              )}
             </div>
-          </form>
+          </div>
         )}
       </div>
     </div>
