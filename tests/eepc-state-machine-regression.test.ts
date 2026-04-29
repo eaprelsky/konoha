@@ -266,4 +266,184 @@ describe("eEPC state-machine regression suite", () => {
     expect(second).toBeNull();
     expect(first ? await loadActiveWaitsForCase(first.case_id) : []).toEqual([]);
   });
+
+  test("OR gateway activates all branches with true conditions", async () => {
+    const id = wfId("or");
+    await registerWorkflow({
+      id,
+      version: "1.0.0",
+      name: "OR regression",
+      elements: [
+        { id: "start", type: "event", label: "Started" },
+        { id: "split", type: "gateway", label: "Split", operator: "OR" },
+        { id: "taskA", type: "function", label: "Task A", role: "qa" },
+        { id: "taskB", type: "function", label: "Task B", role: "qa" },
+        { id: "join", type: "gateway", label: "Join", operator: "XOR" },
+        { id: "end", type: "event", label: "Finished" },
+      ],
+      flow: [
+        ["start", "split"],
+        ["split", "taskA", "payload.doA === true"],
+        ["split", "taskB", "payload.doB === true"],
+        ["taskA", "join"],
+        ["taskB", "join"],
+        ["join", "end"],
+      ],
+    });
+
+    const kase = await createCase(id, "or-both", { doA: true, doB: true });
+    expect(kase.status).toBe("running");
+    expect(kase.position).toBe("split");
+    expect(kase.active_branches?.map(b => b.element_id).sort()).toEqual(["taskA", "taskB"]);
+
+    const items = (await workItemsForCase(kase.case_id)).sort((a, b) => String(a.element_id).localeCompare(String(b.element_id)));
+    expect(items).toHaveLength(2);
+
+    const first = await completeWorkItem(items[0].work_item_id, {});
+    expect(first.case?.status).toBe("running");
+    expect(first.case?.active_branches?.filter(b => b.done)).toHaveLength(1);
+
+    const second = await completeWorkItem(items[1].work_item_id, {});
+    expect(second.case?.status).toBe("done");
+    expect(second.case?.position).toBe("end");
+    expect(second.case?.active_branches).toBeUndefined();
+  });
+
+  test("OR gateway with one true condition activates only that branch", async () => {
+    const id = wfId("or-single");
+    await registerWorkflow({
+      id,
+      version: "1.0.0",
+      name: "OR single branch regression",
+      elements: [
+        { id: "start", type: "event", label: "Started" },
+        { id: "split", type: "gateway", label: "Split", operator: "OR" },
+        { id: "taskA", type: "function", label: "Task A", role: "qa" },
+        { id: "taskB", type: "function", label: "Task B", role: "qa" },
+        { id: "end", type: "event", label: "Finished" },
+      ],
+      flow: [
+        ["start", "split"],
+        ["split", "taskA", "payload.doA === true"],
+        ["split", "taskB", "payload.doB === true"],
+        ["taskA", "end"],
+        ["taskB", "end"],
+      ],
+    });
+
+    const kase = await createCase(id, "or-single", { doA: true, doB: false });
+    expect(kase.status).toBe("running");
+    expect(kase.position).toBe("split");
+    expect(kase.active_branches?.map(b => b.element_id)).toEqual(["taskA"]);
+
+    const items = await workItemsForCase(kase.case_id);
+    expect(items).toHaveLength(1);
+    expect(items[0].element_id).toBe("taskA");
+  });
+
+  test("XOR gateway with no matching condition puts case in error", async () => {
+    const id = wfId("xor-no-match");
+    await registerWorkflow({
+      id,
+      version: "1.0.0",
+      name: "XOR no-match error regression",
+      elements: [
+        { id: "start", type: "event", label: "Started" },
+        { id: "route", type: "gateway", label: "Route", operator: "XOR" },
+        { id: "pathA", type: "function", label: "Path A", role: "qa" },
+        { id: "pathB", type: "function", label: "Path B", role: "qa" },
+        { id: "end", type: "event", label: "Finished" },
+      ],
+      flow: [
+        ["start", "route"],
+        ["route", "pathA", "payload.path === 'a'"],
+        ["route", "pathB", "payload.path === 'b'"],
+        ["pathA", "end"],
+        ["pathB", "end"],
+      ],
+    });
+
+    const kase = await createCase(id, "xor-no-match", { path: "wrong" });
+    expect(kase.status).toBe("error");
+    expect(kase.position).toBe("route");
+    expect(kase.history.map(h => h.element_id)).toContain("route");
+    expect(await workItemsForCase(kase.case_id)).toEqual([]);
+  });
+
+  test("subprocess function creates child case and pauses parent", async () => {
+    const childId = wfId("subprocess-child");
+    await registerWorkflow({
+      id: childId,
+      version: "1.0.0",
+      name: "Child process",
+      elements: [
+        { id: "c_start", type: "event", label: "Child Started" },
+        { id: "c_task", type: "function", label: "Child Task", role: "qa" },
+        { id: "c_end", type: "event", label: "Child Finished" },
+      ],
+      flow: [["c_start", "c_task"], ["c_task", "c_end"]],
+    });
+
+    const parentId = wfId("subprocess-parent");
+    await registerWorkflow({
+      id: parentId,
+      version: "1.0.0",
+      name: "Parent process",
+      elements: [
+        { id: "start", type: "event", label: "Started" },
+        { id: "delegate", type: "function", label: "Delegate", role: "qa", sub_process_id: childId },
+        { id: "end", type: "event", label: "Finished" },
+      ],
+      flow: [["start", "delegate"], ["delegate", "end"]],
+    });
+
+    const kase = await createCase(parentId, "subprocess-parent", {});
+    expect(kase.status).toBe("running");
+    expect(kase.position).toBe("delegate");
+
+    const items = await workItemsForCase(kase.case_id);
+    expect(items).toHaveLength(1);
+    // Subprocess function creates a child case
+    const wi = items[0];
+    expect(wi.child_case_id).toBeDefined();
+    if (wi.child_case_id) {
+      const { getCase } = await import("../src/runtime/cases/crud");
+      const childCase = await getCase(wi.child_case_id);
+      expect(childCase).toBeDefined();
+      expect(childCase?.parent_case_id).toBe(kase.case_id);
+    }
+  });
+
+  test("force-closed case with active branches cleans up branches and subscriptions", async () => {
+    const id = wfId("force-close-branches");
+    await registerWorkflow({
+      id,
+      version: "1.0.0",
+      name: "Force close with branches regression",
+      elements: [
+        { id: "start", type: "event", label: "Started" },
+        { id: "split", type: "gateway", label: "Split", operator: "AND" },
+        { id: "taskA", type: "function", label: "Task A", role: "qa" },
+        { id: "taskB", type: "function", label: "Task B", role: "qa" },
+        { id: "join", type: "gateway", label: "Join", operator: "AND" },
+        { id: "end", type: "event", label: "Finished" },
+      ],
+      flow: [
+        ["start", "split"],
+        ["split", "taskA"], ["split", "taskB"],
+        ["taskA", "join"], ["taskB", "join"],
+        ["join", "end"],
+      ],
+    });
+
+    const kase = await createCase(id, "force-close-branches", {});
+    expect(kase.active_branches).toBeDefined();
+    expect(kase.active_branches!.length).toBe(2);
+
+    const { forceCloseCase } = await import("../src/runtime");
+    const closed = await forceCloseCase(kase.case_id);
+    expect(closed?.status).toBe("done");
+    expect(closed?.active_branches).toBeUndefined();
+    expect(await loadActiveWaitsForCase(kase.case_id)).toEqual([]);
+  });
 });

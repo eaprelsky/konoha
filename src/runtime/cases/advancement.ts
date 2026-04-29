@@ -21,6 +21,7 @@ import type { Case, WorkItem, ActiveBranch } from "./types";
 
 const log = createLogger("runtime:advancement");
 const WORKFLOW_KEY_PREFIX = "workflow:";
+const MAX_LOOP_ITERATIONS = 200; // cycle detection guard
 
 // ── Adjacency / condition helpers ────────────────────────────────────────────
 
@@ -198,12 +199,24 @@ async function completeParentWorkItem(childCase: Case): Promise<void> {
 // ── Main advancement loop ────────────────────────────────────────────────────
 
 export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
+  // Idempotency guard: terminal states are not re-advanced
+  if (kase.status === "done" || kase.status === "error") return kase;
+
   const { outEdges, inEdges, byId, edgeConditions } = buildAdjacency(def);
 
   let current = kase.position;
   let forcedNextId: string | null = null;
+  let iterations = 0;
 
   while (true) {
+    if (++iterations > MAX_LOOP_ITERATIONS) {
+      log.error("cycle detected", { case_id: kase.case_id, process_id: kase.process_id, position: current, iterations });
+      kase.status = "error";
+      kase.active_branches = undefined;
+      await cancelSubscriptionsByInstance(kase.case_id);
+      await saveCase(kase);
+      return kase;
+    }
     // When current position is a gateway (e.g. start_node from trigger), evaluate it first.
     // Otherwise the loop skips to the first outgoing edge without checking conditions.
     if (forcedNextId === null) {
@@ -219,6 +232,12 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
         if (operator === "XOR") {
           if (gwOuts.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
           if (gwOuts.length === 1) {
+            const cond = edgeConditions.get(`${current}->${gwOuts[0]}`);
+            if (cond && !evalCondition(cond, kase.payload)) {
+              kase.status = "error";
+              await saveCase(kase);
+              return kase;
+            }
             forcedNextId = gwOuts[0];
             continue;
           }
@@ -541,6 +560,12 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
 
         if (gwOuts.length <= 1) {
           if (gwOuts.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
+          const cond = edgeConditions.get(`${nextId}->${gwOuts[0]}`);
+          if (cond && !evalCondition(cond, kase.payload)) {
+            kase.status = "error";
+            await saveCase(kase);
+            return kase;
+          }
           current = nextId;
           forcedNextId = gwOuts[0];
           continue;

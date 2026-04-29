@@ -54,6 +54,7 @@ export async function forceCloseCase(case_id: string, _depth = 0): Promise<Case 
   }
 
   kase.status = "done";
+  kase.active_branches = undefined;
   await saveCase(kase);
   cancelSubscriptionsByInstance(case_id).catch(e => log.warn("subscription cleanup on case complete", { case_id, error: e?.message }));
   cancelEventWaitsForCase(case_id).catch(e => log.warn("event wait cancel on case complete", { case_id, error: e?.message }));
