@@ -63,6 +63,10 @@ FAIL_PENDING = 100
 MAX_RED_FLAG_FILE_LINES = 1000
 SIZE_CHECK_EXTENSIONS = {".ts", ".tsx", ".js", ".jsx", ".py"}
 SIZE_CHECK_DIRS = ["src", "scripts", "tests"]
+DASHBOARD_AUTH_FILE = Path(os.environ.get("KONOHA_DASHBOARD_AUTH_FILE", "/opt/shared/.dashboard-auth.json"))
+SENSITIVE_TEMP_FILES = [
+    Path("/home/ubuntu/.dashboard-initial-password"),
+]
 
 
 @dataclass
@@ -306,6 +310,92 @@ def check_shared_config() -> list[Check]:
     return [Check("FAIL", "shared.config", (stdout + stderr).strip()[:400], "Fix /opt/shared/.shared-credentials or /opt/shared/.trusted-users.json")]
 
 
+def nginx_server_blocks(config_text: str) -> list[str]:
+    blocks: list[str] = []
+    current: list[str] = []
+    depth = 0
+    in_server = False
+    for line in config_text.splitlines():
+        stripped = line.strip()
+        if not in_server and stripped.startswith("server") and "{" in stripped:
+            in_server = True
+            current = [line]
+            depth = stripped.count("{") - stripped.count("}")
+            if depth <= 0:
+                blocks.append("\n".join(current))
+                in_server = False
+            continue
+        if not in_server:
+            continue
+        current.append(line)
+        depth += stripped.count("{") - stripped.count("}")
+        if depth <= 0:
+            blocks.append("\n".join(current))
+            in_server = False
+    return blocks
+
+
+def check_security_hygiene() -> list[Check]:
+    checks: list[Check] = []
+
+    leaked_files = [path for path in SENSITIVE_TEMP_FILES if path.exists()]
+    leaked_files.extend(Path("/home/ubuntu").glob(".agent-env.bak.*"))
+    if leaked_files:
+        sample = ", ".join(str(path) for path in leaked_files[:5])
+        checks.append(Check("FAIL", "security.temp_secrets", sample, "Remove one-time password/env backup files after rotation"))
+    else:
+        checks.append(Check("OK", "security.temp_secrets", "no known one-time secret files"))
+
+    if DASHBOARD_AUTH_FILE.exists():
+        mode = DASHBOARD_AUTH_FILE.stat().st_mode & 0o777
+        if mode & 0o077:
+            checks.append(Check("FAIL", "security.dashboard_auth_file", oct(mode), f"Run: chmod 600 {DASHBOARD_AUTH_FILE}"))
+        else:
+            checks.append(Check("OK", "security.dashboard_auth_file", f"{oct(mode)}"))
+    else:
+        checks.append(Check("WARN", "security.dashboard_auth_file", "missing", "Dashboard login will require bootstrap password setup"))
+
+    dashboard_hosts = [
+        host.strip().lower()
+        for host in os.environ.get("KONOHA_DASHBOARD_HOSTS", "").split(",")
+        if host.strip()
+    ]
+    rc, stdout, stderr = run(["sudo", "nginx", "-T"], timeout=15)
+    if rc != 0:
+        checks.append(Check("WARN", "security.nginx_dashboard_auth", (stderr or stdout)[:240], "Run: sudo nginx -T"))
+    elif not dashboard_hosts:
+        checks.append(Check("WARN", "security.nginx_dashboard_auth", "KONOHA_DASHBOARD_HOSTS is empty", "Set dashboard hosts in /home/ubuntu/.agent-env"))
+    else:
+        config_text = f"{stdout}\n{stderr}"
+        offending_hosts: list[str] = []
+        for block in nginx_server_blocks(config_text):
+            lowered = block.lower()
+            if "proxy_set_header authorization" not in lowered:
+                continue
+            if any(host in lowered for host in dashboard_hosts):
+                offending_hosts.extend(host for host in dashboard_hosts if host in lowered)
+        if offending_hosts:
+            checks.append(Check(
+                "FAIL",
+                "security.nginx_dashboard_auth",
+                f"bearer injection for {','.join(sorted(set(offending_hosts)))}",
+                "Dashboard /api must use X-Konoha-Dashboard + session cookie, not injected admin bearer",
+            ))
+        else:
+            checks.append(Check("OK", "security.nginx_dashboard_auth", "dashboard hosts do not inject bearer auth"))
+
+    rc, stdout, stderr = run(
+        ["sudo", "grep", "-R", "-l", 'proxy_set_header Authorization "Bearer', "/root/nginx-backups", "/etc/nginx"],
+        timeout=15,
+    )
+    if rc == 0 and stdout.strip():
+        checks.append(Check("FAIL", "security.nginx_secret_backups", stdout.splitlines()[0][:180], "Remove nginx backups containing bearer tokens"))
+    else:
+        checks.append(Check("OK", "security.nginx_secret_backups", "no nginx bearer backups found"))
+
+    return checks
+
+
 def print_report(checks: list[Check]) -> int:
     order = {"FAIL": 0, "WARN": 1, "OK": 2}
     for check in sorted(checks, key=lambda item: (order[item.level], item.name)):
@@ -515,7 +605,7 @@ def check_large_source_files() -> list[Check]:
 def main() -> int:
     load_env_defaults()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_lifecycle_control_plane, check_shared_config, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
+    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_lifecycle_control_plane, check_shared_config, check_security_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
         checks.extend(fn())
     return print_report(checks)
 

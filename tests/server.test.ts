@@ -94,6 +94,25 @@ describe("Dashboard auth", () => {
     expect(status).toBe(401);
   });
 
+  test("rate-limits repeated dashboard login failures", async () => {
+    const headers = { "Content-Type": "application/json", "X-Real-IP": `10.0.0.${RUN.slice(-3)}` };
+    let status = 0;
+    for (let i = 0; i < 10; i += 1) {
+      const res = await req("POST", "/auth/login", {
+        body: { username: `rate-test-${RUN}`, password: "wrong-password" },
+        headers,
+      });
+      status = res.status;
+    }
+    expect(status).toBe(401);
+
+    const blocked = await req("POST", "/auth/login", {
+      body: { username: `rate-test-${RUN}`, password: "wrong-password" },
+      headers,
+    });
+    expect(blocked.status).toBe(429);
+  });
+
   test("creates httpOnly dashboard session and authenticates API without bearer", async () => {
     const login = await req("POST", "/auth/login", {
       body: { username: "test-admin", password: "test-dashboard-password" },
@@ -133,6 +152,37 @@ describe("Dashboard auth", () => {
       },
     });
     expect(status).toBe(401);
+  });
+
+  test("rate-limits repeated password change failures", async () => {
+    const rawLogin = await app.fetch(new Request("http://localhost/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Real-IP": `10.0.1.${RUN.slice(-3)}` },
+      body: JSON.stringify({ username: "test-admin", password: "test-dashboard-password" }),
+    }));
+    const sessionCookie = (rawLogin.headers.get("set-cookie") || "").split(";")[0];
+    expect(sessionCookie).toContain("konoha_dash_session=");
+
+    const headers = {
+      Cookie: sessionCookie,
+      "Content-Type": "application/json",
+      "X-Real-IP": `10.0.2.${RUN.slice(-3)}`,
+    };
+    let status = 0;
+    for (let i = 0; i < 5; i += 1) {
+      const res = await req("POST", "/auth/password", {
+        body: { current_password: "wrong-password", new_password: "new-dashboard-password" },
+        headers,
+      });
+      status = res.status;
+    }
+    expect(status).toBe(403);
+
+    const blocked = await req("POST", "/auth/password", {
+      body: { current_password: "wrong-password", new_password: "new-dashboard-password" },
+      headers,
+    });
+    expect(blocked.status).toBe(429);
   });
 });
 
