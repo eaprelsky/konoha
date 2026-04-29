@@ -97,6 +97,7 @@ describe("workflow-loader e2e: lead-qualification", () => {
       { id: "f3", label: "Prepare content proposal", role: "sales_owner", documents: ["sales.lead.content-proposal"] },
       { id: "f4", label: "Prepare estimate request", role: "sales_owner", documents: ["sales.lead.estimate-request"] },
       { id: "f5", label: "Assemble commercial proposal and follow-up", role: "sales_owner", documents: ["sales.lead.commercial-followup"] },
+      { id: "f6", label: "Review due follow-up reminder", role: "sales_owner", documents: ["sales.lead.followup-reminder"] },
     ]);
   });
 
@@ -105,16 +106,27 @@ describe("workflow-loader e2e: lead-qualification", () => {
       "sales.lead.commercial-followup",
       "sales.lead.content-proposal",
       "sales.lead.estimate-request",
+      "sales.lead.followup-reminder",
       "sales.lead.human-review",
       "sales.lead.triage",
     ]);
     expect(def.elements.filter(el => el.type === "function").every(el => !el.intent)).toBe(true);
   });
 
-  test("has one terminal event for the prepared follow-up", () => {
+  test("has one terminal event for the handled follow-up", () => {
     const eventIdsWithOutgoing = new Set(def.flow.map(([from]) => from));
     const terminals = def.elements.filter(el => el.type === "event" && !eventIdsWithOutgoing.has(el.id));
-    expect(terminals.map(el => el.id)).toEqual(["e6"]);
+    expect(terminals.map(el => el.id)).toEqual(["e7"]);
+  });
+
+  test("represents follow-up reminder as a visible timer event", () => {
+    const event = def.elements.find(el => el.id === "e6");
+    expect(event?.type).toBe("event");
+    expect(event?.trigger).toEqual({
+      kind: "delay_after",
+      duration: "P1D",
+      ref_event: "e5",
+    });
   });
 
   test("flow edges reference valid element IDs", () => {

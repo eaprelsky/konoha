@@ -31,12 +31,13 @@ export interface WorkflowElement {
   // Trigger config (start/intermediate event nodes)
   // Uses `kind` (new). Legacy `type` field is migrated to `kind` on read.
   trigger?: {
-    kind?: "timer" | "message" | "condition" | "system" | "manual" | "ambiguous";
+    kind?: "timer" | "message" | "condition" | "delay_after" | "system" | "manual" | "ambiguous";
     confidence?: number;
     manual_override?: boolean;
     // timer
     cron?: string;
     delay_after?: { ref_event?: string; duration: string };
+    duration?: string;
     // message
     source?: string;
     filter?: Record<string, unknown>;

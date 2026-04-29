@@ -36,6 +36,12 @@
       "name": "Commercial proposal and follow-up instruction",
       "type": "instruction",
       "content": "Assemble the commercial proposal or next follow-up from the approved content and estimate inputs. Return client_summary, pricing_input, open_questions, follow_up, and next_action."
+    },
+    {
+      "doc_id": "sales.lead.followup-reminder",
+      "name": "Sales follow-up reminder instruction",
+      "type": "instruction",
+      "content": "A follow-up reminder became due. Review the case context and prepare the next manual follow-up action. Return follow_up_status, recommended_message, and next_action."
     }
   ],
   "elements": [
@@ -90,7 +96,24 @@
       "role": "sales_owner",
       "documents": ["sales.lead.commercial-followup"]
     },
-    { "id": "e6", "type": "event", "label": "Sales follow-up prepared" }
+    {
+      "id": "e6",
+      "type": "event",
+      "label": "Follow-up reminder due",
+      "trigger": {
+        "kind": "delay_after",
+        "duration": "P1D",
+        "ref_event": "e5"
+      }
+    },
+    {
+      "id": "f6",
+      "type": "function",
+      "label": "Review due follow-up reminder",
+      "role": "sales_owner",
+      "documents": ["sales.lead.followup-reminder"]
+    },
+    { "id": "e7", "type": "event", "label": "Sales follow-up handled" }
   ],
   "flow": [
     ["e1", "f1"],
@@ -102,6 +125,8 @@
     ["e4", "f4"],
     ["f4", "e5"],
     ["e5", "f5"],
-    ["f5", "e6"]
+    ["f5", "e6"],
+    ["e6", "f6"],
+    ["f6", "e7"]
   ]
 }

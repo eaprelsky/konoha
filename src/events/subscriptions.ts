@@ -68,6 +68,7 @@ export async function publishEventFired(
     trigger_kind: sub.trigger.kind,
     fired_at: firedAt,
     source_data: sourceData,
+    idempotency_key: `event-fired:${sub.id}:${firedAt}`,
   };
 
   await sendMessage({
@@ -76,6 +77,13 @@ export async function publishEventFired(
     type: "event_fired",
     text: JSON.stringify(payload),
   });
+
+  try {
+    const { handleEventFired } = await import("../runtime");
+    await handleEventFired(payload);
+  } catch (e: any) {
+    log.error(`[event-manager] direct event_fired handling failed sub=${sub.id}: ${e.message}`);
+  }
 
   // Persist last_fired_at and increment fire_count
   sub.last_fired_at = firedAt;

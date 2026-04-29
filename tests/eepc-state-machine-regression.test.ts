@@ -9,6 +9,7 @@ import { deleteReminder, listReminders } from "../src/runtime/reminders";
 import { loadInstructionText } from "../src/document-instructions";
 import { createWorkflow } from "../src/workflow-loader";
 import { pgDeleteWorkflow } from "../src/storage/pg";
+import { cancelSubscriptionsByInstance } from "../src/event-manager";
 import type { WorkflowDefinition } from "../src/workflow-loader";
 
 const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
@@ -31,6 +32,7 @@ async function cleanupWorkflow(id: string): Promise<void> {
   }
 
   for (const caseId of caseIds) {
+    await cancelSubscriptionsByInstance(caseId).catch(() => 0);
     const waitIds = await redis.smembers(`konoha:event-waits:case:${caseId}`);
     for (const waitId of waitIds) {
       const raw = await redis.get(`event-wait:${waitId}`);
@@ -195,13 +197,17 @@ describe("eEPC state-machine regression suite", () => {
 
     const commercialProposal = await pendingWorkItemForCase(kase.case_id, "f5");
     expect(commercialProposal.assignee).toBe("sales_owner");
-    const completed = await completeWorkItem(commercialProposal.work_item_id, {
+    const waitingForFollowUp = await completeWorkItem(commercialProposal.work_item_id, {
       follow_up: "Send commercial proposal and schedule discovery.",
     });
 
-    expect(completed.case?.status).toBe("done");
-    expect(completed.case?.position).toBe("e6");
-    expect(completed.case?.history.map(h => h.element_id)).toContain("f5");
+    expect(waitingForFollowUp.case?.status).toBe("running");
+    expect(waitingForFollowUp.case?.position).toBe("e6");
+    expect(waitingForFollowUp.case?.history.map(h => h.element_id)).toContain("f5");
+    const waits = await loadActiveWaitsForCase(kase.case_id);
+    expect(waits).toHaveLength(1);
+    expect(waits[0].element_id).toBe("e6");
+    expect(waits[0].trigger_kind).toBe("delay_after");
   });
 
   test("Telegram message event starts sales workflow only when eEPC trigger filter matches", async () => {
@@ -385,6 +391,47 @@ describe("eEPC state-machine regression suite", () => {
     const duplicateAdvance = await completeWorkItem(item.work_item_id, { reviewed: true }).catch((error: Error) => error);
     expect(duplicateAdvance).toBeInstanceOf(Error);
     expect(await loadActiveWaitsForCase(kase.case_id)).toHaveLength(1);
+  });
+
+  test("delay_after event wait is visible and advances when fired", async () => {
+    const id = wfId("delay-after-wait");
+    await registerWorkflow({
+      id,
+      version: "1.0.0",
+      name: "Delay-after wait regression",
+      elements: [
+        { id: "start", type: "event", label: "Started" },
+        { id: "prepare", type: "function", label: "Prepare", role: "qa" },
+        { id: "due", type: "event", label: "Reminder due", trigger: { kind: "delay_after", duration: "PT1S" } },
+        { id: "followup", type: "function", label: "Follow up", role: "qa" },
+        { id: "end", type: "event", label: "Finished" },
+      ],
+      flow: [["start", "prepare"], ["prepare", "due"], ["due", "followup"], ["followup", "end"]],
+    });
+
+    const kase = await createCase(id, "delay-after-wait", {});
+    const prepare = await pendingWorkItemForCase(kase.case_id, "prepare");
+    const paused = await completeWorkItem(prepare.work_item_id, { prepared: true });
+
+    expect(paused.case?.status).toBe("running");
+    expect(paused.case?.position).toBe("due");
+    const waits = await loadActiveWaitsForCase(kase.case_id);
+    expect(waits).toHaveLength(1);
+    expect(waits[0].element_id).toBe("due");
+    expect(waits[0].trigger_kind).toBe("delay_after");
+
+    const advanced = await handleEventFired({
+      event_id: "due",
+      process_id: id,
+      instance_id: kase.case_id,
+      source_data: { timer_fired: true },
+      idempotency_key: `${RUN}-delay-after`,
+    });
+
+    expect(advanced?.position).toBe("followup");
+    expect(advanced?.payload.timer_fired).toBe(true);
+    const followup = await pendingWorkItemForCase(kase.case_id, "followup");
+    expect(followup.assignee).toBe("qa");
   });
 
   test("event_fired idempotency suppresses duplicate deliveries", async () => {
