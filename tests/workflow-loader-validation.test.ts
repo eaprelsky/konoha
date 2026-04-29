@@ -78,25 +78,31 @@ describe("workflow-loader e2e: lead-qualification", () => {
     expect(errors).toEqual([]);
   });
 
-  test("has start event e1 with lead.received trigger", () => {
+  test("has Telegram lead start event e1", () => {
     const e1 = def.elements.find(el => el.id === "e1");
     expect(e1).toBeDefined();
     expect(e1!.type).toBe("event");
+    expect(e1!.trigger?.kind).toBe("message");
+    expect(e1!.trigger?.source).toBe("telegram");
   });
 
-  test("has XOR gateway g1 for qualified/rejected branching", () => {
-    const g1 = def.elements.find(el => el.id === "g1");
-    expect(g1).toBeDefined();
-    expect(g1!.type).toBe("gateway");
+  test("models Sasuke triage followed by human sales owner tasks", () => {
+    const stages = def.elements
+      .filter(el => el.type === "function")
+      .map(el => ({ id: el.id, label: el.label, role: el.role }));
+    expect(stages).toEqual([
+      { id: "f1", label: "Triage lead signal", role: "sasuke" },
+      { id: "f2", label: "Review lead and decide next step", role: "sales_owner" },
+      { id: "f3", label: "Prepare content proposal", role: "sales_owner" },
+      { id: "f4", label: "Prepare estimate request", role: "sales_owner" },
+      { id: "f5", label: "Assemble commercial proposal and follow-up", role: "sales_owner" },
+    ]);
   });
 
-  test("has terminal events for both branches", () => {
-    const terminalEvents = def.elements.filter(el => el.type === "event");
-    const outgoingIds = new Set(def.flow.map(([, to]) => to));
-    const eventIds = new Set(terminalEvents.map(el => el.id));
-    // At least one event has no outgoing edge (terminal)
-    const terminals = terminalEvents.filter(el => !outgoingIds.has(el.id));
-    expect(terminals.length).toBeGreaterThanOrEqual(1);
+  test("has one terminal event for the prepared follow-up", () => {
+    const eventIdsWithOutgoing = new Set(def.flow.map(([from]) => from));
+    const terminals = def.elements.filter(el => el.type === "event" && !eventIdsWithOutgoing.has(el.id));
+    expect(terminals.map(el => el.id)).toEqual(["e6"]);
   });
 
   test("flow edges reference valid element IDs", () => {

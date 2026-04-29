@@ -1,40 +1,76 @@
 {
   "id": "lead-qualification",
-  "version": "2.1.0",
-  "name": "Lead Qualification",
-  "description": "Qualify a lead, then branch XOR: qualified → notify manager + create CRM lead; rejected → archive. lead.qualified trigger starts from the XOR gateway (lead already qualified by chatbot).",
+  "version": "3.0.0",
+  "name": "Sales Lead Intake",
+  "description": "Human-in-the-loop sales workflow for signals from Telegram lead chats. Sasuke triages the incoming signal, the sales owner reviews it, prepares a content proposal, requests an estimate, and assembles the commercial proposal/follow-up. This replaces hardcoded Sasuke reminders with explicit workflow state.",
   "triggers": [
-    { "event_type": "lead.received", "start_node": "e1" },
-    { "event_type": "lead.qualified", "start_node": "g1" }
+    { "event_type": "lead.received", "start_node": "e1" }
   ],
   "elements": [
-    { "id": "e1",  "type": "event",    "label": "Lead received" },
-    { "id": "f1",  "type": "function", "label": "Qualify lead",          "role": "mirai",   "system": "bitrix24" },
-    { "id": "e2",  "type": "event",    "label": "Lead qualification done" },
-    { "id": "g1",  "type": "gateway",  "label": "Qualified?",            "operator": "XOR" },
-    { "id": "e3",  "type": "event",    "label": "Lead qualified" },
-    { "id": "e4",  "type": "event",    "label": "Lead rejected" },
-    { "id": "g2",  "type": "gateway",  "label": "Notify in parallel",    "operator": "AND" },
-    { "id": "f2",  "type": "function", "label": "Notify sales manager",  "role": "naruto" },
-    { "id": "f3",  "type": "function", "label": "Create lead",           "role": "mirai",   "system": "bitrix24" },
-    { "id": "g3",  "type": "gateway",  "label": "Parallel done",         "operator": "AND" },
-    { "id": "e5",  "type": "event",    "label": "Lead processed" },
-    { "id": "f4",  "type": "function", "label": "Archive lead",          "role": "mirai",   "system": "bitrix24" },
-    { "id": "e6",  "type": "event",    "label": "Lead archived" }
+    {
+      "id": "e1",
+      "type": "event",
+      "label": "Lead signal received",
+      "trigger": {
+        "kind": "message",
+        "source": "telegram",
+        "filter": {
+          "chat": "coMind Лиды",
+          "classifier": "sales_lead"
+        }
+      }
+    },
+    {
+      "id": "f1",
+      "type": "function",
+      "label": "Triage lead signal",
+      "role": "sasuke",
+      "intent": "Classify the Telegram signal, summarize customer need, extract company/contact/source metadata, and decide whether it should enter the sales funnel."
+    },
+    { "id": "e2", "type": "event", "label": "Lead triaged" },
+    {
+      "id": "f2",
+      "type": "function",
+      "label": "Review lead and decide next step",
+      "role": "sales_owner",
+      "intent": "Human review: confirm whether the lead is worth processing, add missing context, and choose the next sales action."
+    },
+    { "id": "e3", "type": "event", "label": "Lead review completed" },
+    {
+      "id": "f3",
+      "type": "function",
+      "label": "Prepare content proposal",
+      "role": "sales_owner",
+      "intent": "Prepare the meaningful proposal: problem framing, value hypothesis, scope outline, discovery questions, and assumptions."
+    },
+    { "id": "e4", "type": "event", "label": "Content proposal prepared" },
+    {
+      "id": "f4",
+      "type": "function",
+      "label": "Prepare estimate request",
+      "role": "sales_owner",
+      "intent": "Translate the content proposal into an estimate request for PM/tech review: scope, deliverables, risks, and questions."
+    },
+    { "id": "e5", "type": "event", "label": "Estimate request prepared" },
+    {
+      "id": "f5",
+      "type": "function",
+      "label": "Assemble commercial proposal and follow-up",
+      "role": "sales_owner",
+      "intent": "Assemble the commercial proposal or next follow-up: pricing input, open questions, client-facing summary, and next action."
+    },
+    { "id": "e6", "type": "event", "label": "Sales follow-up prepared" }
   ],
   "flow": [
-    ["e1",  "f1"],
-    ["f1",  "e2"],
-    ["e2",  "g1"],
-    ["g1",  "e3", "payload.qualified === true"],
-    ["g1",  "e4", "payload.qualified !== true"],
-    ["e3",  "g2"],
-    ["e4",  "f4"],
-    ["g2",  "f2"],
-    ["g2",  "f3"],
-    ["f2",  "g3"],
-    ["f3",  "g3"],
-    ["g3",  "e5"],
-    ["f4",  "e6"]
+    ["e1", "f1"],
+    ["f1", "e2"],
+    ["e2", "f2"],
+    ["f2", "e3"],
+    ["e3", "f3"],
+    ["f3", "e4"],
+    ["e4", "f4"],
+    ["f4", "e5"],
+    ["e5", "f5"],
+    ["f5", "e6"]
   ]
 }

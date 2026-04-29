@@ -1,4 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
 import Redis from "ioredis";
 import { createCase, deleteCasesByProcess, handleEventFired } from "../src/runtime";
 import { completeWorkItem } from "../src/runtime/work-items";
@@ -72,6 +74,13 @@ async function workItemsForCase(caseId: string): Promise<Array<Record<string, an
   return raws.filter(Boolean).map(raw => JSON.parse(raw as string));
 }
 
+async function pendingWorkItemForCase(caseId: string, elementId: string): Promise<Record<string, any>> {
+  const items = await workItemsForCase(caseId);
+  const item = items.find(wi => wi.element_id === elementId && wi.status === "pending");
+  if (!item) throw new Error(`Pending work item not found for ${elementId}`);
+  return item;
+}
+
 afterAll(async () => {
   const workflowIds = await redis.smembers("konoha:workflow:index");
   for (const id of workflowIds) {
@@ -131,6 +140,65 @@ describe("eEPC state-machine regression suite", () => {
     expect(completed.case?.position).toBe("end");
     expect(completed.case?.history.find(h => h.element_id === "review")?.output).toEqual({ approved: true });
     expect(await loadActiveWaitsForCase(kase.case_id)).toEqual([]);
+  });
+
+  test("sales workflow turns Telegram lead into Sasuke triage and sales owner work items", async () => {
+    const id = wfId("sales-lead-intake");
+    const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");
+    const def: WorkflowDefinition = { ...JSON.parse(raw), id };
+    await registerWorkflow(def);
+
+    const kase = await createCase(id, "coMind Лиды: AI assistant request", {
+      source_chat: "coMind Лиды",
+      source_agent: "sasuke",
+      raw_message: "Нужен AI ассистент для обработки заявок и подготовки КП",
+    });
+
+    expect(kase.status).toBe("running");
+    expect(kase.position).toBe("f1");
+
+    const triage = await pendingWorkItemForCase(kase.case_id, "f1");
+    expect(triage.assignee).toBe("sasuke");
+    expect(triage.input.source_chat).toBe("coMind Лиды");
+    expect(triage.input._intent).toContain("Classify the Telegram signal");
+
+    const afterTriage = await completeWorkItem(triage.work_item_id, {
+      classification: "sales_lead",
+      summary: "Client asks for an AI assistant for lead handling and proposal preparation.",
+    });
+    expect(afterTriage.case?.position).toBe("f2");
+
+    const review = await pendingWorkItemForCase(kase.case_id, "f2");
+    expect(review.assignee).toBe("sales_owner");
+    expect(review.input.raw_message).toContain("AI ассистент");
+
+    const afterReview = await completeWorkItem(review.work_item_id, {
+      decision: "continue",
+      next_step: "prepare_content_proposal",
+    });
+    expect(afterReview.case?.position).toBe("f3");
+
+    const contentProposal = await pendingWorkItemForCase(kase.case_id, "f3");
+    expect(contentProposal.assignee).toBe("sales_owner");
+    await completeWorkItem(contentProposal.work_item_id, {
+      proposal_outline: "Discovery, lead intake automation, proposal drafting workflow.",
+    });
+
+    const estimateRequest = await pendingWorkItemForCase(kase.case_id, "f4");
+    expect(estimateRequest.assignee).toBe("sales_owner");
+    await completeWorkItem(estimateRequest.work_item_id, {
+      estimate_scope: "MVP workflow plus Telegram intake integration.",
+    });
+
+    const commercialProposal = await pendingWorkItemForCase(kase.case_id, "f5");
+    expect(commercialProposal.assignee).toBe("sales_owner");
+    const completed = await completeWorkItem(commercialProposal.work_item_id, {
+      follow_up: "Send commercial proposal and schedule discovery.",
+    });
+
+    expect(completed.case?.status).toBe("done");
+    expect(completed.case?.position).toBe("e6");
+    expect(completed.case?.history.map(h => h.element_id)).toContain("f5");
   });
 
   test("XOR gateway selects the first matching conditional branch", async () => {
