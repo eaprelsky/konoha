@@ -2,6 +2,20 @@
 
 ## Running tests
 
+### Portable preflight (CI-safe)
+```bash
+scripts/preflight-portable.sh
+```
+
+This is the GitHub Actions gate. It runs backend typecheck, the portable backend regression suite, frontend typecheck, frontend unit tests, and frontend build. It requires Redis and PostgreSQL, but does not require production systemd units, Telegram credentials, live agent tmux sessions, or production secrets.
+
+### Production preflight (server gate)
+```bash
+scripts/preflight.sh
+```
+
+This is the release gate on `agent.eaprelsky.ru`. It includes the portable checks plus production-only system health, lifecycle/watchdog validation, Telegram smoke, and PostgreSQL shadow verification. Run this before large Workflow Engine changes or after changing lifecycle/runtime/watchdog/storage code.
+
 ### Unit tests
 ```bash
 bun test
