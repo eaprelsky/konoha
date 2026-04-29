@@ -419,6 +419,16 @@ def check_route_auth_policy() -> list[Check]:
     return [Check("FAIL", "security.route_auth_policy", summary[:300], f"Run: {script}")]
 
 
+def check_agent_naming_policy() -> list[Check]:
+    script = Path(__file__).resolve().parent / "check-agent-naming-policy.py"
+    rc, stdout, stderr = run([sys.executable, str(script)], timeout=10)
+    detail = (stdout or stderr).strip().splitlines()
+    summary = detail[0] if detail else "no output"
+    if rc == 0:
+        return [Check("OK", "agent_naming.product_surface", summary)]
+    return [Check("WARN", "agent_naming.product_surface", summary[:300], f"Run: {script}")]
+
+
 def print_report(checks: list[Check]) -> int:
     order = {"FAIL": 0, "WARN": 1, "OK": 2}
     for check in sorted(checks, key=lambda item: (order[item.level], item.name)):
@@ -628,7 +638,7 @@ def check_large_source_files() -> list[Check]:
 def main() -> int:
     load_env_defaults()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_lifecycle_control_plane, check_shared_config, check_security_hygiene, check_route_auth_policy, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
+    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_lifecycle_control_plane, check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
         checks.extend(fn())
     return print_report(checks)
 

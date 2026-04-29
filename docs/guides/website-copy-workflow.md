@@ -42,22 +42,22 @@ This workflow applies to:
 
 The following agents should have these skills assigned:
 
-| Agent | `brand-strategy` | `marketing` | `humanizer` |
-|-------|:-:|:-:|:-:|
-| Naruto | yes | yes | yes |
-| Kakashi | — | — | yes |
-| Sasuke | — | — | yes |
+| Agent | Default alias | `brand-strategy` | `marketing` | `humanizer` |
+|-------|---------------|:-:|:-:|:-:|
+| Бот-агент | alias: Наруто | yes | yes | yes |
+| Тимлид | alias: Какаши | — | — | yes |
+| Юзер-агент | alias: Саске | — | — | yes |
 
 ## Routing
 
 When a website/landing copy task arrives (from Yegor, trusted users, or GitHub issue):
 
-1. **Naruto** receives the request
-2. Naruto routes to the appropriate agent with explicit skill instructions:
+1. **Бот-агент** receives the request
+2. Бот-агент routes to the appropriate agent with explicit skill instructions:
    ```
    kakashi:fix issue=N — use /humanizer on all generated text
    ```
-3. If the task requires creating new copy from scratch, Naruto routes to itself or an agent with `brand-strategy` + `marketing` skills
+3. If the task requires creating new copy from scratch, Бот-агент routes to itself or an agent with `brand-strategy` + `marketing` skills
 
 ## Source of truth
 

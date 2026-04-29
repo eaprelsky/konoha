@@ -93,7 +93,7 @@ After saving, click **Restart** to apply the changes.
 
 ## System Agents
 
-Agents tagged as **system** (Naruto, Sasuke, Kakashi, Mirai) cannot be deleted through the interface. Starting and stopping them requires confirmation.
+Agents tagged as **system** (for example `Бот-агент`, `Юзер-агент`, `Тимлид`, `Исследователь`) cannot be deleted through the interface. Starting and stopping them requires confirmation.
 
 ---
 

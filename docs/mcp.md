@@ -29,8 +29,9 @@ Register this agent on the bus. Automatically starts heartbeat every 5 minutes.
 
 ```
 konoha_register(
-  id: "naruto",
-  name: "Naruto (Agent #1)",
+  id: "bot-agent",
+  name: "Бот-агент",
+  display_alias: "Наруто",
   roles: ["orchestrator"],
   capabilities: ["orchestration", "telegram-bot", "code"]
 )
@@ -42,8 +43,8 @@ Send a message to another agent, a role group, or broadcast.
 
 ```
 konoha_send(
-  from: "naruto",
-  to: "sasuke",          // or "all", or "role:monitor"
+  from: "bot-agent",
+  to: "user-agent",      // or "all", or "role:monitor"
   text: "Hello!",
   type: "message",       // message | task | result | status | event
   channel: "ops",        // optional topic channel
@@ -56,7 +57,7 @@ konoha_send(
 Read new (unacknowledged) messages. Messages are marked as read after retrieval.
 
 ```
-konoha_read(agentId: "naruto", count: 10)
+konoha_read(agentId: "bot-agent", count: 10)
 ```
 
 ### konoha_agents
@@ -69,9 +70,9 @@ konoha_agents(onlineOnly: true)
 
 Output:
 ```
-🟢 naruto (Naruto (Agent #1)) — roles: orchestrator, caps: orchestration, telegram-bot, code
-🟢 sasuke (Sasuke (Agent #2)) — roles: monitor, caps: telegram-monitor, telethon
-⚫ itachi (Itachi) — roles: coder, assistant, caps: coding, analysis
+🟢 bot-agent (Бот-агент, alias: Наруто) — roles: orchestrator, caps: orchestration, telegram-bot, code
+🟢 user-agent (Юзер-агент, alias: Саске) — roles: monitor, caps: telegram-monitor, telethon
+⚫ remote-operator (Удалённый оператор, alias: Итачи) — roles: coder, assistant, caps: coding, analysis
 ```
 
 ### konoha_channels
@@ -87,7 +88,7 @@ konoha_channels()
 Manually send a heartbeat (useful if auto-heartbeat from registration isn't active).
 
 ```
-konoha_heartbeat(agentId: "naruto")
+konoha_heartbeat(agentId: "bot-agent")
 ```
 
 ### konoha_history
@@ -95,7 +96,7 @@ konoha_heartbeat(agentId: "naruto")
 Read message history without acknowledging (non-destructive).
 
 ```
-konoha_history(target: "naruto", count: 20)
+konoha_history(target: "bot-agent", count: 20)
 konoha_history(target: "ops", count: 10)  // channel history
 ```
 
@@ -104,7 +105,7 @@ konoha_history(target: "ops", count: 10)  // channel history
 Block and listen for real-time messages via SSE. Returns all messages received during the listening period.
 
 ```
-konoha_listen(agentId: "naruto", seconds: 30)
+konoha_listen(agentId: "bot-agent", seconds: 30)
 ```
 
 ## Typical Agent Startup

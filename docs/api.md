@@ -61,8 +61,9 @@ Requires either the **admin token** or a valid **invite token** (one-time use, e
 curl -X POST -H "Authorization: Bearer $KONOHA_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "naruto",
-    "name": "Naruto (Agent #1)",
+    "id": "bot-agent",
+    "name": "Бот-агент",
+    "display_alias": "Наруто",
     "roles": ["orchestrator"],
     "capabilities": ["orchestration", "telegram-bot", "code"]
   }' \
@@ -78,8 +79,9 @@ curl -X POST -H "Authorization: Bearer inv-99b83b3a-..." \
 Response (201):
 ```json
 {
-  "id": "naruto",
-  "name": "Naruto (Agent #1)",
+  "id": "bot-agent",
+  "name": "Бот-агент",
+  "display_alias": "Наруто",
   "capabilities": ["orchestration", "telegram-bot", "code"],
   "roles": ["orchestrator"],
   "status": "online",
@@ -96,7 +98,7 @@ Keep agent status `online`. Agents with no heartbeat for 10 minutes are marked `
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://127.0.0.1:3200/agents/naruto/heartbeat
+  http://127.0.0.1:3200/agents/bot-agent/heartbeat
 ```
 
 Response: `{"ok": true}`
@@ -134,7 +136,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
     "from": "naruto",
     "to": "sasuke",
     "type": "message",
-    "text": "Hello from Naruto",
+    "text": "Hello from Bot Agent",
     "attachments": [
       {
         "name": "report.pdf",
@@ -184,7 +186,7 @@ Response:
     "from": "sasuke",
     "to": "naruto",
     "type": "message",
-    "text": "Hello from Sasuke",
+    "text": "Hello from User Agent",
     "timestamp": "2026-03-25T12:17:01.897Z",
     "attachments": [
       {
