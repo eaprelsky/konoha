@@ -21,16 +21,16 @@ Current status legend:
 |---|---|---|---|---|---|
 | Workflow definitions | `/workflows` compatibility wrappers | `konoha_workflow_list/get/create/update` behind `process-tools` | `workflow.create/update/delete/list/get`, plus element/flow/trigger actions | Canonical action executor for HTTP and `/act`; MCP still HTTP-wrapper | #591: eEPC regression suite |
 | Workflow elements/flow/triggers | Coarse workflow update via `/workflows`; trigger resolver routes | No fine-grained MCP tools | `element.add/update/remove`, `flow.add/remove`, `trigger.resolve/subscribe/cancel` | Gap | #589: promote action executor; #590 follow-up if MCP fine-grained editing is needed |
-| Cases | `/cases` routes | `konoha_case_list/start/get` | `case.start/get/list/close`, `event.confirm`, `event.waiting.list` | Partial | #592: runtime hardening; add MCP wrappers only after semantics are stable |
+| Cases | `/cases` routes | `konoha_case_list/start/get` | `case.start/get/list/close`, `event.confirm`, `event.waiting.list` | Partial | Runtime semantics covered by regression suite; add MCP wrappers only for stable agent workflows |
 | Work items | `/workitems` routes | `konoha_workitem_list/complete`, `konoha_complete_task` | `workitem.create/update/list/complete/cancel` | Partial | #589: unify completion path through validated action contracts |
-| Roles | `/roles` CRUD | `konoha_role_list`, `konoha_role_assign` | `role.create/list/update/delete` | Partial | #593: define role persistence/API/MCP contract |
-| Agents lifecycle | `/agents`, `/agents/:id/start/stop/restart/switch-runtime`, profile routes | Bus tools: `konoha_register`, `konoha_agents`, `konoha_heartbeat`; no lifecycle MCP tools | `agent.register/start/stop/restart` | Partial | #593: lifecycle contract; consider MCP lifecycle tools after contract is stable |
+| Roles | `/roles` CRUD | `konoha_role_list`, `konoha_role_assign` | `role.create/list/update/delete` | Contracted partial | See `docs/entity-contracts.md`; action/MCP wrappers can be added after executor migration |
+| Agents lifecycle | `/agents`, `/agents/:id/start/stop/restart/switch-runtime`, profile routes | Bus tools: `konoha_register`, `konoha_agents`, `konoha_heartbeat`; no lifecycle MCP tools | `agent.register/start/stop/restart` | Contracted partial | See `docs/entity-contracts.md`; lifecycle MCP deferred until auth/rollback semantics are explicit |
 | Messages / bus | `/messages` send/read/pending/ack/history/stream | `konoha_send/read/listen/history/channels` | `message.send/read` | Partial | Keep bus as operational substrate; do not overload `/act` for streaming reads |
-| Reminders | `/reminders` routes if mounted; BullMQ/runtime worker | No MCP tools | `reminder.create/list/update_status/delete` | Gap | #593: persistence/API/MCP contract, then add MCP wrappers if agents need direct reminder control |
-| Documents | `/documents` CRUD | No MCP tools | No document actions yet | Gap | #593: define document/artifact contract before adding action IDs |
+| Reminders | `/reminders` routes; BullMQ/runtime worker | No MCP tools | `reminder.create/list/update_status/delete` | Contracted gap | See `docs/entity-contracts.md`; MCP only if agents need direct reminder control |
+| Documents | `/documents` CRUD | No MCP tools | No document actions yet | Contracted gap | See `docs/entity-contracts.md`; add action IDs before MCP mutation tools |
 | Skills | `/skills` CRUD | `konoha_skill_list` only | No skill actions yet | Partial | Treat as admin/config until Workflow Engine requires mutation through agents |
 | Events / subscriptions | `/events`, `/event-manager/*`, webhooks | `konoha_event_emit` | `event.subscribe/cancel/confirm/waiting.list`, plus runtime calls | Partial | #592: harden waits/joins/idempotency before expanding MCP |
-| KB / files / artifacts | `/kb/*`, `/workspace/*` | No MCP wrappers | `file.read`, `search.query` only | Partial | #593: artifact contract; decide filesystem vs DB ownership |
+| KB / files / artifacts | `/kb/*`, `/workspace/*` | No MCP wrappers | `file.read`, `search.query` only | Contracted partial | See `docs/entity-contracts.md`; filesystem vs DB ownership is explicit per artifact type |
 | People / whitelist | `/people`, `/whitelist` | No MCP wrappers | No action contracts | Gap | Keep admin-only unless workflow assignment requires agent-visible control |
 | AI chat / Tsunade | `/ai/chat` canonical; `/tsunade/chat`, `/ai/process-chat` deprecated | No MCP wrappers | Uses workflow action receipts internally | Legacy/Partial | #594: bound and retire old chat paths |
 | Deployment/config/admin | `/deploy`, `/config`, `/admin`, `/setup` | No MCP wrappers | `github.issue.create`, audit actions only | Partial | Keep out of Workflow Engine core unless operational workflows need it |
@@ -46,7 +46,7 @@ Current status legend:
 ## Coverage Gaps To Track
 
 - #589 — make `/act` the primary executor for workflow core actions. Closed for workflow definitions; element/flow/runtime operations remain scoped follow-ups.
-- #591 — deterministic eEPC state-machine regression suite.
-- #592 — harden waits, joins, subprocesses, retries, and idempotency.
-- #593 — persistence/API/MCP contracts for artifacts, roles, reminders, and agents.
+- #591 — deterministic eEPC state-machine regression suite. Closed; suite is in preflight.
+- #592 — harden waits, joins, subprocesses, retries, and idempotency. Closed for current runtime boundary issues.
+- #593 — persistence/API/MCP contracts for artifacts, roles, reminders, and agents. Closed by `docs/entity-contracts.md`.
 - #594 — retire or bound old Tsunade/process-chat paths and stale docs.

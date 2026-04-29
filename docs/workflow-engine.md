@@ -3,6 +3,7 @@
 > Source: `frontend/src` (canonical workflow UI) · `modules/workflow-engine/` (plugin wrappers + runtime module) · `src/runtime/` · `src/dispatcher.ts`
 >
 > API/MCP/action coverage map: `docs/api-mcp-parity.md`.
+> Entity ownership contracts: `docs/entity-contracts.md`.
 
 ## Overview
 
