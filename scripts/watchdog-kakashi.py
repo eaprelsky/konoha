@@ -3,7 +3,7 @@
 Watchdog for Kakashi (Claude Agent #8, Bug Fixer).
 Watches Konoha SSE /messages/kakashi/stream.
 Also polls GitHub Issues every SCAN_INTERVAL seconds and delivers new issues.
-Auto-pushes unpushed commits every AUTO_PUSH_INTERVAL seconds and restarts konoha.service.
+Auto-push is disabled by default; set KAKASHI_AUTO_PUSH_ENABLED=1 to opt in.
 
 Trigger messages: kakashi:fix issue=N, kakashi:scan, kakashi:review
 """
@@ -30,6 +30,7 @@ GH_REPO           = "eaprelsky/konoha"
 SCAN_INTERVAL     = 60    # 1 minute between GitHub Issue scans
 KONOHA_REPO       = os.path.expanduser("~/konoha")
 AUTO_PUSH_INTERVAL = 300  # 5 minutes — push unpushed commits (#367)
+AUTO_PUSH_ENABLED = os.environ.get("KAKASHI_AUTO_PUSH_ENABLED", "").lower() in {"1", "true", "yes", "on"}
 
 
 # ── GitHub Issues scanner (extra_watcher) ────────────────────────────────────
@@ -149,7 +150,12 @@ async def auto_push_loop() -> None:
 
 
 if __name__ == "__main__":
+    if AUTO_PUSH_ENABLED:
+        _b.log.warning("Kakashi auto-push enabled via KAKASHI_AUTO_PUSH_ENABLED=1")
+    else:
+        _b.log.info("Kakashi auto-push disabled; commits must be reviewed and pushed explicitly")
+
     asyncio.run(_b.run_watchdog(
         extra_watchers=[github_issues_scanner],
-        extra_loops=[auto_push_loop()],
+        extra_loops=[auto_push_loop()] if AUTO_PUSH_ENABLED else [],
     ))

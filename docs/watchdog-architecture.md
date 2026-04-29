@@ -19,7 +19,7 @@ Each wrapper configures `watchdog_base.py` and adds only the source-specific beh
 **Unique features**:
 - Naruto: Telegram bot queue, reactions, owner-priority interrupt, Konoha echo dedup
 - Sasuke: Telegram Redis stream, reactions, mark-read commands, stuck-delivery monitor
-- Kakashi: Konoha SSE, GitHub issue scanner, auto-push loop, on-demand only
+- Kakashi: Konoha SSE, GitHub issue scanner, on-demand only; auto-push is opt-in with `KAKASHI_AUTO_PUSH_ENABLED=1`
 - Kiba: Akamaru alert delivery, wake-on-demand, circuit breaker, git-push review poller
 
 ### 2. `watchdog_base.py` (shared library, 586 lines)
@@ -52,8 +52,8 @@ Independent implementation for lifecycle-managed agents. The active systemd unit
 
 ## Shared modules (extracted from `watchdog.py`, #573)
 
-### `watchdog_tmux.py` (186 lines)
-Core tmux interaction: session liveness, pane capture, idle detection (Claude/Codex/Cursor/OpenCode prompts), message delivery with compacting wait, [Pasted text] dismissal, submit retries, and pane-change confirmation.
+### `watchdog_tmux.py`
+Core tmux interaction: session liveness, pane capture, idle detection (Claude/Codex/Cursor/OpenCode prompts), message delivery with compacting wait, [Pasted text] dismissal, and submit retries. Delivery is confirmed only after the pane no longer shows an idle prompt; arbitrary pane repaint/wrapping is not treated as success.
 
 ### `watchdog_format.py` (207 lines)
 Noise filter (`is_session_noise`), text sanitization (`sanitize_message_text`), and multi-source batch formatting for naruto/sasuke.
@@ -76,7 +76,7 @@ The duplication between `watchdog.py` and `watchdog_base.py` was resolved in #57
 | SSE client | curl with replay-age guard | aiohttp | curl via shared source module |
 | Desync recovery | Yes (#505) | Yes (simpler) | No active production use |
 | Circuit breaker | Optional per wrapper | No | No |
-| Auto-push | Kakashi-specific | Lifecycle generic loop | Config-driven |
+| Auto-push | Kakashi-specific, disabled by default | Lifecycle generic loop | Config-driven |
 | Redis streams | Sasuke-specific | Via AgentDef | Via JSON config |
 
 `watchdog-lifecycle.py` cannot trivially merge into `watchdog_base.py` because:
