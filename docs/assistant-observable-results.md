@@ -2,6 +2,8 @@
 
 Issue: `#533`
 
+Canonical server-side types live in `src/workflow-action-contract.ts`. Frontend API consumers use the matching `AssistantWorkflowResponse` and workflow receipt types in `frontend/src/api/types.ts`.
+
 ## Purpose
 
 Every assistant turn that attempts to act must produce a canonical observable result surface:

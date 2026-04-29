@@ -4,8 +4,8 @@ import {
   buildSseParsedEvent,
   normalizeAssistantResponse,
   type AssistantResponse,
-  type ObservableResult,
 } from "./assistant-response";
+import type { WorkflowObservableResult } from "./workflow-action-contract";
 import {
   OPERATOR_STATE_VERSION,
   isOperatorStateEnvelope,
@@ -114,6 +114,6 @@ export async function runOperatorBenchmarkScenario(
   };
 }
 
-export function getPrimaryObservableStatus(result: OperatorBenchmarkResult): ObservableResult["status"] {
+export function getPrimaryObservableStatus(result: OperatorBenchmarkResult): WorkflowObservableResult["status"] {
   return result.response.observable_result.status;
 }

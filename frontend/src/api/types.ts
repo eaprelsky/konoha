@@ -138,6 +138,78 @@ export interface WorkItemFilters {
   deadline_before?: string;
 }
 
+export type WorkflowActionStatus = 'executed' | 'needs_confirm' | 'failed' | 'skipped';
+export type WorkflowActionType = 'workflow.create' | 'workflow.update' | 'workflow.open' | 'workflow.save' | 'workflow.confirm';
+export type WorkflowReceiptStatus = 'succeeded' | 'pending_confirmation' | 'failed' | 'partial';
+export type WorkflowObservableStatus = WorkflowReceiptStatus | 'no_effect';
+export type WorkflowResourceKind = 'workflow' | 'element' | 'flow' | 'confirmation';
+export type WorkflowResourceChange = 'created' | 'updated' | 'pending' | 'failed';
+
+export interface WorkflowAssistantAction {
+  action: WorkflowActionType | string;
+  params: Record<string, unknown>;
+  status: WorkflowActionStatus;
+  description: string;
+  result?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface WorkflowPendingConfirmation {
+  id: string;
+  action: WorkflowActionType | string;
+  title: string;
+  summary: string;
+  status: 'required';
+  permission: {
+    actor_scope: 'assistant_on_behalf_of_user';
+    autonomy: 'confirm';
+    confirmation_required: true;
+  };
+  params: Record<string, unknown>;
+}
+
+export interface WorkflowActionReceipt {
+  id: string;
+  action: WorkflowActionType | string;
+  status: WorkflowReceiptStatus;
+  summary: string;
+  details?: string;
+  changed_resources: Array<{
+    kind: WorkflowResourceKind;
+    id: string;
+    label?: string;
+    change: WorkflowResourceChange;
+  }>;
+  audit: {
+    session_id: string;
+    action_type: WorkflowActionType | string;
+  };
+}
+
+export interface WorkflowObservableResult {
+  status: WorkflowObservableStatus;
+  summary: string;
+  receipts: WorkflowActionReceipt[];
+  counts: {
+    succeeded: number;
+    pending_confirmation: number;
+    failed: number;
+    partial: number;
+  };
+}
+
+export interface AssistantWorkflowResponse {
+  reply: string;
+  chat_id: string;
+  schema_patch: unknown | null;
+  created_workflow: { id: string; name: string } | null;
+  actions?: HighlightAction[];
+  actions_taken: WorkflowAssistantAction[];
+  action_receipts: WorkflowActionReceipt[];
+  observable_result: WorkflowObservableResult;
+  pending_confirmations: WorkflowPendingConfirmation[];
+}
+
 export type AssignmentStrategy = 'round-robin' | 'load-balancing' | 'broadcast' | 'manual';
 
 export interface RoleDef {

@@ -15,24 +15,17 @@ import { createWorkflow } from "./workflow-loader";
 import type { WorkflowDefinition } from "./workflow-loader";
 import { auditLog, checkAutonomy } from "./assistant-actions";
 import type { AutonomyLevel } from "./assistant-actions";
+import {
+  buildWorkflowObservableResult,
+  type WorkflowActionReceipt as ActionReceipt,
+  type WorkflowActionReceiptResource as ActionReceiptResource,
+  type WorkflowAssistantAction as AssistantAction,
+  type WorkflowObservableResult as ObservableResult,
+  type WorkflowPendingConfirmation as PendingConfirmation,
+} from "./workflow-action-contract";
 import { randomUUID } from "crypto";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-export interface AssistantAction {
-  /** Action ID from the action registry */
-  action: string;
-  /** Parameters for the action */
-  params: Record<string, unknown>;
-  /** Execution status */
-  status: "executed" | "needs_confirm" | "failed" | "skipped";
-  /** Human-readable description of what was done */
-  description: string;
-  /** Result data (e.g. created workflow id) */
-  result?: Record<string, unknown>;
-  /** Error message if status is "failed" */
-  error?: string;
-}
 
 export interface AssistantResponse {
   /** Clean human-readable reply text — never raw JSON */
@@ -58,52 +51,6 @@ export interface AssistantResponse {
 export interface UiAction {
   type: "highlight" | "navigate" | "notify";
   [key: string]: unknown;
-}
-
-export interface PendingConfirmation {
-  id: string;
-  action: string;
-  title: string;
-  summary: string;
-  status: "required";
-  permission: {
-    actor_scope: "assistant_on_behalf_of_user";
-    autonomy: "confirm";
-    confirmation_required: true;
-  };
-  params: Record<string, unknown>;
-}
-
-export interface ActionReceiptResource {
-  kind: "workflow" | "element" | "flow" | "confirmation";
-  id: string;
-  label?: string;
-  change: "created" | "updated" | "pending" | "failed";
-}
-
-export interface ActionReceipt {
-  id: string;
-  action: string;
-  status: "succeeded" | "pending_confirmation" | "failed" | "partial";
-  summary: string;
-  details?: string;
-  changed_resources: ActionReceiptResource[];
-  audit: {
-    session_id: string;
-    action_type: string;
-  };
-}
-
-export interface ObservableResult {
-  status: "succeeded" | "pending_confirmation" | "failed" | "partial" | "no_effect";
-  summary: string;
-  receipts: ActionReceipt[];
-  counts: {
-    succeeded: number;
-    pending_confirmation: number;
-    failed: number;
-    partial: number;
-  };
 }
 
 export interface NormalizeOptions {
@@ -183,7 +130,7 @@ export async function normalizeAssistantResponse(
 
   // If reply still looks like JSON, sanitize it
   reply = sanitizeReply(reply);
-  const observableResult = buildObservableResult(actionReceipts);
+  const observableResult = buildWorkflowObservableResult(actionReceipts);
 
   return {
     reply,
@@ -429,38 +376,6 @@ async function buildSchemaPatchReceipt(
       session_id: opts.session_id ?? opts.chat_id,
       action_type: "workflow.update",
     },
-  };
-}
-
-function buildObservableResult(receipts: ActionReceipt[]): ObservableResult {
-  const counts = {
-    succeeded: receipts.filter((receipt) => receipt.status === "succeeded").length,
-    pending_confirmation: receipts.filter((receipt) => receipt.status === "pending_confirmation").length,
-    failed: receipts.filter((receipt) => receipt.status === "failed").length,
-    partial: receipts.filter((receipt) => receipt.status === "partial").length,
-  };
-
-  const status: ObservableResult["status"] =
-    counts.failed > 0 && (counts.succeeded > 0 || counts.pending_confirmation > 0 || counts.partial > 0)
-      ? "partial"
-      : counts.failed > 0
-      ? "failed"
-      : counts.pending_confirmation > 0
-      ? "pending_confirmation"
-      : counts.succeeded > 0 || counts.partial > 0
-      ? "succeeded"
-      : "no_effect";
-
-  const summary =
-    receipts.length === 0
-      ? "Изменений не зафиксировано."
-      : receipts.map((receipt) => receipt.summary).join(" ");
-
-  return {
-    status,
-    summary,
-    receipts,
-    counts,
   };
 }
 

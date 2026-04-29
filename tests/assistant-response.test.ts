@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { normalizeAssistantResponse, buildSseParsedEvent } from "../src/assistant-response";
+import { buildWorkflowObservableResult } from "../src/workflow-action-contract";
 
 describe("normalizeAssistantResponse", () => {
   const baseOpts = { chat_id: "test-chat-1" };
@@ -138,6 +139,28 @@ describe("normalizeAssistantResponse", () => {
     expect(resp.pending_confirmations).toHaveLength(0);
     expect(resp.action_receipts).toHaveLength(0);
     expect(resp.observable_result.status).toBe("no_effect");
+  });
+});
+
+describe("workflow action contract", () => {
+  it("builds a no-effect observable result for empty receipts", () => {
+    expect(buildWorkflowObservableResult([])).toEqual({
+      status: "no_effect",
+      summary: "Изменений не зафиксировано.",
+      receipts: [],
+      counts: { succeeded: 0, pending_confirmation: 0, failed: 0, partial: 0 },
+    });
+  });
+
+  it("prioritizes partial status when failures and successes are mixed", () => {
+    const result = buildWorkflowObservableResult([
+      { id: "ok", action: "workflow.update", status: "succeeded", summary: "ok", changed_resources: [], audit: { session_id: "s", action_type: "workflow.update" } },
+      { id: "bad", action: "workflow.create", status: "failed", summary: "bad", changed_resources: [], audit: { session_id: "s", action_type: "workflow.create" } },
+    ]);
+
+    expect(result.status).toBe("partial");
+    expect(result.counts.succeeded).toBe(1);
+    expect(result.counts.failed).toBe(1);
   });
 });
 
