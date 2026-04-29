@@ -209,3 +209,6 @@ CREATE TABLE IF NOT EXISTS konoha_messages (
 CREATE INDEX IF NOT EXISTS idx_konoha_messages_recipient_ts ON konoha_messages(recipient, timestamp DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_konoha_messages_channel_ts ON konoha_messages(channel, timestamp DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_konoha_messages_stream_id ON konoha_messages(stream_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_konoha_messages_recipient_stream_id
+  ON konoha_messages(recipient, stream_id)
+  WHERE stream_id IS NOT NULL;

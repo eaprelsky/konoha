@@ -25,6 +25,13 @@ function getSql(): ReturnType<typeof postgres> {
   return _sql;
 }
 
+export async function pgCloseBus(): Promise<void> {
+  if (!_sql) return;
+  await _sql.end();
+  _sql = null;
+  _schemaReady = null;
+}
+
 async function ensureBusSchema(): Promise<void> {
   if (_schemaReady) return _schemaReady;
   const sql = getSql();
@@ -79,6 +86,11 @@ async function ensureBusSchema(): Promise<void> {
     await sql`CREATE INDEX IF NOT EXISTS idx_konoha_messages_recipient_ts ON konoha_messages(recipient, timestamp DESC, id DESC)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_konoha_messages_channel_ts ON konoha_messages(channel, timestamp DESC, id DESC)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_konoha_messages_stream_id ON konoha_messages(stream_id)`;
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_konoha_messages_recipient_stream_id
+      ON konoha_messages(recipient, stream_id)
+      WHERE stream_id IS NOT NULL
+    `;
   })();
   return _schemaReady;
 }
@@ -125,6 +137,42 @@ export async function pgRegisterAgent(agent: Agent): Promise<string> {
   });
 
   return token;
+}
+
+export async function pgUpsertAgentSnapshot(agent: Agent): Promise<void> {
+  await ensureBusSchema();
+  const sql = getSql();
+
+  await sql`
+    INSERT INTO konoha_agents (
+      id, name, capabilities, roles, model, status, last_heartbeat,
+      event_subscriptions, village_id, address, updated_at
+    )
+    VALUES (
+      ${agent.id},
+      ${agent.name},
+      ${sql.json(asJson(agent.capabilities ?? []))},
+      ${sql.json(asJson(agent.roles ?? []))},
+      ${agent.model ?? null},
+      ${agent.status},
+      ${agent.lastHeartbeat},
+      ${sql.json(asJson(agent.eventSubscriptions ?? []))},
+      ${agent.village_id ?? null},
+      ${agent.address ?? null},
+      NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      capabilities = EXCLUDED.capabilities,
+      roles = EXCLUDED.roles,
+      model = EXCLUDED.model,
+      status = EXCLUDED.status,
+      last_heartbeat = EXCLUDED.last_heartbeat,
+      event_subscriptions = EXCLUDED.event_subscriptions,
+      village_id = EXCLUDED.village_id,
+      address = EXCLUDED.address,
+      updated_at = NOW()
+  `;
 }
 
 export async function pgGetAgentIdByToken(token: string): Promise<string | null> {
@@ -224,10 +272,10 @@ export async function pgListAgents(onlineOnly = false): Promise<Agent[]> {
   return onlineOnly ? agents.filter(a => a.status === "online") : agents;
 }
 
-export async function pgStoreMessage(msg: Message): Promise<void> {
+export async function pgStoreMessage(msg: Message): Promise<boolean> {
   await ensureBusSchema();
   const sql = getSql();
-  await sql`
+  const rows = await sql<{ id: number }[]>`
     INSERT INTO konoha_messages (
       stream_id, sender, recipient, channel, type, text, reply_to, timestamp, attachments, village_id
     )
@@ -243,7 +291,10 @@ export async function pgStoreMessage(msg: Message): Promise<void> {
       ${sql.json(asJson(msg.attachments ?? []))},
       ${msg.village_id ?? null}
     )
+    ON CONFLICT (recipient, stream_id) WHERE stream_id IS NOT NULL DO NOTHING
+    RETURNING id
   `;
+  return rows.length > 0;
 }
 
 export async function pgReadHistory(target: string, count = 20): Promise<Message[]> {

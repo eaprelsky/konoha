@@ -192,6 +192,16 @@ PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-verify.ts
 
 The gate treats Redis as the active source of truth for Phase 1: every active Redis entity must exist in PostgreSQL. Extra PostgreSQL rows are allowed as archived or historical data, but `Only in Redis` means the migration shadow is incomplete. Message verification counts only Redis stream keys under `konoha:agent:*`, so metadata hashes such as agent definitions do not affect the stream check.
 
+If bus entities are out of sync, reconcile them without rotating agent tokens:
+
+```bash
+cd /home/ubuntu/konoha
+PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/reconcile-pg-bus.ts --dry-run
+PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/reconcile-pg-bus.ts
+```
+
+The bus reconciler copies `konoha:registry` into `konoha_agents` and per-agent Redis streams into `konoha_messages`. Message inserts are idempotent by `(recipient, stream_id)` and use the recipient implied by the stream key, which preserves broadcast/role fanout history correctly.
+
 ---
 
 ## Key Types
