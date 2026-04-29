@@ -6,6 +6,17 @@ Every MCP tool → action ID → parameter mapping. The Konoha MCP server bridge
 
 ## Core Tools (konoha_*)
 
+The generic Action Spine tools expose all implemented registry actions without
+adding one bespoke MCP tool per operation:
+
+| MCP Tool | Action | Parameters |
+|----------|--------|------------|
+| `konoha_action_catalog` | — (inspect registry) | `scope?`, `category?`, `include_planned?` |
+| `konoha_action_get` | — (inspect registry) | `action` |
+| `konoha_action_call` | Any implemented registry action | `action`, `category?`, `args?`, `meta?` |
+
+Legacy/core bus tools remain available for operational workflows:
+
 | MCP Tool | Action | Parameters |
 |----------|--------|------------|
 | `konoha_register` | `agent.register` | `id`, `name`, `capabilities?`, `roles?`, `model?`, `eventSubscriptions?`, `village_id?` |
@@ -18,9 +29,11 @@ Every MCP tool → action ID → parameter mapping. The Konoha MCP server bridge
 | `konoha_listen` | `message.read` (listen) | `agentId`, `seconds?` — SSE listen for new messages |
 | `konoha_complete_task` | `workitem.complete` | `work_item_id`, `output?` — completes a dispatched work item |
 
-## Coverage Gaps
+## Bespoke Tool Coverage Gaps
 
-The following action scopes have no MCP tool coverage:
+The generic `konoha_action_*` bridge can discover and invoke implemented
+registry actions. The table below tracks gaps only for older bespoke MCP tools
+that wrap one workflow directly:
 
 | Scope | Actions without MCP | Gap |
 |-------|---------------------|-----|

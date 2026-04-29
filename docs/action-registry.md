@@ -14,9 +14,13 @@ Every operation the system exposes — API, MCP, assistant, UI — is described 
 
 ## Version
 
-Current: **v1** (`ACTION_VERSION = 1`)
+Current: **v2** (`ACTION_VERSION = 2`)
 
 Bump the version when the vocabulary changes (new actions, renamed args, removed actions).
+
+The short architecture/runbook for the Action Spine control plane is
+`docs/action-spine-runbook.md`. The generated machine-readable action matrix is
+`docs/action-surface.json`.
 
 ## Naming convention
 
@@ -32,6 +36,10 @@ Actions use **object-scope naming**: `{scope}.{verb}`
 | `workitem` | Dispatched work items |
 | `role` | Role definitions |
 | `agent` | Agent lifecycle |
+| `skill` | Skill CRUD |
+| `person` | People directory |
+| `access` | Trusted users and Telegram group access |
+| `adapter` | Data adapter operations |
 | `subscription` | Event manager subscriptions |
 | `issue` | GitHub issues |
 | `reminder` | Scheduled reminders |
@@ -40,6 +48,10 @@ Actions use **object-scope naming**: `{scope}.{verb}`
 | `knowledge` | Knowledge base files |
 
 ## Action catalog
+
+This section is a human overview. Use `docs/action-surface.json` for the exact
+current list, including category, implementation, security, audit, endpoint, and
+argument metadata.
 
 ### Workflow (`workflow.*`)
 
@@ -171,9 +183,9 @@ interface ArgumentDef {
 
 Each action has an optional `currentEndpoint` field that maps to the existing HTTP handler. This allows progressive migration:
 
-1. **Phase 1** (current): Registry is documentation + types. Existing endpoints unchanged.
-2. **Phase 2**: Unified `/act` envelope (see #500) routes through the registry.
-3. **Phase 3**: Old endpoints deprecated, everything goes through action IDs.
+1. **Current**: `/act` validates the envelope against the registry, enforces actor policy/autonomy/audit rules, and routes to a direct executor, registered handler, or compatibility endpoint.
+2. **Compatibility**: Existing REST endpoints may remain, but new user-visible mutations should share the action contract instead of adding separate behavior.
+3. **Future**: Old wrappers can be retired once GUI, MCP, agents, and tests use the action ID directly.
 
 ## Usage in code
 
@@ -213,9 +225,10 @@ At least one assistant flow already uses this spine as its primary mutation path
 
 ## Adding new actions
 
+Use `docs/action-spine-runbook.md` as the contribution checklist. In short:
+
 1. Add an entry to the `ACTIONS` array in `src/action-registry.ts`
 2. Follow the `{scope}.{verb}` naming convention
-3. Set appropriate autonomy level
-4. Set `audited: true` for any write operation
-5. Update this documentation
-6. Bump `ACTION_VERSION`
+3. Set appropriate autonomy, security, implementation metadata, and audit flags
+4. Bump `ACTION_VERSION` when the vocabulary changes
+5. Regenerate/check `docs/action-surface.json`
