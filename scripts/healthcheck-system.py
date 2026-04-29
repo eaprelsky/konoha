@@ -24,6 +24,7 @@ CORE_SERVICES = [
     "telegram-bot",
     "telegram-bus",
     "telegram-context-packer",
+    "telegram-event-bridge",
     "telegram-vision-packer",
     "agent-watchdog-lifecycle",
     "agent-naruto",
@@ -49,11 +50,13 @@ STREAM_GROUPS = {
     "telegram:incoming": ["sasuke"],
     "telegram:bot:incoming": ["naruto"],
     "telegram:needs_context": ["context-packer"],
+    "telegram:log": ["event-bridge"],
     "telegram:vision_requests": ["vision-packer"],
     "telegram:outgoing": ["claude-agents"],
 }
 DEAD_LETTER_STREAMS = [
     "telegram:needs_context:dead_letter",
+    "telegram:event_bridge:dead_letter",
     "telegram:vision_requests:dead_letter",
     "telegram:outgoing:dead_letter",
 ]

@@ -1,0 +1,23 @@
+[Unit]
+Description=Telegram Event Bridge - publishes Telegram stream entries as Konoha events
+After=network.target redis-server.service konoha.service telegram-bus.service
+Wants=redis-server.service konoha.service telegram-bus.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/konoha
+EnvironmentFile=/opt/shared/.shared-credentials
+EnvironmentFile=/home/ubuntu/.agent-env
+UnsetEnvironment=http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+Environment=PYTHONUNBUFFERED=1
+Environment=TELEGRAM_EVENT_STREAM=telegram:log
+Environment=TELEGRAM_EVENT_GROUP=event-bridge
+ExecStart=/usr/bin/python3 -u /home/ubuntu/konoha/scripts/telegram-event-bridge.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
