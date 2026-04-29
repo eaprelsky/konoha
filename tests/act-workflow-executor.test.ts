@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import Redis from "ioredis";
 import { AUTONOMY_KEY } from "../src/assistant-actions";
+import { pgDeleteWorkflow, pgDeleteWorkItem } from "../src/storage/pg";
 
 process.env.KONOHA_PORT = "0";
 process.env.ANTHROPIC_API_KEY ||= "test-anthropic-key";
@@ -22,6 +23,7 @@ function adminHeaders() {
 async function cleanupWorkflow(id: string) {
   await redis.srem("konoha:workflow:index", id);
   await redis.del(`workflow:${id}`);
+  await pgDeleteWorkflow(id);
 }
 
 beforeAll(async () => {
@@ -55,6 +57,7 @@ afterAll(async () => {
     await redis.srem("konoha:workitems:status:pending", actWorkItemId);
     await redis.srem("konoha:workitems:status:cancelled", actWorkItemId);
     await redis.zrem("konoha:workitems:all", actWorkItemId);
+    await pgDeleteWorkItem(actWorkItemId);
   }
   redis.disconnect();
   delete process.env.KONOHA_PORT;
