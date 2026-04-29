@@ -28,6 +28,15 @@ The registry is the source of truth. The generated machine-readable surface is
 Use the JSON when building UI affordances, MCP coverage reports, or testbench
 harnesses. Do not hand-maintain a second full action matrix in Markdown.
 
+Current consumer status:
+
+| Consumer | Status | Source of truth |
+|---|---|---|
+| API | `/act` exposes implemented registry actions and compatibility endpoints | `/act`, `src/act-envelope.ts` |
+| MCP | Generic `konoha_action_*` tools cover implemented actions | `src/mcp-action-bridge.ts` |
+| GUI | Migration is incremental; new mutations should call `/act` | `docs/action-surface.json`, issue `#602` |
+| Testbench | Harness should consume the same action surface when migrated | `docs/action-surface.json`, issue `#603` |
+
 ## When To Use `/act`
 
 Use `/act` for any user-visible operation that changes system state or should be
