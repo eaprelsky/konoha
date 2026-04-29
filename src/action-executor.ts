@@ -39,6 +39,12 @@ import {
   removeWhitelistedGroup,
   upsertTrustedUser,
 } from "./access-control";
+import {
+  getAgentDef,
+  restartAgent,
+  startAgent,
+  stopAgent,
+} from "./agent-lifecycle";
 import { ServiceError } from "./errors";
 
 export interface ActionExecution {
@@ -559,6 +565,49 @@ async function executeAccessAction(action: string, args: Record<string, unknown>
   }
 }
 
+async function executeAgentAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "agent.start": {
+      const invalid = validationFailure("agent.start", args);
+      if (invalid) return invalid;
+      const id = String(args.id);
+      const def = await getAgentDef(id);
+      if (!def) return { status: 404, data: { error: "Agent not found" } };
+      try {
+        return { status: 200, data: await startAgent(id, def) };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    case "agent.stop": {
+      const invalid = validationFailure("agent.stop", args);
+      if (invalid) return invalid;
+      const id = String(args.id);
+      const def = await getAgentDef(id);
+      if (!def) return { status: 404, data: { error: "Agent not found" } };
+      try {
+        return { status: 200, data: await stopAgent(id) };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    case "agent.restart": {
+      const invalid = validationFailure("agent.restart", args);
+      if (invalid) return invalid;
+      const id = String(args.id);
+      const def = await getAgentDef(id);
+      if (!def) return { status: 404, data: { error: "Agent not found" } };
+      try {
+        return { status: 200, data: await restartAgent(id, def) };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    default:
+      return null;
+  }
+}
+
 export async function executeActionDirect(
   action: string,
   args: Record<string, unknown>,
@@ -584,6 +633,9 @@ export async function executeActionDirect(
   }
   if (action.startsWith("access.")) {
     return executeAccessAction(action, args);
+  }
+  if (action.startsWith("agent.")) {
+    return executeAgentAction(action, args);
   }
   return null;
 }

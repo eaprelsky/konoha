@@ -7,6 +7,7 @@ import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 
 import { requireAuth, requireAdmin, requireAgentSelfOrAdmin, ADMIN_TOKEN } from "../middleware/auth";
+import { executeActionDirect, type ActionExecution } from "../action-executor";
 import {
   registerAgent,
   unregisterAgent,
@@ -41,6 +42,10 @@ import { silentCatch } from "../logger";
 const router = new Hono<HonoEnv>();
 
 type LifecycleProjection = Pick<AgentRuntimeState, "pid" | "uptime_seconds"> & { status: LifecycleStatus };
+
+function actionJson(c: any, result: ActionExecution): Response {
+  return c.json(result.data as any, result.status as any);
+}
 
 function routeRuntimeState(agentId: string, lifecycle: LifecycleProjection): AgentRuntimeState {
   return {
@@ -201,40 +206,22 @@ router.get("/:id/status", requireAgentSelfOrAdmin(), async (c) => {
 // POST /agents/:id/start
 router.post("/:id/start", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
-  const def = await getAgentDef(id);
-  if (!def) return c.json({ error: "Agent not found" }, 404);
-  try {
-    const state = await startAgent(id, def);
-    return c.json(state);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500);
-  }
+  const result = await executeActionDirect("agent.start", { id });
+  return actionJson(c, result!);
 });
 
 // POST /agents/:id/stop
 router.post("/:id/stop", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
-  const def = await getAgentDef(id);
-  if (!def) return c.json({ error: "Agent not found" }, 404);
-  try {
-    const state = await stopAgent(id);
-    return c.json(state);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500);
-  }
+  const result = await executeActionDirect("agent.stop", { id });
+  return actionJson(c, result!);
 });
 
 // POST /agents/:id/restart
 router.post("/:id/restart", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
-  const def = await getAgentDef(id);
-  if (!def) return c.json({ error: "Agent not found" }, 404);
-  try {
-    const state = await restartAgent(id, def);
-    return c.json(state);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500);
-  }
+  const result = await executeActionDirect("agent.restart", { id });
+  return actionJson(c, result!);
 });
 
 // POST /agents/:id/switch-runtime — change runtime/profile and optionally restart

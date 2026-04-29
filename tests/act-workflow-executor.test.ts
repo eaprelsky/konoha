@@ -481,6 +481,23 @@ describe("/act workflow executor", () => {
     expect(deleted.ok).toBe(true);
   });
 
+  test("routes agent lifecycle wrappers through direct actions without losing 404 semantics", async () => {
+    const missingId = `${RUN}-missing-agent`;
+    const { executeActionDirect } = await import("../src/action-executor");
+
+    const direct = await executeActionDirect("agent.start", { id: missingId });
+    expect(direct?.status).toBe(404);
+    expect((direct?.data as any).error).toBe("Agent not found");
+
+    const wrapper = await app.fetch(new Request(`http://localhost/agents/${missingId}/start`, {
+      method: "POST",
+      headers: adminHeaders(),
+    }));
+    const body = await wrapper.json();
+    expect(wrapper.status).toBe(404);
+    expect(body.error).toBe("Agent not found");
+  });
+
   test("executes person actions directly through the action envelope", async () => {
     const createRes = await app.fetch(new Request("http://localhost/act", {
       method: "POST",
