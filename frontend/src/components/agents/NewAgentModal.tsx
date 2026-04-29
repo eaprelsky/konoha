@@ -46,13 +46,13 @@ export function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
             <input type="text" placeholder="например: my-agent" value={id} onChange={e => setId(e.target.value)} autoFocus required />
           </div>
           <div className="form-group">
-            <label>Операционное имя *</label>
-            <input type="text" placeholder="Например: Sasuke" value={name} onChange={e => setName(e.target.value)} required />
+            <label>Корпоративное имя *</label>
+            <input type="text" placeholder="Например: Тимлид" value={name} onChange={e => setName(e.target.value)} required />
           </div>
           <div className="form-group">
-            <label>Имя в продукте</label>
-            <input type="text" placeholder="Например: Sales Assistant" value={displayAlias} onChange={e => setDisplayAlias(e.target.value)} />
-            <span style={{ fontSize: 11, color: '#94a3b8' }}>Показывается в бизнес-интерфейсе вместо runtime-id.</span>
+            <label>Алиас / позывной</label>
+            <input type="text" placeholder="Например: Какаши" value={displayAlias} onChange={e => setDisplayAlias(e.target.value)} />
+            <span style={{ fontSize: 11, color: '#94a3b8' }}>Локальное имя инстанса; runtime-id остаётся стабильным.</span>
           </div>
           <div className="form-group">
             <label>Модель</label>

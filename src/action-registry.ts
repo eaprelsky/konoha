@@ -437,7 +437,7 @@ const ACTIONS: ActionDef[] = [
     args: [
       { name: "id",            type: "string", required: true,  description: "Unique agent ID." },
       { name: "name",          type: "string", required: true,  description: "Display name." },
-      { name: "display_alias", type: "string", required: false, description: "Product-facing alias shown in business UI." },
+      { name: "display_alias", type: "string", required: false, description: "Instance-specific alias/callsign." },
       { name: "roles",         type: "array",  required: false, description: "Role list." },
       { name: "capabilities",  type: "array",  required: false, description: "Capability list." },
       { name: "model",         type: "string", required: false, description: "Model identifier." },
@@ -448,12 +448,12 @@ const ACTIONS: ActionDef[] = [
   },
   {
     id: "agent.update_profile",
-    description: "Update product-facing and operator-editable agent profile fields.",
+    description: "Update canonical and operator-editable agent profile fields.",
     scope: "agent",
     args: [
       { name: "id",               type: "string", required: true,  description: "Agent ID to update." },
-      { name: "name",             type: "string", required: false, description: "Operational display name." },
-      { name: "display_alias",    type: "string", required: false, description: "Product-facing alias shown in business UI." },
+      { name: "name",             type: "string", required: false, description: "Canonical corporate/product agent name." },
+      { name: "display_alias",    type: "string", required: false, description: "Instance-specific alias/callsign." },
       { name: "system_prompt",    type: "string", required: false, description: "User-maintained agent instructions." },
       { name: "runtime",          type: "string", required: false, description: "Runtime adapter." },
       { name: "fallback_runtime", type: "string", required: false, description: "Fallback runtime adapter." },

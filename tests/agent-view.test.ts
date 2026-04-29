@@ -4,8 +4,8 @@ import type { AgentDef, AgentState } from "../src/agent";
 
 const def: AgentDef = {
   id: "sasuke",
-  name: "Sasuke",
-  display_alias: "User Agent",
+  name: "User Agent",
+  display_alias: "Sasuke",
   runtime: "claude",
   fallback_runtime: "codex",
   llm_client_profile: "claude-deepseek-sonnet",
@@ -35,8 +35,8 @@ describe("agent view boundaries", () => {
   test("splits template fields from runtime config fields", () => {
     expect(templateFromAgentDef(def)).toEqual({
       id: "sasuke",
-      name: "Sasuke",
-      display_alias: "User Agent",
+      name: "User Agent",
+      display_alias: "Sasuke",
       system_prompt: undefined,
       tool_profile: "telegram-userbot",
       sandbox_profile: "tmux",
@@ -63,7 +63,7 @@ describe("agent view boundaries", () => {
   test("maps bus heartbeat data to explicit presence", () => {
     const presence = presenceFromBusAgent({
       id: "sasuke",
-      name: "Sasuke",
+      name: "User Agent",
       status: "online",
       lastHeartbeat: 12345,
       address: "sasuke@default",
@@ -92,8 +92,8 @@ describe("agent view boundaries", () => {
     });
 
     expect(view.id).toBe("sasuke");
-    expect(view.display_alias).toBe("User Agent");
-    expect(view.template.display_alias).toBe("User Agent");
+    expect(view.display_alias).toBe("Sasuke");
+    expect(view.template.display_alias).toBe("Sasuke");
     expect(view.model).toBe("claude:sonnet");
     expect(view.status).toBe("online");
     expect(view.lifecycle.status).toBe("running");

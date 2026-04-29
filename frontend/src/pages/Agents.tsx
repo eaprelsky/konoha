@@ -96,7 +96,7 @@ export function Agents() {
                     const atype = getAgentType(a);
                     const isProtected = !!(a as any).protected;
                     const canEdit = atype === 'managed' || isProtected;
-                    const displayName = a.display_alias || a.name;
+                    const displayName = a.name;
                     return (
                       <tr key={a.id}>
                         <td>
@@ -114,7 +114,7 @@ export function Agents() {
                                 }
                               </div>
                               <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>
-                                {a.display_alias ? `${a.name} · ` : ''}{a.id}
+                                {a.display_alias ? `${a.display_alias} · ` : ''}{a.id}
                               </div>
                             </div>
                           </div>

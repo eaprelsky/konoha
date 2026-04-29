@@ -188,7 +188,7 @@ export async function initTsunade(): Promise<void> {
 
   // Resolve display name from branding config (closes #325 white-labeling)
   const branding = await getBranding().catch(() => null);
-  const tsunadeName = branding?.agent_display_names?.["tsunade"]
+  const tsunadeAlias = branding?.agent_display_names?.["tsunade"]
     ?? branding?.assistant_name
     ?? "Цунаде";
 
@@ -196,8 +196,8 @@ export async function initTsunade(): Promise<void> {
   // that Tsunade is ready to receive events.
   await registerAgent({
     id: TSUNADE_ID,
-    name: `${tsunadeName} (Process Monitor)`,
-    display_alias: branding?.agent_display_names?.["tsunade"] ?? branding?.assistant_name ?? "Советник",
+    name: "Советник",
+    display_alias: tsunadeAlias,
     roles: ["architect"],
     capabilities: ["process-monitoring", "event-handler"],
     eventSubscriptions: ["process.exception", "workitem.stuck", "workitem.overdue"],

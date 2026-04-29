@@ -44,7 +44,7 @@ export function useAgentFilters(agents: Agent[]): UseAgentFiltersResult {
       return true;
     })
     .sort((a, b) => {
-      if (sortBy === 'name') return (a.display_alias || a.name).localeCompare(b.display_alias || b.name);
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
       if (sortBy === 'model') return (a.model || '').localeCompare(b.model || '');
       if (sortBy === 'status') return a.status.localeCompare(b.status);
       return 0;

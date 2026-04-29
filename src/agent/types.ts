@@ -40,7 +40,7 @@ export interface AgentRuntimeProfile {
 export interface AgentDef {
   id: string;
   name: string;
-  /** Product-facing alias shown in business UI; runtime id/name stay stable. */
+  /** Mutable instance-specific alias/callsign; canonical product name stays in name. */
   display_alias?: string;
   system_prompt?: string;
   startup_sequence?: string[];

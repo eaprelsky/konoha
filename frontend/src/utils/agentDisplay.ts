@@ -3,7 +3,11 @@ import type { Agent, RoleDef } from '../api/types';
 export type AssigneeOption = { value: string; label: string };
 
 export function agentDisplayName(agent: Pick<Agent, 'id' | 'name' | 'display_alias'>): string {
-  return agent.display_alias || agent.name || agent.id;
+  return agent.name || agent.id;
+}
+
+export function agentAlias(agent: Pick<Agent, 'display_alias'>): string | undefined {
+  return agent.display_alias || undefined;
 }
 
 export function buildAgentLabelMap(agents: Agent[]): Record<string, string> {

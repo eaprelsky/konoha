@@ -345,31 +345,31 @@ describe("GET /agents", () => {
 // ── PUT /agents/:id ─────────────────────────────────────────────────────────
 
 describe("PUT /agents/:id", () => {
-  test("updates product-facing display alias through agent.update_profile action", async () => {
+  test("updates instance alias through agent.update_profile action", async () => {
     const agentId = id("profile-alias");
     await req("POST", "/agents", {
       body: {
         id: agentId,
-        name: "Runtime Sasuke",
+        name: "User Agent",
         model: "claude:sonnet",
       },
     });
 
     const { status, body } = await req("PUT", `/agents/${agentId}`, {
       body: {
-        name: "Runtime Sasuke",
-        display_alias: "Sales Assistant",
+        name: "User Agent",
+        display_alias: "Sasuke",
       },
     });
 
     expect(status).toBe(200);
     expect(body.id).toBe(agentId);
-    expect(body.name).toBe("Runtime Sasuke");
-    expect(body.display_alias).toBe("Sales Assistant");
+    expect(body.name).toBe("User Agent");
+    expect(body.display_alias).toBe("Sasuke");
 
     const listed = await req("GET", "/agents");
     const found = listed.body.find((a: any) => a.id === agentId);
-    expect(found.display_alias).toBe("Sales Assistant");
+    expect(found.display_alias).toBe("Sasuke");
   });
 
   test("rejects empty profile update", async () => {

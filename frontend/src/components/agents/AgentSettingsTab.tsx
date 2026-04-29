@@ -125,13 +125,13 @@ export function AgentSettingsTab({
 
       {/* Fields */}
       <div className="form-group">
-        <label>Операционное имя *</label>
+        <label>Корпоративное имя *</label>
         <input type="text" value={name} onChange={e => setName(e.target.value)} required autoFocus />
       </div>
       <div className="form-group">
-        <label>Имя в продукте</label>
-        <input type="text" value={displayAlias} onChange={e => setDisplayAlias(e.target.value)} placeholder="Например: Советник, Тимлид, Sales Assistant" />
-        <span style={{ fontSize: 11, color: '#94a3b8' }}>Используется в бизнес-сценариях и демо; runtime-id остаётся неизменным: {agentId}</span>
+        <label>Алиас / позывной</label>
+        <input type="text" value={displayAlias} onChange={e => setDisplayAlias(e.target.value)} placeholder="Например: Наруто, Какаши, Sales-AI" />
+        <span style={{ fontSize: 11, color: '#94a3b8' }}>Настраивается для конкретной организации; runtime-id остаётся неизменным: {agentId}</span>
       </div>
       <div className="form-group">
         <label>Runtime</label>

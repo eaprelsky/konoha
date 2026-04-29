@@ -124,13 +124,15 @@ export async function buildRoleBlocks(agentId: string): Promise<string> {
  * Used by startAgent() and GET /agents/:id/system-template.
  */
 export async function buildSystemPrompt(agentId: string, def: Pick<AgentDef, "id" | "name" | "display_alias" | "model" | "runtime" | "system_prompt" | "capabilities">): Promise<string> {
-  // Substitute {display_name} from branding config (closes #298)
+  // Canonical product name is stable; aliases/callsigns are instance-specific.
   const branding = await getBranding().catch(() => null);
-  const displayName = branding?.agent_display_names?.[agentId] ?? def.display_alias ?? def.name;
+  const displayName = def.name;
+  const alias = branding?.agent_display_names?.[agentId] ?? def.display_alias ?? def.name;
 
   const base = renderSystemTemplate({ ...def, name: displayName });
   const userInstructions = (def.system_prompt?.trim() ?? "")
-    .replace(/\{display_name\}/g, displayName);
+    .replace(/\{display_name\}/g, displayName)
+    .replace(/\{alias\}/g, alias);
   const roleBlocks = await buildRoleBlocks(agentId);
 
   let skillSnippets = "";
