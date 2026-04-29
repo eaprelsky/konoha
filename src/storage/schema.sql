@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS skills (
 CREATE TABLE IF NOT EXISTS konoha_agents (
   id                  TEXT PRIMARY KEY,
   name                TEXT NOT NULL DEFAULT '',
+  display_alias       TEXT,
   capabilities        JSONB NOT NULL DEFAULT '[]',
   roles               JSONB NOT NULL DEFAULT '[]',
   model               TEXT,

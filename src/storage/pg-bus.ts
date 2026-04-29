@@ -40,6 +40,7 @@ async function ensureBusSchema(): Promise<void> {
       CREATE TABLE IF NOT EXISTS konoha_agents (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL DEFAULT '',
+        display_alias TEXT,
         capabilities JSONB NOT NULL DEFAULT '[]',
         roles JSONB NOT NULL DEFAULT '[]',
         model TEXT,
@@ -52,6 +53,7 @@ async function ensureBusSchema(): Promise<void> {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `;
+    await sql`ALTER TABLE konoha_agents ADD COLUMN IF NOT EXISTS display_alias TEXT`;
     await sql`
       CREATE TABLE IF NOT EXISTS konoha_tokens (
         token TEXT PRIMARY KEY,
@@ -103,12 +105,13 @@ export async function pgRegisterAgent(agent: Agent): Promise<string> {
   await sql.begin(async (tx) => {
     await tx`
       INSERT INTO konoha_agents (
-        id, name, capabilities, roles, model, status, last_heartbeat,
+        id, name, display_alias, capabilities, roles, model, status, last_heartbeat,
         event_subscriptions, village_id, address, updated_at
       )
       VALUES (
         ${agent.id},
         ${agent.name},
+        ${agent.display_alias ?? null},
         ${tx.json(asJson(agent.capabilities ?? []))},
         ${tx.json(asJson(agent.roles ?? []))},
         ${agent.model ?? null},
@@ -121,6 +124,7 @@ export async function pgRegisterAgent(agent: Agent): Promise<string> {
       )
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
+        display_alias = EXCLUDED.display_alias,
         capabilities = EXCLUDED.capabilities,
         roles = EXCLUDED.roles,
         model = EXCLUDED.model,
@@ -145,12 +149,13 @@ export async function pgUpsertAgentSnapshot(agent: Agent): Promise<void> {
 
   await sql`
     INSERT INTO konoha_agents (
-      id, name, capabilities, roles, model, status, last_heartbeat,
+      id, name, display_alias, capabilities, roles, model, status, last_heartbeat,
       event_subscriptions, village_id, address, updated_at
     )
     VALUES (
       ${agent.id},
       ${agent.name},
+      ${agent.display_alias ?? null},
       ${sql.json(asJson(agent.capabilities ?? []))},
       ${sql.json(asJson(agent.roles ?? []))},
       ${agent.model ?? null},
@@ -163,6 +168,7 @@ export async function pgUpsertAgentSnapshot(agent: Agent): Promise<void> {
     )
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
+      display_alias = EXCLUDED.display_alias,
       capabilities = EXCLUDED.capabilities,
       roles = EXCLUDED.roles,
       model = EXCLUDED.model,
@@ -248,6 +254,7 @@ function mapRowToAgent(row: Record<string, unknown>, now: number): Agent {
   return {
     id: String(row.id),
     name: String(row.name ?? ""),
+    display_alias: row.display_alias ? String(row.display_alias) : undefined,
     capabilities: Array.isArray(row.capabilities) ? row.capabilities as string[] : [],
     roles: Array.isArray(row.roles) ? row.roles as string[] : [],
     model: row.model ? String(row.model) : undefined,
@@ -264,7 +271,7 @@ export async function pgListAgents(onlineOnly = false): Promise<Agent[]> {
   const sql = getSql();
   const now = Date.now();
   const rows = await sql<Record<string, unknown>[]>`
-    SELECT id, name, capabilities, roles, model, status, last_heartbeat, event_subscriptions, village_id, address
+    SELECT id, name, display_alias, capabilities, roles, model, status, last_heartbeat, event_subscriptions, village_id, address
     FROM konoha_agents
     ORDER BY id ASC
   `;

@@ -64,8 +64,9 @@ if (!HAS_DATABASE_CREDENTIALS) {
 describe("registerAgent", () => {
   test("returns agent with status=online and a token", async () => {
     const agentId = id("reg1");
-    const agent = await registerAgent({ id: agentId, name: "Redis Reg1", capabilities: ["cap1"], roles: ["r1"] });
+    const agent = await registerAgent({ id: agentId, name: "Redis Reg1", display_alias: "Product Reg1", capabilities: ["cap1"], roles: ["r1"] });
     expect(agent.id).toBe(agentId);
+    expect(agent.display_alias).toBe("Product Reg1");
     expect(agent.status).toBe("online");
     expect(typeof agent.token).toBe("string");
     expect(agent.token!.length).toBeGreaterThan(8);
@@ -75,10 +76,11 @@ describe("registerAgent", () => {
 
   test("stores agent in persistent registry", async () => {
     const agentId = id("reg2");
-    await registerAgent({ id: agentId, name: "Redis Reg2", capabilities: [], roles: [] });
+    await registerAgent({ id: agentId, name: "Redis Reg2", display_alias: "Product Reg2", capabilities: [], roles: [] });
     const agents = await listAgents(false);
     const stored = agents.find(a => a.id === agentId);
     expect(stored).toBeDefined();
+    expect(stored!.display_alias).toBe("Product Reg2");
     expect(stored!.status).toBe("online");
   });
 
