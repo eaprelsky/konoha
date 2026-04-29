@@ -193,54 +193,6 @@ Style: "spotlight" — затемнение фона; "pointer" — пульси
 
 ВАЖНО: отвечай ТОЛЬКО валидным JSON. Без markdown-оберток.`;
 
-async function handleTsunadeChatRequest(
-  histKey: string,
-  chatId: string,
-  message: string,
-  schema?: unknown,
-  attachments?: AttachmentRef[],
-  agentId = "tsunade",
-) {
-  const rawHistory = await redis.lrange(histKey, 0, -1).catch(() => [] as string[]);
-  const history: Anthropic.MessageParam[] = rawHistory.map(r => {
-    try { return JSON.parse(r); } catch { return null; }
-  }).filter(Boolean);
-
-  const schemaContext = schema
-    ? `\n<process_data>\n${JSON.stringify(schema, null, 2)}\n</process_data>`
-    : "";
-
-  const userMsg = message + schemaContext;
-  const userContent = buildContent(userMsg, attachments);
-  const messages: Anthropic.MessageParam[] = [
-    ...history,
-    { role: "user", content: userContent },
-  ];
-
-  const identityBlock = await buildAgentIdentityBlock(agentId);
-  const rawReply = await generateText({
-    model: "claude-sonnet-4-6",
-    maxTokens: 2000,
-    system: identityBlock + TSUNADE_SYSTEM,
-    messages,
-  });
-
-  // Normalize LLM output through canonical response envelope (#528)
-  const { normalizeAssistantResponse } = await import("../assistant-response");
-  const normalized = await normalizeAssistantResponse(rawReply, {
-    chat_id: chatId,
-    agent_id: agentId,
-    session_id: chatId,
-  });
-
-  await redis.rpush(histKey, JSON.stringify({ role: "user", content: message }));
-  await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));
-  await redis.ltrim(histKey, -CHAT_MAX_HISTORY * 2, -1);
-  await redis.expire(histKey, 7 * 24 * 3600); // 7 days TTL
-
-  return toAssistantWorkflowResponse(normalized);
-}
-
 function toAssistantWorkflowResponse(normalized: AssistantResponse) {
   return {
     reply: normalized.reply,
@@ -256,59 +208,6 @@ function toAssistantWorkflowResponse(normalized: AssistantResponse) {
 }
 
 const router = new Hono();
-const PROCESS_CHAT_SUNSET = "Sat, 31 May 2026 00:00:00 GMT";
-const PROCESS_CHAT_CANONICAL_LINK = '</api/ai/chat?mode=process>; rel="canonical"';
-
-function markDeprecatedProcessChat(c: { header: (name: string, value: string) => void }) {
-  c.header("Deprecation", "true");
-  c.header("Sunset", PROCESS_CHAT_SUNSET);
-  c.header("Link", PROCESS_CHAT_CANONICAL_LINK);
-}
-
-router.use("/tsunade/chat", requireAuth);
-router.post("/tsunade/chat", async (c) => {
-  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }>().catch(() => null);
-  if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
-  const chatId = body.chat_id || randomUUID();
-  const histKey = TSUNADE_CHAT_PREFIX + chatId;
-  try {
-    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
-    markDeprecatedProcessChat(c);
-    return c.json(result);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500);
-  }
-});
-
-router.delete("/tsunade/chat/:chat_id", requireAuth, async (c) => {
-  const chatId = c.req.param("chat_id");
-  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
-  markDeprecatedProcessChat(c);
-  return c.json({ ok: true });
-});
-
-// Deprecated alias: use POST /ai/chat?mode=process instead (Sunset: 31 May 2026)
-router.use("/ai/process-chat", requireAuth);
-router.post("/ai/process-chat", async (c) => {
-  const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }>().catch(() => null);
-  if (!body?.message?.trim()) return c.json({ error: "message required" }, 400);
-  const chatId = body.chat_id || randomUUID();
-  const histKey = TSUNADE_CHAT_PREFIX + chatId;
-  try {
-    const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
-    markDeprecatedProcessChat(c);
-    return c.json(result);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500);
-  }
-});
-
-router.delete("/ai/process-chat/:chat_id", requireAuth, async (c) => {
-  const chatId = c.req.param("chat_id");
-  await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
-  markDeprecatedProcessChat(c);
-  return c.json({ ok: true });
-});
 
 // --- Kiba Admin Chat API ---
 

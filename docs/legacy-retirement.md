@@ -17,10 +17,10 @@ This document bounds compatibility surfaces that remain after the workflow found
 
 | Surface | Decision | Sunset | Guardrail |
 |---|---|---|---|
-| `POST /api/tsunade/chat` | Keep for external/old callers only | 2026-05-31 | Must return `Deprecation`, `Sunset`, and canonical `Link` headers. |
-| `DELETE /api/tsunade/chat/:chat_id` | Keep for external/old callers only | 2026-05-31 | Same deprecation headers as POST. |
-| `POST /api/ai/process-chat` | Keep for external/old callers only | 2026-05-31 | Must call the same backend handler and expose canonical replacement headers. |
-| `DELETE /api/ai/process-chat/:chat_id` | Keep for external/old callers only | 2026-05-31 | Same deprecation headers as POST. |
+| `POST /api/tsunade/chat` | **REMOVED** (#594) | — | Returns 404. |
+| `DELETE /api/tsunade/chat/:chat_id` | **REMOVED** (#594) | — | Returns 404. |
+| `POST /api/ai/process-chat` | **REMOVED** (#594) | — | Returns 404. |
+| `DELETE /api/ai/process-chat/:chat_id` | **REMOVED** (#594) | — | Returns 404. |
 | `frontend/src/api/client.ts` `api.tsunade.*` | Keep as frontend compatibility aliases | 2026-05-31 | Must delegate to `api.assistant.chat()` / canonical delete paths; no direct new legacy HTTP calls. |
 | `frontend/src/pages/TsunadeChatPanel.tsx` | Keep as ProcessEditor UI compatibility component | Revisit after editor UX consolidation | Must use `api.assistant.chat()` and canonical envelope fields. |
 | `modules/workflow-engine` frontend wrappers | Keep | Indefinite plugin boundary | Must re-export core frontend behavior, not fork it. |
@@ -37,12 +37,13 @@ This document bounds compatibility surfaces that remain after the workflow found
 
 ## Removal Criteria
 
-On or after 2026-05-31:
+**Completed 2026-04-29 (#594).** All four legacy routes have been removed. The unified `POST /api/ai/chat` with `mode: "process"` is the only process-chat endpoint. Legacy route tests now verify 404 responses.
 
-1. Check access logs for `/api/tsunade/chat` and `/api/ai/process-chat`.
-2. Grep the repository and deployed workdirs for callers outside compatibility tests/docs.
-3. If no external callers remain, remove the backend routes and frontend `api.tsunade.*` shims in one commit.
-4. Keep `/api/ai/chat` contract tests as the canonical assistant regression gate.
+## Enforcement
+
+- `scripts/preflight.ts` includes `tests/ai-chat-contract.test.ts` in its gate test suite.
+- Any reintroduction of `POST /tsunade/chat`, `POST /ai/process-chat`, or their DELETE counterparts will cause a typecheck or test failure.
+- Grep for `/tsunade/chat` and `/ai/process-chat` must return zero non-doc, non-test hits.
 
 ## Tests
 

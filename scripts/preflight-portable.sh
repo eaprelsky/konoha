@@ -47,6 +47,8 @@ cd "$ROOT"
 run_step "backend typecheck" bun x tsc --noEmit
 run_step "backend tests" run_backend_tests
 run_step "frontend typecheck/test/build" run_frontend
+run_step "legacy enforcement" bash -c '! grep -r "/tsunade/chat\|/ai/process-chat" src/routes/ --include="*.ts" --include="*.tsx"'
+run_step "action coverage" bun run scripts/action-coverage.ts
 
 echo
 echo "portable preflight OK"

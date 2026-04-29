@@ -9,7 +9,7 @@ Phase 1-3 have partially landed:
 - `/api/ai/chat` is the canonical assistant endpoint for process-mode workflow operations.
 - Non-streaming process responses now use the same canonical assistant envelope as streaming parsed events: `created_workflow`, `actions_taken`, `action_receipts`, `observable_result`, and `pending_confirmations`.
 - `api.assistant.chat({ mode: "process", ... })` is the preferred frontend client path. `api.tsunade.chat()` and `api.tsunade.processChat()` remain compatibility shims that call `/api/ai/chat`.
-- Legacy backend routes `/tsunade/chat` and `/ai/process-chat` are still active compatibility endpoints for external callers, but new UI code should not target them directly.
+- Legacy backend routes `/tsunade/chat` and `/ai/process-chat` were retired on 2026-04-29. New and old UI code must target `/api/ai/chat` with `mode: "process"`.
 - The compatibility inventory and removal criteria are tracked in `docs/legacy-retirement.md`.
 
 The root-cause analysis below is preserved as historical context from 2026-04-15. Treat statements about missing `created_workflow` frontend types as pre-fix context, not the current implementation.
@@ -32,7 +32,7 @@ Entry Point B: TsunadeChatPanel (legacy, inside ProcessEditor, non-streaming)
       └── canonical assistant envelope
       └── handles schema_patch, created_workflow, action_receipts, observable_result, pending_confirmations
 
-Entry Point C: /tsunade/chat (legacy HTTP endpoint, used by old chat)
+Entry Point C: /tsunade/chat (retired legacy HTTP endpoint)
   └── Compatibility backend path
   └── Returns the canonical assistant envelope
   └── Frontend shims should prefer /api/ai/chat
@@ -304,7 +304,7 @@ Tsunade's actions are visible in:
 
 ### Phase 3: Unify entry points (2-3 days)
 
-5. **Deprecate `/ai/process-chat`** — completed; keep it as a compatibility route while new clients use `/api/ai/chat` with `mode: "process"` and remove it after `docs/legacy-retirement.md` criteria pass.
+5. **Retire `/ai/process-chat`** — completed; callers must use `/api/ai/chat` with `mode: "process"`.
 6. **Remove `TsunadeChatPanel` as separate component** — future cleanup: replace it with a docked mode of `AssistantWidget`
 7. **Single assistant path** — all new workflow chat goes through `/api/ai/chat`; streaming remains preferred for the global widget
 
@@ -384,6 +384,6 @@ The action registry from #503 is already the foundation. The intent-decomposer t
 
 ## 7. Recommended First Step
 
-**Current next step** — keep new work on `/api/ai/chat`, `/act`, and typed action receipts. Remove `/ai/process-chat` and `/tsunade/chat` after the sunset criteria in `docs/legacy-retirement.md` pass.
+**Current next step** — keep new work on `/api/ai/chat`, `/act`, and typed action receipts. `/ai/process-chat` and `/tsunade/chat` are retired and covered by contract tests that expect 404.
 
 The original Phase 1 fixes are preserved above as historical context. The architectural work now continues through the action executor, entity contracts, and regression/preflight gates.
