@@ -1,7 +1,7 @@
 # ADR-002: Tsunade New-Process Materialization — Root Cause & Target Architecture
 
 > Issue: #525 | Priority: P1 | Date: 2026-04-15 | Author: Kakashi
-> Status: Decision Packet — awaiting Egor's review
+> Status: Historical decision packet; implementation partially landed and remaining legacy paths are sunset-bound.
 
 ## 2026-04-29 Status Update
 
@@ -10,6 +10,7 @@ Phase 1-3 have partially landed:
 - Non-streaming process responses now use the same canonical assistant envelope as streaming parsed events: `created_workflow`, `actions_taken`, `action_receipts`, `observable_result`, and `pending_confirmations`.
 - `api.assistant.chat({ mode: "process", ... })` is the preferred frontend client path. `api.tsunade.chat()` and `api.tsunade.processChat()` remain compatibility shims that call `/api/ai/chat`.
 - Legacy backend routes `/tsunade/chat` and `/ai/process-chat` are still active compatibility endpoints for external callers, but new UI code should not target them directly.
+- The compatibility inventory and removal criteria are tracked in `docs/legacy-retirement.md`.
 
 The root-cause analysis below is preserved as historical context from 2026-04-15. Treat statements about missing `created_workflow` frontend types as pre-fix context, not the current implementation.
 
@@ -96,35 +97,35 @@ User: "Создай процесс согласования договоров"
   │     │     navigate(/editor/:id)              │
   │     │     ✅ Materializes in editor         │
   │
-  └─→ [TsunadeChatPanel] ──POST /ai/process-chat──→ [non-stream]
+  └─→ [TsunadeChatPanel] ──api.assistant.chat()──→ POST /api/ai/chat [non-stream]
         │                                            │
-        │   Response: { reply, created_workflow }    │  Same backend
+        │   Response: canonical assistant envelope   │  Same backend normalization
         │                                            │
         │   Frontend:                                │
-        │     Only reads schema_patch                │
-        │     ❌ created_workflow DROPPED             │
-        │     ❌ Shows raw reply (may contain JSON)  │
-        │     ❌ No navigation to editor             │
+        │     handles schema_patch                   │
+        │     handles created_workflow               │
+        │     handles action_receipts                │
+        │     navigates to editor when needed        │
 ```
 
 ## 2. Root Cause Analysis
 
-### Root Cause #1: Legacy panel ignores created_workflow
+### Historical Root Cause #1: Legacy panel ignored created_workflow
 
 **File:** `frontend/src/pages/TsunadeChatPanel.tsx:69-86`
 
-The legacy panel uses `api.tsunade.processChat()` whose TypeScript return type is:
+At the time of this ADR, the legacy panel used `api.tsunade.processChat()` whose TypeScript return type was:
 ```typescript
 apiFetch<{ reply: string; chat_id: string; schema_patch: unknown | null; actions?: HighlightAction[] }>
 ```
 
-This type **does not include `created_workflow`**. Even though the backend returns it, the frontend:
+This type did not include `created_workflow`. Even though the backend returned it, the frontend:
 1. Doesn't declare the type → TypeScript doesn't know about it
 2. Doesn't read `res.created_workflow` from the response
 3. Doesn't dispatch `konoha:workflow_created` event
 4. Doesn't navigate to the editor
 
-**Impact:** If a user is in ProcessEditor and uses the legacy TsunadeChatPanel to ask "create a new process", the workflow IS created in the backend (Redis + PG), but the UI shows the reply text and does NOT navigate to the new process.
+**Historical impact:** If a user was in ProcessEditor and used the legacy TsunadeChatPanel to ask "create a new process", the workflow was created in the backend (Redis + PG), but the UI showed the reply text and did not navigate to the new process. This specific gap is now closed by the canonical assistant envelope path.
 
 ### Root Cause #2: Streaming shows raw JSON during delta phase
 
@@ -164,13 +165,13 @@ If the LLM output is not valid JSON (partial JSON, text with JSON fragments, hal
 
 **Impact:** The user's chat shows the full JSON payload as the "reply", with no human-readable text and no workflow creation.
 
-### Root Cause #4: Dual-path architecture (streaming vs non-streaming)
+### Historical Root Cause #4: Dual-path architecture (streaming vs non-streaming)
 
-The system has **two partially overlapping paths**:
+At the time of this ADR, the system had two partially overlapping paths:
 - `AssistantWidget` → `/api/ai/chat` (stream=true) → handles `created_workflow`
-- `TsunadeChatPanel` → `/api/ai/process-chat` (no stream) → ignores `created_workflow`
+- `TsunadeChatPanel` → `/api/ai/process-chat` (no stream) → ignored `created_workflow`
 
-Both call the same backend logic, but with different contracts and different frontend handling. The legacy panel was extracted from ProcessEditor but was never updated for workflow creation.
+They called overlapping backend logic with different contracts and different frontend handling. Current frontend code routes the panel through `api.assistant.chat({ mode: "process" })`; legacy HTTP endpoints remain only for external compatibility and are sunset-bound in `docs/legacy-retirement.md`.
 
 ### Missing Invariants
 
@@ -277,7 +278,7 @@ Tsunade's actions are visible in:
 
 ### Phase 1: Stop the bleeding (immediate, low risk)
 
-1. **Fix TsunadeChatPanel** — add `created_workflow` handling:
+1. **Fix TsunadeChatPanel** — completed; `created_workflow` handling is now part of the canonical assistant path:
    - Update `api.tsunade.processChat()` type to include `created_workflow`
    - Read `res.created_workflow` in TsunadeChatPanel
    - Dispatch `konoha:workflow_created` event
@@ -303,7 +304,7 @@ Tsunade's actions are visible in:
 
 ### Phase 3: Unify entry points (2-3 days)
 
-5. **Deprecate `/ai/process-chat`** — keep it as a compatibility route while new clients use `/api/ai/chat` with `mode: "process"`
+5. **Deprecate `/ai/process-chat`** — completed; keep it as a compatibility route while new clients use `/api/ai/chat` with `mode: "process"` and remove it after `docs/legacy-retirement.md` criteria pass.
 6. **Remove `TsunadeChatPanel` as separate component** — future cleanup: replace it with a docked mode of `AssistantWidget`
 7. **Single assistant path** — all new workflow chat goes through `/api/ai/chat`; streaming remains preferred for the global widget
 
@@ -383,6 +384,6 @@ The action registry from #503 is already the foundation. The intent-decomposer t
 
 ## 7. Recommended First Step
 
-**Phase 1, Item 1** — Fix TsunadeChatPanel to handle `created_workflow`. This is the smallest change that directly fixes the reported symptom. After that, Phase 1 Item 2 fixes the streaming flash.
+**Current next step** — keep new work on `/api/ai/chat`, `/act`, and typed action receipts. Remove `/ai/process-chat` and `/tsunade/chat` after the sunset criteria in `docs/legacy-retirement.md` pass.
 
-These are safe fixes that don't change architecture — they just close the gaps in the existing paths. The architectural work (Phase 2-4) follows after the packet is reviewed.
+The original Phase 1 fixes are preserved above as historical context. The architectural work now continues through the action executor, entity contracts, and regression/preflight gates.

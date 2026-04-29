@@ -16,6 +16,7 @@ Current status legend:
 - `Partial` — useful coverage exists, but not full CRUD/lifecycle parity.
 - `Gap` — missing or not wired to the target architecture.
 - `Legacy` — compatibility only; do not extend.
+- `Legacy bounded` — compatibility only, with a documented sunset and regression guard.
 
 | Domain | HTTP surface | MCP surface | Action surface | Status | Follow-up |
 |---|---|---|---|---|---|
@@ -32,7 +33,7 @@ Current status legend:
 | Events / subscriptions | `/events`, `/event-manager/*`, webhooks | `konoha_event_emit` | `event.subscribe/cancel/confirm/waiting.list`, plus runtime calls | Partial | #592: harden waits/joins/idempotency before expanding MCP |
 | KB / files / artifacts | `/kb/*`, `/workspace/*` | No MCP wrappers | `file.read`, `search.query` only | Contracted partial | See `docs/entity-contracts.md`; filesystem vs DB ownership is explicit per artifact type |
 | People / whitelist | `/people`, `/whitelist` | No MCP wrappers | No action contracts | Gap | Keep admin-only unless workflow assignment requires agent-visible control |
-| AI chat / Tsunade | `/ai/chat` canonical; `/tsunade/chat`, `/ai/process-chat` deprecated | No MCP wrappers | Uses workflow action receipts internally | Legacy/Partial | #594: bound and retire old chat paths |
+| AI chat / Tsunade | `/ai/chat` canonical; `/tsunade/chat`, `/ai/process-chat` deprecated and sunset-bound | No MCP wrappers | Uses workflow action receipts internally | Legacy bounded | See `docs/legacy-retirement.md` |
 | Deployment/config/admin | `/deploy`, `/config`, `/admin`, `/setup` | No MCP wrappers | `github.issue.create`, audit actions only | Partial | Keep out of Workflow Engine core unless operational workflows need it |
 | Testbench | Testbench HTTP API | `konoha_testbench_*` | No action contracts | Canonical for tests | Keep as testing surface, not product API |
 
@@ -49,4 +50,4 @@ Current status legend:
 - #591 — deterministic eEPC state-machine regression suite. Closed; suite is in preflight.
 - #592 — harden waits, joins, subprocesses, retries, and idempotency. Closed for current runtime boundary issues.
 - #593 — persistence/API/MCP contracts for artifacts, roles, reminders, and agents. Closed by `docs/entity-contracts.md`.
-- #594 — retire or bound old Tsunade/process-chat paths and stale docs.
+- #594 — old Tsunade/process-chat paths are bounded by `docs/legacy-retirement.md`; remove after the sunset criteria pass.

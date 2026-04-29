@@ -4,6 +4,7 @@
 >
 > API/MCP/action coverage map: `docs/api-mcp-parity.md`.
 > Entity ownership contracts: `docs/entity-contracts.md`.
+> Legacy retirement inventory: `docs/legacy-retirement.md`.
 
 ## Overview
 

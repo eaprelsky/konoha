@@ -23,6 +23,7 @@ function adminHeaders() {
 
 afterAll(async () => {
   await redis.del("tsunade:chat:test-ai-chat-contract");
+  await redis.del("tsunade:chat:test-ai-chat-contract-delete");
   redis.disconnect();
   delete process.env.KONOHA_PORT;
 });
@@ -63,6 +64,20 @@ describe("POST /api/ai/chat workflow contract", () => {
           message: "Покажи процесс",
           chat_id: `test-ai-chat-contract-deprecated-${path.replace(/\W+/g, "-")}`,
         }),
+      }));
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Deprecation")).toBe("true");
+      expect(res.headers.get("Sunset")).toBe("Sat, 31 May 2026 00:00:00 GMT");
+      expect(res.headers.get("Link")).toBe('</api/ai/chat?mode=process>; rel="canonical"');
+    }
+  });
+
+  test("deprecated Tsunade chat delete routes advertise canonical replacement", async () => {
+    for (const path of ["/api/tsunade/chat/test-ai-chat-contract-delete", "/api/ai/process-chat/test-ai-chat-contract-delete"]) {
+      const res = await app.fetch(new Request(`http://localhost${path}`, {
+        method: "DELETE",
+        headers: adminHeaders(),
       }));
 
       expect(res.status).toBe(200);

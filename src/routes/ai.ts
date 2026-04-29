@@ -256,6 +256,14 @@ function toAssistantWorkflowResponse(normalized: AssistantResponse) {
 }
 
 const router = new Hono();
+const PROCESS_CHAT_SUNSET = "Sat, 31 May 2026 00:00:00 GMT";
+const PROCESS_CHAT_CANONICAL_LINK = '</api/ai/chat?mode=process>; rel="canonical"';
+
+function markDeprecatedProcessChat(c: { header: (name: string, value: string) => void }) {
+  c.header("Deprecation", "true");
+  c.header("Sunset", PROCESS_CHAT_SUNSET);
+  c.header("Link", PROCESS_CHAT_CANONICAL_LINK);
+}
 
 router.use("/tsunade/chat", requireAuth);
 router.post("/tsunade/chat", async (c) => {
@@ -265,9 +273,7 @@ router.post("/tsunade/chat", async (c) => {
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
     const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
-    c.header("Deprecation", "true");
-    c.header("Sunset", "Sat, 31 May 2026 00:00:00 GMT");
-    c.header("Link", '</api/ai/chat?mode=process>; rel="canonical"');
+    markDeprecatedProcessChat(c);
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -277,8 +283,7 @@ router.post("/tsunade/chat", async (c) => {
 router.delete("/tsunade/chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
   await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
-  c.header("Deprecation", "true");
-  c.header("Sunset", "Sat, 31 May 2026 00:00:00 GMT");
+  markDeprecatedProcessChat(c);
   return c.json({ ok: true });
 });
 
@@ -291,9 +296,7 @@ router.post("/ai/process-chat", async (c) => {
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
     const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
-    c.header("Deprecation", "true");
-    c.header("Sunset", "Sat, 31 May 2026 00:00:00 GMT");
-    c.header("Link", '</api/ai/chat?mode=process>; rel="canonical"');
+    markDeprecatedProcessChat(c);
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -303,8 +306,7 @@ router.post("/ai/process-chat", async (c) => {
 router.delete("/ai/process-chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
   await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
-  c.header("Sunset", "Sat, 31 May 2026 00:00:00 GMT");
-  c.header("Deprecation", "true");
+  markDeprecatedProcessChat(c);
   return c.json({ ok: true });
 });
 
