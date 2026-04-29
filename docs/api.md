@@ -345,7 +345,7 @@ Stop + start in sequence. Regenerates AGENTS.md and .mcp.json.
 
 Return the fully assembled system prompt for this agent. The response now includes all 5 layers (see `docs/agent-lifecycle.md` — Composite prompt):
 
-- Layer 1: identity + startup sequence (base template)
+- Layer 1: identity (`id`, canonical `name`, mutable `display_alias`) + startup sequence (base template)
 - Layer 2: Konoha bus usage + watchdog behavior
 - Layer 3: role blocks — functions, input/output events from workflows assigned to this agent's roles
 - Layer 4: user-defined `system_prompt` from agent definition

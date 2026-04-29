@@ -101,7 +101,7 @@ Every lifecycle event (created, started, stopped, restarted, error) is appended 
 ```
 [Layer 1+2: System Template]
   - Agent identity (id, canonical name, display alias, model)
-  - Startup sequence (source /home/ubuntu/.agent-env, read MEMORY.md, konoha_register, wait for tasks)
+  - Startup sequence (source /home/ubuntu/.agent-env, read MEMORY.md, konoha_register with name and display_alias, wait for tasks)
   - Konoha bus connection info + watchdog behavior
 ---
 [Layer 4: User Instructions]
@@ -313,7 +313,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3200/agents/kaka
 
 ### GET /agents/:id/system-template
 
-Returns the rendered system template for a given agent (before appending user instructions).
+Returns the fully rendered AGENTS.md content for a given agent, including base
+identity/startup text, user instructions, role blocks, and skill snippets.
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3200/agents/kakashi/system-template

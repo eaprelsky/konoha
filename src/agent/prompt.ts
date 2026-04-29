@@ -17,13 +17,14 @@ const SYSTEM_TEMPLATE = `\
 ## Identity
 - Agent ID: {{id}}
 - Agent Name: {{name}}
+- Agent Display Alias: {{display_alias}}
 - Model: {{model}}
 - Language: Russian (communicate in Russian unless overridden in user instructions)
 
 ## Startup sequence
 1. source /home/ubuntu/.agent-env
 2. Read /opt/shared/agent-memory/MEMORY.md, then read only the files listed under \`Startup Core\`. Use other linked memory files on demand.
-3. Register on Konoha bus: konoha_register(id={{id}}, name={{name}}, model={{model}})
+3. Register on Konoha bus: konoha_register(id={{id}}, name={{name}}, display_alias={{display_alias}}, model={{model}})
 4. Read your personal memory if it exists: /opt/shared/agent-memory/{{id}}/MEMORY.md
 5. Wait for tasks — watchdog delivers them via Konoha bus
 
@@ -40,10 +41,12 @@ Session cleanup fires every 2h — save work-state and do /new when requested.
 ---
 # User Instructions`;
 
-export function renderSystemTemplate(def: Pick<AgentDef, "id" | "name" | "model" | "runtime">): string {
+export function renderSystemTemplate(def: Pick<AgentDef, "id" | "name" | "display_alias" | "model" | "runtime">): string {
+  const displayAlias = def.display_alias ?? def.name;
   return SYSTEM_TEMPLATE
     .replace(/{{id}}/g, def.id)
     .replace(/{{name}}/g, def.name)
+    .replace(/{{display_alias}}/g, displayAlias)
     .replace(/{{model}}/g, formatAgentModel(def));
 }
 
