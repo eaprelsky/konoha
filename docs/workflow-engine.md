@@ -1,6 +1,8 @@
 # Workflow Engine — Architecture
 
 > Source: `frontend/src` (canonical workflow UI) · `modules/workflow-engine/` (plugin wrappers + runtime module) · `src/runtime/` · `src/dispatcher.ts`
+>
+> API/MCP/action coverage map: `docs/api-mcp-parity.md`.
 
 ## Overview
 
