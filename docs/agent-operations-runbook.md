@@ -150,8 +150,36 @@ journalctl -u agent-watchdog-<id> -n 120 --no-pager
 Redis stream pending or lag growing:
 ```bash
 redis-cli XINFO GROUPS telegram:incoming
+redis-cli XINFO GROUPS telegram:bot:incoming
+redis-cli XINFO GROUPS telegram:outgoing
 redis-cli XPENDING telegram:incoming sasuke
-sudo systemctl restart agent-watchdog-sasuke telegram-context-packer telegram-vision-packer
+redis-cli XPENDING telegram:bot:incoming naruto
+redis-cli XPENDING telegram:outgoing claude-agents
+sudo systemctl restart agent-watchdog-sasuke agent-watchdog-naruto telegram-bus telegram-context-packer telegram-vision-packer
+```
+
+Telegram stream ownership:
+
+| Stream | Group | Owner | Recovery behavior |
+|--------|-------|-------|-------------------|
+| `telegram:bot:incoming` | `naruto` | `agent-watchdog-naruto` | Reads pending on startup, acks after tmux delivery |
+| `telegram:incoming` | `sasuke` | `agent-watchdog-sasuke` | Reads pending on startup, acks after tmux delivery |
+| `telegram:outgoing` | `claude-agents` | `telegram-bus` | Replays pending on startup; stale/poison sends go to `telegram:outgoing:dead_letter` |
+| `telegram:needs_context` | `context-packer` | `telegram-context-packer` | Dead letters invalid context packs |
+| `telegram:vision_requests` | `vision-packer` | `telegram-vision-packer` | Dead letters invalid vision packs |
+
+Do not replay old bot backlog after migrating Naruto or changing ownership. Move the group to the current tail first:
+
+```bash
+redis-cli XGROUP SETID telegram:bot:incoming naruto '$'
+sudo systemctl restart agent-watchdog-naruto
+```
+
+If `telegram:outgoing:dead_letter` is non-empty, inspect and either replay manually or archive and clear after triage:
+
+```bash
+redis-cli --json XRANGE telegram:outgoing:dead_letter - + COUNT 20
+redis-cli DEL telegram:outgoing:dead_letter
 ```
 
 ## Verification

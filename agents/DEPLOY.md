@@ -231,6 +231,7 @@ For Sasuke, also add `telethon-channel` MCP (see `telethon-mcp/` README).
 | `telegram:bot:outgoing` | Naruto → Telegram bot | Naruto writes (naruto-tg-send.py), bot.ts sends |
 | `telegram:incoming` | Telethon → Sasuke | bus.py writes, Sasuke reads |
 | `telegram:outgoing` | Sasuke → Telethon | Sasuke writes (tg-send-user.py), bus.py sends |
+| `telegram:outgoing:dead_letter` | Failed Telethon sends | bus.py writes stale/poison outgoing messages |
 | `konoha:agent:{id}` | Inter-agent | Konoha bus manages |
 
 ---

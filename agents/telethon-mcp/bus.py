@@ -46,6 +46,13 @@ OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 RETRYABLE_OPENROUTER_STATUS = {401, 402, 403, 408, 409, 429, 500, 502, 503, 504}
 
+OUTGOING_STREAM = 'telegram:outgoing'
+OUTGOING_GROUP = 'claude-agents'
+OUTGOING_CONSUMER = 'sender'
+OUTGOING_DEAD_LETTER_STREAM = 'telegram:outgoing:dead_letter'
+OUTGOING_STALE_PENDING_MAX_AGE_SEC = int(os.environ.get('TELEGRAM_OUTGOING_STALE_PENDING_MAX_AGE_SEC', '3600'))
+OUTGOING_MAX_RUNTIME_ATTEMPTS = int(os.environ.get('TELEGRAM_OUTGOING_MAX_RUNTIME_ATTEMPTS', '3'))
+
 def _load_trusted_ids() -> set[int]:
     """Load trusted user IDs from shared config."""
     cfg = json.loads(open(TRUSTED_USERS_FILE).read())
@@ -145,6 +152,43 @@ async def _append_history(rd: aioredis.Redis, chat_id: str | int, item: dict) ->
         await rd.expire(key, 7 * 24 * 3600)
     except Exception as e:
         print(f'HISTORY WRITE ERR [{chat_id}]: {e}', flush=True)
+
+
+def _stream_batch_has_messages(results: list) -> bool:
+    """Return True only when XREADGROUP returned at least one message."""
+    return any(messages for _stream_name, messages in results)
+
+
+def _is_stale_stream_id(redis_id: str, *, max_age_sec: int) -> bool:
+    """Return True for old pending Redis stream IDs that should not be replayed."""
+    try:
+        created_ms = int(str(redis_id).split('-', 1)[0])
+    except (TypeError, ValueError):
+        return False
+    current_ms = int(datetime.now().timestamp() * 1000)
+    return (current_ms - created_ms) > max_age_sec * 1000
+
+
+async def _dead_letter_outgoing(
+    rd: aioredis.Redis,
+    msg_id: str,
+    data: dict,
+    *,
+    reason: str,
+    error: str,
+) -> None:
+    """Move an outgoing message to DLQ and ack it from the live stream."""
+    fields = {str(k): str(v) for k, v in data.items() if v is not None}
+    fields.update({
+        'source_stream': OUTGOING_STREAM,
+        'source_id': msg_id,
+        'dead_letter_reason': reason,
+        'last_error': str(error)[:500],
+        'failed_at': datetime.now().isoformat(),
+    })
+    await rd.xadd(OUTGOING_DEAD_LETTER_STREAM, fields, maxlen=1000, approximate=True)
+    await rd.xack(OUTGOING_STREAM, OUTGOING_GROUP, msg_id)
+    print(f'OUT DLQ [{msg_id}] {reason}: {str(error)[:160]}', flush=True)
 
 
 
@@ -485,11 +529,43 @@ async def on_message(event):
 
 async def outgoing_loop():
     rd = aioredis.Redis(host='localhost', port=6379, decode_responses=True)
+    failed_attempts: dict[str, int] = {}
+    replay_pending = True
     while True:
         try:
-            msgs = await rd.xreadgroup('claude-agents', 'sender', {'telegram:outgoing': '>'}, count=1, block=2000)
+            try:
+                await rd.xgroup_create(OUTGOING_STREAM, OUTGOING_GROUP, id='0', mkstream=True)
+            except Exception as e:
+                if 'BUSYGROUP' not in str(e):
+                    raise
+
+            stream_id = '0' if replay_pending else '>'
+            msgs = await rd.xreadgroup(
+                OUTGOING_GROUP,
+                OUTGOING_CONSUMER,
+                {OUTGOING_STREAM: stream_id},
+                count=1,
+                block=100 if replay_pending else 2000,
+            )
+            if not _stream_batch_has_messages(msgs):
+                if replay_pending:
+                    replay_pending = False
+                    print(f'OUT pending replay drained for {OUTGOING_STREAM}', flush=True)
+                continue
+
             for stream, items in msgs:
                 for msg_id, data in items:
+                    if replay_pending:
+                        if _is_stale_stream_id(msg_id, max_age_sec=OUTGOING_STALE_PENDING_MAX_AGE_SEC):
+                            await _dead_letter_outgoing(
+                                rd,
+                                msg_id,
+                                data,
+                                reason='stale_pending',
+                                error=f'pending older than {OUTGOING_STALE_PENDING_MAX_AGE_SEC}s',
+                            )
+                            continue
+
                     chat_id = int(data['chat_id'])
                     text = data.get('text', '')
                     reply_to = int(data['reply_to']) if data.get('reply_to') else None
@@ -514,9 +590,25 @@ async def outgoing_loop():
                         if len(entry['ids']) > 50:
                             entry['ids'] = set(list(entry['ids'])[-50:])
                         _last_sent_per_chat[chat_id] = entry
-                        await rd.xack('telegram:outgoing', 'claude-agents', msg_id)
+                        await rd.xack(OUTGOING_STREAM, OUTGOING_GROUP, msg_id)
+                        failed_attempts.pop(msg_id, None)
                     except Exception as e:
-                        print(f'SEND ERR: {e}', flush=True)
+                        failed_attempts[msg_id] = failed_attempts.get(msg_id, 0) + 1
+                        if failed_attempts[msg_id] >= OUTGOING_MAX_RUNTIME_ATTEMPTS:
+                            await _dead_letter_outgoing(
+                                rd,
+                                msg_id,
+                                data,
+                                reason='send_failed',
+                                error=str(e),
+                            )
+                            failed_attempts.pop(msg_id, None)
+                        else:
+                            print(
+                                f'SEND ERR [{msg_id}] attempt={failed_attempts[msg_id]}/'
+                                f'{OUTGOING_MAX_RUNTIME_ATTEMPTS}: {e}',
+                                flush=True,
+                            )
         except Exception as e:
             if 'Connection' not in str(e):
                 print(f'OUT ERR: {e}', flush=True)

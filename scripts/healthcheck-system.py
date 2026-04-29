@@ -54,7 +54,11 @@ STREAM_GROUPS = {
     "telegram:vision_requests": ["vision-packer"],
     "telegram:outgoing": ["claude-agents"],
 }
-DEAD_LETTER_STREAMS = ["telegram:needs_context:dead_letter", "telegram:vision_requests:dead_letter"]
+DEAD_LETTER_STREAMS = [
+    "telegram:needs_context:dead_letter",
+    "telegram:vision_requests:dead_letter",
+    "telegram:outgoing:dead_letter",
+]
 WARN_LAG = 100
 WARN_PENDING = 10
 FAIL_PENDING = 100

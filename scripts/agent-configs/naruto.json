@@ -3,8 +3,8 @@
   "tmux_session": "naruto",
   "debounce_window": 2.0,
   "idle_timeout": 600,
-  "sources": ["konoha-sse", "telegram-file", "telegram-reactions-file"],
-  "telegram_file": "~/.claude/channels/telegram/message-queue.jsonl",
+  "sources": ["konoha-sse", "redis-stream", "telegram-reactions-file"],
+  "redis_stream": {"stream": "telegram:bot:incoming", "group": "naruto", "consumer": "naruto-watchdog"},
   "reaction_file": "~/.claude/channels/telegram/reaction-queue.jsonl",
   "message_prefix": "",
   "message_suffix": ""
