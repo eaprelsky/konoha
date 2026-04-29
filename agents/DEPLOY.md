@@ -234,6 +234,11 @@ For Sasuke, also add `telethon-channel` MCP (see `telethon-mcp/` README).
 | `telegram:outgoing:dead_letter` | Failed Telethon sends | bus.py writes stale/poison outgoing messages |
 | `konoha:agent:{id}` | Inter-agent | Konoha bus manages |
 
+`telegram:incoming/claude-agents` is optional legacy MCP pull-channel state for
+`telethon-channel`. It is not the production Telegram delivery path and should
+not be used for health SLOs while `agent-watchdog-sasuke` owns
+`telegram:incoming/sasuke`.
+
 ---
 
 ## Troubleshooting

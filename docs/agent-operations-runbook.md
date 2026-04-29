@@ -168,6 +168,14 @@ Telegram stream ownership:
 | `telegram:needs_context` | `context-packer` | `telegram-context-packer` | Dead letters invalid context packs |
 | `telegram:vision_requests` | `vision-packer` | `telegram-vision-packer` | Dead letters invalid vision packs |
 
+Optional/legacy groups:
+
+| Stream | Group | Owner | Policy |
+|--------|-------|-------|--------|
+| `telegram:incoming` | `claude-agents` | `telethon-channel` MCP tools | Optional pull channel; not a production delivery SLO. Prune zero-pending stale consumers, do not destroy while MCP channel tools are still configured. |
+
+The old `telegram:incoming/sasuke-group` group is not owned by any active code path and may be deleted when `pending=0`.
+
 Do not replay old bot backlog after migrating Naruto or changing ownership. Move the group to the current tail first:
 
 ```bash
@@ -180,6 +188,13 @@ If `telegram:outgoing:dead_letter` is non-empty, inspect and either replay manua
 ```bash
 redis-cli --json XRANGE telegram:outgoing:dead_letter - + COUNT 20
 redis-cli DEL telegram:outgoing:dead_letter
+```
+
+Run a smoke gate after Telegram stream changes:
+
+```bash
+cd /home/ubuntu/konoha
+scripts/telegram-smoke.sh
 ```
 
 ## Verification

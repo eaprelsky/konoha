@@ -19,9 +19,10 @@ SESSION = '/opt/shared/telegram_session'
 WIKI_DIR = '/opt/shared/wiki/group-chats'
 os.makedirs(WIKI_DIR, exist_ok=True)
 
-# Sync redis for stream group creation only
+# Sync redis for stream group creation only. The bus owns only command/outgoing
+# consumer groups; incoming stream groups are owned by agent watchdogs or MCP.
 sr = sync_redis.Redis(host='localhost', port=6379, decode_responses=True)
-for s in ['telegram:incoming', 'telegram:outgoing', 'telegram:log', 'telegram:commands', 'telegram:needs_context', 'telegram:vision_requests']:
+for s in ['telegram:outgoing', 'telegram:commands']:
     try:
         sr.xgroup_create(s, 'claude-agents', id='0', mkstream=True)
     except:
