@@ -122,6 +122,9 @@ export async function consumeInvite(token: string): Promise<boolean> {
 
 export async function unregisterAgent(id: string, hard = false): Promise<void> {
   await pgUnregisterAgent(id, hard);
+  if (hard) {
+    await redis.hdel("konoha:registry", id);
+  }
 }
 
 export async function heartbeat(id: string): Promise<void> {

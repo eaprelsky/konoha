@@ -177,6 +177,7 @@ describe("unregisterAgent", () => {
   test("hard unregister removes agent from registry", async () => {
     const agentId = id("unreg-hard");
     await registerAgent({ id: agentId, name: "Unreg Hard", capabilities: [], roles: [] });
+    await redis.hset("konoha:registry", agentId, JSON.stringify({ id: agentId, name: "Legacy row" }));
     await unregisterAgent(agentId, true);
     const raw = await redis.hget("konoha:registry", agentId);
     expect(raw).toBeNull();
