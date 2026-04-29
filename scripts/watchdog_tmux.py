@@ -11,6 +11,7 @@ import subprocess
 import time
 
 log = logging.getLogger(__name__)
+ACTIVE_WORK_MARKERS = ("◦ Working", "• Working", "esc to interrupt")
 
 # ── Idle detection ───────────────────────────────────────────────────────────
 
@@ -45,15 +46,27 @@ def tmux_pane_content(session: str) -> str:
     return tmux_pane_capture(session)[1]
 
 
+def _has_active_work(line: str) -> bool:
+    return any(marker in line for marker in ACTIVE_WORK_MARKERS)
+
+
+def _prompt_snippet(text: str) -> str:
+    return " ".join(text.split())[:80]
+
+
+def _has_active_work_after_prompt(content: str, text: str) -> bool:
+    normalized = " ".join(content.split())
+    snippet = _prompt_snippet(text)
+    if snippet and snippet in normalized:
+        return any(marker in normalized[normalized.rfind(snippet):] for marker in ACTIVE_WORK_MARKERS)
+
+    lines = [l.strip() for l in content.strip().split("\n") if l.strip()]
+    return any(_has_active_work(l) for l in lines[-4:])
+
+
 def _has_idle_prompt(content: str) -> bool:
     lines = [l.strip() for l in content.strip().split("\n") if l.strip()]
     last_lines = lines[-12:]
-    has_active_work = any(
-        l.startswith("◦ Working") or "esc to interrupt" in l
-        for l in last_lines
-    )
-    if has_active_work:
-        return False
     has_claude_queue = any("queued messages" in l.lower() for l in last_lines)
     has_claude_prompt = any(
         (l == "❯" or l == "❯ " or l.startswith("❯ ") or l.startswith("❯ "))
@@ -62,6 +75,11 @@ def _has_idle_prompt(content: str) -> bool:
     ) and not has_claude_queue
     has_codex_startup = any("Booting MCP server" in l or "Starting MCP servers" in l for l in last_lines)
     has_codex_prompt = any(l.startswith("› ") for l in last_lines) and not has_codex_startup
+    if has_codex_prompt:
+        last_prompt_idx = max((i for i, l in enumerate(lines) if l.startswith("› ")), default=-1)
+        last_active_idx = max((i for i, l in enumerate(lines) if _has_active_work(l)), default=-1)
+        if last_active_idx > last_prompt_idx:
+            return False
     has_cursor_ready = (
         any("→ Add a follow-up" in l for l in last_lines)
         or any("ctrl+c to stop" in l for l in last_lines)
@@ -163,7 +181,10 @@ async def tmux_send(session: str, text: str) -> bool:
                 await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
                 await asyncio.sleep(0.6)
                 continue
-            if pane.strip() and not _has_idle_prompt(pane):
+            if _has_active_work_after_prompt(pane, text):
+                log.info("Delivery confirmed: agent left idle state after submit")
+                return True
+            if pane.strip() and not _has_idle_prompt(pane) and _prompt_snippet(text) not in " ".join(pane.split()):
                 log.info("Delivery confirmed: agent left idle state after submit")
                 return True
             await asyncio.sleep(0.4)
