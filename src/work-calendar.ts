@@ -16,6 +16,7 @@
 import { redis } from "./redis";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { HonoEnv } from "./types";
+import { requireAdmin } from "./middleware/auth";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -257,7 +258,7 @@ export function registerWorkCalendarRoutes(
   });
 
   // POST /api/work-calendar/override — add custom override (admin only)
-  app.post("/work-calendar/override", requireAuth, async (c) => {
+  app.post("/work-calendar/override", requireAdmin, async (c) => {
     const body = await c.req.json<{ date: string; status: DayStatus; name?: string }>().catch(() => null);
     if (!body?.date || !body.status) return c.json({ error: "date and status required" }, 400);
     if (!["working", "holiday", "weekend"].includes(body.status)) {
@@ -271,8 +272,8 @@ export function registerWorkCalendarRoutes(
   });
 
   // DELETE /api/work-calendar/override/:date — remove custom override (admin only)
-  app.delete("/work-calendar/override/:date", requireAuth, async (c) => {
-    const date = c.req.param("date");
+  app.delete("/work-calendar/override/:date", requireAdmin, async (c) => {
+    const date = c.req.param("date")!;
     const deleted = await redis.hdel(OVERRIDES_KEY, date);
     return c.json({ ok: true, deleted });
   });

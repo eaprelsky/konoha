@@ -65,6 +65,76 @@ RULES = [
         ('router.post("/admin/seed-system-agents", requireAdmin',),
     ),
     Rule(
+        "route.auth.agent_definition_mutations_admin",
+        "src/routes/agents.ts",
+        (
+            'router.post("/", requireAdmin',
+            'router.put("/:id", requireAdmin',
+            'router.delete("/:id", requireAdmin',
+        ),
+    ),
+    Rule(
+        "route.auth.agent_lifecycle_admin",
+        "src/routes/agents.ts",
+        (
+            'router.post("/:id/start", requireAdmin',
+            'router.post("/:id/stop", requireAdmin',
+            'router.post("/:id/restart", requireAdmin',
+            'router.post("/:id/switch-runtime", requireAdmin',
+            'router.use("/tmux/:id", requireAdmin',
+        ),
+    ),
+    Rule(
+        "route.auth.agent_self_bound_reads",
+        "src/routes/agents.ts",
+        (
+            'router.get("/:id/status", requireAgentSelfOrAdmin()',
+            'router.get("/:id/system-template", requireAgentSelfOrAdmin()',
+            'router.get("/:id", requireAgentSelfOrAdmin()',
+        ),
+    ),
+    Rule(
+        "route.auth.agent_avatar_self_bound",
+        "src/routes/agents-avatar.ts",
+        ('router.post("/:id/avatar", requireAgentSelfOrAdmin()',),
+    ),
+    Rule(
+        "route.auth.workflow_crud_admin",
+        "modules/workflow-engine/src/routes/workflows.ts",
+        (
+            'router.post("/", requireAdmin',
+            'router.put("/:id{.+}", requireAdmin',
+            'router.delete("/:id{.+}", requireAdmin',
+        ),
+    ),
+    Rule(
+        "route.auth.workitem_ownership",
+        "modules/workflow-engine/src/routes/cases.ts",
+        (
+            "requireWorkItemOwnerOrAdmin",
+            "authorizedAssignee",
+            'workitemsRouter.post("/", requireAdmin',
+            'workitemsRouter.patch("/:id", requireAdmin',
+            'workitemsRouter.delete("/:id", requireAdmin',
+        ),
+    ),
+    Rule(
+        "route.auth.event_subscription_admin",
+        "src/events/routes.ts",
+        (
+            'app.post("/event-manager/subscribe", requireAdmin',
+            'app.delete("/event-manager/subscribe/:id", requireAdmin',
+        ),
+    ),
+    Rule(
+        "route.auth.work_calendar_admin",
+        "src/work-calendar.ts",
+        (
+            'app.post("/work-calendar/override", requireAdmin',
+            'app.delete("/work-calendar/override/:date", requireAdmin',
+        ),
+    ),
+    Rule(
         "route.auth.people_mutations_admin",
         "src/routes/people.ts",
         ('router.post("/", requireAdmin', 'router.delete("/:id", requireAdmin'),

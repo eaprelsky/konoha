@@ -24,6 +24,7 @@ import {
 } from "./subscriptions";
 import { DEFAULT_MAX_RPS, adapterStats, adapterRateLimiters } from "./utils";
 import { randomUUID } from "crypto";
+import { requireAdmin } from "../middleware/auth";
 
 const log = createLogger("event-manager");
 export function registerEventManagerRoutes(
@@ -31,7 +32,7 @@ export function registerEventManagerRoutes(
   requireAuth: MiddlewareHandler<HonoEnv>,
 ): void {
   // POST /api/event-manager/subscribe
-  app.post("/event-manager/subscribe", requireAuth, async (c) => {
+  app.post("/event-manager/subscribe", requireAdmin, async (c) => {
     const body = await c.req.json<{
       event_id: string;
       event_label?: string;
@@ -146,8 +147,8 @@ export function registerEventManagerRoutes(
   });
 
   // DELETE /api/event-manager/subscribe/:id
-  app.delete("/event-manager/subscribe/:id", requireAuth, async (c) => {
-    const id = c.req.param("id");
+  app.delete("/event-manager/subscribe/:id", requireAdmin, async (c) => {
+    const id = c.req.param("id")!;
     const raw = await redis.hget(SUBSCRIPTIONS_KEY, id);
     if (!raw) return c.json({ error: "Subscription not found" }, 404);
 

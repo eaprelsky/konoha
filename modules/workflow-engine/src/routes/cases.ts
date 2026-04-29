@@ -1,5 +1,6 @@
-import { Hono } from "hono";
-import { requireAuth } from "../../../../src/middleware/auth";
+import { Hono, type Context } from "hono";
+import { requireAdmin } from "../../../../src/middleware/auth";
+import type { HonoEnv, CallerInfo } from "../../../../src/types";
 import { redis } from "../../../../src/redis";
 import {
   createCase,
@@ -10,6 +11,7 @@ import {
   listCases,
   deleteCasesByProcess,
   createStandaloneWorkItem,
+  getWorkItem,
   updateWorkItem,
   createReminder,
   listReminders,
@@ -33,7 +35,32 @@ import { getWorkflow } from "../../../../src/workflow-loader";
 import { emitEvent } from "../../../../src/runtime/event-log";
 
 // Cases router — mounted at /cases
-export const casesRouter = new Hono();
+export const casesRouter = new Hono<HonoEnv>();
+
+type RouteContext = Context<HonoEnv>;
+
+function caller(c: { get: (key: "caller") => CallerInfo }): CallerInfo {
+  return c.get("caller");
+}
+
+async function requireWorkItemOwnerOrAdmin(c: RouteContext, workItemId: string): Promise<Response | null> {
+  const current = caller(c);
+  const wi = await getWorkItem(workItemId);
+  if (!wi) return c.json({ error: "Work item not found" }, 404);
+  if (!current.isAdmin && wi.assignee !== current.agentId) {
+    return c.json({ error: "Forbidden: work item is assigned to another agent" }, 403);
+  }
+  return null;
+}
+
+function authorizedAssignee(c: RouteContext, requested?: string): string | undefined | Response {
+  const current = caller(c);
+  if (current.isAdmin) return requested;
+  if (requested && requested !== current.agentId) {
+    return c.json({ error: "Forbidden: can only list your own work items" }, 403);
+  }
+  return current.agentId ?? undefined;
+}
 
 casesRouter.get("/", async (c) => {
   const status = (c.req.query("status") || undefined) as CaseStatus | undefined;
@@ -46,7 +73,7 @@ casesRouter.get("/", async (c) => {
   return c.json(result);
 });
 
-casesRouter.post("/", async (c) => {
+casesRouter.post("/", requireAdmin, async (c) => {
   const body = await c.req.json();
   const { process_id, subject, payload = {}, start_node } = body;
   if (!process_id || !subject) return c.json({ error: "process_id and subject required" }, 400);
@@ -66,7 +93,7 @@ casesRouter.get("/:id", async (c) => {
   return c.json(kase);
 });
 
-casesRouter.post("/:id/close", requireAuth, async (c) => {
+casesRouter.post("/:id/close", requireAdmin, async (c) => {
   const id = c.req.param("id");
   const kase = await forceCloseCase(id!);
   if (!kase) return c.json({ error: "Case not found" }, 404);
@@ -74,7 +101,7 @@ casesRouter.post("/:id/close", requireAuth, async (c) => {
 });
 
 // DELETE /cases?process_id=... — bulk delete cases for a process (admin cleanup)
-casesRouter.delete("/", requireAuth, async (c) => {
+casesRouter.delete("/", requireAdmin, async (c) => {
   const process_id = c.req.query("process_id");
   if (!process_id) return c.json({ error: "process_id query param required" }, 400);
   const deleted = await deleteCasesByProcess(process_id);
@@ -156,11 +183,13 @@ casesRouter.get("/:id/stream", async (c) => {
 });
 
 // Work Items router — mounted at /workitems
-export const workitemsRouter = new Hono();
-export const waitsRouter = new Hono();
+export const workitemsRouter = new Hono<HonoEnv>();
+export const waitsRouter = new Hono<HonoEnv>();
 
 workitemsRouter.post("/:id/complete", async (c) => {
   const id = c.req.param("id");
+  const forbidden = await requireWorkItemOwnerOrAdmin(c, id);
+  if (forbidden) return forbidden;
   const body = await c.req.json().catch(() => ({}));
   const output = body.output || {};
   try {
@@ -172,7 +201,9 @@ workitemsRouter.post("/:id/complete", async (c) => {
 });
 
 workitemsRouter.get("/", async (c) => {
-  const assignee = c.req.query("assignee") || undefined;
+  const assigneeOrResponse = authorizedAssignee(c, c.req.query("assignee") || undefined);
+  if (assigneeOrResponse instanceof Response) return assigneeOrResponse;
+  const assignee = assigneeOrResponse;
   const status = (c.req.query("status") || undefined) as WorkItemStatus | undefined;
   const process_id = c.req.query("process_id") || undefined;
   const deadline_before = c.req.query("deadline_before") || undefined;
@@ -180,7 +211,7 @@ workitemsRouter.get("/", async (c) => {
   return c.json(items);
 });
 
-workitemsRouter.post("/", async (c) => {
+workitemsRouter.post("/", requireAdmin, async (c) => {
   const body = await c.req.json();
   const { label, assignee, input = {}, deadline, process_id } = body;
   if (!label || !assignee) return c.json({ error: "label and assignee required" }, 400);
@@ -188,8 +219,8 @@ workitemsRouter.post("/", async (c) => {
   return c.json(wi, 201);
 });
 
-workitemsRouter.patch("/:id", async (c) => {
-  const id = c.req.param("id");
+workitemsRouter.patch("/:id", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
   const body = await c.req.json().catch(() => ({}));
   const { status, assignee, deadline, output, label } = body;
   try {
@@ -200,13 +231,13 @@ workitemsRouter.patch("/:id", async (c) => {
   }
 });
 
-workitemsRouter.delete("/all", requireAuth, async (c) => {
+workitemsRouter.delete("/all", requireAdmin, async (c) => {
   const deleted = await purgeAllWorkItems();
   return c.json({ ok: true, deleted });
 });
 
-workitemsRouter.delete("/:id", async (c) => {
-  const id = c.req.param("id");
+workitemsRouter.delete("/:id", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
   try {
     const wi = await updateWorkItem(id, { status: "cancelled" });
     return c.json(wi);
@@ -216,14 +247,16 @@ workitemsRouter.delete("/:id", async (c) => {
 });
 
 // POST /workitems/healthcheck — manual trigger for stuck work item recovery (#508)
-workitemsRouter.post("/healthcheck", requireAuth, async (c) => {
+workitemsRouter.post("/healthcheck", requireAdmin, async (c) => {
   const thresholdMs = parseInt(c.req.query("threshold_ms") || "60000");
   const result = await recoverStuckWorkItems(thresholdMs);
   return c.json(result);
 });
 
 waitsRouter.get("/", async (c) => {
-  const assignee = c.req.query("assignee") || undefined;
+  const assigneeOrResponse = authorizedAssignee(c, c.req.query("assignee") || undefined);
+  if (assigneeOrResponse instanceof Response) return assigneeOrResponse;
+  const assignee = assigneeOrResponse;
   const process_id = c.req.query("process_id") || undefined;
   const case_id = c.req.query("case_id") || undefined;
   const status = (c.req.query("status") || undefined) as EventWaitStatus | undefined;
@@ -247,6 +280,10 @@ waitsRouter.post("/:id/confirm", async (c) => {
     await c.req.json<{ comment?: string; confirmed_by?: string }>().catch(() => ({}));
   const wait = await loadEventWait(wait_id);
   if (!wait) return c.json({ error: "Wait not found" }, 404);
+  const current = caller(c);
+  if (!current.isAdmin && wait.assignee !== current.agentId) {
+    return c.json({ error: "Forbidden: wait is assigned to another agent" }, 403);
+  }
   if (!["active", "overdue", "escalated"].includes(wait.status)) {
     return c.json({ error: "Wait is not actionable", status: wait.status }, 409);
   }
@@ -289,16 +326,21 @@ waitsRouter.post("/:id/confirm", async (c) => {
 });
 
 // Reminders router — mounted at /reminders
-export const remindersRouter = new Hono();
+export const remindersRouter = new Hono<HonoEnv>();
 
 remindersRouter.get("/", async (c) => {
   const status = (c.req.query("status") || undefined) as ReminderStatus | undefined;
-  const recipient = c.req.query("recipient") || undefined;
+  const current = caller(c);
+  const requestedRecipient = c.req.query("recipient") || undefined;
+  if (!current.isAdmin && requestedRecipient && requestedRecipient !== current.agentId) {
+    return c.json({ error: "Forbidden: can only list your own reminders" }, 403);
+  }
+  const recipient = current.isAdmin ? requestedRecipient : current.agentId ?? undefined;
   const reminders = await listReminders({ status, recipient });
   return c.json(reminders);
 });
 
-remindersRouter.post("/", async (c) => {
+remindersRouter.post("/", requireAdmin, async (c) => {
   const body = await c.req.json();
   const { type, recipient, message, scheduled_at, channel, case_id, process_id, element_id } = body;
   if (!recipient || !message || !scheduled_at) {
@@ -317,8 +359,8 @@ remindersRouter.post("/", async (c) => {
   return c.json(r, 201);
 });
 
-remindersRouter.patch("/:id/status", async (c) => {
-  const id = c.req.param("id");
+remindersRouter.patch("/:id/status", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
   const body = await c.req.json().catch(() => ({}));
   const { status } = body;
   if (!status) return c.json({ error: "status required" }, 400);
@@ -330,8 +372,8 @@ remindersRouter.patch("/:id/status", async (c) => {
   }
 });
 
-remindersRouter.delete("/:id", async (c) => {
-  const id = c.req.param("id");
+remindersRouter.delete("/:id", requireAdmin, async (c) => {
+  const id = c.req.param("id")!;
   try {
     await deleteReminder(id);
     return c.json({ ok: true });

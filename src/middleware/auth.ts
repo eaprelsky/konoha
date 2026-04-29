@@ -1,4 +1,4 @@
-import type { Context, Next } from "hono";
+import type { Context, MiddlewareHandler, Next } from "hono";
 import { config } from "../config";
 import type { CallerInfo, HonoEnv } from "../types";
 import { getAgentIdByToken } from "../redis";
@@ -40,4 +40,17 @@ export async function requireAdmin(c: Context<HonoEnv>, next: Next) {
   if (!caller || !caller.isAdmin) return c.json({ error: "Forbidden: admin token required" }, 403);
   c.set("caller", caller);
   await next();
+}
+
+export function requireAgentSelfOrAdmin(paramName = "id"): MiddlewareHandler<HonoEnv> {
+  return async (c, next) => {
+    const caller = await resolveAuth(c);
+    if (!caller) return c.json({ error: "Unauthorized" }, 401);
+    const targetAgentId = c.req.param(paramName);
+    if (!caller.isAdmin && caller.agentId !== targetAgentId) {
+      return c.json({ error: "Forbidden: agent can only access its own resource" }, 403);
+    }
+    c.set("caller", caller);
+    await next();
+  };
 }

@@ -6,7 +6,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 
-import { requireAuth, requireAdmin, resolveAuth, ADMIN_TOKEN } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireAgentSelfOrAdmin, ADMIN_TOKEN } from "../middleware/auth";
 import {
   registerAgent,
   unregisterAgent,
@@ -114,7 +114,7 @@ router.post("/register", async (c) => {
 });
 
 // POST /agents — create a managed agent definition
-router.post("/", async (c) => {
+router.post("/", requireAdmin, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const {
     id,
@@ -190,7 +190,7 @@ router.get("/sandbox-profiles", async (c) => {
 });
 
 // GET /agents/:id/status — lifecycle status (tmux state, pid, uptime)
-router.get("/:id/status", async (c) => {
+router.get("/:id/status", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
@@ -199,7 +199,7 @@ router.get("/:id/status", async (c) => {
 });
 
 // POST /agents/:id/start
-router.post("/:id/start", async (c) => {
+router.post("/:id/start", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
@@ -212,7 +212,7 @@ router.post("/:id/start", async (c) => {
 });
 
 // POST /agents/:id/stop
-router.post("/:id/stop", async (c) => {
+router.post("/:id/stop", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
@@ -225,7 +225,7 @@ router.post("/:id/stop", async (c) => {
 });
 
 // POST /agents/:id/restart
-router.post("/:id/restart", async (c) => {
+router.post("/:id/restart", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
@@ -238,7 +238,7 @@ router.post("/:id/restart", async (c) => {
 });
 
 // POST /agents/:id/switch-runtime — change runtime/profile and optionally restart
-router.post("/:id/switch-runtime", async (c) => {
+router.post("/:id/switch-runtime", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
@@ -306,7 +306,7 @@ router.post("/:id/switch-runtime", async (c) => {
 });
 
 // GET /agents/tmux/:id — capture tmux pane output (last 200 lines)
-router.use("/tmux/:id", requireAuth);
+router.use("/tmux/:id", requireAdmin);
 router.get("/tmux/:id", async (c) => {
   const id = c.req.param("id")!;
   const konohaSession = `konoha-${id}`;
@@ -330,7 +330,7 @@ router.get("/tmux/:id", async (c) => {
 });
 
 // GET /agents/:id/system-template — rendered system template (includes role blocks + skills)
-router.get("/:id/system-template", async (c) => {
+router.get("/:id/system-template", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   const base = def ?? { id, name: id, runtime: "claude" as const, model: "claude:sonnet", system_prompt: undefined, capabilities: [] };
@@ -339,7 +339,7 @@ router.get("/:id/system-template", async (c) => {
 });
 
 // GET /agents/:id/memory — list memory files for agent
-router.get("/:id/memory", requireAuth, async (c) => {
+router.get("/:id/memory", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
   const dir = `/opt/shared/agent-memory/${basename(id)}`;
   if (!existsSync(dir)) return c.json([]);
@@ -354,7 +354,7 @@ router.get("/:id/memory", requireAuth, async (c) => {
 });
 
 // GET /agents/:id/memory/:filename — read one memory file
-router.get("/:id/memory/:filename", requireAuth, async (c) => {
+router.get("/:id/memory/:filename", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
   const filename = basename(c.req.param("filename")!); // prevent path traversal
   const dir = `/opt/shared/agent-memory/${basename(id)}`;
@@ -365,7 +365,7 @@ router.get("/:id/memory/:filename", requireAuth, async (c) => {
 });
 
 // DELETE /agents/:id/memory/:filename — delete one memory file
-router.delete("/:id/memory/:filename", requireAuth, async (c) => {
+router.delete("/:id/memory/:filename", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
   const filename = basename(c.req.param("filename")!); // prevent path traversal
   const dir = `/opt/shared/agent-memory/${basename(id)}`;
@@ -376,7 +376,7 @@ router.delete("/:id/memory/:filename", requireAuth, async (c) => {
 });
 
 // PUT /agents/:id/memory/:filename — overwrite memory file content
-router.put("/:id/memory/:filename", requireAuth, async (c) => {
+router.put("/:id/memory/:filename", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
   const filename = basename(c.req.param("filename")!);
   if (!filename.endsWith(".md") && !filename.endsWith(".txt") && !filename.endsWith(".json")) {
@@ -391,7 +391,7 @@ router.put("/:id/memory/:filename", requireAuth, async (c) => {
 });
 
 // POST /agents/:id/memory/:filename — create new memory file
-router.post("/:id/memory/:filename", requireAuth, async (c) => {
+router.post("/:id/memory/:filename", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
   const filename = basename(c.req.param("filename")!);
   if (!filename.endsWith(".md") && !filename.endsWith(".txt") && !filename.endsWith(".json")) {
@@ -407,7 +407,7 @@ router.post("/:id/memory/:filename", requireAuth, async (c) => {
 });
 
 // GET /agents/:id — get single agent (bus data merged with def)
-router.get("/:id", async (c) => {
+router.get("/:id", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
   const [busAgents, def] = await Promise.all([
     listAgents(false),
@@ -438,7 +438,7 @@ router.get("/:id", async (c) => {
 });
 
 // PUT /agents/:id — update agent definition fields (name, system_prompt, model)
-router.put("/:id", async (c) => {
+router.put("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
@@ -450,7 +450,7 @@ router.put("/:id", async (c) => {
 });
 
 // DELETE /agents/:id — stop agent, delete definition, and unregister from bus
-router.delete("/:id", async (c) => {
+router.delete("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (def?.protected) return c.json({ error: "Cannot delete a protected system agent" }, 403);
@@ -474,7 +474,7 @@ router.delete("/:id", async (c) => {
 const _lifecycleCache = new Map<string, { data: LifecycleProjection; ts: number }>();
 const LIFECYCLE_CACHE_TTL_MS = 5_000;
 
-router.get("/", async (c) => {
+router.get("/", requireAdmin, async (c) => {
   const onlineOnly = c.req.query("online") === "true";
   const [busAgents, defs] = await Promise.all([
     listAgents(onlineOnly),

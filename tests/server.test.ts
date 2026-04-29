@@ -744,6 +744,105 @@ describe("User-visible configuration access control", () => {
   });
 });
 
+// ── Route RBAC policy ───────────────────────────────────────────────────────
+
+describe("Route RBAC policy", () => {
+  test("agent token cannot manage agent definitions or lifecycle", async () => {
+    const agentId = id("rbac-agent");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "RBAC Agent" } });
+    const token: string = reg.body.token;
+
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    expect((await req("GET", "/agents", { headers })).status).toBe(403);
+    expect((await req("POST", "/agents", {
+      body: { id: id("blocked-managed"), name: "Blocked Managed", model: "claude:sonnet" },
+      headers,
+    })).status).toBe(403);
+    expect((await req("POST", `/agents/${agentId}/start`, { body: {}, headers })).status).toBe(403);
+    expect((await req("POST", `/agents/${agentId}/switch-runtime`, {
+      body: { llm_client_profile: "claude-deepseek-haiku" },
+      headers,
+    })).status).toBe(403);
+    expect((await req("DELETE", `/agents/${agentId}`, { headers })).status).toBe(403);
+  });
+
+  test("agent token can inspect self but not another agent", async () => {
+    const selfId = id("rbac-self");
+    const otherId = id("rbac-other");
+    await req("POST", "/agents", { body: { id: selfId, name: "RBAC Self", model: "claude:sonnet" } });
+    await req("POST", "/agents", { body: { id: otherId, name: "RBAC Other", model: "claude:sonnet" } });
+    const reg = await req("POST", "/agents/register", { body: { id: selfId, name: "RBAC Self" } });
+    const token: string = reg.body.token;
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+    expect((await req("GET", `/agents/${selfId}`, { headers })).status).toBe(200);
+    expect((await req("GET", `/agents/${selfId}/status`, { headers })).status).toBe(200);
+    expect((await req("GET", `/agents/${otherId}`, { headers })).status).toBe(403);
+    expect((await req("GET", `/agents/${otherId}/status`, { headers })).status).toBe(403);
+  });
+
+  test("agent token cannot mutate workflows through direct CRUD routes", async () => {
+    const agentId = id("rbac-workflow");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "RBAC Workflow" } });
+    const token: string = reg.body.token;
+
+    const { status } = await req("POST", "/workflows", {
+      body: { id: id("blocked-workflow"), elements: [], flow: [], draft: true },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    expect(status).toBe(403);
+  });
+
+  test("work item direct routes enforce assignee ownership for agent tokens", async () => {
+    const assigneeId = id("rbac-assignee");
+    const otherId = id("rbac-non-assignee");
+    const assigneeReg = await req("POST", "/agents/register", { body: { id: assigneeId, name: "RBAC Assignee" } });
+    const otherReg = await req("POST", "/agents/register", { body: { id: otherId, name: "RBAC Non Assignee" } });
+    const created = await req("POST", "/workitems", {
+      body: { label: "RBAC task", assignee: assigneeId, input: {} },
+    });
+    expect(created.status).toBe(201);
+    const workItemId = created.body.work_item_id;
+
+    const otherHeaders = { Authorization: `Bearer ${otherReg.body.token}`, "Content-Type": "application/json" };
+    expect((await req("GET", `/workitems?assignee=${assigneeId}`, { headers: otherHeaders })).status).toBe(403);
+    expect((await req("POST", `/workitems/${workItemId}/complete`, {
+      body: { output: { blocked: true } },
+      headers: otherHeaders,
+    })).status).toBe(403);
+
+    const ownHeaders = { Authorization: `Bearer ${assigneeReg.body.token}`, "Content-Type": "application/json" };
+    expect((await req("POST", `/workitems/${workItemId}/complete`, {
+      body: { output: { ok: true } },
+      headers: ownHeaders,
+    })).status).toBe(200);
+  });
+
+  test("agent token cannot mutate event subscriptions, calendar overrides, or reminders directly", async () => {
+    const agentId = id("rbac-ops");
+    const reg = await req("POST", "/agents/register", { body: { id: agentId, name: "RBAC Ops" } });
+    const headers = { Authorization: `Bearer ${reg.body.token}`, "Content-Type": "application/json" };
+
+    expect((await req("POST", "/event-manager/subscribe", {
+      body: { event_id: "start", process_id: "p", instance_id: "i", trigger: { kind: "manual" } },
+      headers,
+    })).status).toBe(403);
+    expect((await req("POST", "/work-calendar/override", {
+      body: { date: "2026-05-01", status: "holiday" },
+      headers,
+    })).status).toBe(403);
+    expect((await req("POST", "/reminders", {
+      body: {
+        recipient: agentId,
+        message: "blocked",
+        scheduled_at: new Date(Date.now() + 60_000).toISOString(),
+      },
+      headers,
+    })).status).toBe(403);
+  });
+});
+
 // ── DELETE /agents/:id ────────────────────────────────────────────────────────
 
 describe("DELETE /agents/:id", () => {

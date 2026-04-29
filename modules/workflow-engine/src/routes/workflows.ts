@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { requireAuth } from "../../../../src/middleware/auth";
+import { requireAuth, requireAdmin } from "../../../../src/middleware/auth";
 import {
   loadWorkflows,
   getWorkflow,
@@ -39,7 +39,7 @@ router.get("/:id{.+}", requireAuth, async (c) => {
   return c.json(wf);
 });
 
-router.post("/", requireAuth, async (c) => {
+router.post("/", requireAdmin, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
   const draft = body.draft === true || c.req.query("draft") === "true";
@@ -47,7 +47,7 @@ router.post("/", requireAuth, async (c) => {
   return c.json(result!.data as any, result!.status as any);
 });
 
-router.put("/:id{.+}", requireAuth, async (c) => {
+router.put("/:id{.+}", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON body" }, 400);
@@ -56,7 +56,7 @@ router.put("/:id{.+}", requireAuth, async (c) => {
   return c.json(result!.data as any, result!.status as any);
 });
 
-router.delete("/:id{.+}", requireAuth, async (c) => {
+router.delete("/:id{.+}", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const result = await executeWorkflowAction("workflow.delete", { id });
   return c.json(result!.data as any, result!.status as any);

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { writeFileSync } from "fs";
 import { join, extname } from "path";
-import { requireAuth } from "../middleware/auth";
+import { requireAgentSelfOrAdmin } from "../middleware/auth";
 import { getAgentDef, updateAgentDef } from "../agent-lifecycle";
 import { generateAvatar, generateAvatarImg2Img } from "../adapters/image";
 
@@ -9,7 +9,7 @@ const AVATARS_DIR = "/opt/shared/avatars";
 
 const router = new Hono();
 
-router.post("/:id/avatar", requireAuth, async (c) => {
+router.post("/:id/avatar", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found" }, 404);
