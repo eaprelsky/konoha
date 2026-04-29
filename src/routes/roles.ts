@@ -1,32 +1,38 @@
 import { Hono } from "hono";
-import { createRole, listRoles, updateRole, deleteRole, type AssignmentStrategy } from "../runtime";
+import { requireAdmin } from "../middleware/auth";
+import { executeActionDirect, type ActionExecution } from "../action-executor";
 
 const router = new Hono();
 
+function actionJson(c: any, result: ActionExecution): Response {
+  return c.json(result.data as any, result.status as any);
+}
+
 router.get("/", async (c) => {
   c.header("Cache-Control", "public, max-age=60, stale-while-revalidate=30");
-  return c.json(await listRoles());
+  const result = await executeActionDirect("role.list", {});
+  return actionJson(c, result!);
 });
 
-router.post("/", async (c) => {
+router.post("/", requireAdmin, async (c) => {
   const body = await c.req.json();
   const { role_id, name, description, assignees = [], strategy = "manual" } = body;
   if (!role_id || !name) return c.json({ error: "role_id and name required" }, 400);
-  const r = await createRole({ role_id, name, description, assignees, strategy: strategy as AssignmentStrategy });
-  return c.json(r, 201);
+  const result = await executeActionDirect("role.create", { role_id, name, description, assignees, strategy });
+  return actionJson(c, result!);
 });
 
-router.patch("/:id", async (c) => {
+router.patch("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
-  try { return c.json(await updateRole(id, body)); }
-  catch (e: any) { return c.json({ error: e.message }, 404); }
+  const result = await executeActionDirect("role.update", { id, ...body });
+  return actionJson(c, result!);
 });
 
-router.delete("/:id", async (c) => {
+router.delete("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id");
-  try { await deleteRole(id); return c.json({ ok: true }); }
-  catch (e: any) { return c.json({ error: e.message }, 404); }
+  const result = await executeActionDirect("role.delete", { id });
+  return actionJson(c, result!);
 });
 
 export default router;

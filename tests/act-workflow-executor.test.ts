@@ -3,6 +3,8 @@ import Redis from "ioredis";
 import { AUDIT_STREAM, AUTONOMY_KEY } from "../src/assistant-actions";
 import { unregisterAgent } from "../src/redis";
 import { deleteCasesByProcess } from "../src/runtime/cases/crud";
+import { deleteReminder } from "../src/runtime/reminders";
+import { deleteRole } from "../src/runtime/roles";
 import { pgDeleteWorkflow, pgDeleteWorkItem } from "../src/storage/pg";
 
 process.env.KONOHA_PORT = "0";
@@ -18,6 +20,10 @@ const HTTP_WORKFLOW_ID_PREFIX = `${RUN}-http`;
 let actWorkItemId: string | null = null;
 let wrapperWorkItemId: string | null = null;
 const ACT_PERSON_ID = `${RUN}-person`;
+const ACT_ROLE_ID = `${RUN}-role`;
+const WRAPPER_ROLE_ID = `${RUN}-wrapper-role`;
+let actReminderId: string | null = null;
+let wrapperReminderId: string | null = null;
 const RBAC_AGENT_ID = `${RUN}-rbac-agent`;
 const savedAutonomy: Record<string, string | null> = {};
 
@@ -84,6 +90,10 @@ afterAll(async () => {
     await redis.zrem("konoha:workitems:all", wrapperWorkItemId);
     await pgDeleteWorkItem(wrapperWorkItemId);
   }
+  await deleteRole(ACT_ROLE_ID).catch(() => {});
+  await deleteRole(WRAPPER_ROLE_ID).catch(() => {});
+  if (actReminderId) await deleteReminder(actReminderId).catch(() => {});
+  if (wrapperReminderId) await deleteReminder(wrapperReminderId).catch(() => {});
   await redis.hdel("people:custom", ACT_PERSON_ID);
   await unregisterAgent(RBAC_AGENT_ID, true).catch(() => {});
   redis.disconnect();
@@ -293,6 +303,182 @@ describe("/act workflow executor", () => {
     const cancelled = await deleteRes.json();
     expect(deleteRes.status).toBe(200);
     expect(cancelled.status).toBe("cancelled");
+  });
+
+  test("executes role create/update/delete directly through the action envelope", async () => {
+    const createRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "role.create",
+        category: "act",
+        args: {
+          role_id: ACT_ROLE_ID,
+          name: "Action Role",
+          assignees: ["naruto"],
+          strategy: "manual",
+        },
+        meta: { session_id: `${RUN}-role-create-test` },
+      }),
+    }));
+    const created = await createRes.json();
+    expect(createRes.status).toBe(201);
+    expect(created.ok).toBe(true);
+    expect(created.data.role_id).toBe(ACT_ROLE_ID);
+    expect(created.data.assignees).toEqual(["naruto"]);
+
+    const updateRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "role.update",
+        category: "act",
+        args: { id: ACT_ROLE_ID, name: "Updated Action Role", assignees: ["sasuke"] },
+        meta: { session_id: `${RUN}-role-update-test` },
+      }),
+    }));
+    const updated = await updateRes.json();
+    expect(updateRes.status).toBe(200);
+    expect(updated.data.name).toBe("Updated Action Role");
+    expect(updated.data.assignees).toEqual(["sasuke"]);
+
+    const deleteRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "role.delete",
+        category: "act",
+        args: { id: ACT_ROLE_ID },
+        meta: { session_id: `${RUN}-role-delete-test` },
+      }),
+    }));
+    const deleted = await deleteRes.json();
+    expect(deleteRes.status).toBe(200);
+    expect(deleted.data.ok).toBe(true);
+  });
+
+  test("keeps legacy /roles mutations as compatibility wrappers around role actions", async () => {
+    const createRes = await app.fetch(new Request("http://localhost/roles", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        role_id: WRAPPER_ROLE_ID,
+        name: "HTTP wrapper role",
+        assignees: ["naruto"],
+        strategy: "manual",
+      }),
+    }));
+    const created = await createRes.json();
+    expect(createRes.status).toBe(201);
+    expect(created.role_id).toBe(WRAPPER_ROLE_ID);
+    expect(created.assignees).toEqual(["naruto"]);
+
+    const updateRes = await app.fetch(new Request(`http://localhost/roles/${WRAPPER_ROLE_ID}`, {
+      method: "PATCH",
+      headers: adminHeaders(),
+      body: JSON.stringify({ name: "Updated HTTP wrapper role", assignees: ["sasuke"] }),
+    }));
+    const updated = await updateRes.json();
+    expect(updateRes.status).toBe(200);
+    expect(updated.name).toBe("Updated HTTP wrapper role");
+    expect(updated.assignees).toEqual(["sasuke"]);
+
+    const deleteRes = await app.fetch(new Request(`http://localhost/roles/${WRAPPER_ROLE_ID}`, {
+      method: "DELETE",
+      headers: adminHeaders(),
+    }));
+    const deleted = await deleteRes.json();
+    expect(deleteRes.status).toBe(200);
+    expect(deleted.ok).toBe(true);
+  });
+
+  test("executes reminder create/update/delete directly through the action envelope", async () => {
+    const createRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "reminder.create",
+        category: "act",
+        args: {
+          recipient: "naruto",
+          message: "Action reminder",
+          scheduled_at: "2030-03-01T00:00:00.000Z",
+          channel: "gui",
+          process_id: ACT_WORKFLOW_ID,
+        },
+        meta: { session_id: `${RUN}-reminder-create-test` },
+      }),
+    }));
+    const created = await createRes.json();
+    expect(createRes.status).toBe(201);
+    expect(created.ok).toBe(true);
+    expect(created.data.recipient).toBe("naruto");
+    expect(created.data.process_id).toBe(ACT_WORKFLOW_ID);
+    actReminderId = created.data.reminder_id;
+
+    const updateRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "reminder.update_status",
+        category: "act",
+        args: { id: actReminderId, status: "sent" },
+        meta: { session_id: `${RUN}-reminder-update-test` },
+      }),
+    }));
+    const updated = await updateRes.json();
+    expect(updateRes.status).toBe(200);
+    expect(updated.data.status).toBe("sent");
+
+    const deleteRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "reminder.delete",
+        category: "act",
+        args: { id: actReminderId },
+        meta: { session_id: `${RUN}-reminder-delete-test` },
+      }),
+    }));
+    const deleted = await deleteRes.json();
+    expect(deleteRes.status).toBe(200);
+    expect(deleted.data.ok).toBe(true);
+  });
+
+  test("keeps legacy /reminders mutations as compatibility wrappers around reminder actions", async () => {
+    const createRes = await app.fetch(new Request("http://localhost/reminders", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        recipient: "sasuke",
+        message: "HTTP wrapper reminder",
+        scheduled_at: "2030-04-01T00:00:00.000Z",
+        channel: "gui",
+        process_id: ACT_WORKFLOW_ID,
+      }),
+    }));
+    const created = await createRes.json();
+    expect(createRes.status).toBe(201);
+    expect(created.recipient).toBe("sasuke");
+    expect(created.process_id).toBe(ACT_WORKFLOW_ID);
+    wrapperReminderId = created.reminder_id;
+
+    const updateRes = await app.fetch(new Request(`http://localhost/reminders/${wrapperReminderId}/status`, {
+      method: "PATCH",
+      headers: adminHeaders(),
+      body: JSON.stringify({ status: "sent" }),
+    }));
+    const updated = await updateRes.json();
+    expect(updateRes.status).toBe(200);
+    expect(updated.status).toBe("sent");
+
+    const deleteRes = await app.fetch(new Request(`http://localhost/reminders/${wrapperReminderId}`, {
+      method: "DELETE",
+      headers: adminHeaders(),
+    }));
+    const deleted = await deleteRes.json();
+    expect(deleteRes.status).toBe(200);
+    expect(deleted.ok).toBe(true);
   });
 
   test("executes person actions directly through the action envelope", async () => {

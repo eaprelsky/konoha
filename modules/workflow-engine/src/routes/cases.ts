@@ -8,17 +8,11 @@ import {
   listCases,
   deleteCasesByProcess,
   getWorkItem,
-  createReminder,
-  listReminders,
-  updateReminderStatus,
-  deleteReminder,
   purgeAllWorkItems,
   recoverStuckWorkItems,
   type WorkItemStatus,
   type CaseStatus,
   type ReminderStatus,
-  type ReminderChannel,
-  type ReminderType,
 } from "../../../../src/runtime";
 import {
   listEventWaits,
@@ -318,27 +312,28 @@ remindersRouter.get("/", async (c) => {
     return c.json({ error: "Forbidden: can only list your own reminders" }, 403);
   }
   const recipient = current.isAdmin ? requestedRecipient : current.agentId ?? undefined;
-  const reminders = await listReminders({ status, recipient });
-  return c.json(reminders);
+  const result = await executeActionDirect("reminder.list", { status, recipient });
+  return actionJson(c, result!);
 });
 
 remindersRouter.post("/", requireAdmin, async (c) => {
   const body = await c.req.json();
-  const { type, recipient, message, scheduled_at, channel, case_id, process_id, element_id } = body;
+  const { type, recipient, message, scheduled_at, channel, case_id, process_id, element_id, work_item_id } = body;
   if (!recipient || !message || !scheduled_at) {
     return c.json({ error: "recipient, message and scheduled_at required" }, 400);
   }
-  const r = await createReminder({
-    type: (type || "standalone") as ReminderType,
+  const result = await executeActionDirect("reminder.create", {
+    type,
     recipient,
     message,
     scheduled_at,
-    channel: (channel || "gui") as ReminderChannel,
+    channel,
     case_id,
     process_id,
     element_id,
+    work_item_id,
   });
-  return c.json(r, 201);
+  return actionJson(c, result!);
 });
 
 remindersRouter.patch("/:id/status", requireAdmin, async (c) => {
@@ -346,22 +341,14 @@ remindersRouter.patch("/:id/status", requireAdmin, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { status } = body;
   if (!status) return c.json({ error: "status required" }, 400);
-  try {
-    const r = await updateReminderStatus(id, status as ReminderStatus);
-    return c.json(r);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 404);
-  }
+  const result = await executeActionDirect("reminder.update_status", { id, status });
+  return actionJson(c, result!);
 });
 
 remindersRouter.delete("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
-  try {
-    await deleteReminder(id);
-    return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ error: e.message }, 404);
-  }
+  const result = await executeActionDirect("reminder.delete", { id });
+  return actionJson(c, result!);
 });
 
 export default casesRouter;

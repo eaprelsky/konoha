@@ -24,10 +24,10 @@ Current status legend:
 | Workflow elements/flow/triggers | Coarse workflow update via `/workflows`; trigger resolver routes | No fine-grained MCP tools | `element.add/update/remove`, `flow.add/remove`, `trigger.resolve/subscribe/cancel` | Gap | #589: promote action executor; #590 follow-up if MCP fine-grained editing is needed |
 | Cases | `/cases` routes | `konoha_case_list/start/get` | `case.start/get/list/close`, `event.confirm`, `event.waiting.list` | Canonical executor for start/close/list/get; MCP still HTTP-wrapper | Runtime semantics covered by regression suite; add MCP wrappers only for stable agent workflows |
 | Work items | `/workitems` routes | `konoha_workitem_list/complete`, `konoha_complete_task` | `workitem.create/update/list/complete/cancel` | Canonical executor for create/update/complete/cancel/list; MCP still HTTP-wrapper | Convert MCP tools to action wrappers when agent workflows need receipts |
-| Roles | `/roles` CRUD | `konoha_role_list`, `konoha_role_assign` | `role.create/list/update/delete` | Contracted partial | See `docs/entity-contracts.md`; action/MCP wrappers can be added after executor migration |
+| Roles | `/roles` CRUD | `konoha_role_list`, `konoha_role_assign` | `role.create/list/update/delete` | Canonical executor for CRUD; MCP still HTTP-wrapper | Convert MCP tools to action wrappers when agent workflows need receipts |
 | Agents lifecycle | `/agents`, `/agents/:id/start/stop/restart/switch-runtime`, profile routes | Bus tools: `konoha_register`, `konoha_agents`, `konoha_heartbeat`; no lifecycle MCP tools | `agent.register/start/stop/restart` | Contracted partial | See `docs/entity-contracts.md`; lifecycle MCP deferred until auth/rollback semantics are explicit |
 | Messages / bus | `/messages` send/read/pending/ack/history/stream | `konoha_send/read/listen/history/channels` | `message.send/read` | Partial | Keep bus as operational substrate; do not overload `/act` for streaming reads |
-| Reminders | `/reminders` routes; BullMQ/runtime worker | No MCP tools | `reminder.create/list/update_status/delete` | Contracted gap | See `docs/entity-contracts.md`; MCP only if agents need direct reminder control |
+| Reminders | `/reminders` routes; BullMQ/runtime worker | No MCP tools | `reminder.create/list/update_status/delete` | Canonical executor for CRUD | Add MCP tools only if agents need direct reminder control |
 | Documents | `/documents` CRUD | No MCP tools | No document actions yet | Contracted gap | See `docs/entity-contracts.md`; add action IDs before MCP mutation tools |
 | Skills | `/skills` CRUD | `konoha_skill_list` only | No skill actions yet | Partial | Treat as admin/config until Workflow Engine requires mutation through agents |
 | Events / subscriptions | `/events`, `/event-manager/*`, webhooks | `konoha_event_emit` | `event.subscribe/cancel/confirm/waiting.list`, plus runtime calls | Partial | #592: harden waits/joins/idempotency before expanding MCP |
@@ -41,6 +41,7 @@ Current status legend:
 
 - Workflow definition mutations now converge on the action executor from `/act` and `/workflows`; MCP workflow tools are still HTTP wrappers and should become action wrappers when the MCP surface is revised.
 - Case start/close and work item create/update/complete/cancel HTTP routes now call the same direct action executor as `/act`; legacy routes remain compatibility wrappers without adding separate audit entries.
+- Role and reminder HTTP CRUD routes now also call the direct action executor; `reminder.update_status` is classified as a mutating action.
 - MCP parity should not mean “every route becomes a tool”. Agent-facing tools should cover stable, useful operations; admin-only surfaces can remain HTTP-only.
 - Runtime semantics come before broader tool exposure. Waits, joins, subprocesses, retries, and idempotency need tests before more agents can safely drive them.
 - Legacy chat routes should remain compatibility shims only. New UI/API/MCP work should target `/api/ai/chat`, `/act`, and typed action receipts.

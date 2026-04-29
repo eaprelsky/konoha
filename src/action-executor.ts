@@ -19,6 +19,16 @@ import {
   completeWorkItem,
   listWorkItems,
 } from "./runtime/work-items";
+import { createRole, deleteRole, listRoles, updateRole, type AssignmentStrategy } from "./runtime/roles";
+import {
+  createReminder,
+  deleteReminder,
+  listReminders,
+  updateReminderStatus,
+  type ReminderChannel,
+  type ReminderStatus,
+  type ReminderType,
+} from "./runtime/reminders";
 import { deleteCustomPerson, listPeople, upsertCustomPerson } from "./people-service";
 import {
   addWhitelistedGroup,
@@ -374,6 +384,105 @@ async function executeWorkItemAction(action: string, args: Record<string, unknow
   }
 }
 
+async function executeRoleAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "role.create": {
+      const invalid = validationFailure("role.create", args);
+      if (invalid) return invalid;
+      const role = await createRole({
+        role_id: String(args.role_id),
+        name: String(args.name),
+        description: args.description ? String(args.description) : undefined,
+        assignees: Array.isArray(args.assignees) ? args.assignees.map(String) : [],
+        strategy: (args.strategy ? String(args.strategy) : "manual") as AssignmentStrategy,
+      });
+      return { status: 201, data: role };
+    }
+    case "role.list":
+      return { status: 200, data: await listRoles() };
+    case "role.update": {
+      const invalid = validationFailure("role.update", args);
+      if (invalid) return invalid;
+      try {
+        const patch: Record<string, unknown> = {};
+        if (args.name !== undefined) patch.name = args.name;
+        if (args.description !== undefined) patch.description = args.description;
+        if (args.assignees !== undefined) patch.assignees = args.assignees;
+        if (args.strategy !== undefined) patch.strategy = args.strategy;
+        const role = await updateRole(String(args.id), patch as any);
+        return { status: 200, data: role };
+      } catch (e: any) {
+        if (e.message?.includes("not found")) return { status: 404, data: { error: e.message } };
+        return { status: 400, data: { error: e.message } };
+      }
+    }
+    case "role.delete": {
+      const invalid = validationFailure("role.delete", args);
+      if (invalid) return invalid;
+      try {
+        await deleteRole(String(args.id));
+        return { status: 200, data: { ok: true } };
+      } catch (e: any) {
+        if (e.message?.includes("not found")) return { status: 404, data: { error: e.message } };
+        return { status: 400, data: { error: e.message } };
+      }
+    }
+    default:
+      return null;
+  }
+}
+
+async function executeReminderAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "reminder.create": {
+      const invalid = validationFailure("reminder.create", args);
+      if (invalid) return invalid;
+      const reminder = await createReminder({
+        type: (args.type ? String(args.type) : "standalone") as ReminderType,
+        recipient: String(args.recipient),
+        message: String(args.message),
+        scheduled_at: String(args.scheduled_at),
+        channel: (args.channel ? String(args.channel) : "gui") as ReminderChannel,
+        case_id: args.case_id ? String(args.case_id) : undefined,
+        process_id: args.process_id ? String(args.process_id) : undefined,
+        element_id: args.element_id ? String(args.element_id) : undefined,
+        work_item_id: args.work_item_id ? String(args.work_item_id) : undefined,
+      });
+      return { status: 201, data: reminder };
+    }
+    case "reminder.list": {
+      const filters: Record<string, unknown> = {};
+      if (args.status) filters.status = args.status;
+      if (args.recipient) filters.recipient = args.recipient;
+      return { status: 200, data: await listReminders(filters as any) };
+    }
+    case "reminder.update_status": {
+      const invalid = validationFailure("reminder.update_status", args);
+      if (invalid) return invalid;
+      try {
+        const reminder = await updateReminderStatus(String(args.id), String(args.status) as ReminderStatus);
+        return { status: 200, data: reminder };
+      } catch (e: any) {
+        if (e.message?.includes("not found")) return { status: 404, data: { error: e.message } };
+        return { status: 400, data: { error: e.message } };
+      }
+    }
+    case "reminder.delete": {
+      const invalid = validationFailure("reminder.delete", args);
+      if (invalid) return invalid;
+      try {
+        await deleteReminder(String(args.id));
+        return { status: 200, data: { ok: true } };
+      } catch (e: any) {
+        if (e.message?.includes("not found")) return { status: 404, data: { error: e.message } };
+        return { status: 400, data: { error: e.message } };
+      }
+    }
+    default:
+      return null;
+  }
+}
+
 function serviceFailure(error: unknown): ActionExecution {
   if (error instanceof ServiceError) return { status: error.status, data: { error: error.message } };
   const message = error instanceof Error ? error.message : "Internal error";
@@ -463,6 +572,12 @@ export async function executeActionDirect(
   }
   if (action.startsWith("workitem.")) {
     return executeWorkItemAction(action, args);
+  }
+  if (action.startsWith("role.")) {
+    return executeRoleAction(action, args);
+  }
+  if (action.startsWith("reminder.")) {
+    return executeReminderAction(action, args);
   }
   if (action.startsWith("person.")) {
     return executePersonAction(action, args);

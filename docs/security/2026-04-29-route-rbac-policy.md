@@ -22,6 +22,7 @@ The direct CRUD API is intentionally stricter than `/act`. Direct workflow mutat
 | `/cases` direct CRUD | auth read/stream | admin for start/close/delete |
 | `/workitems` direct API | agent sees own assigned items, admin sees all | assignee can complete own item, admin manages create/update/cancel/cleanup |
 | `/waits` | agent sees own waits, admin sees all | assignee can confirm own wait |
+| `/roles` | auth | admin |
 | `/reminders` | agent sees own reminders, admin sees all | admin |
 | `/event-manager/subscribe` | auth read | admin |
 | `/work-calendar/override` | auth read | admin |

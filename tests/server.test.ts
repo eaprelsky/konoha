@@ -871,6 +871,10 @@ describe("Route RBAC policy", () => {
       body: { date: "2026-05-01", status: "holiday" },
       headers,
     })).status).toBe(403);
+    expect((await req("POST", "/roles", {
+      body: { role_id: id("blocked-role"), name: "Blocked role" },
+      headers,
+    })).status).toBe(403);
     expect((await req("POST", "/reminders", {
       body: {
         recipient: agentId,

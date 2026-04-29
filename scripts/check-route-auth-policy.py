@@ -140,6 +140,11 @@ RULES = [
         ('router.post("/", requireAdmin', 'router.delete("/:id", requireAdmin'),
     ),
     Rule(
+        "route.auth.roles_mutations_admin",
+        "src/routes/roles.ts",
+        ('router.post("/", requireAdmin', 'router.patch("/:id", requireAdmin', 'router.delete("/:id", requireAdmin'),
+    ),
+    Rule(
         "route.auth.act_action_policy",
         "src/act-envelope.ts",
         ("getActionSecurity", "authorizeAction", "Forbidden: admin token required"),
