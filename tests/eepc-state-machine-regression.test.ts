@@ -100,6 +100,7 @@ describe("eEPC state-machine regression suite", () => {
     expect(kase.status).toBe("done");
     expect(kase.position).toBe("end");
     expect(kase.history.map(h => h.element_id)).toEqual(["start", "end"]);
+    expect(await loadActiveWaitsForCase(kase.case_id)).toEqual([]);
   });
 
   test("manual function creates a pending work item and completion advances to end", async () => {
@@ -129,6 +130,7 @@ describe("eEPC state-machine regression suite", () => {
     expect(completed.case?.status).toBe("done");
     expect(completed.case?.position).toBe("end");
     expect(completed.case?.history.find(h => h.element_id === "review")?.output).toEqual({ approved: true });
+    expect(await loadActiveWaitsForCase(kase.case_id)).toEqual([]);
   });
 
   test("XOR gateway selects the first matching conditional branch", async () => {
@@ -237,6 +239,10 @@ describe("eEPC state-machine regression suite", () => {
     expect(waits[0].element_id).toBe("approved");
     expect(waits[0].trigger_kind).toBe("manual");
     expect(waits[0].assignee).toBe("manager");
+
+    const duplicateAdvance = await completeWorkItem(item.work_item_id, { reviewed: true }).catch((error: Error) => error);
+    expect(duplicateAdvance).toBeInstanceOf(Error);
+    expect(await loadActiveWaitsForCase(kase.case_id)).toHaveLength(1);
   });
 
   test("event_fired idempotency suppresses duplicate deliveries", async () => {
@@ -258,5 +264,6 @@ describe("eEPC state-machine regression suite", () => {
 
     expect(first?.status).toBe("done");
     expect(second).toBeNull();
+    expect(first ? await loadActiveWaitsForCase(first.case_id) : []).toEqual([]);
   });
 });

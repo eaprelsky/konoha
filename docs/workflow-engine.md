@@ -34,6 +34,7 @@ The suite covers:
 - `workflow.open` navigation actions and receipts.
 - Confirmation-required `workflow.create` without side effects.
 - Deterministic eEPC state-machine semantics: start/end, manual function pause/resume, XOR branch selection, AND split/join, manual waits, event idempotency, and sub-process spawning.
+- Wait hardening: terminal events and plain pass-through events do not create `EventWait` rows; active waits are unique per `case_id + element_id`.
 - Browser boundary: `AssistantWidget` consumes a canonical `/api/ai/chat` parsed event and applies the schema patch to `ProcessEditor`.
 - Operational boundary: system health, Telegram stream smoke, and Redis/PostgreSQL shadow verification.
 

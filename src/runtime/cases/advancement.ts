@@ -14,7 +14,7 @@ import { dispatchWorkItem } from "../../dispatcher";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByInstance, type TriggerDef } from "../../event-manager";
 import { emitEvent } from "../event-log";
 import { createLogger } from "../../logger";
-import { createEventWait, loadActiveWaitsForCase, cancelEventWaitsForCase } from "../event-waits";
+import { createEventWait, loadActiveWaitsForCase } from "../event-waits";
 import { scheduleWaitReminders } from "../event-waits";
 import { saveCase, loadCase, saveWorkItem, loadWorkItem, CASES_IDX_PROCESS, WORKITEMS_IDX_CASE, WORKITEM_KEY_PREFIX } from "./persistence";
 import type { Case, WorkItem, ActiveBranch } from "./types";
@@ -482,31 +482,35 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       kase.position = nextId;
       kase.history.push({ element_id: nextId, element_type: "event", label: nextEl.label, timestamp: new Date().toISOString() });
 
-      const isIntermediate = (inEdges.get(nextId) || []).length > 0;
+      const isIntermediate = (inEdges.get(nextId) || []).length > 0 && (outEdges.get(nextId) || []).length > 0;
       const trigger = nextEl.trigger;
       const triggerKind = trigger?.kind || "manual";
+      const shouldWait =
+        isIntermediate &&
+        Boolean(trigger?.kind || trigger?.manual_override);
 
-      if (isIntermediate) {
-        // Create an EventWait for this intermediate event node
-        const waitPromise = createEventWait({
-          case_id: kase.case_id,
-          process_id: kase.process_id,
-          element_id: nextId,
-          element_label: nextEl.label,
-          trigger_kind: triggerKind as any,
-          deadline: nextEl.trigger?.deadline,
-          assignee: nextEl.role,
-          escalation_target: nextEl.trigger?.escalation_target,
-        });
+      if (shouldWait) {
+        const activeWaits = await loadActiveWaitsForCase(kase.case_id);
+        let wait = activeWaits.find(w => w.element_id === nextId);
+        if (!wait) {
+          wait = await createEventWait({
+            case_id: kase.case_id,
+            process_id: kase.process_id,
+            element_id: nextId,
+            element_label: nextEl.label,
+            trigger_kind: triggerKind as any,
+            deadline: nextEl.trigger?.deadline,
+            assignee: nextEl.role,
+            escalation_target: nextEl.trigger?.escalation_target,
+          });
 
-        // Schedule reminders for manual waits (notification only, not process advancement)
-        waitPromise.then(wait => {
+          // Schedule reminders for manual waits (notification only, not process advancement)
           if (triggerKind === "manual" || trigger?.manual_override) {
             scheduleWaitReminders(wait).catch(e =>
               log.warn("failed to schedule wait reminders", { case_id: kase.case_id, element_id: nextId, error: e?.message }),
             );
           }
-        }).catch(e => log.warn("failed to create event wait", { case_id: kase.case_id, element_id: nextId, error: e?.message }));
+        }
 
         if (trigger?.kind && trigger.kind !== "manual" && trigger.kind !== "ambiguous" && !trigger.manual_override) {
           await saveCase(kase);
