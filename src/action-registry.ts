@@ -38,6 +38,14 @@ export type ObjectScope =
   | "message";    // bus messages
 
 export type AutonomyLevel = "auto" | "confirm" | "disabled";
+export type ActionCategory = "act" | "inspect" | "drill";
+export type ActionImplementationKind = "direct" | "endpoint" | "registered-handler" | "planned";
+
+export interface ActionImplementation {
+  kind: ActionImplementationKind;
+  /** Short migration note for planned/legacy implementations. */
+  note?: string;
+}
 
 export interface ArgumentDef {
   name: string;
@@ -57,10 +65,36 @@ export interface ActionDef {
   args: ArgumentDef[];
   /** Current HTTP method + path that handles this action (for migration tracking) */
   currentEndpoint?: string;
+  /** Explicit implementation metadata when currentEndpoint is not sufficient. */
+  implementation?: ActionImplementation;
   /** Default autonomy level */
   autonomy: AutonomyLevel;
   /** Whether this action writes to the audit log */
   audited: boolean;
+}
+
+export interface ActionSurfaceEntry extends ActionDef {
+  category: ActionCategory;
+  implementation: ActionImplementation;
+  implemented: boolean;
+}
+
+const MUTATION_VERBS = new Set([
+  "create", "update", "delete", "remove", "close", "complete",
+  "cancel", "start", "stop", "restart", "register", "set",
+  "resolve", "send", "upsert", "approve", "reject",
+  "upsert_user", "remove_user", "add_group", "remove_group",
+]);
+
+const DRILL_VERBS = new Set([
+  "stream", "history", "versions", "tree",
+]);
+
+export function classifyAction(actionId: string): ActionCategory {
+  const verb = actionId.split(".")[1] ?? "";
+  if (MUTATION_VERBS.has(verb)) return "act";
+  if (DRILL_VERBS.has(verb)) return "drill";
+  return "inspect";
 }
 
 // ── Action definitions ──────────────────────────────────────────────────────
@@ -144,6 +178,7 @@ const ACTIONS: ActionDef[] = [
       { name: "role",        type: "string", required: false, description: "Assigned role (for functions)." },
       { name: "operator",    type: "string", required: false, description: "Gateway operator: AND | OR | XOR." },
     ],
+    implementation: { kind: "planned", note: "Intent decomposer emits this action; direct workflow patch executor is not wired yet." },
     autonomy: "confirm",
     audited: true,
   },
@@ -158,6 +193,7 @@ const ACTIONS: ActionDef[] = [
       { name: "role",        type: "string", required: false, description: "New role assignment." },
       { name: "trigger",     type: "object", required: false, description: "Trigger configuration (for event nodes)." },
     ],
+    implementation: { kind: "planned", note: "Intent decomposer emits this action; direct workflow patch executor is not wired yet." },
     autonomy: "confirm",
     audited: true,
   },
@@ -169,6 +205,7 @@ const ACTIONS: ActionDef[] = [
       { name: "workflow_id", type: "string", required: true, description: "Workflow ID." },
       { name: "id",          type: "string", required: true, description: "Element ID to remove." },
     ],
+    implementation: { kind: "planned", note: "Intent decomposer emits this action; direct workflow patch executor is not wired yet." },
     autonomy: "confirm",
     audited: true,
   },
@@ -184,6 +221,7 @@ const ACTIONS: ActionDef[] = [
       { name: "to",          type: "string", required: true,  description: "Target element ID." },
       { name: "condition",   type: "string", required: false, description: "JS expression for conditional routing." },
     ],
+    implementation: { kind: "planned", note: "Intent decomposer emits this action; direct workflow patch executor is not wired yet." },
     autonomy: "confirm",
     audited: true,
   },
@@ -196,6 +234,7 @@ const ACTIONS: ActionDef[] = [
       { name: "from",        type: "string", required: true,  description: "Source element ID." },
       { name: "to",          type: "string", required: true,  description: "Target element ID." },
     ],
+    implementation: { kind: "planned", note: "Intent decomposer emits this action; direct workflow patch executor is not wired yet." },
     autonomy: "confirm",
     audited: true,
   },
@@ -211,6 +250,7 @@ const ACTIONS: ActionDef[] = [
       { name: "kind",        type: "string", required: true,  description: "Trigger kind: timer | message | condition | system | manual." },
       { name: "config",      type: "object", required: false, description: "Kind-specific trigger configuration." },
     ],
+    implementation: { kind: "planned", note: "Trigger mutation action exists in the vocabulary but is not wired to executor yet." },
     autonomy: "confirm",
     audited: true,
   },
@@ -222,6 +262,7 @@ const ACTIONS: ActionDef[] = [
       { name: "workflow_id", type: "string", required: true, description: "Workflow ID." },
       { name: "element_id",  type: "string", required: true, description: "Event element ID to resolve." },
     ],
+    implementation: { kind: "planned", note: "Trigger resolver action exists in the vocabulary but is not wired to executor yet." },
     autonomy: "auto",
     audited: true,
   },
@@ -626,6 +667,7 @@ const ACTIONS: ActionDef[] = [
       { name: "priority", type: "string", required: false, description: "Priority label: P0 | P1 | P2 | P3." },
       { name: "labels",   type: "array",  required: false, description: "Additional labels." },
     ],
+    implementation: { kind: "registered-handler", note: "Registered in action-handlers.ts." },
     autonomy: "auto",
     audited: true,
   },
@@ -750,6 +792,7 @@ const ACTIONS: ActionDef[] = [
       { name: "assignee", type: "string", required: false, description: "Filter by assignee role or user ID." },
       { name: "status",   type: "string", required: false, description: "Filter by wait status: active | overdue | escalated." },
     ],
+    implementation: { kind: "planned", note: "Manual wait inbox action is registered but still needs direct endpoint/executor wiring." },
     autonomy: "auto",
     audited: false,
   },
@@ -828,9 +871,30 @@ export function getActionCount(): number {
   return registry.size;
 }
 
+function resolveImplementation(action: ActionDef): ActionImplementation {
+  if (action.implementation) return action.implementation;
+  if (action.currentEndpoint) return { kind: "endpoint", note: action.currentEndpoint };
+  return { kind: "planned", note: "No endpoint, direct executor, or registered handler has been declared yet." };
+}
+
+export function getActionSurface(action: ActionDef): ActionSurfaceEntry {
+  const implementation = resolveImplementation(action);
+  return {
+    ...action,
+    category: classifyAction(action.id),
+    implementation,
+    implemented: implementation.kind !== "planned",
+  };
+}
+
+export function listActionSurface(scope?: ObjectScope): ActionSurfaceEntry[] {
+  return listActions(scope).map(getActionSurface);
+}
+
 /** Full registry dump for debugging / API exposure */
-export function dumpRegistry(): { version: number; actions: ActionDef[] } {
-  return { version: ACTION_VERSION, actions: [...registry.values()] };
+export function dumpRegistry(): { version: number; actions: ActionDef[]; surface: ActionSurfaceEntry[] } {
+  const actions = [...registry.values()];
+  return { version: ACTION_VERSION, actions, surface: actions.map(getActionSurface) };
 }
 
 // ── Argument Validation ──────────────────────────────────────────────────────

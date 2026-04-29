@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { validateActionArgs, getActionContract, dumpRegistry, listActions, isValidAction } from "../src/action-registry";
+import { validateActionArgs, getActionContract, dumpRegistry, listActions, isValidAction, listActionSurface } from "../src/action-registry";
 import { canonicalActionType } from "../src/assistant-actions";
 
 describe("workflow action contract validation", () => {
@@ -129,6 +129,7 @@ describe("workflow action contract validation", () => {
   it("dumpRegistry version matches ACTION_VERSION", () => {
     expect(dump.version).toBe(2);
     expect(dump.actions.length).toBeGreaterThan(30);
+    expect(dump.surface.length).toBe(dump.actions.length);
   });
 
   it("registers people and access actions for API/agent parity", () => {
@@ -155,6 +156,35 @@ describe("workflow action contract validation", () => {
       const requiredArgs = action.args.filter(a => a.required);
       if (requiredArgs.length > 0) {
         expect(result.valid).toBe(false);
+      }
+    }
+  });
+
+  it("every action has explicit surface metadata for GUI/API/MCP/testbench parity", () => {
+    const surface = listActionSurface();
+    const planned = new Set([
+      "element.add",
+      "element.update",
+      "element.remove",
+      "flow.add",
+      "flow.remove",
+      "trigger.set",
+      "trigger.resolve",
+      "event.wait_list",
+    ]);
+
+    expect(surface.length).toBe(dump.actions.length);
+    for (const action of surface) {
+      expect(["act", "inspect", "drill"]).toContain(action.category);
+      expect(["direct", "endpoint", "registered-handler", "planned"]).toContain(action.implementation.kind);
+      if (action.implementation.kind === "planned") {
+        expect(planned.has(action.id)).toBe(true);
+        expect(action.implementation.note?.length ?? 0).toBeGreaterThan(10);
+      } else {
+        expect(action.implemented).toBe(true);
+      }
+      if (action.category === "act" && action.implemented) {
+        expect(action.audited).toBe(true);
       }
     }
   });

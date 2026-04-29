@@ -19,9 +19,11 @@ import type { HonoEnv } from "./types";
 import { requireAuth } from "./middleware/auth";
 import {
   ACTION_VERSION,
+  classifyAction,
   getAction,
   isValidAction,
   validateActionArgs,
+  type ActionCategory,
   type ActionDef,
 } from "./action-registry";
 import { auditLog, checkAutonomy } from "./assistant-actions";
@@ -29,7 +31,8 @@ import { assertActionArgs, executeActionDirect } from "./action-executor";
 
 // ── Envelope types ───────────────────────────────────────────────────────────
 
-export type ActCategory = "act" | "inspect" | "drill";
+export type ActCategory = ActionCategory;
+export { classifyAction } from "./action-registry";
 
 export interface ActEnvelope {
   /** Action ID from the registry (e.g. "workflow.create") */
@@ -67,29 +70,6 @@ export type ActionHandler = (
   args: Record<string, unknown>,
   ctx: ActionExecutionContext,
 ) => Promise<unknown>;
-
-// ── Category classification ──────────────────────────────────────────────────
-
-const MUTATION_VERBS = new Set([
-  "create", "update", "delete", "remove", "close", "complete",
-  "cancel", "start", "stop", "restart", "register", "set",
-  "resolve", "send", "upsert", "approve", "reject",
-  "upsert_user", "remove_user", "add_group", "remove_group",
-]);
-
-const DRILL_VERBS = new Set([
-  "stream", "history", "versions", "tree",
-]);
-
-/**
- * Classify an action into act/inspect/drill based on its verb.
- */
-export function classifyAction(actionId: string): ActCategory {
-  const verb = actionId.split(".")[1] ?? "";
-  if (MUTATION_VERBS.has(verb)) return "act";
-  if (DRILL_VERBS.has(verb)) return "drill";
-  return "inspect";
-}
 
 // ── Validation ───────────────────────────────────────────────────────────────
 
