@@ -338,7 +338,7 @@ export function Monitor() {
                         if (!confirm(lang === 'ru' ? 'Принудительно закрыть прогон?' : 'Force-close this run?')) return;
                         setClosingRun(true);
                         try {
-                          await fetch(`/cases/${selectedRun.case_id}/close`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+                          await api.cases.close(selectedRun.case_id);
                           load();
                           setSelectedRun(r => r ? { ...r, status: 'done' } : r);
                         } finally { setClosingRun(false); }

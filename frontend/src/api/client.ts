@@ -44,6 +44,12 @@ function cacheTtl(path: string): number {
   return CACHE_TTL_MS;
 }
 
+function invalidateCache(...prefixes: string[]) {
+  for (const key of _cache.keys()) {
+    if (prefixes.some(prefix => key.startsWith(prefix))) _cache.delete(key);
+  }
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = options?.body instanceof FormData;
   const method = (options?.method || 'GET').toUpperCase();
@@ -102,6 +108,17 @@ async function act<T>(action: string, args: Record<string, unknown>, category: A
   return result.data as T;
 }
 
+async function actMutation<T>(
+  action: string,
+  args: Record<string, unknown>,
+  invalidates: string[],
+  category: ActCategory = 'act',
+): Promise<T> {
+  const data = await act<T>(action, args, category);
+  invalidateCache(...invalidates);
+  return data;
+}
+
 // ── Workflows ─────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -130,11 +147,11 @@ export const api = {
     get: (id: string) => apiFetch<Workflow>(`${BASE}/workflows/${id}`),
     versions: (id: string) => apiFetch<{ version: string; saved_at?: string }[]>(`${BASE}/workflows/${id}/versions`),
     create: (body: Partial<Workflow> & { id: string; name: string }, draft = false) =>
-      apiFetch<Workflow>(`${BASE}/workflows${draft ? '?draft=true' : ''}`, { method: 'POST', body: JSON.stringify(body) }),
+      actMutation<Workflow>('workflow.create', { ...body, draft }, [`${BASE}/workflows`, `${BASE}/cases`, `${BASE}/workitems`]),
     update: (id: string, body: Partial<Workflow>, draft = false) =>
-      apiFetch<Workflow>(`${BASE}/workflows/${id}${draft ? '?draft=true' : ''}`, { method: 'PUT', body: JSON.stringify(body) }),
+      actMutation<Workflow>('workflow.update', { ...body, id, draft }, [`${BASE}/workflows`, `${BASE}/cases`, `${BASE}/workitems`]),
     delete: (id: string) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/workflows/${id}`, { method: 'DELETE' }),
+      actMutation<{ ok: boolean }>('workflow.delete', { id }, [`${BASE}/workflows`, `${BASE}/cases`, `${BASE}/workitems`]),
   },
 
   workitems: {
@@ -148,15 +165,9 @@ export const api = {
       return apiFetch<WorkItem[]>(`${BASE}/workitems${qs ? '?' + qs : ''}`);
     },
     complete: (id: string, output?: Record<string, unknown>) =>
-      apiFetch<WorkItem>(`${BASE}/workitems/${id}/complete`, {
-        method: 'POST',
-        body: JSON.stringify({ output: output || {} }),
-      }),
+      actMutation<WorkItem>('workitem.complete', { id, output: output || {} }, [`${BASE}/workitems`, `${BASE}/cases`]),
     create: (params: { label: string; assignee: string; deadline?: string; input?: Record<string, unknown>; process_id?: string }) =>
-      apiFetch<WorkItem>(`${BASE}/workitems`, {
-        method: 'POST',
-        body: JSON.stringify(params),
-      }),
+      actMutation<WorkItem>('workitem.create', params as Record<string, unknown>, [`${BASE}/workitems`]),
     deleteAll: () => apiFetch<{ deleted: number }>(`${BASE}/workitems/all`, { method: 'DELETE' }),
   },
 
@@ -190,6 +201,8 @@ export const api = {
       return apiFetch<{ cases: Case[]; total: number }>(`${BASE}/cases${qs ? '?' + qs : ''}`);
     },
     get: (id: string) => apiFetch<Case>(`${BASE}/cases/${id}`),
+    close: (id: string) =>
+      actMutation<Case>('case.close', { id }, [`${BASE}/cases`, `${BASE}/workitems`]),
   },
 
   /** Alias for cases — use "прогон" terminology in new UI */
@@ -227,9 +240,9 @@ export const api = {
       apiFetch<Agent>(`${BASE}/agents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
     switchRuntime: (id: string, patch: { runtime?: string; fallback_runtime?: string; model?: string; reasoning_effort?: string; restart?: boolean }) =>
       apiFetch<{ def: Agent; state?: AgentStatus | null; error?: string }>(`${BASE}/agents/${id}/switch-runtime`, { method: 'POST', body: JSON.stringify(patch) }),
-    start: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/start`, { method: 'POST', body: '{}' }),
-    stop: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/stop`, { method: 'POST', body: '{}' }),
-    restart: (id: string) => apiFetch<unknown>(`${BASE}/agents/${id}/restart`, { method: 'POST', body: '{}' }),
+    start: (id: string) => actMutation<unknown>('agent.start', { id }, [`${BASE}/agents`]),
+    stop: (id: string) => actMutation<unknown>('agent.stop', { id }, [`${BASE}/agents`]),
+    restart: (id: string) => actMutation<unknown>('agent.restart', { id }, [`${BASE}/agents`]),
     delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/agents/${id}?hard=true`, { method: 'DELETE' }),
     status: (id: string) => apiFetch<AgentStatus>(`${BASE}/agents/${id}/status`),
     tmuxLog: (id: string) => apiFetch<{ session: string; lines: string }>(`${BASE}/agents/tmux/${id}`),
@@ -260,10 +273,10 @@ export const api = {
   roles: {
     list: () => apiFetch<RoleDef[]>(`${BASE}/roles`),
     create: (params: { role_id: string; name: string; description?: string; assignees?: string[]; strategy?: string }) =>
-      apiFetch<RoleDef>(`${BASE}/roles`, { method: 'POST', body: JSON.stringify(params) }),
+      actMutation<RoleDef>('role.create', params as Record<string, unknown>, [`${BASE}/roles`]),
     update: (id: string, patch: Partial<RoleDef>) =>
-      apiFetch<RoleDef>(`${BASE}/roles/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-    delete: (id: string) => apiFetch<{ ok: boolean }>(`${BASE}/roles/${id}`, { method: 'DELETE' }),
+      actMutation<RoleDef>('role.update', { ...patch, id }, [`${BASE}/roles`]),
+    delete: (id: string) => actMutation<{ ok: boolean }>('role.delete', { id }, [`${BASE}/roles`]),
   },
 
   documents: {
@@ -294,14 +307,15 @@ export const api = {
       scheduled_at: string;
       channel?: string;
       type?: string;
-    }) => apiFetch<Reminder>(`${BASE}/reminders`, { method: 'POST', body: JSON.stringify(params) }),
+      case_id?: string;
+      process_id?: string;
+      element_id?: string;
+      work_item_id?: string;
+    }) => actMutation<Reminder>('reminder.create', params as Record<string, unknown>, [`${BASE}/reminders`]),
     acknowledge: (id: string) =>
-      apiFetch<Reminder>(`${BASE}/reminders/${id}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'acknowledged' }),
-      }),
+      actMutation<Reminder>('reminder.update_status', { id, status: 'acknowledged' }, [`${BASE}/reminders`]),
     delete: (id: string) =>
-      apiFetch<{ ok: boolean }>(`${BASE}/reminders/${id}`, { method: 'DELETE' }),
+      actMutation<{ ok: boolean }>('reminder.delete', { id }, [`${BASE}/reminders`]),
   },
 
   messages: {
@@ -315,12 +329,12 @@ export const api = {
     list: () => apiFetch<Person[]>(`${BASE}/people`),
     save: async (p: Partial<Person>) => {
       const saved = await act<Person>('person.upsert', p as Record<string, unknown>);
-      _cache.delete(`${BASE}/people`);
+      invalidateCache(`${BASE}/people`);
       return saved;
     },
     delete: async (id: string) => {
       const deleted = await act<{ ok: boolean }>('person.delete', { id });
-      _cache.delete(`${BASE}/people`);
+      invalidateCache(`${BASE}/people`);
       return deleted;
     },
     generateAvatar: (id: string, params?: { style?: string; description?: string; prompt?: string }) =>
@@ -463,34 +477,32 @@ export const api = {
     get: () => apiFetch<any>(`${BASE}/whitelist`),
     approve: async (body: { type: string; telegram_id?: number; chat_id?: number }) => {
       const res = await act<{ ok: boolean; state?: any }>('access.approve', body as Record<string, unknown>);
-      _cache.delete(`${BASE}/whitelist`);
+      invalidateCache(`${BASE}/whitelist`);
       return res;
     },
     reject: async (body: { type: string; telegram_id?: number; chat_id?: number; block?: boolean }) => {
       const res = await act<{ ok: boolean; state?: any }>('access.reject', body as Record<string, unknown>);
-      _cache.delete(`${BASE}/whitelist`);
+      invalidateCache(`${BASE}/whitelist`);
       return res;
     },
     upsertUser: async (body: { name: string; telegram_id: number; username?: string; email?: string; phone?: string; position?: string; relation?: string; level?: number }) => {
       const res = await act<{ ok: boolean; state?: any }>('access.upsert_user', body as Record<string, unknown>);
-      _cache.delete(`${BASE}/whitelist`);
-      _cache.delete(`${BASE}/people`);
+      invalidateCache(`${BASE}/whitelist`, `${BASE}/people`);
       return res;
     },
     addGroup: async (body: { chat_id: number }) => {
       const res = await act<{ ok: boolean; state?: any }>('access.add_group', body as Record<string, unknown>);
-      _cache.delete(`${BASE}/whitelist`);
+      invalidateCache(`${BASE}/whitelist`);
       return res;
     },
     deleteUser: async (telegram_id: number) => {
       const res = await act<{ ok: boolean; state?: any }>('access.remove_user', { telegram_id });
-      _cache.delete(`${BASE}/whitelist`);
-      _cache.delete(`${BASE}/people`);
+      invalidateCache(`${BASE}/whitelist`, `${BASE}/people`);
       return res;
     },
     deleteGroup: async (chat_id: number) => {
       const res = await act<{ ok: boolean; state?: any }>('access.remove_group', { chat_id });
-      _cache.delete(`${BASE}/whitelist`);
+      invalidateCache(`${BASE}/whitelist`);
       return res;
     },
   },
