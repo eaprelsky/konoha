@@ -469,9 +469,9 @@ def check_llm_client_profiles() -> list[Check]:
 
     codex = by_id.get("codex-gpt-5.5") or {}
     if codex.get("disabled") is True:
-        checks.append(Check("OK", "llm_profiles.codex_fallback", "codex-gpt-5.5 disabled until proxy/VPN is fixed"))
+        checks.append(Check("WARN", "llm_profiles.codex_fallback", "codex-gpt-5.5 is disabled", "Proxy and Codex CLI smoke are fixed; enable after re-running the smoke"))
     else:
-        checks.append(Check("WARN", "llm_profiles.codex_fallback", "codex-gpt-5.5 is enabled", "Enable only after #565 is resolved"))
+        checks.append(Check("OK", "llm_profiles.codex_fallback", "codex-gpt-5.5 enabled after proxy and CLI verification"))
 
     deepseek_profiles = [profile for profile in by_id.values() if profile.get("provider_profile") == "deepseek"]
     if deepseek_profiles:

@@ -53,10 +53,10 @@ describe("LLM client profiles", () => {
     })).toThrow("Unknown LLM client profile: missing-profile");
   });
 
-  test("contains disabled Codex fallback profile", () => {
+  test("contains enabled Codex fallback profile", () => {
     const profile = listLLMClientProfiles().find((item) => item.id === "codex-gpt-5.5");
 
     expect(profile?.runtime_adapter).toBe("codex");
-    expect(profile?.disabled).toBe(true);
+    expect(profile?.disabled).not.toBe(true);
   });
 });

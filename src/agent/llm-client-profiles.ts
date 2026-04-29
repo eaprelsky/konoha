@@ -76,8 +76,6 @@ const PROFILES: Record<string, LLMClientProfile> = {
     runtime_model: "gpt-5.5",
     reasoning_effort: "high",
     capabilities: ["text", "tool_use", "code", "long_context", "reasoning"],
-    disabled: true,
-    disabled_reason: "Codex CLI upgraded to 0.125.0 (#574). Blocked until proxy/VPN upstream credentials are refreshed (#565).",
   },
 };
 
