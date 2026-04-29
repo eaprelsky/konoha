@@ -96,23 +96,26 @@ export function Agents() {
                     const atype = getAgentType(a);
                     const isProtected = !!(a as any).protected;
                     const canEdit = atype === 'managed' || isProtected;
+                    const displayName = a.display_alias || a.name;
                     return (
                       <tr key={a.id}>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             {(a as any).avatar_url
                               ? <img src={(a as any).avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
-                              : <div style={{ width: 36, height: 36, borderRadius: 6, background: isProtected ? '#0f172a' : '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'white', fontWeight: 700, flexShrink: 0 }}>{a.name.charAt(0).toUpperCase()}</div>
+                              : <div style={{ width: 36, height: 36, borderRadius: 6, background: isProtected ? '#0f172a' : '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'white', fontWeight: 700, flexShrink: 0 }}>{displayName.charAt(0).toUpperCase()}</div>
                             }
                             <div>
                               <div style={{ fontWeight: 600 }}>
-                                {a.name}
+                                {displayName}
                                 {isProtected
                                   ? <span className="badge-system">system</span>
                                   : <AgentTypeBadge type={atype} />
                                 }
                               </div>
-                              <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{a.id}</div>
+                              <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>
+                                {a.display_alias ? `${a.name} · ` : ''}{a.id}
+                              </div>
                             </div>
                           </div>
                         </td>

@@ -112,9 +112,9 @@ router.post("/register", async (c) => {
   }
 
   const body = await c.req.json();
-  const { id, name, capabilities = [], roles = [], model, eventSubscriptions, village_id } = body;
+  const { id, name, display_alias, capabilities = [], roles = [], model, eventSubscriptions, village_id } = body;
   if (!id || !name) return c.json({ error: "id and name required" }, 400);
-  const agent = await registerAgent({ id, name, capabilities, roles, ...(model ? { model } : {}), ...(eventSubscriptions ? { eventSubscriptions } : {}), ...(village_id ? { village_id } : {}) });
+  const agent = await registerAgent({ id, name, ...(display_alias ? { display_alias } : {}), capabilities, roles, ...(model ? { model } : {}), ...(eventSubscriptions ? { eventSubscriptions } : {}), ...(village_id ? { village_id } : {}) });
   return c.json(agent, 201);
 });
 
@@ -124,6 +124,7 @@ router.post("/", requireAdmin, async (c) => {
   const {
     id,
     name,
+    display_alias,
     system_prompt,
     startup_sequence,
     runtime,
@@ -154,6 +155,7 @@ router.post("/", requireAdmin, async (c) => {
   const def = await createAgentDef({
     id,
     name,
+    display_alias,
     system_prompt,
     startup_sequence,
     runtime,
@@ -424,16 +426,15 @@ router.get("/:id", requireAgentSelfOrAdmin(), async (c) => {
   }));
 });
 
-// PUT /agents/:id — update agent definition fields (name, system_prompt, model)
+// PUT /agents/:id — update agent definition fields through Action Spine
 router.put("/:id", requireAdmin, async (c) => {
   const id = c.req.param("id")!;
   const def = await getAgentDef(id);
   if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON" }, 400);
-  const updated = await updateAgentDef(id, body);
-  if (!updated) return c.json({ error: "Agent not found or not managed" }, 404);
-  return c.json(updated);
+  const result = await executeActionDirect("agent.update_profile", { id, ...body });
+  return actionJson(c, result!);
 });
 
 // DELETE /agents/:id — stop agent, delete definition, and unregister from bus

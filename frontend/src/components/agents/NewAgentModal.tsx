@@ -7,6 +7,7 @@ interface NewAgentModalProps { onClose: () => void; onCreated: () => void; }
 export function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
   const [id, setId] = useState('');
   const [name, setName] = useState('');
+  const [displayAlias, setDisplayAlias] = useState('');
   const [model, setModel] = useState('claude:claude-sonnet-4-6');
   const [prompt, setPrompt] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -23,7 +24,13 @@ export function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
     if (!id.trim() || !name.trim()) { setError('Укажите ID и имя'); return; }
     setSubmitting(true); setError(null);
     try {
-      await api.agents.create({ id: id.trim(), name: name.trim(), model, system_prompt: prompt || undefined });
+      await api.agents.create({
+        id: id.trim(),
+        name: name.trim(),
+        display_alias: displayAlias.trim() || undefined,
+        model,
+        system_prompt: prompt || undefined,
+      });
       onCreated(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
   }
@@ -39,8 +46,13 @@ export function NewAgentModal({ onClose, onCreated }: NewAgentModalProps) {
             <input type="text" placeholder="например: my-agent" value={id} onChange={e => setId(e.target.value)} autoFocus required />
           </div>
           <div className="form-group">
-            <label>Имя *</label>
-            <input type="text" placeholder="Отображаемое имя..." value={name} onChange={e => setName(e.target.value)} required />
+            <label>Операционное имя *</label>
+            <input type="text" placeholder="Например: Sasuke" value={name} onChange={e => setName(e.target.value)} required />
+          </div>
+          <div className="form-group">
+            <label>Имя в продукте</label>
+            <input type="text" placeholder="Например: Sales Assistant" value={displayAlias} onChange={e => setDisplayAlias(e.target.value)} />
+            <span style={{ fontSize: 11, color: '#94a3b8' }}>Показывается в бизнес-интерфейсе вместо runtime-id.</span>
           </div>
           <div className="form-group">
             <label>Модель</label>

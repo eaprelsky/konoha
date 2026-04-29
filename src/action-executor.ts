@@ -44,6 +44,7 @@ import {
   restartAgent,
   startAgent,
   stopAgent,
+  updateAgentDef,
 } from "./agent-lifecycle";
 import { ServiceError } from "./errors";
 
@@ -567,6 +568,32 @@ async function executeAccessAction(action: string, args: Record<string, unknown>
 
 async function executeAgentAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
   switch (action) {
+    case "agent.update_profile": {
+      const invalid = validationFailure("agent.update_profile", args);
+      if (invalid) return invalid;
+      const id = String(args.id);
+      const allowed = [
+        "name",
+        "display_alias",
+        "system_prompt",
+        "runtime",
+        "fallback_runtime",
+        "model",
+        "reasoning_effort",
+        "capabilities",
+        "gender",
+      ] as const;
+      const updates: Record<string, unknown> = {};
+      for (const key of allowed) {
+        if (args[key] !== undefined) updates[key] = args[key];
+      }
+      if (Object.keys(updates).length === 0) {
+        return { status: 400, data: { error: "No fields to update" } };
+      }
+      const updated = await updateAgentDef(id, updates as Parameters<typeof updateAgentDef>[1]);
+      if (!updated) return { status: 404, data: { error: "Agent not found or not managed" } };
+      return { status: 200, data: updated };
+    }
     case "agent.start": {
       const invalid = validationFailure("agent.start", args);
       if (invalid) return invalid;

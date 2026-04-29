@@ -40,6 +40,8 @@ export interface AgentRuntimeProfile {
 export interface AgentDef {
   id: string;
   name: string;
+  /** Product-facing alias shown in business UI; runtime id/name stay stable. */
+  display_alias?: string;
   system_prompt?: string;
   startup_sequence?: string[];
   runtime?: AgentProvider;
@@ -74,6 +76,7 @@ export interface AgentDef {
 export interface AgentTemplate {
   id: string;
   name: string;
+  display_alias?: string;
   system_prompt?: string;
   tool_profile?: string;        // ToolProfile id (#571)
   sandbox_profile?: string;     // SandboxProfile id (#572), defaults to "tmux"

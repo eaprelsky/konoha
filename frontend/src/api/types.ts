@@ -287,6 +287,7 @@ export interface AgentLifecycle {
 export interface Agent {
   id: string;
   name: string;
+  display_alias?: string;
   status: string;
   roles?: string[];
   capabilities?: string[];

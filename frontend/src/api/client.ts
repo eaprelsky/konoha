@@ -234,10 +234,10 @@ export const api = {
   agents: {
     list: () => apiFetch<Agent[]>(`${BASE}/agents`),
     get: (id: string) => apiFetch<Agent>(`${BASE}/agents/${id}`),
-    create: (params: { id: string; name: string; system_prompt?: string; model?: string }) =>
+    create: (params: { id: string; name: string; display_alias?: string; system_prompt?: string; model?: string }) =>
       apiFetch<Agent>(`${BASE}/agents`, { method: 'POST', body: JSON.stringify(params) }),
-    update: (id: string, patch: { name?: string; system_prompt?: string; runtime?: string; fallback_runtime?: string; model?: string; reasoning_effort?: string; capabilities?: string[]; gender?: string }) =>
-      apiFetch<Agent>(`${BASE}/agents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    update: (id: string, patch: { name?: string; display_alias?: string; system_prompt?: string; runtime?: string; fallback_runtime?: string; model?: string; reasoning_effort?: string; capabilities?: string[]; gender?: string }) =>
+      actMutation<Agent>('agent.update_profile', { id, ...patch }, [`${BASE}/agents`, `${BASE}/agents/${id}`]),
     switchRuntime: (id: string, patch: { runtime?: string; fallback_runtime?: string; model?: string; reasoning_effort?: string; restart?: boolean }) =>
       apiFetch<{ def: Agent; state?: AgentStatus | null; error?: string }>(`${BASE}/agents/${id}/switch-runtime`, { method: 'POST', body: JSON.stringify(patch) }),
     start: (id: string) => actMutation<unknown>('agent.start', { id }, [`${BASE}/agents`]),

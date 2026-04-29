@@ -17,6 +17,7 @@ function baseInput(): Omit<AgentDef, "created_at" | "updated_at"> {
   return {
     id: agentId,
     name: "Storage Split Test",
+    display_alias: "Product Alias",
     runtime: "claude",
     llm_client_profile: "claude-deepseek-sonnet",
     model: "claude:sonnet",
@@ -49,7 +50,7 @@ describe("agent definition split storage", () => {
     ]);
 
     expect(JSON.parse(legacyRaw ?? "{}").id).toBe(def.id);
-    expect(JSON.parse(templateRaw ?? "{}")).toMatchObject({ id: agentId, name: "Storage Split Test", tags: ["test"] });
+    expect(JSON.parse(templateRaw ?? "{}")).toMatchObject({ id: agentId, name: "Storage Split Test", display_alias: "Product Alias", tags: ["test"] });
     expect(JSON.parse(runtimeConfigRaw ?? "{}")).toMatchObject({ model: "claude:sonnet", llm_client_profile: "claude-deepseek-sonnet" });
   });
 
@@ -64,11 +65,12 @@ describe("agent definition split storage", () => {
   });
 
   test("updates and lists through split-aware helpers", async () => {
-    const updated = await updateAgentDef(agentId, { name: "Storage Split Updated", model: "claude:opus" });
+    const updated = await updateAgentDef(agentId, { name: "Storage Split Updated", display_alias: "Updated Alias", model: "claude:opus" });
     const listed = await listAgentDefs();
     const found = listed.find((item) => item.id === agentId);
 
     expect(updated?.name).toBe("Storage Split Updated");
+    expect(found?.display_alias).toBe("Updated Alias");
     expect(found?.model).toBe("claude:opus");
     expect(JSON.parse((await redis.hget("konoha:agent-runtime-configs", agentId)) ?? "{}").model).toBe("claude:opus");
   });

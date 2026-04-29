@@ -6,6 +6,8 @@ interface AgentSettingsTabProps {
   agentId: string;
   name: string;
   setName: (v: string) => void;
+  displayAlias: string;
+  setDisplayAlias: (v: string) => void;
   runtime: string;
   setRuntime: (v: string) => void;
   fallbackRuntime: string;
@@ -45,7 +47,7 @@ interface AgentSettingsTabProps {
 }
 
 export function AgentSettingsTab({
-  agentId, name, setName, runtime, setRuntime, fallbackRuntime, setFallbackRuntime,
+  agentId, name, setName, displayAlias, setDisplayAlias, runtime, setRuntime, fallbackRuntime, setFallbackRuntime,
   model, setModel, reasoningEffort, setReasoningEffort, gender, setGender,
   prompt, setPrompt, sysTemplate, sysExpanded, setSysExpanded,
   avatarUrl, avatarMode, setAvatarMode, avatarStyle, setAvatarStyle,
@@ -123,8 +125,13 @@ export function AgentSettingsTab({
 
       {/* Fields */}
       <div className="form-group">
-        <label>Имя *</label>
+        <label>Операционное имя *</label>
         <input type="text" value={name} onChange={e => setName(e.target.value)} required autoFocus />
+      </div>
+      <div className="form-group">
+        <label>Имя в продукте</label>
+        <input type="text" value={displayAlias} onChange={e => setDisplayAlias(e.target.value)} placeholder="Например: Советник, Тимлид, Sales Assistant" />
+        <span style={{ fontSize: 11, color: '#94a3b8' }}>Используется в бизнес-сценариях и демо; runtime-id остаётся неизменным: {agentId}</span>
       </div>
       <div className="form-group">
         <label>Runtime</label>

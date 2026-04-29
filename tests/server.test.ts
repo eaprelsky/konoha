@@ -342,6 +342,52 @@ describe("GET /agents", () => {
   });
 });
 
+// ── PUT /agents/:id ─────────────────────────────────────────────────────────
+
+describe("PUT /agents/:id", () => {
+  test("updates product-facing display alias through agent.update_profile action", async () => {
+    const agentId = id("profile-alias");
+    await req("POST", "/agents", {
+      body: {
+        id: agentId,
+        name: "Runtime Sasuke",
+        model: "claude:sonnet",
+      },
+    });
+
+    const { status, body } = await req("PUT", `/agents/${agentId}`, {
+      body: {
+        name: "Runtime Sasuke",
+        display_alias: "Sales Assistant",
+      },
+    });
+
+    expect(status).toBe(200);
+    expect(body.id).toBe(agentId);
+    expect(body.name).toBe("Runtime Sasuke");
+    expect(body.display_alias).toBe("Sales Assistant");
+
+    const listed = await req("GET", "/agents");
+    const found = listed.body.find((a: any) => a.id === agentId);
+    expect(found.display_alias).toBe("Sales Assistant");
+  });
+
+  test("rejects empty profile update", async () => {
+    const agentId = id("profile-empty");
+    await req("POST", "/agents", {
+      body: {
+        id: agentId,
+        name: "Profile Empty",
+        model: "claude:sonnet",
+      },
+    });
+
+    const { status, body } = await req("PUT", `/agents/${agentId}`, { body: {} });
+    expect(status).toBe(400);
+    expect(body.error).toBe("No fields to update");
+  });
+});
+
 // ── POST /agents/:id/switch-runtime ─────────────────────────────────────────
 
 describe("POST /agents/:id/switch-runtime", () => {

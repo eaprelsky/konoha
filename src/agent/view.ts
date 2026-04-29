@@ -8,6 +8,7 @@ export function templateFromAgentDef(def: AgentDef): AgentTemplate {
   return {
     id: def.id,
     name: def.name,
+    display_alias: def.display_alias,
     system_prompt: def.system_prompt,
     tool_profile: def.tool_profile,
     sandbox_profile: def.sandbox_profile,

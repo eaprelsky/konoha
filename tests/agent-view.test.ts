@@ -5,6 +5,7 @@ import type { AgentDef, AgentState } from "../src/agent";
 const def: AgentDef = {
   id: "sasuke",
   name: "Sasuke",
+  display_alias: "User Agent",
   runtime: "claude",
   fallback_runtime: "codex",
   llm_client_profile: "claude-deepseek-sonnet",
@@ -35,6 +36,7 @@ describe("agent view boundaries", () => {
     expect(templateFromAgentDef(def)).toEqual({
       id: "sasuke",
       name: "Sasuke",
+      display_alias: "User Agent",
       system_prompt: undefined,
       tool_profile: "telegram-userbot",
       sandbox_profile: "tmux",
@@ -90,6 +92,8 @@ describe("agent view boundaries", () => {
     });
 
     expect(view.id).toBe("sasuke");
+    expect(view.display_alias).toBe("User Agent");
+    expect(view.template.display_alias).toBe("User Agent");
     expect(view.model).toBe("claude:sonnet");
     expect(view.status).toBe("online");
     expect(view.lifecycle.status).toBe("running");

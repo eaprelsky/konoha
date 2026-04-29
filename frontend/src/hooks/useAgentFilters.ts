@@ -32,7 +32,9 @@ export function useAgentFilters(agents: Agent[]): UseAgentFiltersResult {
 
   const filteredAgents = useMemo(() => agents
     .filter(a => {
-      if (search && !a.name.toLowerCase().includes(search.toLowerCase()) && !a.id.toLowerCase().includes(search.toLowerCase())) return false;
+      const q = search.toLowerCase();
+      const displayAlias = (a.display_alias || '').toLowerCase();
+      if (search && !a.name.toLowerCase().includes(q) && !displayAlias.includes(q) && !a.id.toLowerCase().includes(q)) return false;
       if (filterBus !== 'all' && a.status !== filterBus) return false;
       if (filterLifecycle !== 'all') {
         const ls = (a.lifecycle as any)?.status;
@@ -42,7 +44,7 @@ export function useAgentFilters(agents: Agent[]): UseAgentFiltersResult {
       return true;
     })
     .sort((a, b) => {
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'name') return (a.display_alias || a.name).localeCompare(b.display_alias || b.name);
       if (sortBy === 'model') return (a.model || '').localeCompare(b.model || '');
       if (sortBy === 'status') return a.status.localeCompare(b.status);
       return 0;

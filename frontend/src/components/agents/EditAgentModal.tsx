@@ -10,6 +10,7 @@ interface EditAgentModalProps { agent: Agent; onClose: () => void; onSaved: () =
 export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const [tab, setTab] = useState<'settings' | 'memory'>('settings');
   const [name, setName] = useState(agent.name);
+  const [displayAlias, setDisplayAlias] = useState(agent.display_alias || agent.name);
   const [runtime, setRuntime] = useState((agent as any).runtime || ((agent.model || '').split(':')[0] || 'claude'));
   const [fallbackRuntime, setFallbackRuntime] = useState((agent as any).fallback_runtime || 'codex');
   const [model, setModel] = useState(agent.model || 'claude:claude-sonnet-4-6');
@@ -34,6 +35,8 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
   useEffect(() => {
     api.agents.get(agent.id).then(d => {
       setRuntime((d as any).runtime || ((d.model || '').split(':')[0] || 'claude'));
+      setName(d.name);
+      setDisplayAlias(d.display_alias || d.name);
       setFallbackRuntime((d as any).fallback_runtime || 'codex');
       setModel(d.model || 'claude:claude-sonnet-4-6');
       setReasoningEffort((d as any).reasoning_effort || '');
@@ -103,6 +106,7 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
     try {
       await api.agents.update(agent.id, {
         name: name.trim(),
+        display_alias: displayAlias.trim() || undefined,
         runtime,
         fallback_runtime: fallbackRuntime || undefined,
         model,
@@ -133,6 +137,7 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
         {tab === 'settings' && (
           <AgentSettingsTab
             agentId={agent.id} name={name} setName={setName}
+            displayAlias={displayAlias} setDisplayAlias={setDisplayAlias}
             runtime={runtime} setRuntime={setRuntime}
             fallbackRuntime={fallbackRuntime} setFallbackRuntime={setFallbackRuntime}
             model={model} setModel={setModel}

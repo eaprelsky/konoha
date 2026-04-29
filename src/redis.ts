@@ -25,6 +25,7 @@ export const DEFAULT_VILLAGE = "comind.konoha";
 export interface Agent {
   id: string;
   name: string;
+  display_alias?: string;
   capabilities: string[];
   roles: string[];
   model?: string;
