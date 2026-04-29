@@ -1,9 +1,8 @@
 import { Hono } from "hono";
-import { writeFileSync, existsSync } from "fs";
+import { writeFileSync } from "fs";
 import { join, extname } from "path";
 import { requireAuth } from "../middleware/auth";
-import { redis } from "../redis";
-import { getAgentDef } from "../agent-lifecycle";
+import { getAgentDef, updateAgentDef } from "../agent-lifecycle";
 import { generateAvatar, generateAvatarImg2Img } from "../adapters/image";
 
 const AVATARS_DIR = "/opt/shared/avatars";
@@ -33,8 +32,7 @@ router.post("/:id/avatar", requireAuth, async (c) => {
         const mime = file.type || "image/jpeg";
         const imageBase64 = `data:${mime};base64,${buf.toString("base64")}`;
         const result = await generateAvatarImg2Img({ id, imageBase64, prompt });
-        const updated = { ...def, avatar_url: result.avatar_url, updated_at: new Date().toISOString() };
-        await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+        await updateAgentDef(id, { avatar_url: result.avatar_url });
         return c.json({ avatar_url: result.avatar_url });
       } catch (e: any) {
         return c.json({ error: e.message }, 500);
@@ -46,8 +44,7 @@ router.post("/:id/avatar", requireAuth, async (c) => {
     const buf = Buffer.from(await file.arrayBuffer());
     writeFileSync(join(AVATARS_DIR, filename), buf);
     const avatar_url = `/api/avatars/${filename}`;
-    const updated = { ...def, avatar_url, updated_at: new Date().toISOString() };
-    await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+    await updateAgentDef(id, { avatar_url });
     return c.json({ avatar_url });
   }
 
@@ -61,8 +58,7 @@ router.post("/:id/avatar", requireAuth, async (c) => {
       style: body.style,
       prompt: body.prompt,
     });
-    const updated = { ...def, avatar_url: result.avatar_url, updated_at: new Date().toISOString() };
-    await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+    await updateAgentDef(id, { avatar_url: result.avatar_url });
     return c.json({ avatar_url: result.avatar_url });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);

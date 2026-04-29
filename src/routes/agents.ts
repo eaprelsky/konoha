@@ -12,7 +12,6 @@ import {
   unregisterAgent,
   heartbeat,
   listAgents,
-  redis,
 } from "../redis";
 import { consumeInvite, createInvite } from "../redis";
 import {
@@ -20,6 +19,7 @@ import {
   getAgentDef,
   deleteAgentDef,
   listAgentDefs,
+  updateAgentDef,
   getAgentState,
   startAgent,
   stopAgent,
@@ -224,8 +224,8 @@ router.post("/:id/switch-runtime", async (c) => {
   if (fallback_runtime !== undefined) updates.fallback_runtime = fallback_runtime;
   if (fallback_llm_client_profile !== undefined) updates.fallback_llm_client_profile = fallback_llm_client_profile;
   if (Object.keys(updates).length === 0) return c.json({ error: "No fields to update" }, 400);
-  const updated = { ...def, ...updates, id, updated_at: new Date().toISOString() };
-  await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+  const updated = await updateAgentDef(id, updates);
+  if (!updated) return c.json({ error: "Agent not found or not managed" }, 404);
   let state = null;
   if (restart) {
     try {
@@ -376,8 +376,8 @@ router.put("/:id", async (c) => {
   if (!def) return c.json({ error: "Agent not found or not managed" }, 404);
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "Invalid JSON" }, 400);
-  const updated = { ...def, ...body, id, updated_at: new Date().toISOString() };
-  await redis.hset("konoha:agent-defs", id, JSON.stringify(updated));
+  const updated = await updateAgentDef(id, body);
+  if (!updated) return c.json({ error: "Agent not found or not managed" }, 404);
   return c.json(updated);
 });
 

@@ -2,9 +2,8 @@ import { Hono } from "hono";
 import { createLogger } from "../logger";
 import { requireAuth } from "../middleware/auth";
 import { createCase } from "../runtime";
-import { getAgentDef } from "../agent-lifecycle";
+import { upsertAgentDef } from "../agent-lifecycle";
 import { listAdapters, getAdapter } from "../adapters/index";
-import { redis } from "../redis";
 const log = createLogger("routes:admin");
 
 const NARUTO_PROMPT = `# Naruto — Main Orchestrator
@@ -300,16 +299,11 @@ const SYSTEM_AGENTS = [
 ];
 
 async function syncSystemAgent(ag: (typeof SYSTEM_AGENTS)[number]): Promise<"created" | "updated"> {
-  const existing = await getAgentDef(ag.id);
-  const now = new Date().toISOString();
-  const def = {
+  const { created } = await upsertAgentDef({
     ...ag,
     protected: true,
-    created_at: existing?.created_at ?? now,
-    updated_at: now,
-  };
-  await redis.hset("konoha:agent-defs", ag.id, JSON.stringify(def));
-  return existing ? "updated" : "created";
+  });
+  return created ? "created" : "updated";
 }
 
 export async function seedSystemAgents() {

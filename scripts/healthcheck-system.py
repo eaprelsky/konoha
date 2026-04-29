@@ -50,6 +50,9 @@ DEAD_LETTER_STREAMS = ["telegram:needs_context:dead_letter", "telegram:vision_re
 WARN_LAG = 100
 WARN_PENDING = 10
 FAIL_PENDING = 100
+MAX_RED_FLAG_FILE_LINES = 1000
+SIZE_CHECK_EXTENSIONS = {".ts", ".tsx", ".js", ".jsx", ".py"}
+SIZE_CHECK_DIRS = ["src", "scripts", "tests"]
 
 
 @dataclass
@@ -363,6 +366,29 @@ def check_agent_registry_hygiene() -> list[Check]:
     return checks
 
 
+def check_agent_definition_storage_split() -> list[Check]:
+    try:
+        legacy = set(redis_json("HKEYS", "konoha:agent-defs") or [])
+        templates = set(redis_json("HKEYS", "konoha:agent-templates") or [])
+        runtime_configs = set(redis_json("HKEYS", "konoha:agent-runtime-configs") or [])
+    except Exception as exc:
+        return [Check("WARN", "agent_storage.split", str(exc), "Inspect Redis agent definition hashes")]
+
+    missing_templates = sorted(legacy - templates)
+    missing_runtime_configs = sorted(legacy - runtime_configs)
+    if missing_templates or missing_runtime_configs:
+        detail = f"legacy={len(legacy)} templates={len(templates)} runtime_configs={len(runtime_configs)}"
+        hint = "Run split backfill before relying on template/runtime-config stores"
+        return [Check("WARN", "agent_storage.split", detail, hint)]
+
+    split_only = sorted((templates | runtime_configs) - legacy)
+    if split_only:
+        detail = f"legacy={len(legacy)} split_only={len(split_only)} sample={','.join(split_only[:5])}"
+        return [Check("OK", "agent_storage.split", detail)]
+
+    return [Check("OK", "agent_storage.split", f"{len(legacy)} defs mirrored to template/runtime-config stores")]
+
+
 def check_llm_client_profiles() -> list[Check]:
     try:
         profiles = api_get("/agents/llm-client-profiles")
@@ -392,10 +418,39 @@ def check_llm_client_profiles() -> list[Check]:
     return checks
 
 
+def check_large_source_files() -> list[Check]:
+    repo = Path(__file__).resolve().parent.parent
+    violations: list[tuple[str, int]] = []
+    for dirname in SIZE_CHECK_DIRS:
+        root = repo / dirname
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix not in SIZE_CHECK_EXTENSIONS:
+                continue
+            try:
+                lines = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+            except Exception:
+                continue
+            if lines > MAX_RED_FLAG_FILE_LINES:
+                violations.append((str(path.relative_to(repo)), lines))
+
+    if not violations:
+        return [Check("OK", "source_size.red_flags", f"no files over {MAX_RED_FLAG_FILE_LINES} lines")]
+
+    detail = ", ".join(f"{name}={lines}" for name, lines in sorted(violations, key=lambda item: item[1], reverse=True)[:8])
+    return [Check(
+        "WARN",
+        "source_size.red_flags",
+        detail,
+        "Split files over 1000 lines; this is architecture debt, not a release blocker yet",
+    )]
+
+
 def main() -> int:
     load_env_defaults()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_llm_client_profiles):
+    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
         checks.extend(fn())
     return print_report(checks)
 
