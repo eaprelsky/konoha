@@ -84,6 +84,7 @@ describe("workflow-loader e2e: lead-qualification", () => {
     expect(e1!.type).toBe("event");
     expect(e1!.trigger?.kind).toBe("message");
     expect(e1!.trigger?.source).toBe("telegram");
+    expect(e1!.trigger?.filter).toEqual({ chat_title: "coMind Лиды" });
   });
 
   test("models lead triage followed by human sales owner tasks", () => {

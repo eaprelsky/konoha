@@ -4,7 +4,7 @@
   "name": "Sales Lead Intake",
   "description": "Human-in-the-loop sales workflow for signals from Telegram lead chats. A lead triage specialist reviews the incoming signal, the sales owner reviews it, prepares a content proposal, requests an estimate, and assembles the commercial proposal/follow-up. This replaces hardcoded agent reminders with explicit workflow state.",
   "triggers": [
-    { "event_type": "lead.received", "start_node": "e1" }
+    { "event_type": "telegram.message.received", "start_node": "e1" }
   ],
   "documents": [
     {
@@ -47,8 +47,7 @@
         "kind": "message",
         "source": "telegram",
         "filter": {
-          "chat": "coMind Лиды",
-          "classifier": "sales_lead"
+          "chat_title": "coMind Лиды"
         }
       }
     },

@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
 import Redis from "ioredis";
-import { createCase, deleteCasesByProcess, handleEventFired } from "../src/runtime";
+import { createCase, deleteCasesByProcess, handleEventFired, processEvent } from "../src/runtime";
 import { completeWorkItem } from "../src/runtime/work-items";
 import { loadActiveWaitsForCase } from "../src/runtime/event-waits";
 import { deleteReminder, listReminders } from "../src/runtime/reminders";
@@ -202,6 +202,36 @@ describe("eEPC state-machine regression suite", () => {
     expect(completed.case?.status).toBe("done");
     expect(completed.case?.position).toBe("e6");
     expect(completed.case?.history.map(h => h.element_id)).toContain("f5");
+  });
+
+  test("Telegram message event starts sales workflow only when eEPC trigger filter matches", async () => {
+    const id = wfId("sales-telegram-event");
+    const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");
+    const def: WorkflowDefinition = { ...JSON.parse(raw), id };
+    const chatTitle = `${RUN} Лиды`;
+    const start = def.elements.find(el => el.id === "e1");
+    if (start?.trigger?.filter) start.trigger.filter = { chat_title: chatTitle };
+    await registerWorkflow(def);
+
+    const cases = await processEvent("telegram.message.received", "telegram", {
+      chat_title: chatTitle,
+      chat_id: "-1001",
+      sender_name: "Client",
+      text: "Нужен AI ассистент для обработки заявок",
+      msg_id: "42",
+    });
+
+    expect(cases).toHaveLength(1);
+    expect(cases[0].process_id).toBe(id);
+    expect(cases[0].subject).toBe("Нужен AI ассистент для обработки заявок");
+    expect(cases[0].position).toBe("f1");
+    expect(cases[0].payload.chat_title).toBe(chatTitle);
+
+    const ignored = await processEvent("telegram.message.received", "telegram", {
+      chat_title: "Random Chat",
+      text: "Постороннее сообщение",
+    });
+    expect(ignored).toEqual([]);
   });
 
   test("XOR gateway selects the first matching conditional branch", async () => {

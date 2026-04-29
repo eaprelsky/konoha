@@ -74,7 +74,7 @@ export async function forceCloseCase(case_id: string, _depth = 0): Promise<Case 
 
 export async function processEvent(
   eventType: string,
-  subject: string,
+  source: string,
   payload: Record<string, unknown>,
 ): Promise<Case[]> {
   const WORKFLOW_INDEX_KEY = "konoha:workflow:index";
@@ -90,12 +90,45 @@ export async function processEvent(
     if (!def.triggers) continue;
     for (const trigger of def.triggers) {
       if (trigger.event_type !== eventType) continue;
+      const startNode = def.elements.find(el => el.id === trigger.start_node);
+      const startTrigger = startNode?.type === "event" ? startNode.trigger : undefined;
+      if (!eventMatchesStartTrigger(source, payload, startTrigger)) continue;
+
+      const subject = eventSubject(source, payload);
       const kase = await createCase(def.id, subject, payload, trigger.start_node);
       cases.push(kase);
     }
   }
 
   return cases;
+}
+
+function eventSubject(source: string, payload: Record<string, unknown>): string {
+  for (const key of ["subject", "text", "message", "chat_title", "chat"]) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) return value.trim().slice(0, 160);
+  }
+  return source;
+}
+
+function eventMatchesStartTrigger(
+  source: string,
+  payload: Record<string, unknown>,
+  trigger?: WorkflowDefinition["elements"][number]["trigger"],
+): boolean {
+  if (!trigger) return true;
+  if (trigger.source && trigger.source !== source) return false;
+  if (!trigger.filter) return true;
+
+  for (const [key, expected] of Object.entries(trigger.filter)) {
+    const actual = payload[key];
+    if (Array.isArray(expected)) {
+      if (!expected.includes(actual)) return false;
+      continue;
+    }
+    if (actual !== expected) return false;
+  }
+  return true;
 }
 
 export async function handleEventFired(payload: {
