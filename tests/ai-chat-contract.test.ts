@@ -53,4 +53,22 @@ describe("POST /api/ai/chat workflow contract", () => {
     expect(body.observable_result.status).toBe("succeeded");
     expect(body.pending_confirmations).toEqual([]);
   });
+
+  test("deprecated Tsunade chat routes advertise canonical replacement", async () => {
+    for (const path of ["/api/tsunade/chat", "/api/ai/process-chat"]) {
+      const res = await app.fetch(new Request(`http://localhost${path}`, {
+        method: "POST",
+        headers: adminHeaders(),
+        body: JSON.stringify({
+          message: "Покажи процесс",
+          chat_id: `test-ai-chat-contract-deprecated-${path.replace(/\W+/g, "-")}`,
+        }),
+      }));
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Deprecation")).toBe("true");
+      expect(res.headers.get("Sunset")).toBe("Sat, 31 May 2026 00:00:00 GMT");
+      expect(res.headers.get("Link")).toBe('</api/ai/chat?mode=process>; rel="canonical"');
+    }
+  });
 });

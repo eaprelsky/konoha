@@ -20,17 +20,93 @@ export type AutonomyLevel = "auto" | "confirm" | "disabled";
 
 export const AUTONOMY_KEY = "konoha:config:autonomy";
 
+/** Complete mapping from legacy snake_case action IDs to canonical {scope}.{verb} format */
 const LEGACY_TO_CANONICAL_ACTION: Record<string, string> = {
+  // Issue
   issue_create: "issue.create",
   issue_label: "issue.label",
+
+  // Workflow
   workflow_create: "workflow.create",
+  workflow_update: "workflow.update",
   workflow_delete: "workflow.delete",
-  data_delete: "data.delete",
+  workflow_list: "workflow.list",
+  workflow_get: "workflow.get",
+
+  // Element
+  element_add: "element.add",
+  element_update: "element.update",
+  element_remove: "element.remove",
+
+  // Flow
+  flow_add: "flow.add",
+  flow_remove: "flow.remove",
+
+  // Trigger
+  trigger_set: "trigger.set",
+  trigger_resolve: "trigger.resolve",
+
+  // Case
+  case_start: "case.start",
+  case_get: "case.get",
+  case_list: "case.list",
+  case_close: "case.close",
+  event_confirm: "event.confirm",
+
+  // Work item
+  workitem_complete: "workitem.complete",
+  workitem_create: "workitem.create",
+  workitem_update: "workitem.update",
+  workitem_list: "workitem.list",
+  workitem_cancel: "workitem.cancel",
+
+  // Role
+  role_create: "role.create",
+  role_list: "role.list",
+  role_update: "role.update",
+  role_delete: "role.delete",
+
+  // Agent
+  agent_register: "agent.register",
+  agent_start: "agent.start",
+  agent_stop: "agent.stop",
   agent_restart: "agent.restart",
   agent_deploy: "agent.deploy",
+
+  // Subscription
+  subscription_create: "subscription.create",
+  subscription_cancel: "subscription.cancel",
+  subscription_list: "subscription.list",
+
+  // Reminder
+  reminder_create: "reminder.create",
+  reminder_list: "reminder.list",
+  reminder_update_status: "reminder.update_status",
+  reminder_delete: "reminder.delete",
+
+  // Message
+  message_send: "message.send",
+  message_read: "message.read",
+
+  // Audit / Knowledge
+  audit_read: "audit.read",
+  knowledge_tree: "knowledge.tree",
+  knowledge_read: "knowledge.read",
+  knowledge_search: "knowledge.search",
+
+  // Legacy non-standard
+  data_delete: "data.delete",
 };
 
-function canonicalActionType(actionType: string): string {
+/** Self-mapping: canonical IDs map to themselves so canonicalActionType is idempotent */
+for (const id of Object.keys(LEGACY_TO_CANONICAL_ACTION)) {
+  const canonical = LEGACY_TO_CANONICAL_ACTION[id];
+  if (!LEGACY_TO_CANONICAL_ACTION[canonical]) {
+    LEGACY_TO_CANONICAL_ACTION[canonical] = canonical;
+  }
+}
+
+export function canonicalActionType(actionType: string): string {
   return LEGACY_TO_CANONICAL_ACTION[actionType] ?? actionType;
 }
 

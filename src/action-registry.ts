@@ -698,3 +698,72 @@ export function getActionCount(): number {
 export function dumpRegistry(): { version: number; actions: ActionDef[] } {
   return { version: ACTION_VERSION, actions: [...registry.values()] };
 }
+
+// ── Argument Validation ──────────────────────────────────────────────────────
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+/** Validate that provided args match the ActionDef argument contract */
+export function validateActionArgs(actionId: string, args: Record<string, unknown>): ValidationResult {
+  const action = registry.get(actionId);
+  if (!action) {
+    return { valid: false, errors: [`Unknown action: ${actionId}`] };
+  }
+
+  const errors: string[] = [];
+
+  for (const arg of action.args) {
+    const value = args[arg.name];
+
+    // Check required
+    if (arg.required && (value === undefined || value === null)) {
+      errors.push(`Missing required argument: ${arg.name}`);
+      continue;
+    }
+
+    // Skip type check for missing optional args
+    if (value === undefined || value === null) continue;
+
+    // Type coercion checks
+    switch (arg.type) {
+      case "string":
+        if (typeof value !== "string") errors.push(`Expected string for "${arg.name}", got ${typeof value}`);
+        break;
+      case "number":
+        if (typeof value !== "number" || Number.isNaN(value)) errors.push(`Expected number for "${arg.name}", got ${typeof value}`);
+        break;
+      case "boolean":
+        if (typeof value !== "boolean") errors.push(`Expected boolean for "${arg.name}", got ${typeof value}`);
+        break;
+      case "object":
+        if (typeof value !== "object" || value === null || Array.isArray(value)) errors.push(`Expected object for "${arg.name}"`);
+        break;
+      case "array":
+        if (!Array.isArray(value)) errors.push(`Expected array for "${arg.name}", got ${typeof value}`);
+        break;
+      case "date":
+        if (typeof value !== "string" || Number.isNaN(Date.parse(value as string))) errors.push(`Expected ISO 8601 date string for "${arg.name}"`);
+        break;
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+export interface ActionContract {
+  def: ActionDef;
+  validate: (args: Record<string, unknown>) => ValidationResult;
+}
+
+/** Get a typed action contract for use by the assistant layer */
+export function getActionContract(actionId: string): ActionContract | undefined {
+  const def = registry.get(actionId);
+  if (!def) return undefined;
+  return {
+    def,
+    validate: (args: Record<string, unknown>) => validateActionArgs(actionId, args),
+  };
+}

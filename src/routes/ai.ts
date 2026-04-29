@@ -265,6 +265,9 @@ router.post("/tsunade/chat", async (c) => {
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
     const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
+    c.header("Deprecation", "true");
+    c.header("Sunset", "Sat, 31 May 2026 00:00:00 GMT");
+    c.header("Link", '</api/ai/chat?mode=process>; rel="canonical"');
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -274,10 +277,12 @@ router.post("/tsunade/chat", async (c) => {
 router.delete("/tsunade/chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
   await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
+  c.header("Deprecation", "true");
+  c.header("Sunset", "Sat, 31 May 2026 00:00:00 GMT");
   return c.json({ ok: true });
 });
 
-// Alias: /ai/process-chat → same Tsunade logic
+// Deprecated alias: use POST /ai/chat?mode=process instead (Sunset: 31 May 2026)
 router.use("/ai/process-chat", requireAuth);
 router.post("/ai/process-chat", async (c) => {
   const body = await c.req.json<{ message: string; schema?: unknown; chat_id?: string; attachments?: AttachmentRef[] }>().catch(() => null);
@@ -286,6 +291,9 @@ router.post("/ai/process-chat", async (c) => {
   const histKey = TSUNADE_CHAT_PREFIX + chatId;
   try {
     const result = await handleTsunadeChatRequest(histKey, chatId, body.message, body.schema, body.attachments);
+    c.header("Deprecation", "true");
+    c.header("Sunset", "Sat, 31 May 2026 00:00:00 GMT");
+    c.header("Link", '</api/ai/chat?mode=process>; rel="canonical"');
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -295,6 +303,8 @@ router.post("/ai/process-chat", async (c) => {
 router.delete("/ai/process-chat/:chat_id", requireAuth, async (c) => {
   const chatId = c.req.param("chat_id");
   await redis.del(TSUNADE_CHAT_PREFIX + chatId).catch(silentCatch("clear chat history"));
+  c.header("Sunset", "Sat, 31 May 2026 00:00:00 GMT");
+  c.header("Deprecation", "true");
   return c.json({ ok: true });
 });
 
