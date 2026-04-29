@@ -20,14 +20,13 @@ set +a
 python3 /home/ubuntu/konoha/scripts/healthcheck-system.py
 curl -sS --max-time 15 https://ifconfig.co/json
 curl -sS -I --max-time 15 https://chatgpt.com/
-timeout 90 /home/ubuntu/.npm-global/bin/codex exec --model gpt-5.4 \
-  -c model_reasoning_effort="medium" \
+timeout 120 /home/ubuntu/.npm-global/bin/codex exec --model gpt-5.5 \
+  -c model_reasoning_effort="high" \
   --dangerously-bypass-approvals-and-sandbox \
   -C /tmp --skip-git-repo-check --ephemeral "Reply exactly: codex-vpn-ok"
 ```
 
 The Codex fallback may be enabled only after the smoke returns the exact expected text.
-`gpt-5.5` currently requires a newer Codex CLI than `/home/ubuntu/.npm-global/bin/codex` v0.122.0, so use `gpt-5.4` for proxy smoke until the CLI is upgraded.
 
 ## Known Bad State
 
@@ -81,4 +80,6 @@ Verification results:
 - `scripts/healthcheck-system.py` reports `codex_proxy.chatgpt: OK`.
 - Codex CLI smoke with `gpt-5.4` returned `codex-vpn-ok`.
 
-Remaining caveat: `gpt-5.5` smoke fails with a Codex CLI version error, not a VPN/proxy error. Upgrade Codex CLI before enabling a `gpt-5.5` Codex runtime profile.
+## Codex CLI Upgrade Verified (2026-04-29)
+
+`/home/ubuntu/.npm-global/bin/codex` is on `codex-cli 0.125.0`, which is the current `@openai/codex` npm release on this host. The `gpt-5.5` smoke through the sourced proxy env now returns `codex-vpn-ok`, so the Codex runtime profile can use `gpt-5.5` again.
