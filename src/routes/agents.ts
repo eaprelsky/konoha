@@ -28,9 +28,10 @@ import {
   isTmuxRunning,
   listLLMClientProfiles,
   getLLMClientProfile,
+  resolveLLMClientProfile,
   composeAgentView,
 } from "../agent-lifecycle";
-import type { AgentRuntimeState, LifecycleStatus } from "../agent-lifecycle";
+import type { AgentRuntimeState, LifecycleStatus, AgentProvider } from "../agent-lifecycle";
 import { silentCatch } from "../logger";
 
 const router = new Hono<HonoEnv>();
@@ -110,7 +111,7 @@ router.post("/", async (c) => {
     system_prompt,
     runtime,
     fallback_runtime,
-    llm_client_profile,
+    llm_client_profile = (!runtime ? "claude-deepseek-sonnet" : undefined),
     fallback_llm_client_profile,
     launch_strategy,
     startup_timeout_sec,
@@ -213,12 +214,18 @@ router.post("/:id/switch-runtime", async (c) => {
   if (profileError) return c.json(profileError, 400);
   const updates: Record<string, unknown> = {};
   const nextRuntime = runtime ?? profile;
-  if (llm_client_profile !== undefined) updates.llm_client_profile = llm_client_profile;
+  if (llm_client_profile !== undefined) {
+    updates.llm_client_profile = llm_client_profile;
+  } else if (profile) {
+    const resolved = resolveLLMClientProfile({ runtime: profile as AgentProvider, model: profile });
+    if (resolved) updates.llm_client_profile = resolved.id;
+  }
   if (nextRuntime !== undefined) updates.runtime = nextRuntime;
   if (model !== undefined) {
     updates.model = model;
-  } else if (profile && PROFILE_DEFAULT_MODELS[profile]) {
-    updates.model = PROFILE_DEFAULT_MODELS[profile];
+  } else if (typeof updates.llm_client_profile === "string") {
+    const prof = getLLMClientProfile(updates.llm_client_profile);
+    if (prof) updates.model = prof.runtime_adapter === "codex" ? prof.model : `${prof.runtime_adapter}:${prof.runtime_model || prof.model}`;
   }
   if (reasoning_effort !== undefined) updates.reasoning_effort = reasoning_effort;
   if (fallback_runtime !== undefined) updates.fallback_runtime = fallback_runtime;

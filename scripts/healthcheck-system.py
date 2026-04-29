@@ -37,6 +37,14 @@ CORE_SERVICES = [
 ]
 PROXY_SERVICES = ["sing-box", "privoxy"]
 PERMANENT_AGENTS = ["naruto", "sasuke", "kakashi", "kiba"]
+PERMANENT_AGENT_SERVICES = {agent: f"agent-{agent}.service" for agent in PERMANENT_AGENTS}
+WATCHDOG_ENTRYPOINTS = {
+    "agent-watchdog-naruto.service": "scripts/watchdog-naruto.py",
+    "agent-watchdog-sasuke.service": "scripts/watchdog-sasuke.py",
+    "agent-watchdog-kakashi.service": "scripts/watchdog-kakashi.py",
+    "agent-watchdog-kiba.service": "scripts/watchdog-kiba.py",
+    "agent-watchdog-lifecycle.service": "scripts/watchdog-lifecycle.py",
+}
 REGISTRY_WARN_TOTAL = 100
 REGISTRY_WARN_EPHEMERAL = 10
 STREAM_GROUPS = {
@@ -215,20 +223,75 @@ def check_redis_streams() -> list[Check]:
 
 def check_agents() -> list[Check]:
     checks: list[Check] = []
+    # Fetch agent defs to report LLM profiles
+    agent_profiles: dict[str, str] = {}
+    try:
+        agents = api_get("/agents")
+        for a in agents or []:
+            aid = str(a.get("id") or "")
+            profile = a.get("llm_client_profile") or a.get("runtime") or "unknown"
+            if aid:
+                agent_profiles[aid] = str(profile)
+    except Exception:
+        pass
+
     for agent in PERMANENT_AGENTS:
+        profile = agent_profiles.get(agent, "unknown")
         rc, _, _ = run(["tmux", "-L", agent, "has-session", "-t", agent], timeout=5)
         if rc != 0:
-            checks.append(Check("FAIL", f"agent.{agent}.tmux", "missing", f"Run: sudo systemctl restart agent-{agent}.service"))
+            checks.append(Check("FAIL", f"agent.{agent}.tmux", f"missing profile={profile}", f"Run: sudo systemctl restart agent-{agent}.service"))
             continue
         rc, pane, stderr = run(["tmux", "-L", agent, "capture-pane", "-pt", agent, "-S", "-80"], timeout=5)
         if rc != 0:
-            checks.append(Check("WARN", f"agent.{agent}.pane", stderr[:160], f"Run: tmux -L {agent} capture-pane -pt {agent}"))
+            checks.append(Check("WARN", f"agent.{agent}.pane", f"{stderr[:160]} profile={profile}", f"Run: tmux -L {agent} capture-pane -pt {agent}"))
             continue
         signal = pane_stuck_signal(pane)
         if signal:
-            checks.append(Check("WARN", f"agent.{agent}.signal", signal, f"Inspect pane; if persistent restart agent-{agent}.service"))
+            checks.append(Check("WARN", f"agent.{agent}.signal", f"{signal} profile={profile}", f"Inspect pane; if persistent restart agent-{agent}.service"))
         else:
-            checks.append(Check("OK", f"agent.{agent}.tmux", "alive idle=" + str(pane_is_idle(pane)).lower()))
+            checks.append(Check("OK", f"agent.{agent}.tmux", f"alive idle={str(pane_is_idle(pane)).lower()} profile={profile}"))
+    return checks
+
+
+def systemd_exec_start(service: str) -> str:
+    rc, stdout, stderr = run(["systemctl", "show", service, "-p", "ExecStart", "--value"], timeout=5)
+    if rc != 0:
+        raise RuntimeError(stderr or stdout or f"systemctl show {service} failed")
+    return stdout
+
+
+def check_lifecycle_control_plane() -> list[Check]:
+    checks: list[Check] = []
+    for agent, service in PERMANENT_AGENT_SERVICES.items():
+        try:
+            exec_start = systemd_exec_start(service)
+        except Exception as exc:
+            checks.append(Check("FAIL", f"control_plane.agent_service.{agent}", str(exc), f"Inspect: systemctl cat {service}"))
+            continue
+        expected = f"scripts/agent-api-service.sh {agent}"
+        if expected in exec_start:
+            checks.append(Check("OK", f"control_plane.agent_service.{agent}", "uses lifecycle API wrapper"))
+        else:
+            checks.append(Check("FAIL", f"control_plane.agent_service.{agent}", exec_start[:180], f"ExecStart must use {expected}"))
+
+    legacy_watchdog_users: list[str] = []
+    for service, expected_script in WATCHDOG_ENTRYPOINTS.items():
+        try:
+            exec_start = systemd_exec_start(service)
+        except Exception as exc:
+            checks.append(Check("FAIL", f"control_plane.watchdog.{service}", str(exc), f"Inspect: systemctl cat {service}"))
+            continue
+        if "scripts/watchdog.py" in exec_start:
+            legacy_watchdog_users.append(service)
+        if expected_script in exec_start:
+            checks.append(Check("OK", f"control_plane.watchdog.{service}", f"uses {expected_script}"))
+        else:
+            checks.append(Check("WARN", f"control_plane.watchdog.{service}", exec_start[:180], f"Expected {expected_script}"))
+
+    if legacy_watchdog_users:
+        checks.append(Check("WARN", "control_plane.legacy_watchdog", ",".join(legacy_watchdog_users), "Retire scripts/watchdog.py from active systemd units"))
+    else:
+        checks.append(Check("OK", "control_plane.legacy_watchdog", "scripts/watchdog.py is not an active known watchdog entrypoint"))
     return checks
 
 
@@ -450,7 +513,7 @@ def check_large_source_files() -> list[Check]:
 def main() -> int:
     load_env_defaults()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_shared_config, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
+    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_lifecycle_control_plane, check_shared_config, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
         checks.extend(fn())
     return print_report(checks)
 
