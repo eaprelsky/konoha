@@ -28,10 +28,23 @@ import {
   isTmuxRunning,
   listLLMClientProfiles,
   getLLMClientProfile,
+  composeAgentView,
 } from "../agent-lifecycle";
+import type { AgentRuntimeState, LifecycleStatus } from "../agent-lifecycle";
 import { silentCatch } from "../logger";
 
 const router = new Hono<HonoEnv>();
+
+type LifecycleProjection = Pick<AgentRuntimeState, "pid" | "uptime_seconds"> & { status: LifecycleStatus };
+
+function routeRuntimeState(agentId: string, lifecycle: LifecycleProjection): AgentRuntimeState {
+  return {
+    agent_id: agentId,
+    status: lifecycle.status,
+    pid: lifecycle.pid,
+    uptime_seconds: lifecycle.uptime_seconds,
+  };
+}
 
 const PROFILE_DEFAULT_MODELS: Record<string, string> = {
   claude: "claude:sonnet",
@@ -337,7 +350,7 @@ router.get("/:id", async (c) => {
   const base = busAgent ?? { id, status: "offline" };
   if (!def) return c.json(base);
 
-  let lifecycle: { status: string; pid?: number; uptime_seconds?: number };
+  let lifecycle: LifecycleProjection;
   if (def.tmux_session_override) {
     const sess = def.tmux_session_override;
     const runningNamedSocket = await execFileAsync("tmux", ["-L", sess, "has-session", "-t", sess]).then(() => true).catch(() => false);
@@ -348,7 +361,12 @@ router.get("/:id", async (c) => {
     lifecycle = { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds };
   }
 
-  return c.json({ ...base, ...def, lifecycle });
+  return c.json(composeAgentView({
+    id,
+    def,
+    busAgent: base,
+    runtimeState: routeRuntimeState(id, lifecycle),
+  }));
 });
 
 // PUT /agents/:id — update agent definition fields (name, system_prompt, model)
@@ -385,7 +403,7 @@ router.delete("/:id", async (c) => {
 
 // GET /agents — list with lifecycle status merged in
 // In-memory cache for tmux lifecycle status — avoids spawning N processes per request
-const _lifecycleCache = new Map<string, { data: object; ts: number }>();
+const _lifecycleCache = new Map<string, { data: LifecycleProjection; ts: number }>();
 const LIFECYCLE_CACHE_TTL_MS = 5_000;
 
 router.get("/", async (c) => {
@@ -396,13 +414,13 @@ router.get("/", async (c) => {
   ]);
   // Build a map from managed defs for quick lookup
   const defMap = new Map(defs.map(d => [d.id, d]));
-  async function lifecycleForDef(id: string, def: { protected?: boolean; tmux_session_override?: string }) {
+  async function lifecycleForDef(id: string, def: { protected?: boolean; tmux_session_override?: string }): Promise<LifecycleProjection> {
     const cacheKey = def.tmux_session_override ? `tmux:${def.tmux_session_override}` : `agent:${id}`;
     const cached = _lifecycleCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < LIFECYCLE_CACHE_TTL_MS) {
       return cached.data;
     }
-    let result: object;
+    let result: LifecycleProjection;
     if (def.tmux_session_override) {
       const sess = def.tmux_session_override;
       // System agents (naruto/sasuke/mirai) use named tmux sockets (-L <session>)
@@ -423,7 +441,12 @@ router.get("/", async (c) => {
       const def = defMap.get(a.id);
       if (!def) return a;
       const lifecycle = await lifecycleForDef(a.id, def);
-      return { ...a, ...def, lifecycle };
+      return composeAgentView({
+        id: a.id,
+        def,
+        busAgent: a,
+        runtimeState: routeRuntimeState(a.id, lifecycle),
+      });
     })
   );
   // Also include managed agents not yet on the bus
@@ -432,7 +455,12 @@ router.get("/", async (c) => {
   const unmatchedWithState = await Promise.all(
     unmatchedDefs.map(async (d) => {
       const lifecycle = await lifecycleForDef(d.id, d);
-      return { ...d, status: "offline", lifecycle };
+      return composeAgentView({
+        id: d.id,
+        def: d,
+        busAgent: { id: d.id, status: "offline" },
+        runtimeState: routeRuntimeState(d.id, lifecycle),
+      });
     })
   );
   return c.json([...agentsWithState, ...unmatchedWithState]);

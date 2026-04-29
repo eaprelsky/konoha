@@ -10,6 +10,7 @@
  */
 export * from "./types";
 export * from "./llm-client-profiles";
+export * from "./view";
 export * from "./runtime";
 export * from "./prompt";
 export * from "./process";

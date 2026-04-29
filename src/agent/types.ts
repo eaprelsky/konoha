@@ -41,6 +41,46 @@ export interface AgentDef {
   updated_at: string;
 }
 
+export interface AgentTemplate {
+  id: string;
+  name: string;
+  system_prompt?: string;
+  tags?: string[];
+  capabilities?: string[];
+  memory?: string;
+  avatar_url?: string;
+  gender?: 'male' | 'female' | 'neutral';
+  protected?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentRuntimeConfig {
+  runtime?: AgentProvider;
+  fallback_runtime?: AgentProvider;
+  llm_client_profile?: string;
+  fallback_llm_client_profile?: string;
+  launch_strategy?: LaunchStrategy;
+  startup_timeout_sec?: number;
+  model: string;
+  reasoning_effort?: string;
+  env?: Record<string, string>;
+  shared_mcp_allowlist?: string[];
+  codex_disable_features?: string[];
+  tmux_session_override?: string;
+  redis_streams?: AgentRedisStream[];
+}
+
+export interface AgentPresence {
+  agent_id: string;
+  status: "online" | "offline";
+  online: boolean;
+  last_heartbeat?: number;
+  address?: string;
+  village_id?: string;
+  event_subscriptions?: string[];
+}
+
 export interface AgentState {
   agent_id: string;
   status: LifecycleStatus;
@@ -49,4 +89,18 @@ export interface AgentState {
   tmux_session?: string;
   error?: string;
   uptime_seconds?: number;
+}
+
+export type AgentRuntimeState = AgentState;
+
+export interface AgentView extends AgentDef {
+  presence?: AgentPresence;
+  runtime_config: AgentRuntimeConfig;
+  template: AgentTemplate;
+  runtime_state: AgentRuntimeState;
+  lifecycle: {
+    status: LifecycleStatus | string;
+    pid?: number;
+    uptime_seconds?: number;
+  };
 }

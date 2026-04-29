@@ -9,6 +9,18 @@ The agent lifecycle module manages two separate concerns:
 
 Both are stored in Redis and survive server restarts.
 
+The public `/agents` API is backward-compatible and still returns flattened fields, but internally new code should use explicit projections:
+
+| Boundary | Source | Meaning |
+|----------|--------|---------|
+| `AgentTemplate` | `AgentDef` | Durable identity and human-editable instructions |
+| `AgentRuntimeConfig` | `AgentDef` | Launch adapter, model profile, MCP/tool config, tmux hints |
+| `AgentPresence` | Konoha bus heartbeat registry | Online/offline presence and last heartbeat |
+| `AgentRuntimeState` | lifecycle manager/tmux/systemd | Process state, pid, uptime, startup errors |
+| `AgentView` | projection | Backward-compatible API view with structured boundaries |
+
+Use `composeAgentView()` for `/agents` responses instead of ad hoc object spreading. This keeps old clients working while the storage model is split.
+
 ---
 
 ## Data model
