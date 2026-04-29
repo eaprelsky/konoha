@@ -140,6 +140,22 @@ describe("normalizeAssistantResponse", () => {
     expect(resp.action_receipts).toHaveLength(0);
     expect(resp.observable_result.status).toBe("no_effect");
   });
+
+  it("normalizes workflow open requests into navigate actions and receipts", async () => {
+    const resp = await normalizeAssistantResponse(JSON.stringify({
+      reply: "Открываю процесс.",
+      open_workflow: { id: "wf-open", name: "Открываемый процесс" },
+    }), baseOpts);
+
+    expect(resp.actions_taken[0].action).toBe("workflow.open");
+    expect(resp.ui_actions[0]).toMatchObject({ type: "navigate", path: "/editor/wf-open" });
+    expect(resp.action_receipts[0]).toMatchObject({
+      action: "workflow.open",
+      status: "succeeded",
+      changed_resources: [{ kind: "workflow", id: "wf-open", label: "Открываемый процесс", change: "opened" }],
+    });
+    expect(resp.observable_result.status).toBe("succeeded");
+  });
 });
 
 describe("workflow action contract", () => {

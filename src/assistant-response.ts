@@ -101,6 +101,28 @@ export async function normalizeAssistantResponse(
       actionReceipts.push(schemaPatchReceipt);
     }
 
+    const openWorkflow = extractOpenWorkflow(parsed.open_workflow);
+    if (openWorkflow) {
+      const action = buildWorkflowOpenAction(openWorkflow);
+      await auditLog({
+        timestamp: new Date().toISOString(),
+        session_id: opts.session_id ?? opts.chat_id,
+        action_type: "workflow.open",
+        parameters: JSON.stringify(openWorkflow),
+        result: "ok",
+        agent_chain: opts.agent_id ?? "tsunade",
+      }).catch(() => {});
+      actionsTaken.push(action);
+      actionReceipts.push(buildWorkflowOpenReceipt(action, opts));
+      uiActions.push({
+        type: "navigate",
+        target: `/editor/${openWorkflow.id}`,
+        path: `/editor/${openWorkflow.id}`,
+        workflow_id: openWorkflow.id,
+        ...(openWorkflow.name ? { message: `Открыть процесс "${openWorkflow.name}"` } : {}),
+      });
+    }
+
     // Extract UI actions (highlights, etc.)
     if (Array.isArray(parsed.actions)) {
       for (const act of parsed.actions) {
@@ -375,6 +397,68 @@ async function buildSchemaPatchReceipt(
     audit: {
       session_id: opts.session_id ?? opts.chat_id,
       action_type: "workflow.update",
+    },
+  };
+}
+
+function extractOpenWorkflow(raw: unknown): { id: string; name?: string } | null {
+  if (typeof raw === "string" && raw.trim()) return { id: raw.trim() };
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const id = typeof obj.id === "string"
+    ? obj.id
+    : typeof obj.workflow_id === "string"
+    ? obj.workflow_id
+    : null;
+  if (!id) return null;
+  return {
+    id,
+    ...(typeof obj.name === "string" ? { name: obj.name } : {}),
+  };
+}
+
+function buildWorkflowOpenAction(workflow: { id: string; name?: string }): AssistantAction {
+  return {
+    action: "workflow.open",
+    params: workflow,
+    status: "executed",
+    description: "Open workflow in editor",
+    result: {
+      id: workflow.id,
+      path: `/editor/${workflow.id}`,
+      ...(workflow.name ? { name: workflow.name } : {}),
+    },
+  };
+}
+
+function buildWorkflowOpenReceipt(action: AssistantAction, opts: NormalizeOptions): ActionReceipt {
+  const workflowId = typeof action.result?.id === "string"
+    ? action.result.id
+    : typeof action.params.id === "string"
+    ? action.params.id
+    : "workflow.open";
+  const workflowName = typeof action.result?.name === "string"
+    ? action.result.name
+    : typeof action.params.name === "string"
+    ? action.params.name
+    : undefined;
+
+  return {
+    id: randomUUID(),
+    action: "workflow.open",
+    status: "succeeded",
+    summary: `Открыт процесс${workflowName ? ` "${workflowName}"` : ""}.`,
+    changed_resources: [
+      {
+        kind: "workflow",
+        id: workflowId,
+        ...(workflowName ? { label: workflowName } : {}),
+        change: "opened",
+      },
+    ],
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: "workflow.open",
     },
   };
 }

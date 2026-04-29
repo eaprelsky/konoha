@@ -100,6 +100,9 @@ export function TsunadeChatPanel({
         const act = res.actions[0];
         if (act.type === 'highlight') {
           showHighlight({ selector: act.selector, style: act.style ?? 'spotlight', message: act.message });
+        } else if (act.type === 'navigate') {
+          const target = typeof act.path === 'string' ? act.path : typeof act.target === 'string' ? act.target : null;
+          if (target) navigate(target);
         }
       }
     } catch (e: any) {

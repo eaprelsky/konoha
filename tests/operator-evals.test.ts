@@ -177,6 +177,65 @@ describe("operator benchmark harness", () => {
     expect(result.audit_entries.some((entry) => entry.action_type === "workflow.create" && entry.result === "requires_confirm")).toBe(true);
   });
 
+  it("captures workflow patch receipts without materializing unrelated side effects", async () => {
+    const result = await runOperatorBenchmarkScenario({
+      id: `tsunade-patch-${RUN}`,
+      operator: "tsunade",
+      message: "Переименуй выбранный стартовый шаг.",
+      operator_state: buildOperatorState("Operator Eval: Patch"),
+      raw_output: JSON.stringify({
+        reply: "Обновила выбранный элемент.",
+        schema_patch: {
+          update_elements: [{ id: "start_event", label: "Заявка зарегистрирована" }],
+        },
+      }),
+    });
+
+    expect(getPrimaryObservableStatus(result)).toBe("succeeded");
+    expect(result.response.schema_patch).toEqual({
+      update_elements: [{ id: "start_event", label: "Заявка зарегистрирована" }],
+    });
+    expect(result.response.action_receipts[0]).toMatchObject({
+      action: "workflow.update",
+      status: "succeeded",
+      changed_resources: [{ kind: "element", id: "start_event", change: "updated" }],
+    });
+    expect(result.materialized_workflows).toHaveLength(0);
+    expect(result.audit_entries.some((entry) => entry.action_type === "workflow.update" && entry.result === "ok")).toBe(true);
+  });
+
+  it("captures workflow open as an observable navigate action", async () => {
+    const result = await runOperatorBenchmarkScenario({
+      id: `tsunade-open-${RUN}`,
+      operator: "tsunade",
+      message: "Открой текущий процесс.",
+      operator_state: buildOperatorState("Operator Eval: Open"),
+      raw_output: JSON.stringify({
+        reply: "Открываю процесс.",
+        open_workflow: { id: "operator-eval-space", name: "Operator Eval Space" },
+      }),
+    });
+
+    expect(getPrimaryObservableStatus(result)).toBe("succeeded");
+    expect(result.response.actions_taken[0]).toMatchObject({
+      action: "workflow.open",
+      status: "executed",
+      result: { id: "operator-eval-space", path: "/editor/operator-eval-space" },
+    });
+    expect(result.response.ui_actions[0]).toMatchObject({
+      type: "navigate",
+      path: "/editor/operator-eval-space",
+    });
+    expect(result.response.action_receipts[0]).toMatchObject({
+      action: "workflow.open",
+      status: "succeeded",
+      changed_resources: [{ kind: "workflow", id: "operator-eval-space", label: "Operator Eval Space", change: "opened" }],
+    });
+    expect(result.materialized_workflows).toHaveLength(0);
+    expect(result.parsed_event.actions).toEqual(result.response.ui_actions);
+    expect(result.audit_entries.some((entry) => entry.action_type === "workflow.open" && entry.result === "ok")).toBe(true);
+  });
+
   it("falls back safely on malformed operator output without materialized changes", async () => {
     const result = await runOperatorBenchmarkScenario({
       id: `tsunade-fallback-${RUN}`,

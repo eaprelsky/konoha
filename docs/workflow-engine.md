@@ -17,6 +17,29 @@ At runtime the engine creates a **Case** (instance of a process) and advances it
 
 `modules/workflow-engine/frontend` is a plugin boundary. Its editor-facing files are thin re-export wrappers to `@core/...` so the plugin keeps stable route/import paths without maintaining a second copy of workflow UI behavior. New workflow editor behavior must be added to `frontend/src` first; module-local forks are allowed only for genuinely module-specific pages.
 
+## Regression Gate
+
+Before delegating autonomous workflow-engine repair or merging workflow editor/action changes, run the canonical smoke suite:
+
+```bash
+PATH=/home/ubuntu/.bun/bin:$PATH bun x tsc --noEmit
+PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 \
+  tests/ai-chat-contract.test.ts \
+  tests/assistant-response.test.ts \
+  tests/operator-evals.test.ts \
+  tests/applyPatch.test.ts
+cd frontend && PATH=/home/ubuntu/.bun/bin:$PATH bun run build
+ANTHROPIC_API_KEY=test-anthropic-key PATH=/home/ubuntu/.bun/bin:$PATH \
+  bunx playwright test e2e/workflow-assistant-contract.spec.ts
+```
+
+The suite covers:
+- `workflow.create` materialization and observable receipts.
+- `workflow.update` schema patches through API and operator evals.
+- `workflow.open` navigation actions and receipts.
+- Confirmation-required `workflow.create` without side effects.
+- Browser boundary: `AssistantWidget` consumes a canonical `/api/ai/chat` parsed event and applies the schema patch to `ProcessEditor`.
+
 ---
 
 ## Case Lifecycle

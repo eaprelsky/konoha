@@ -143,7 +143,7 @@ export type WorkflowActionType = 'workflow.create' | 'workflow.update' | 'workfl
 export type WorkflowReceiptStatus = 'succeeded' | 'pending_confirmation' | 'failed' | 'partial';
 export type WorkflowObservableStatus = WorkflowReceiptStatus | 'no_effect';
 export type WorkflowResourceKind = 'workflow' | 'element' | 'flow' | 'confirmation';
-export type WorkflowResourceChange = 'created' | 'updated' | 'pending' | 'failed';
+export type WorkflowResourceChange = 'created' | 'updated' | 'opened' | 'pending' | 'failed';
 
 export interface WorkflowAssistantAction {
   action: WorkflowActionType | string;
@@ -203,7 +203,7 @@ export interface AssistantWorkflowResponse {
   chat_id: string;
   schema_patch: unknown | null;
   created_workflow: { id: string; name: string } | null;
-  actions?: HighlightAction[];
+  actions?: AssistantUiAction[];
   actions_taken: WorkflowAssistantAction[];
   action_receipts: WorkflowActionReceipt[];
   observable_result: WorkflowObservableResult;
@@ -393,6 +393,17 @@ export interface KibaAction {
 export interface HighlightAction {
   type: 'highlight';
   selector: string;
+  target?: string;
   message?: string;
   style?: 'spotlight' | 'pointer' | 'outline';
 }
+
+export interface NavigateAction {
+  type: 'navigate';
+  target?: string;
+  path?: string;
+  workflow_id?: string;
+  message?: string;
+}
+
+export type AssistantUiAction = HighlightAction | NavigateAction;

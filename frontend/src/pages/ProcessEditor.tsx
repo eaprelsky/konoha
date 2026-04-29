@@ -45,7 +45,13 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
   const [triggerPopupId, setTriggerPopupId] = React.useState<string | null>(null);
   // Load workflow from URL param on mount
   const { loadWorkflow } = s;
-  useEffect(() => { if (initialId) loadWorkflow(initialId); }, [initialId, loadWorkflow]);
+  const loadedInitialIdRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialId || loadedInitialIdRef.current === initialId) return;
+    if (!s.workflows.some(w => w.id === initialId)) return;
+    loadWorkflow(initialId);
+    loadedInitialIdRef.current = initialId;
+  }, [initialId, s.workflows, loadWorkflow]);
 
   // Load newly created workflow dispatched by AssistantWidget (#416)
   useEffect(() => {

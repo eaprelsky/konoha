@@ -188,6 +188,8 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
                 return updated;
               });
               if (ev.schema_patch) {
+                const applySchemaPatch = (window as any).__konoha_apply_schema_patch;
+                if (typeof applySchemaPatch === 'function') applySchemaPatch(ev.schema_patch);
                 window.dispatchEvent(new CustomEvent('konoha:schema_patch', { detail: ev.schema_patch }));
               }
               if (ev.created_workflow) {
@@ -200,6 +202,9 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
                 const act = ev.actions[0];
                 if (act.type === 'highlight' && act.target) {
                   showHighlight({ selector: act.target, style: act.style ?? 'spotlight', message: act.message });
+                } else if (act.type === 'navigate') {
+                  const target = typeof act.path === 'string' ? act.path : typeof act.target === 'string' ? act.target : null;
+                  if (target) navigate(target);
                 }
               }
             } else if (ev.type === 'chat_id') {
