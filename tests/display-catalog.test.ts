@@ -4,6 +4,7 @@ import {
   DISPLAY_CATALOG_KEY,
   displayCatalogStorageKey,
   listDisplayCatalogEntries,
+  loadLocaleCatalogEntries,
   putDisplayCatalogEntry,
   resolveAgentDisplay,
   resolveDisplayValue,
@@ -27,6 +28,33 @@ afterAll(async () => {
 });
 
 describe("display catalog resolver", () => {
+  test("loads shared locale entries from runtime-config seed files", () => {
+    const entries = loadLocaleCatalogEntries();
+
+    expect(entries).toContainEqual(expect.objectContaining({
+      scope: "locale",
+      entity_type: "agent",
+      entity_id: "sasuke",
+      locale: "ru",
+      field: "alias",
+      value: "Саске",
+    }));
+  });
+
+  test("resolves fresh neutral agent defaults through the Russian locale catalog", async () => {
+    const display = await resolveAgentDisplay({
+      id: "sasuke",
+      name: "Telegram user-account connector",
+      display_alias: "Telegram user connector",
+    }, { locale: "ru" });
+
+    expect(display).toMatchObject({
+      name: "Коннектор Telegram-аккаунта",
+      alias: "Саске",
+      source: { name: "locale_catalog", alias: "locale_catalog" },
+    });
+  });
+
   test("prefers org override over locale catalog over neutral default", () => {
     const entries: DisplayCatalogEntry[] = [
       {

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "entries": [
+    { "scope": "locale", "entity_type": "agent", "entity_id": "naruto", "locale": "ru", "field": "name", "value": "Коннектор Telegram-бота" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "naruto", "locale": "ru", "field": "alias", "value": "Наруто" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "sasuke", "locale": "ru", "field": "name", "value": "Коннектор Telegram-аккаунта" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "sasuke", "locale": "ru", "field": "alias", "value": "Саске" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "kiba", "locale": "ru", "field": "name", "value": "Системный монитор" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "kiba", "locale": "ru", "field": "alias", "value": "Киба" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "kakashi", "locale": "ru", "field": "name", "value": "Тимлид SDD" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "kakashi", "locale": "ru", "field": "alias", "value": "Какаши" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "shino", "locale": "ru", "field": "name", "value": "Тестлид SDD" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "shino", "locale": "ru", "field": "alias", "value": "Шино" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "hinata", "locale": "ru", "field": "name", "value": "Исполнитель тестов SDD" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "hinata", "locale": "ru", "field": "alias", "value": "Хината" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "guy", "locale": "ru", "field": "name", "value": "Разработчик SDD" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "guy", "locale": "ru", "field": "alias", "value": "Гай" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "mirai", "locale": "ru", "field": "name", "value": "Коннектор внешних источников" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "mirai", "locale": "ru", "field": "alias", "value": "Мирай" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "jiraiya", "locale": "ru", "field": "name", "value": "Куратор знаний" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "jiraiya", "locale": "ru", "field": "alias", "value": "Дзирайя" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "ibiki", "locale": "ru", "field": "name", "value": "Аудитор безопасности" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "ibiki", "locale": "ru", "field": "alias", "value": "Ибики" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "ino", "locale": "ru", "field": "name", "value": "Маркетолог" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "ino", "locale": "ru", "field": "alias", "value": "Ино" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "inojin", "locale": "ru", "field": "name", "value": "Редактор" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "inojin", "locale": "ru", "field": "alias", "value": "Иноджин" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "shikadai", "locale": "ru", "field": "name", "value": "Архитектор" },
+    { "scope": "locale", "entity_type": "agent", "entity_id": "shikadai", "locale": "ru", "field": "alias", "value": "Шикадай" }
+  ]
+}

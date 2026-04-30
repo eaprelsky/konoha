@@ -8,6 +8,14 @@ function agent(id: string) {
 }
 
 describe("seeded system agent classifications", () => {
+  test("seeded runtime display defaults stay locale-neutral", () => {
+    const localized = /[А-Яа-яЁё]/;
+    for (const seeded of SYSTEM_AGENTS) {
+      expect(seeded.name).not.toMatch(localized);
+      expect(seeded.display_alias ?? "").not.toMatch(localized);
+    }
+  });
+
   test("every seeded agent has explicit ADR-004 lifecycle metadata", () => {
     for (const seeded of SYSTEM_AGENTS) {
       expect(seeded.seed_classification).toBeDefined();
@@ -43,17 +51,22 @@ describe("seeded system agent classifications", () => {
     });
     expect(agent("mirai").tags ?? []).not.toContain("autostart");
 
-    for (const id of ["jiraiya", "ino", "inojin", "shikadai"]) {
+    for (const id of ["jiraiya", "ino", "inojin"]) {
       const seeded = agent(id);
       expect(seeded.seed_classification).toBe("deprecated_compat");
       expect(seeded.lifecycle_mode).toBe("deprecated");
       expect(seeded.tags ?? []).not.toContain("autostart");
     }
+
+    expect(agent("shikadai")).toMatchObject({
+      seed_classification: "optional_worker",
+      lifecycle_mode: "optional_on_demand",
+    });
   });
 
   test("system monitor is optional but may be enabled for this deployment", () => {
     expect(agent("kiba")).toMatchObject({
-      name: "Системный монитор",
+      name: "System monitor",
       seed_classification: "optional_worker",
       lifecycle_mode: "optional_on_demand",
     });

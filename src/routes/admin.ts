@@ -10,10 +10,10 @@ import { getMessengerConnectorHealth } from "../messenger-connector-health";
 import { getTelegramStreamHealth } from "../telegram-stream-health";
 const log = createLogger("routes:admin");
 
-const BOT_AGENT_PROMPT = `# Бот-агент
+const BOT_AGENT_PROMPT = `# Telegram bot connector
 
 ## Role
-You are the bot-channel operator for the Konoha system. Your default display alias is "Наруто"; treat it as a callsign, not as your canonical product name. You handle owner-facing communication via the Telegram bot, coordinate other agents through the Konoha bus, and make escalation decisions.
+You are the bot-channel operator for the Konoha system. Your display alias is instance-configured; treat any alias as a callsign, not as your canonical product name. You handle owner-facing communication via the Telegram bot, coordinate other agents through the Konoha bus, and make escalation decisions.
 
 ## Input Channels
 - Telegram bot messages delivered through the lifecycle watchdog from 'telegram:bot:incoming'
@@ -46,10 +46,10 @@ When the user-account agent forwards a feature request:
 - If another managed agent is offline, recover it through Konoha-managed lifecycle, not old per-agent Claude services
 - Keep responses concise and operationally clear`;
 
-const USER_AGENT_PROMPT = `# Юзер-агент
+const USER_AGENT_PROMPT = `# Telegram user-account connector
 
 ## Role
-You are the Telegram user-account operator in Konoha. Your default display alias is "Саске"; treat it as a callsign, not as your canonical product name. You monitor inbound messages from the Telethon side, respond through the user account, and escalate complex work to the bot-channel agent when needed.
+You are the Telegram user-account operator in Konoha. Your display alias is instance-configured; treat any alias as a callsign, not as your canonical product name. You monitor inbound messages from the Telethon side, respond through the user account, and escalate complex work to the bot-channel agent when needed.
 
 ## Input Channels
 - Redis stream 'telegram:incoming' delivered through the lifecycle watchdog
@@ -83,10 +83,10 @@ When a trusted user or the owner proposes a feature:
 - Do not rely on legacy per-agent systemd services
 - Stay concise, practical, and action-oriented`;
 
-const RELIABILITY_GUARD_PROMPT = `# Страж надежности
+const RELIABILITY_GUARD_PROMPT = `# Reliability guard
 
 ## Role
-You are the reliability guard for the Konoha multi-agent system. Your default display alias is "Киба"; treat it as a callsign, not as your canonical product name. You monitor agent health, diagnose incidents, and escalate or recover failures when needed.
+You are the reliability guard for the Konoha multi-agent system. Your display alias is instance-configured; treat any alias as a callsign, not as your canonical product name. You monitor agent health, diagnose incidents, and escalate or recover failures when needed.
 
 ## Input Channels
 - Konoha bus messages for 'kiba'
@@ -127,7 +127,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   {
     id: "naruto",
     name: "Telegram bot connector",
-    display_alias: "Наруто",
+    display_alias: "Telegram bot connector",
     seed_classification: "connector_owned",
     lifecycle_mode: "connector_owned",
     runtime: "claude" as const,
@@ -150,7 +150,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   {
     id: "sasuke",
     name: "Telegram user-account connector",
-    display_alias: "Саске",
+    display_alias: "Telegram user connector",
     seed_classification: "connector_owned",
     lifecycle_mode: "connector_owned",
     runtime: "claude" as const,
@@ -175,8 +175,8 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "kiba",
-    name: "Системный монитор",
-    display_alias: "Киба",
+    name: "System monitor",
+    display_alias: "System monitor",
     seed_classification: "optional_worker",
     lifecycle_mode: "optional_on_demand",
     runtime: "claude" as const,
@@ -196,8 +196,8 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "kakashi",
-    name: "SDD тимлид",
-    display_alias: "Какаши",
+    name: "SDD team lead",
+    display_alias: "SDD team lead",
     seed_classification: "optional_worker",
     lifecycle_mode: "optional_on_demand",
     runtime: "claude" as const,
@@ -216,7 +216,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   {
     id: "mirai",
     name: "External source connector",
-    display_alias: "Мирай",
+    display_alias: "External source connector",
     seed_classification: "connector_owned",
     lifecycle_mode: "connector_owned",
     runtime: "claude" as const,
@@ -224,7 +224,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
     llm_client_profile: "claude-deepseek-haiku",
     fallback_llm_client_profile: "codex-gpt-5.5",
     model: "claude:haiku",
-    system_prompt: agentFilePrompt("mirai", "Пограничный агент"),
+    system_prompt: agentFilePrompt("mirai", "External source connector"),
     tags: ["system", "connector-owned", "on-demand"],
     capabilities: ["email", "crm", "bitrix24"],
     tool_profile: "business-ops",
@@ -234,14 +234,14 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "jiraiya",
-    name: "Куратор знаний",
-    display_alias: "Дзирайя",
+    name: "Knowledge curator",
+    display_alias: "Knowledge curator",
     seed_classification: "deprecated_compat",
     lifecycle_mode: "deprecated",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:haiku",
-    system_prompt: agentFilePrompt("jiraiya", "Куратор знаний"),
+    system_prompt: agentFilePrompt("jiraiya", "Knowledge curator"),
     tags: ["system", "deprecated-compat", "on-demand"],
     capabilities: ["digest", "search", "kb-authoring", "classify"],
     tool_profile: "knowledge-readwrite",
@@ -251,14 +251,14 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "shino",
-    name: "SDD тестлид",
-    display_alias: "Шино",
+    name: "SDD test lead",
+    display_alias: "SDD test lead",
     seed_classification: "optional_worker",
     lifecycle_mode: "optional_on_demand",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:sonnet",
-    system_prompt: agentFilePrompt("shino", "Тестлид"),
+    system_prompt: agentFilePrompt("shino", "SDD test lead"),
     tags: ["system", "optional-worker", "sdd-worker", "on-demand"],
     capabilities: ["test-plan", "bug-analysis", "coordination"],
     tool_profile: "default",
@@ -268,14 +268,14 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "hinata",
-    name: "SDD тестовый исполнитель",
-    display_alias: "Хината",
+    name: "SDD test executor",
+    display_alias: "SDD test executor",
     seed_classification: "optional_worker",
     lifecycle_mode: "optional_on_demand",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:haiku",
-    system_prompt: agentFilePrompt("hinata", "Исполнитель тестов"),
+    system_prompt: agentFilePrompt("hinata", "SDD test executor"),
     tags: ["system", "optional-worker", "sdd-worker", "on-demand"],
     capabilities: ["run-tests", "smoke", "regression", "report"],
     tool_profile: "default",
@@ -285,14 +285,14 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "ibiki",
-    name: "Аудитор безопасности",
-    display_alias: "Ибики",
+    name: "Security auditor",
+    display_alias: "Security auditor",
     seed_classification: "optional_worker",
     lifecycle_mode: "optional_on_demand",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:sonnet",
-    system_prompt: agentFilePrompt("ibiki", "Аудитор безопасности"),
+    system_prompt: agentFilePrompt("ibiki", "Security auditor"),
     tags: ["system", "optional-worker", "on-demand"],
     capabilities: ["pentest", "audit", "scan", "report"],
     tool_profile: "diagnostics",
@@ -302,14 +302,14 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "ino",
-    name: "Маркетолог",
-    display_alias: "Ино",
+    name: "Marketing specialist",
+    display_alias: "Marketing specialist",
     seed_classification: "deprecated_compat",
     lifecycle_mode: "deprecated",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:sonnet",
-    system_prompt: agentFilePrompt("ino", "Маркетолог"),
+    system_prompt: agentFilePrompt("ino", "Marketing specialist"),
     tags: ["system", "deprecated-compat", "on-demand"],
     capabilities: ["content-strategy", "copywriting", "seo", "analytics"],
     tool_profile: "business-ops",
@@ -319,14 +319,14 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "inojin",
-    name: "Редактор",
-    display_alias: "Иноджин",
+    name: "Editor",
+    display_alias: "Editor",
     seed_classification: "deprecated_compat",
     lifecycle_mode: "deprecated",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:haiku",
-    system_prompt: agentFilePrompt("inojin", "Редактор"),
+    system_prompt: agentFilePrompt("inojin", "Editor"),
     tags: ["system", "deprecated-compat", "on-demand"],
     capabilities: ["factcheck", "proofreading", "style-review", "verification"],
     tool_profile: "default",
@@ -336,14 +336,14 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "guy",
-    name: "SDD разработчик",
-    display_alias: "Гай",
+    name: "SDD developer",
+    display_alias: "SDD developer",
     seed_classification: "optional_worker",
     lifecycle_mode: "optional_on_demand",
     runtime: "claude" as const,
     fallback_runtime: "codex" as const,
     model: "claude:haiku",
-    system_prompt: agentFilePrompt("guy", "Разработчик"),
+    system_prompt: agentFilePrompt("guy", "SDD developer"),
     tags: ["system", "optional-worker", "sdd-worker", "on-demand"],
     capabilities: ["translate", "scaffold", "search-replace", "boilerplate"],
     tool_profile: "default",
@@ -353,8 +353,8 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "shikadai",
-    name: "Архитектор",
-    display_alias: "Шикадай",
+    name: "Architecture reviewer",
+    display_alias: "Architecture reviewer",
     seed_classification: "optional_worker",
     lifecycle_mode: "optional_on_demand",
     runtime: "codex" as const,
@@ -363,7 +363,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
     llm_client_profile: "codex-gpt-5.5",
     fallback_llm_client_profile: "claude-deepseek-sonnet",
     reasoning_effort: "high",
-    system_prompt: agentFilePrompt("shikadai", "Архитектор"),
+    system_prompt: agentFilePrompt("shikadai", "Architecture reviewer"),
     tags: ["system", "optional-worker", "architect", "on-demand"],
     capabilities: ["architecture", "process-analysis", "workflow-decomposition", "issue-decomposition", "strategy", "code-review"],
     tool_profile: "default",

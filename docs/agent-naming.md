@@ -8,12 +8,13 @@ persona names. New workflow, UI, API, and prompt code must preserve this split.
 | Field | Meaning | Example |
 |-------|---------|---------|
 | `id` | Stable technical runtime id. Used by lifecycle, tmux, systemd, streams, and compatibility paths. | `sasuke` |
-| `name` | Canonical portable product/corporate name. This travels across installations and should be shown as the primary agent label. | `Юзер-агент` |
-| `display_alias` | Mutable tenant/instance callsign or persona alias. This can be changed per organization without changing semantics. | `Саске` |
+| `name` | Canonical portable product/corporate name. This travels across installations and stays locale-neutral in runtime defaults. | `Telegram user-account connector` |
+| `display_alias` | Mutable tenant/instance callsign or persona alias. Runtime defaults stay locale-neutral; organization or locale catalogs can override it. | `User connector` |
 
 This means `name` is not a nickname. `display_alias` is not the stable product
-role. If an organization wants to call the user-account agent "Алиса", only
-`display_alias` changes; the canonical `name` remains `Юзер-агент`.
+role. If an organization wants to call the user-account agent "Alice", only
+`display_alias` changes; the canonical `name` remains
+`Telegram user-account connector`.
 
 ## Related Concepts
 
@@ -23,14 +24,14 @@ Business process roles are separate from agents:
 |---------|---------|---------|
 | Workflow role | Responsibility in an eEPC process. | `lead_triage_specialist` |
 | Assignment policy | Mapping from role to person, agent, team, or strategy. | `lead_triage_specialist -> sasuke` |
-| Agent canonical name | Product-facing actor label. | `Юзер-агент` |
-| Agent alias | Local callsign/persona. | `Саске` |
+| Agent canonical name | Product-facing actor label resolved through display catalog when localized. | `Telegram user-account connector` |
+| Agent alias | Local callsign/persona resolved through display catalog when localized. | `User connector` |
 
 Workflow definitions must reference business roles, not agent ids or aliases.
 Process UI can show an assignment as:
 
 ```text
-Специалист первичной квалификации -> Юзер-агент (alias: Саске)
+Lead triage specialist -> Telegram user-account connector (alias: User connector)
 ```
 
 ## Current Compatibility
@@ -50,19 +51,21 @@ Until that migration lands:
 ## Seeded System Agents
 
 This table describes the current compatibility fleet, not the desired product
-minimum. ADR-004 narrows the mandatory target to `Советник` and optionally
-`Системный монитор`; the rest should become optional runtime workers,
-connectors, or workflow-defined roles over time.
+minimum. ADR-004 narrows the mandatory target to the product assistant and
+optionally the system monitor; the rest should become optional runtime workers,
+connectors, or workflow-defined roles over time. Russian labels for this
+deployment are loaded from `runtime-config/display-catalog.ru.json`.
 
 | Runtime id | Canonical `name` | Default `display_alias` | Classification | Lifecycle mode |
 |------------|------------------|--------------------------|----------------|----------------|
-| `tsunade` | `Советник` | `Цунаде` | `core` | `core` |
-| `naruto` | `Telegram bot connector` | `Наруто` | `connector_owned` | `connector_owned` |
-| `sasuke` | `Telegram user-account connector` | `Саске` | `connector_owned` | `connector_owned` |
-| `kiba` | `Системный монитор` | `Киба` | `optional_worker` | `optional_on_demand` |
-| `kakashi` | `SDD тимлид` | `Какаши` | `optional_worker` | `optional_on_demand` |
-| `shino` | `SDD тестлид` | `Шино` | `optional_worker` | `optional_on_demand` |
-| `hinata` | `SDD тестовый исполнитель` | `Хината` | `optional_worker` | `optional_on_demand` |
-| `guy` | `SDD разработчик` | `Гай` | `optional_worker` | `optional_on_demand` |
-| `mirai` | `External source connector` | `Мирай` | `connector_owned` | `connector_owned` |
-| `jiraiya`, `ino`, `inojin`, `shikadai` | legacy specialist aliases | varies | `deprecated_compat` | `deprecated` |
+| `tsunade` | `Product assistant` | `Product assistant` | `core` | `core` |
+| `naruto` | `Telegram bot connector` | `Telegram bot connector` | `connector_owned` | `connector_owned` |
+| `sasuke` | `Telegram user-account connector` | `Telegram user connector` | `connector_owned` | `connector_owned` |
+| `kiba` | `System monitor` | `System monitor` | `optional_worker` | `optional_on_demand` |
+| `kakashi` | `SDD team lead` | `SDD team lead` | `optional_worker` | `optional_on_demand` |
+| `shino` | `SDD test lead` | `SDD test lead` | `optional_worker` | `optional_on_demand` |
+| `hinata` | `SDD test executor` | `SDD test executor` | `optional_worker` | `optional_on_demand` |
+| `guy` | `SDD developer` | `SDD developer` | `optional_worker` | `optional_on_demand` |
+| `mirai` | `External source connector` | `External source connector` | `connector_owned` | `connector_owned` |
+| `jiraiya`, `ino`, `inojin` | legacy specialist actors | locale-neutral defaults | `deprecated_compat` | `deprecated` |
+| `shikadai` | `Architecture reviewer` | `Architecture reviewer` | `optional_worker` | `optional_on_demand` |

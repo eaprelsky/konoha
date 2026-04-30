@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, readdirSync } from "fs";
+import { join } from "path";
 import { redis } from "./redis";
 import type { AgentDef } from "./agent/types";
 
@@ -36,35 +38,57 @@ export const DEFAULT_ORG_SCOPE = `org:${process.env.KONOHA_ORG_ID || "default"}`
 export const LOCALE_SCOPE = "locale";
 export const NEUTRAL_LOCALE = "neutral";
 export const DEFAULT_LOCALE = "en";
+export const DISPLAY_CATALOG_DIR = process.env.KONOHA_DISPLAY_CATALOG_DIR
+  || join(import.meta.dir, "..", "runtime-config");
 
 const now = "1970-01-01T00:00:00.000Z";
 
-const BUILTIN_LOCALE_CATALOG: DisplayCatalogEntry[] = [
-  agent("ru", "naruto", "name", "Коннектор Telegram-бота"),
-  agent("ru", "naruto", "alias", "Наруто"),
-  agent("ru", "sasuke", "name", "Коннектор Telegram-аккаунта"),
-  agent("ru", "sasuke", "alias", "Саске"),
-  agent("ru", "kiba", "name", "Системный монитор"),
-  agent("ru", "kiba", "alias", "Киба"),
-  agent("ru", "kakashi", "name", "SDD тимлид"),
-  agent("ru", "kakashi", "alias", "Какаши"),
-  agent("ru", "shino", "name", "SDD тестлид"),
-  agent("ru", "shino", "alias", "Шино"),
-  agent("ru", "hinata", "name", "SDD тестовый исполнитель"),
-  agent("ru", "hinata", "alias", "Хината"),
-  agent("ru", "guy", "name", "SDD разработчик"),
-  agent("ru", "guy", "alias", "Гай"),
-];
+export function loadLocaleCatalogEntries(dir = DISPLAY_CATALOG_DIR): DisplayCatalogEntry[] {
+  if (!existsSync(dir)) return [];
+  const entries: DisplayCatalogEntry[] = [];
+  for (const filename of readdirSync(dir).sort()) {
+    if (!filename.startsWith("display-catalog.") || !filename.endsWith(".json")) continue;
+    const file = join(dir, filename);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(file, "utf-8"));
+    } catch {
+      continue;
+    }
+    const rawEntries = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { entries?: unknown }).entries)
+        ? (parsed as { entries: unknown[] }).entries
+        : [];
+    for (const raw of rawEntries) {
+      const entry = normalizeCatalogEntry(raw);
+      if (entry) entries.push(entry);
+    }
+  }
+  return entries;
+}
 
-function agent(locale: string, entityId: string, field: DisplayField, value: string): DisplayCatalogEntry {
+function normalizeCatalogEntry(raw: unknown): DisplayCatalogEntry | null {
+  if (!raw || typeof raw !== "object") return null;
+  const entry = raw as Partial<DisplayCatalogEntry>;
+  if (
+    typeof entry.scope !== "string"
+    || typeof entry.entity_type !== "string"
+    || typeof entry.entity_id !== "string"
+    || typeof entry.locale !== "string"
+    || typeof entry.field !== "string"
+    || typeof entry.value !== "string"
+  ) {
+    return null;
+  }
   return {
-    scope: LOCALE_SCOPE,
-    entity_type: "agent",
-    entity_id: entityId,
-    locale,
-    field,
-    value,
-    updated_at: now,
+    scope: entry.scope,
+    entity_type: entry.entity_type as DisplayEntityType,
+    entity_id: entry.entity_id,
+    locale: entry.locale,
+    field: entry.field as DisplayField,
+    value: entry.value,
+    updated_at: typeof entry.updated_at === "string" ? entry.updated_at : now,
   };
 }
 
@@ -121,7 +145,7 @@ export async function listDisplayCatalogEntries(filter: {
   locale?: string;
   field?: DisplayField;
 } = {}): Promise<DisplayCatalogEntry[]> {
-  const entries = [...BUILTIN_LOCALE_CATALOG, ...await listStoredDisplayCatalogEntries()];
+  const entries = [...loadLocaleCatalogEntries(), ...await listStoredDisplayCatalogEntries()];
   return entries
     .filter(entry => !filter.scope || entry.scope === filter.scope)
     .filter(entry => !filter.entity_type || entry.entity_type === filter.entity_type)
