@@ -6,6 +6,7 @@ import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { RoleDef, AssignmentStrategy, Agent, Person, Skill } from '../api/types';
 import { agentActorLabel, buildAgentLabelMap, roleAssigneeLabel } from '../utils/agentDisplay';
+import { filterOperatorRoles, useOperatorViewMode } from '../utils/operatorView';
 
 const STRATEGIES: { value: AssignmentStrategy; label: string }[] = [
   { value: 'manual',          label: 'Вручную' },
@@ -323,6 +324,7 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function Roles() {
   const token = useToken();
+  const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [roles,   setRoles]   = useState<RoleDef[]>([]);
   const [agents,  setAgents]  = useState<Agent[]>([]);
   const [people,  setPeople]  = useState<Person[]>([]);
@@ -332,6 +334,8 @@ export function Roles() {
   const [showModal, setShowModal] = useState(false);
   const [editRole,  setEditRole]  = useState<RoleDef | null>(null);
   const agentLabels = buildAgentLabelMap(agents);
+  const visibleRoles = filterOperatorRoles(roles, { showHiddenArtifacts });
+  const hiddenRoleCount = roles.length - filterOperatorRoles(roles).length;
   const load = useCallback(() => {
     if (!token) return;
     api.roles.list()
@@ -366,13 +370,26 @@ export function Roles() {
           <div className="page-header">
             <h1>Роли</h1>
             <div style={{ display: 'flex', gap: 8 }}>
+              {hiddenRoleCount > 0 && (
+                <label
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }}
+                  title="Показать скрытые test/debug/deprecated роли. То же можно открыть через ?view=debug."
+                >
+                  <input
+                    type="checkbox"
+                    checked={showHiddenArtifacts}
+                    onChange={e => setShowHiddenArtifacts(e.target.checked)}
+                  />
+                  Служебные ({hiddenRoleCount})
+                </label>
+              )}
               <button className="btn-new" onClick={openNew}>+ Новая роль</button>
             </div>
           </div>
           {error && <div className="error-banner">{error}</div>}
           {loading && <div className="empty">Загрузка…</div>}
-          {!loading && roles.length === 0 && <div className="empty">Роли ещё не определены.</div>}
-          {roles.length > 0 && (
+          {!loading && visibleRoles.length === 0 && <div className="empty">Роли ещё не определены.</div>}
+          {visibleRoles.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
@@ -383,7 +400,7 @@ export function Roles() {
                 </tr>
               </thead>
               <tbody>
-                {roles.map(r => (
+                {visibleRoles.map(r => (
                   <tr key={r.role_id}>
                     <td>
                       <div style={{ fontWeight: 600 }}>{r.name}</div>

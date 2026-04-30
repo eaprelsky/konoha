@@ -13,6 +13,7 @@ import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Run, Workflow } from '../api/types';
 import { buildRoleLabelMap } from '../utils/agentDisplay';
+import { filterOperatorRuns, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
 import './Monitor.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ export function Monitor() {
   const token = useToken();
   const { lang } = useI18n();
   const location = useLocation();
+  const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
 
   const [runs, setRuns] = useState<Run[]>([]);
   const [total, setTotal] = useState(0);
@@ -63,6 +65,7 @@ export function Monitor() {
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [selectedWf, setSelectedWf] = useState<Workflow | null>(null);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
+  const [hiddenProcessIds, setHiddenProcessIds] = useState<Set<string>>(new Set());
   const [roleLabels, setRoleLabels] = useState<Record<string, string>>({});
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [wfLoadState, setWfLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -81,6 +84,7 @@ export function Monitor() {
       const m: Record<string, string> = {};
       wfs.forEach(wf => { m[wf.id] = wf.name || wf.id; });
       setWfNameMap(m);
+      setHiddenProcessIds(new Set(wfs.filter(isWorkflowHiddenFromOperator).map(wf => wf.id)));
     }).catch(() => {});
     api.roles.list()
       .then(roles => setRoleLabels(buildRoleLabelMap(roles)))
@@ -129,7 +133,9 @@ export function Monitor() {
   }, [selectedRun, token]);
 
   // Group runs by process_id, filter by search
-  const filtered = runs.filter(r => {
+  const operatorRuns = filterOperatorRuns(runs, hiddenProcessIds, { showHiddenArtifacts });
+  const hiddenRunCount = runs.length - filterOperatorRuns(runs, hiddenProcessIds).length;
+  const filtered = operatorRuns.filter(r => {
     if (!search) return true;
     return r.subject.toLowerCase().includes(search.toLowerCase())
       || r.process_id.toLowerCase().includes(search.toLowerCase());
@@ -180,7 +186,7 @@ export function Monitor() {
           <div className="mon-left-head">
             <h2>
               {lang === 'ru' ? 'Прогоны' : 'Process Runs'}
-              {total > 0 && <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: 13, marginLeft: 8 }}>({total})</span>}
+              {operatorRuns.length > 0 && <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: 13, marginLeft: 8 }}>({operatorRuns.length})</span>}
             </h2>
             <div className="mon-filters">
               <div className="mon-filter-row">
@@ -198,6 +204,19 @@ export function Monitor() {
                   <option value="error">{lang === 'ru' ? 'Ошибка' : 'Error'}</option>
                 </select>
               </div>
+              {hiddenRunCount > 0 && (
+                <label
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b' }}
+                  title={lang === 'ru' ? 'Показать скрытые test/debug/generated прогоны. То же доступно через ?view=debug.' : 'Show hidden test/debug/generated runs. Also available with ?view=debug.'}
+                >
+                  <input
+                    type="checkbox"
+                    checked={showHiddenArtifacts}
+                    onChange={e => setShowHiddenArtifacts(e.target.checked)}
+                  />
+                  {lang === 'ru' ? `Служебные (${hiddenRunCount})` : `Hidden (${hiddenRunCount})`}
+                </label>
+              )}
             </div>
           </div>
 

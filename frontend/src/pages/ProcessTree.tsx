@@ -36,6 +36,9 @@ interface Props {
   onCollapsedTreeChange: (s: Set<string>) => void;
   onCancelCreating: () => void;
   onCancelRename: () => void;
+  showHiddenArtifacts: boolean;
+  hiddenArtifactCount: number;
+  onShowHiddenArtifactsChange: (v: boolean) => void;
 }
 
 export function ProcessTree({
@@ -44,6 +47,7 @@ export function ProcessTree({
   onSideSearch, onLoadWorkflow, onStartCreatingNew, onCommitNewProc, onNewProcNameChange,
   onStartRename, onCommitRename, onRenamingValChange, onDupWorkflow, onDelWorkflow,
   onCollapsedTreeChange, onCancelCreating, onCancelRename,
+  showHiddenArtifacts, hiddenArtifactCount, onShowHiddenArtifactsChange,
 }: Props) {
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
 
@@ -180,6 +184,28 @@ export function ProcessTree({
         value={sideSearch}
         onChange={e => onSideSearch(e.target.value)}
       />
+      {hiddenArtifactCount > 0 && (
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            margin: '6px 0 8px',
+            fontSize: 11,
+            color: '#94a3b8',
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+          title="Показать скрытые test/debug/generated процессы. То же можно открыть через ?view=debug."
+        >
+          <input
+            type="checkbox"
+            checked={showHiddenArtifacts}
+            onChange={e => onShowHiddenArtifactsChange(e.target.checked)}
+          />
+          Показать служебные ({hiddenArtifactCount})
+        </label>
+      )}
       {creatingNew && (
         <input
           className="proc-new-input"

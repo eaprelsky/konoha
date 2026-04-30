@@ -27,6 +27,7 @@ export function EventMonitor() {
     filterSource, setFilterSource,
     filterProcess, setFilterProcess,
     filterStatus, setFilterStatus,
+    showHiddenArtifacts, setShowHiddenArtifacts, hiddenSubscriptionCount,
     processes, resetFilters, updateUrl,
   } = useEventMonitor();
 
@@ -103,6 +104,16 @@ export function EventMonitor() {
               <option value="telegram">Телеграм</option>
               <option value="tracker">Яндекс Трекер</option>
             </select>
+            {hiddenSubscriptionCount > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }} title="Показать скрытые test/debug/generated подписки. То же можно открыть через ?view=debug.">
+                <input
+                  type="checkbox"
+                  checked={showHiddenArtifacts}
+                  onChange={e => setShowHiddenArtifacts(e.target.checked)}
+                />
+                Служебные ({hiddenSubscriptionCount})
+              </label>
+            )}
             {hasFilters && <button className="reset-btn" onClick={resetFilters}>Сбросить</button>}
           </div>
 

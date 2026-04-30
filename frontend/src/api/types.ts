@@ -6,6 +6,8 @@ export interface Workflow {
   version?: string;
   description?: string;
   category?: string;
+  status?: string;
+  metadata?: OperatorArtifactMetadata;
   elements: WorkflowElement[];
   flow: [string, string, string?][];
   triggers?: WorkflowTrigger[];
@@ -77,6 +79,7 @@ export interface Run {
   sla_ok?: boolean;     // true = on time, false = overdue/at risk
   elapsed_ms?: number;  // time in current step (ms)
   payload: Record<string, unknown>;
+  metadata?: OperatorArtifactMetadata;
   history: HistoryEntry[];
   created_at: string;
 }
@@ -232,8 +235,18 @@ export interface RoleDef {
   assignees: string[];
   strategy: AssignmentStrategy;
   required_capabilities?: string[];
+  metadata?: OperatorArtifactMetadata;
   created_at: string;
   updated_at: string;
+}
+
+export interface OperatorArtifactMetadata {
+  visibility?: 'operator' | 'debug' | 'internal' | 'test' | 'generated' | 'deprecated' | string;
+  audience?: string | string[];
+  source?: string;
+  tags?: string[];
+  lifecycle?: 'active' | 'deprecated' | string;
+  operator_visible?: boolean;
 }
 
 export interface McpServerDef {
@@ -275,6 +288,7 @@ export interface RuntimeEvent {
   work_item_id?: string;
   element_id?: string;
   label?: string;
+  metadata?: OperatorArtifactMetadata;
   timestamp: string;
 }
 

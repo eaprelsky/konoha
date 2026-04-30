@@ -445,6 +445,9 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
                 onCollapsedTreeChange={s.setCollapsedTree}
                 onCancelCreating={() => { s.setCreatingNew(false); s.setNewProcName(''); }}
                 onCancelRename={() => s.setRenamingVal('')}
+                showHiddenArtifacts={s.showHiddenArtifacts}
+                hiddenArtifactCount={s.hiddenWorkflowCount}
+                onShowHiddenArtifactsChange={s.setShowHiddenArtifacts}
               />
             </div>
           </div>

@@ -10,6 +10,7 @@ import { EW, EH, snap, pinchDist, genId, slugify, type Pos, type EType } from '.
 import { Inspector } from '../components/Inspector';
 import { DEFAULT_LABELS } from './ElementShape';
 import { applyPatchToState } from './applyPatchHelper';
+import { filterOperatorWorkflows, useOperatorViewMode } from '../utils/operatorView';
 
 export type Mode = 'select' | 'connect';
 
@@ -28,6 +29,7 @@ export interface DraftWarning { text: string; details: string[] }
 
 export function useProcessEditor(readOnly = false) {
   const token = useToken();
+  const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
 
   // ── Workflow canvas state ────────────────────────────────────────────────────
   const [wfId,   setWfId]   = useState('');
@@ -752,9 +754,11 @@ export function useProcessEditor(readOnly = false) {
   const selEl = elements.find(e => e.id === selected);
   const canvasCursor = connectDrag ? 'crosshair' : mode === 'connect' ? 'crosshair'
     : (dragging || groupDrag) ? 'grabbing' : 'default';
+  const operatorWorkflows = filterOperatorWorkflows(workflows, { showHiddenArtifacts });
+  const hiddenWorkflowCount = workflows.length - operatorWorkflows.length;
   const filteredWorkflows = sideSearch.trim()
-    ? workflows.filter(w => (w.name || w.id).toLowerCase().includes(sideSearch.toLowerCase()))
-    : workflows;
+    ? operatorWorkflows.filter(w => (w.name || w.id).toLowerCase().includes(sideSearch.toLowerCase()))
+    : operatorWorkflows;
   const isKnown = workflows.some(w => w.id === wfId.trim());
 
   function buildTree(wfs: Workflow[]): WfNode[] {
@@ -767,7 +771,7 @@ export function useProcessEditor(readOnly = false) {
     }
     return roots;
   }
-  const workflowTree = sideSearch.trim() ? [] : buildTree(workflows);
+  const workflowTree = sideSearch.trim() ? [] : buildTree(operatorWorkflows);
 
   return {
     // identity
@@ -781,7 +785,8 @@ export function useProcessEditor(readOnly = false) {
     panX, panY, zoom,
     // ui
     error, saving, draftWarning, autosavePending,
-    workflows, sideW, versions, viewingVersion, setViewingVersion,
+    workflows, operatorWorkflows, hiddenWorkflowCount, showHiddenArtifacts, setShowHiddenArtifacts,
+    sideW, versions, viewingVersion, setViewingVersion,
     roles, docs, adapters, wsFiles, breadcrumb,
     showChat, setShowChat, picker, setPicker,
     triggerResolving, resolveTrigger,

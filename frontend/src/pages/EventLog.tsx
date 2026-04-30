@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { RuntimeEvent } from '../api/types';
+import { filterOperatorEvents, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
 
 const EVENT_TYPES = [
   'case.created', 'case.completed', 'case.error',
@@ -46,13 +47,17 @@ function eventClass(type: string): string {
 
 export function EventLog() {
   const token = useToken();
+  const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [events, setEvents] = useState<RuntimeEvent[]>([]);
+  const [hiddenProcessIds, setHiddenProcessIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState('-');
   const [typeFilter, setTypeFilter] = useState('');
   const [appliedType, setAppliedType] = useState('');
   const [limit, setLimit] = useState(100);
+  const visibleEvents = filterOperatorEvents(events, hiddenProcessIds, { showHiddenArtifacts });
+  const hiddenEventCount = events.length - filterOperatorEvents(events, hiddenProcessIds).length;
 
   const load = useCallback(() => {
     if (!token) return;
@@ -70,13 +75,20 @@ export function EventLog() {
   // initial load via useInterval would be delayed; trigger manually
   useState(() => { setTimeout(load, 0); });
 
+  useEffect(() => {
+    if (!token) return;
+    api.workflows.list()
+      .then(wfs => setHiddenProcessIds(new Set(wfs.filter(isWorkflowHiddenFromOperator).map(wf => wf.id))))
+      .catch(() => {});
+  }, [token]);
+
   return (
     <>
       <style>{styles}</style>
       <div className="el-body">
         <div className="container">
           <div className="page-header">
-            <h1>Лог событий <span className="count-badge">{events.length} событий</span></h1>
+            <h1>Лог событий <span className="count-badge">{visibleEvents.length} событий</span></h1>
           </div>
           {error && <div className="error-banner">{error}</div>}
 
@@ -92,14 +104,24 @@ export function EventLog() {
             </select>
             <button onClick={() => setAppliedType(typeFilter)}>Применить</button>
             <button className="reset" onClick={() => { setTypeFilter(''); setAppliedType(''); }}>Сбросить</button>
+            {hiddenEventCount > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }} title="Показать скрытые test/debug/generated события. То же можно открыть через ?view=debug.">
+                <input
+                  type="checkbox"
+                  checked={showHiddenArtifacts}
+                  onChange={e => setShowHiddenArtifacts(e.target.checked)}
+                />
+                Служебные ({hiddenEventCount})
+              </label>
+            )}
           </div>
 
           {loading && <div className="empty">Загрузка…</div>}
-          {!loading && events.length === 0 && <div className="empty">События не найдены.</div>}
+          {!loading && visibleEvents.length === 0 && <div className="empty">События не найдены.</div>}
 
-          {events.length > 0 && (
+          {visibleEvents.length > 0 && (
             <div className="log-list">
-              {[...events].reverse().map((e, i) => (
+              {[...visibleEvents].reverse().map((e, i) => (
                 <div key={e.id || i} className={`log-item ${eventClass(e.type)}`}>
                   <div className="log-time">{new Date(e.timestamp).toLocaleString()}</div>
                   <div className="log-type">{e.type}</div>

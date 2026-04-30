@@ -33,6 +33,9 @@ export function ProcessEditorSidebar({ s }: { s: ProcessEditorState }) {
         onCollapsedTreeChange={s.setCollapsedTree}
         onCancelCreating={() => { s.setCreatingNew(false); s.setNewProcName(''); }}
         onCancelRename={() => s.setRenamingVal('')}
+        showHiddenArtifacts={s.showHiddenArtifacts}
+        hiddenArtifactCount={s.hiddenWorkflowCount}
+        onShowHiddenArtifactsChange={s.setShowHiddenArtifacts}
       />
 
       <div>
