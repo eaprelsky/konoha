@@ -105,4 +105,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['connectors.adapter.default']).toBe('Integration adapter');
     expect(translations.ru['connectors.adapter.default']).toBe('Адаптер интеграции');
   });
+
+  it('keeps event log copy in the translation catalog', () => {
+    expect(translations.en['eventLog.count']).toContain('{count}');
+    expect(translations.ru['eventLog.count']).toContain('{count}');
+    expect(translations.en['eventLog.refreshInfo']).toContain('{time}');
+    expect(translations.ru['eventLog.refreshInfo']).toContain('{time}');
+  });
 });

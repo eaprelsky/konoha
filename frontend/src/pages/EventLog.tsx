@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { RuntimeEvent } from '../api/types';
@@ -47,6 +48,7 @@ function eventClass(type: string): string {
 
 export function EventLog() {
   const token = useToken();
+  const { t } = useI18n();
   const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [events, setEvents] = useState<RuntimeEvent[]>([]);
   const [hiddenProcessIds, setHiddenProcessIds] = useState<Set<string>>(new Set());
@@ -88,36 +90,36 @@ export function EventLog() {
       <div className="el-body">
         <div className="container">
           <div className="page-header">
-            <h1>Лог событий <span className="count-badge">{visibleEvents.length} событий</span></h1>
+            <h1>{t('page.eventlog.title')} <span className="count-badge">{t('eventLog.count').replace('{count}', String(visibleEvents.length))}</span></h1>
           </div>
           {error && <div className="error-banner">{error}</div>}
 
           <div className="filters">
             <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-              <option value="">Все типы событий</option>
+              <option value="">{t('eventLog.allEventTypes')}</option>
               {EVENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             <select value={limit} onChange={e => setLimit(Number(e.target.value))}>
-              <option value={50}>Последние 50</option>
-              <option value={100}>Последние 100</option>
-              <option value={500}>Последние 500</option>
+              <option value={50}>{t('eventLog.latest').replace('{count}', '50')}</option>
+              <option value={100}>{t('eventLog.latest').replace('{count}', '100')}</option>
+              <option value={500}>{t('eventLog.latest').replace('{count}', '500')}</option>
             </select>
-            <button onClick={() => setAppliedType(typeFilter)}>Применить</button>
-            <button className="reset" onClick={() => { setTypeFilter(''); setAppliedType(''); }}>Сбросить</button>
+            <button onClick={() => setAppliedType(typeFilter)}>{t('action.apply')}</button>
+            <button className="reset" onClick={() => { setTypeFilter(''); setAppliedType(''); }}>{t('action.reset')}</button>
             {hiddenEventCount > 0 && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }} title="Показать скрытые test/debug/generated события. То же можно открыть через ?view=debug.">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }} title={t('eventLog.hiddenToggleTitle')}>
                 <input
                   type="checkbox"
                   checked={showHiddenArtifacts}
                   onChange={e => setShowHiddenArtifacts(e.target.checked)}
                 />
-                Служебные ({hiddenEventCount})
+                {t('operator.monitor.hidden').replace('{count}', String(hiddenEventCount))}
               </label>
             )}
           </div>
 
-          {loading && <div className="empty">Загрузка…</div>}
-          {!loading && visibleEvents.length === 0 && <div className="empty">События не найдены.</div>}
+          {loading && <div className="empty">{t('status.loading')}</div>}
+          {!loading && visibleEvents.length === 0 && <div className="empty">{t('empty.events')}</div>}
 
           {visibleEvents.length > 0 && (
             <div className="log-list">
@@ -135,7 +137,7 @@ export function EventLog() {
             </div>
           )}
 
-          <div className="refresh-info">Авто-обновление 10с • Обновлено: {lastUpdate}</div>
+          <div className="refresh-info">{t('eventLog.refreshInfo').replace('{time}', lastUpdate)}</div>
         </div>
       </div>
     </>
