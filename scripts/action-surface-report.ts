@@ -40,13 +40,88 @@ function toReportAction(action: ActionSurfaceEntry) {
   };
 }
 
-export function buildActionSurfaceReport() {
-  const dump = dumpRegistry();
-  const actions = dump.surface.map(toReportAction);
+function actionIds(actions: ReturnType<typeof toReportAction>[]): string[] {
+  return actions.map(action => action.id).sort();
+}
+
+function buildOpenApiSurface(actions: ReturnType<typeof toReportAction>[]) {
+  const ids = actionIds(actions);
+  return {
+    openapi: "3.1.0",
+    info: {
+      title: "Konoha Action Spine",
+      version: String(dumpRegistry().version),
+    },
+    paths: {
+      "/act": {
+        post: {
+          operation_id: "postAct",
+          action_ids: ids,
+          request_schema: {
+            type: "object",
+            required: ["action", "category", "args"],
+            properties: {
+              action: { type: "string", enum: ids },
+              category: { type: "string", enum: ["act", "inspect", "drill"] },
+              args: { type: "object" },
+              meta: { type: "object" },
+            },
+          },
+        },
+        get: {
+          operation_id: "listActions",
+          action_ids: ids,
+        },
+      },
+      "/act/{actionId}": {
+        get: {
+          operation_id: "getAction",
+          action_ids: ids,
+          parameters: [{ name: "actionId", in: "path", required: true, schema: { type: "string", enum: ids } }],
+        },
+      },
+    },
+  };
+}
+
+function buildMcpSurface(actions: ReturnType<typeof toReportAction>[]) {
+  const ids = actionIds(actions);
+  return {
+    tools: [
+      {
+        name: "konoha_action_catalog",
+        action_ids: ids,
+        filters: ["scope", "category", "include_planned"],
+      },
+      {
+        name: "konoha_action_get",
+        action_ids: ids,
+        required_args: ["action"],
+      },
+      {
+        name: "konoha_action_call",
+        action_ids: ids,
+        required_args: ["action"],
+        envelope_fields: ["action", "category", "args", "meta"],
+      },
+    ],
+  };
+}
+
+export function buildActionSurfaceReportFromSurface(
+  version: number,
+  surface: ActionSurfaceEntry[],
+  generatedFrom = "src/action-registry.ts",
+) {
+  const actions = surface.map(toReportAction);
+  const ids = actionIds(actions);
+  const openapi = buildOpenApiSurface(actions);
+  openapi.info.version = String(version);
+  const mcp = buildMcpSurface(actions);
   return {
     schema_version: 1,
-    action_version: dump.version,
-    generated_from: "src/action-registry.ts",
+    action_version: version,
+    generated_from: generatedFrom,
     counts: {
       actions: actions.length,
       by_scope: countBy(actions.map(action => action.scope)),
@@ -54,16 +129,46 @@ export function buildActionSurfaceReport() {
       by_implementation: countBy(actions.map(action => action.implementation.kind)),
       by_security_actor: countBy(actions.map(action => action.security.actor)),
     },
+    parity: {
+      registry_action_ids: ids,
+      http_act_action_ids: openapi.paths["/act"].post.action_ids,
+      http_get_action_ids: openapi.paths["/act/{actionId}"].get.action_ids,
+      mcp_catalog_action_ids: mcp.tools.find(tool => tool.name === "konoha_action_catalog")?.action_ids ?? [],
+      mcp_call_action_ids: mcp.tools.find(tool => tool.name === "konoha_action_call")?.action_ids ?? [],
+    },
+    openapi,
+    mcp,
     actions,
   };
 }
 
-function validateReport(report: ReturnType<typeof buildActionSurfaceReport>): string[] {
+export function buildActionSurfaceReport() {
+  const dump = dumpRegistry();
+  return buildActionSurfaceReportFromSurface(dump.version, dump.surface);
+}
+
+export function validateActionSurfaceReport(report: ReturnType<typeof buildActionSurfaceReport>): string[] {
   const errors: string[] = [];
   const seen = new Set<string>();
+  const registryIds = report.parity.registry_action_ids;
 
   if (report.counts.actions !== report.actions.length) {
     errors.push(`counts.actions=${report.counts.actions} but actions.length=${report.actions.length}`);
+  }
+  if (JSON.stringify(actionIds(report.actions)) !== JSON.stringify(registryIds)) {
+    errors.push("parity.registry_action_ids does not match actions");
+  }
+  if (JSON.stringify(report.parity.http_act_action_ids) !== JSON.stringify(registryIds)) {
+    errors.push("HTTP /act action ids drift from registry");
+  }
+  if (JSON.stringify(report.parity.http_get_action_ids) !== JSON.stringify(registryIds)) {
+    errors.push("HTTP /act/{actionId} action ids drift from registry");
+  }
+  if (JSON.stringify(report.parity.mcp_catalog_action_ids) !== JSON.stringify(registryIds)) {
+    errors.push("MCP catalog action ids drift from registry");
+  }
+  if (JSON.stringify(report.parity.mcp_call_action_ids) !== JSON.stringify(registryIds)) {
+    errors.push("MCP call action ids drift from registry");
   }
 
   for (const action of report.actions) {
@@ -89,9 +194,9 @@ function validateReport(report: ReturnType<typeof buildActionSurfaceReport>): st
   return errors;
 }
 
-function renderReport(): string {
+export function renderActionSurfaceReport(): string {
   const report = buildActionSurfaceReport();
-  const errors = validateReport(report);
+  const errors = validateActionSurfaceReport(report);
   if (errors.length > 0) {
     throw new Error(`Action surface invariant failure:\n${errors.map(error => `- ${error}`).join("\n")}`);
   }
@@ -100,11 +205,11 @@ function renderReport(): string {
 
 function writeReport(path = DEFAULT_OUT): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, renderReport());
+  writeFileSync(path, renderActionSurfaceReport());
 }
 
 function checkReport(path = DEFAULT_OUT): void {
-  const expected = renderReport();
+  const expected = renderActionSurfaceReport();
   const actual = readFileSync(path, "utf8");
   if (actual !== expected) {
     throw new Error(`${path} is out of date. Run: bun run scripts/action-surface-report.ts --write`);
@@ -119,6 +224,6 @@ if (import.meta.main) {
     checkReport(pathArg ?? DEFAULT_OUT);
     console.log(`action surface report OK (${DEFAULT_OUT})`);
   } else {
-    process.stdout.write(renderReport());
+    process.stdout.write(renderActionSurfaceReport());
   }
 }
