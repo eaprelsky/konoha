@@ -107,6 +107,10 @@ export const translations: Record<Lang, Record<string, string>> = {
     'agent.settings.userInstructionsPlaceholder': 'Role, specialization, task types, behavior...',
     'agent.settings.capabilities': 'Skills / Capabilities',
     'agent.settings.capabilitiesHint': 'Skill prompt snippets are injected into AGENTS.md on agent startup.',
+    'agent.edit.title': 'Edit agent',
+    'agent.edit.tabSettings': 'Settings',
+    'agent.edit.tabMemory': 'Memory',
+    'agent.edit.choosePhotoForImg2Img': 'Choose a photo for img2img',
     // Pages
     'page.myTasks.title':     'My Tasks',
     'page.monitor.title':     'Monitor',
@@ -462,6 +466,10 @@ export const translations: Record<Lang, Record<string, string>> = {
     'agent.settings.userInstructionsPlaceholder': 'Роль, специализация, типы задач, поведение...',
     'agent.settings.capabilities': 'Навыки / Capabilities',
     'agent.settings.capabilitiesHint': 'Prompt snippet навыков инжектируется в AGENTS.md при старте агента.',
+    'agent.edit.title': 'Изменить агента',
+    'agent.edit.tabSettings': 'Настройки',
+    'agent.edit.tabMemory': 'Память',
+    'agent.edit.choosePhotoForImg2Img': 'Выберите фото для img2img',
     // Pages
     'page.myTasks.title':     'Мои задачи',
     'page.monitor.title':     'Монитор',

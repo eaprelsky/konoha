@@ -18,6 +18,7 @@ interface GuardOptions {
 
 const DEFAULT_ROOT = "frontend/src";
 const DEFAULT_GUARDED_FILES = [
+  "frontend/src/components/agents/EditAgentModal.tsx",
   "frontend/src/components/agents/AgentMemoryTab.tsx",
   "frontend/src/components/agents/AgentSettingsTab.tsx",
   "frontend/src/pages/ByProcessView.tsx",

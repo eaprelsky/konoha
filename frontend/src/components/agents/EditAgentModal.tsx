@@ -4,10 +4,12 @@ import { api } from '../../api/client';
 import type { Agent, Skill } from '../../api/types';
 import { AgentSettingsTab } from './AgentSettingsTab';
 import { AgentMemoryTab } from './AgentMemoryTab';
+import { useI18n } from '../../context/I18nContext';
 
 interface EditAgentModalProps { agent: Agent; onClose: () => void; onSaved: () => void; }
 
 export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<'settings' | 'memory'>('settings');
   const [name, setName] = useState(agent.name);
   const [displayAlias, setDisplayAlias] = useState(agent.display_alias || '');
@@ -74,12 +76,12 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
         });
         setAvatarUrl(res.avatar_url);
       } else if (avatarMode === 'img2img') {
-        if (!avatarFile) { setError('Выберите фото для img2img'); return; }
+        if (!avatarFile) { setError(t('agent.edit.choosePhotoForImg2Img', 'Choose a photo for img2img')); return; }
         const res = await api.agents.generateAvatarImg2Img(agent.id, avatarFile, avatarPrompt || `Portrait avatar in ${avatarStyle} style`);
         setAvatarUrl(res.avatar_url);
       }
     } catch (e: any) {
-      setError(`Аватар: ${e.message}`);
+      setError(`${t('agent.settings.avatar', 'Avatar')}: ${e.message}`);
     } finally {
       setGeneratingAvatar(false);
     }
@@ -93,7 +95,7 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
       const res = await api.agents.uploadAvatar(agent.id, file);
       setAvatarUrl(res.avatar_url);
     } catch (e: any) {
-      setError(`Аватар: ${e.message}`);
+      setError(`${t('agent.settings.avatar', 'Avatar')}: ${e.message}`);
     } finally {
       setGeneratingAvatar(false);
       if (avatarFileRef.current) avatarFileRef.current.value = '';
@@ -122,14 +124,14 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" style={{ width: 620, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-        <h2 style={{ marginBottom: 12 }}>Изменить агента — {agent.id}</h2>
+        <h2 style={{ marginBottom: 12 }}>{t('agent.edit.title', 'Edit agent')} - {agent.id}</h2>
         <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
-          {(['settings', 'memory'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{
+          {(['settings', 'memory'] as const).map(tabId => (
+            <button key={tabId} onClick={() => setTab(tabId)} style={{
               padding: '5px 14px', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-              background: tab === t ? '#6366f1' : '#f1f5f9', color: tab === t ? 'white' : '#475569',
+              background: tab === tabId ? '#6366f1' : '#f1f5f9', color: tab === tabId ? 'white' : '#475569',
             }}>
-              {t === 'settings' ? 'Настройки' : 'Память'}
+              {tabId === 'settings' ? t('agent.edit.tabSettings', 'Settings') : t('agent.edit.tabMemory', 'Memory')}
             </button>
           ))}
         </div>
