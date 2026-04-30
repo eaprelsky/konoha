@@ -77,4 +77,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['people.confirmDelete']).toContain('{name}');
     expect(translations.ru['people.confirmDelete']).toContain('{name}');
   });
+
+  it('keeps document template copy in the translation catalog', () => {
+    expect(translations.en['documents.newTitle']).toBe('New document');
+    expect(translations.ru['documents.newTitle']).toBe('Новый документ');
+    expect(translations.en['documents.confirmDelete']).toContain('{name}');
+    expect(translations.ru['documents.confirmDelete']).toContain('{name}');
+  });
 });

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type React from 'react';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { DocTemplate, DocType } from '../api/types';
@@ -55,6 +56,7 @@ function detectParams(content: string): string[] {
 
 interface DocModalProps { doc?: DocTemplate | null; onClose: () => void; onSaved: () => void; }
 function DocModal({ doc, onClose, onSaved }: DocModalProps) {
+  const { t } = useI18n();
   const [name, setName] = useState(doc?.name || '');
   const [type, setType] = useState<DocType>(doc?.type || 'template');
   const [content, setContent] = useState(doc?.content || '');
@@ -70,7 +72,7 @@ function DocModal({ doc, onClose, onSaved }: DocModalProps) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) { setError('Введите название'); return; }
+    if (!name.trim()) { setError(t('documents.nameRequired')); return; }
     setSubmitting(true); setError(null);
     try {
       if (doc) { await api.documents.update(doc.doc_id, { name, type, content }); }
@@ -82,32 +84,32 @@ function DocModal({ doc, onClose, onSaved }: DocModalProps) {
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
-        <h2>{doc ? 'Редактировать документ' : 'Новый документ'}</h2>
+        <h2>{doc ? t('documents.editTitle') : t('documents.newTitle')}</h2>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
           <div className="form-group">
-            <label>Название *</label>
-            <input type="text" placeholder="Название шаблона..." value={name} onChange={e => setName(e.target.value)} autoFocus required />
+            <label>{t('documents.nameLabel')}</label>
+            <input type="text" placeholder={t('documents.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} autoFocus required />
           </div>
           <div className="form-group">
-            <label>Тип</label>
+            <label>{t('label.type')}</label>
             <select value={type} onChange={e => setType(e.target.value as DocType)}>
               {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div className="form-group">
-            <label>Содержание</label>
-            <textarea placeholder="Содержание шаблона. Используйте {{параметр}} для подстановки..." value={content} onChange={e => setContent(e.target.value)} />
-            <span className="hint">Синтаксис {'{{placeholder}}'} для динамических параметров</span>
+            <label>{t('label.content')}</label>
+            <textarea placeholder={t('documents.contentPlaceholder')} value={content} onChange={e => setContent(e.target.value)} />
+            <span className="hint">{t('documents.placeholderSyntax')}</span>
             {params.length > 0 && (
               <div className="detected-params">
-                Параметры: {params.map(p => <span key={p} className="param-tag" style={{ display: 'inline-block', padding: '1px 6px', background: '#fff7ed', color: '#c2410c', borderRadius: 4, fontSize: 11, margin: '0 2px', fontFamily: 'monospace' }}>{'{{' + p + '}}'}</span>)}
+                {t('documents.parameters')}: {params.map(p => <span key={p} className="param-tag" style={{ display: 'inline-block', padding: '1px 6px', background: '#fff7ed', color: '#c2410c', borderRadius: 4, fontSize: 11, margin: '0 2px', fontFamily: 'monospace' }}>{'{{' + p + '}}'}</span>)}
               </div>
             )}
           </div>
           <div className="form-actions">
-            <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
-            <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Сохранение…' : 'Сохранить'}</button>
+            <button type="button" className="btn-cancel-f" onClick={onClose}>{t('action.cancel')}</button>
+            <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? t('status.saving') : t('action.save')}</button>
           </div>
         </form>
       </div>
@@ -117,6 +119,7 @@ function DocModal({ doc, onClose, onSaved }: DocModalProps) {
 
 export function Documents() {
   const token = useToken();
+  const { t } = useI18n();
   const [docs, setDocs] = useState<DocTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +137,7 @@ export function Documents() {
   useInterval(load, 30000);
 
   async function deleteDoc(id: string, name: string) {
-    if (!confirm(`Удалить документ "${name}"?`)) return;
+    if (!confirm(t('documents.confirmDelete').replace('{name}', name))) return;
     try { await api.documents.delete(id); load(); } catch (e: any) { setError(e.message); }
   }
 
@@ -144,22 +147,22 @@ export function Documents() {
       <div className="dc-body">
         <div className="container">
           <div className="page-header">
-            <h1>Документы</h1>
-            <button className="btn-new" onClick={() => { setEditDoc(null); setShowModal(true); }}>+ Новый документ</button>
+            <h1>{t('page.documents.title')}</h1>
+            <button className="btn-new" onClick={() => { setEditDoc(null); setShowModal(true); }}>{t('page.documents.new')}</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
-          {loading && <div className="empty">Загрузка…</div>}
-          {!loading && docs.length === 0 && <div className="empty">Шаблоны документов не добавлены.</div>}
+          {loading && <div className="empty">{t('status.loading')}</div>}
+          {!loading && docs.length === 0 && <div className="empty">{t('empty.documents')}</div>}
           {docs.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Название</th>
-                  <th>Тип</th>
-                  <th>Превью</th>
-                  <th>Параметры</th>
-                  <th>Обновлён</th>
-                  <th>Действия</th>
+                  <th>{t('label.name')}</th>
+                  <th>{t('label.type')}</th>
+                  <th>{t('documents.preview')}</th>
+                  <th>{t('documents.parameters')}</th>
+                  <th>{t('documents.updated')}</th>
+                  <th>{t('label.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -167,13 +170,13 @@ export function Documents() {
                   <tr key={d.doc_id}>
                     <td style={{ fontWeight: 600 }}>{d.name}</td>
                     <td><span className={`type-badge type-${d.type}`}>{d.type}</span></td>
-                    <td><div className="preview">{d.content || '(пусто)'}</div></td>
+                    <td><div className="preview">{d.content || t('documents.emptyPreview')}</div></td>
                     <td>{d.parameters.map(p => <span key={p} className="param-tag">{'{{' + p + '}}'}</span>)}{d.parameters.length === 0 && '-'}</td>
                     <td style={{ fontSize: 12, color: '#888' }}>{new Date(d.updated_at).toLocaleDateString()}</td>
                     <td>
                       <div className="actions">
-                        <button className="edit" onClick={() => { setEditDoc(d); setShowModal(true); }}>Изменить</button>
-                        <button className="del" onClick={() => deleteDoc(d.doc_id, d.name)}>Удалить</button>
+                        <button className="edit" onClick={() => { setEditDoc(d); setShowModal(true); }}>{t('action.edit')}</button>
+                        <button className="del" onClick={() => deleteDoc(d.doc_id, d.name)}>{t('action.delete')}</button>
                       </div>
                     </td>
                   </tr>
