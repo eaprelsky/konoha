@@ -10,6 +10,7 @@ import { loadInstructionText } from "../src/document-instructions";
 import { createWorkflow } from "../src/workflow-loader";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import { cancelSubscriptionsByInstance } from "../src/event-manager";
+import { normalizeTelegramStreamEvent, routeMessengerEventToWorkflows } from "../src/messenger-event-router";
 import type { WorkflowDefinition } from "../src/workflow-loader";
 
 const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
@@ -238,6 +239,45 @@ describe("eEPC state-machine regression suite", () => {
       text: "Постороннее сообщение",
     });
     expect(ignored).toEqual([]);
+  });
+
+  test("connector-normalized Telegram event starts sales workflow without sales-specific router", async () => {
+    const id = wfId("sales-connector-event");
+    const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");
+    const def: WorkflowDefinition = { ...JSON.parse(raw), id };
+    const chatTitle = `${RUN} Connector Leads`;
+    const start = def.elements.find(el => el.id === "e1");
+    if (start?.trigger?.filter) start.trigger.filter = { chat_title: chatTitle };
+    await registerWorkflow(def);
+
+    const event = normalizeTelegramStreamEvent({
+      endpoint_id: "telegram-user-sasuke",
+      stream: "telegram:incoming",
+      stream_id: `${Date.now()}-0`,
+      fields: {
+        chat_title: chatTitle,
+        chat_id: "-1002",
+        chat_type: "group",
+        sender_name: "Client",
+        text: "Хотим внедрить workflow для продаж",
+        msg_id: "77",
+      },
+    });
+
+    const cases = await routeMessengerEventToWorkflows(event);
+
+    expect(cases).toHaveLength(1);
+    expect(cases[0].process_id).toBe(id);
+    expect(cases[0].position).toBe("f1");
+    expect(cases[0].payload).toMatchObject({
+      connector_id: "telegram-main",
+      endpoint_id: "telegram-user-sasuke",
+      provider: "telegram",
+      event_kind: "message",
+      chat_type: "group",
+      chat_title: chatTitle,
+      text: "Хотим внедрить workflow для продаж",
+    });
   });
 
   test("XOR gateway selects the first matching conditional branch", async () => {
