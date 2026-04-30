@@ -7,6 +7,14 @@ function parseStdout(result: Awaited<ReturnType<typeof runActionSpineCli>>) {
 }
 
 describe("Action Spine CLI bridge", () => {
+  test("prints help with a successful exit code", async () => {
+    const result = await runActionSpineCli(["--help"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Usage:");
+    expect(result.stderr).toBe("");
+  });
+
   test("invokes a read action through the direct action executor", async () => {
     const result = await runActionSpineCli(["workflow.list", "{}"]);
     const body = parseStdout(result);

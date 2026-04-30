@@ -15,6 +15,7 @@ interface ParsedArgs {
   args: Record<string, unknown>;
   dryRun: boolean;
   executeWrite: boolean;
+  help: boolean;
 }
 
 function usage(): string {
@@ -39,12 +40,14 @@ function parseJsonArgs(raw: string | undefined): Record<string, unknown> {
 function parseArgs(argv: string[]): ParsedArgs {
   const dryRun = argv.includes("--dry-run");
   const executeWrite = argv.includes("--execute-write");
+  const help = argv.includes("--help") || argv.includes("-h");
   const positional = argv.filter(arg => !arg.startsWith("--"));
   return {
     action: positional[0],
     args: parseJsonArgs(positional[1]),
     dryRun,
     executeWrite,
+    help,
   };
 }
 
@@ -60,8 +63,8 @@ export async function runActionSpineCli(argv: string[]): Promise<CliRunResult> {
     return { exitCode: 2, stdout: "", stderr: `${e.message}\n${usage()}\n` };
   }
 
-  if (!parsed.action || parsed.action === "--help" || parsed.action === "-h") {
-    return { exitCode: parsed.action ? 0 : 2, stdout: `${usage()}\n`, stderr: "" };
+  if (parsed.help || !parsed.action) {
+    return { exitCode: parsed.help ? 0 : 2, stdout: `${usage()}\n`, stderr: "" };
   }
 
   const envelope: ActEnvelope = {

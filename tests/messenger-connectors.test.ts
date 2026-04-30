@@ -27,6 +27,29 @@ describe("messenger connector model", () => {
     expect(user?.inbound_streams.map(stream => stream.stream)).toContain("telegram:incoming");
   });
 
+  test("keeps compatibility routes scoped to their Telegram endpoint", () => {
+    expect(resolveMessengerTargets(CURRENT_TELEGRAM_CONNECTOR_CATALOG, {
+      endpoint_id: "telegram-bot-naruto",
+      chat_ref: "chat:group",
+      chat_type: "group",
+    })).toEqual([{ target_type: "agent", target_id: "naruto" }]);
+
+    expect(resolveMessengerTargets(CURRENT_TELEGRAM_CONNECTOR_CATALOG, {
+      endpoint_id: "telegram-bot-naruto",
+      chat_ref: "chat:direct",
+      chat_type: "direct",
+    })).toEqual([
+      { target_type: "workflow", target_id: "telegram-lead-intake" },
+      { target_type: "agent", target_id: "naruto" },
+    ]);
+
+    expect(resolveMessengerTargets(CURRENT_TELEGRAM_CONNECTOR_CATALOG, {
+      endpoint_id: "telegram-user-sasuke",
+      chat_ref: "chat:group",
+      chat_type: "group",
+    })).toEqual([{ target_type: "agent", target_id: "sasuke" }]);
+  });
+
   test("routes one messenger connector to multiple workflows and agents", () => {
     const catalog: MessengerConnectorCatalog = {
       schema_version: 1,

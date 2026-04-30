@@ -42,6 +42,7 @@ export interface MessengerRoutingRule {
   rule_id: string;
   description: string;
   match: {
+    endpoint_id?: string;
     chat_id?: string;
     chat_type?: MessengerChatType;
     message_type?: string;
@@ -142,16 +143,13 @@ export const CURRENT_TELEGRAM_CONNECTOR_CATALOG: MessengerConnectorCatalog = {
       policy_id: "telegram-compat-routing",
       connector_id: "telegram-main",
       strategy: "hybrid",
-      default_targets: [
-        { target_type: "agent", target_id: "naruto" },
-        { target_type: "agent", target_id: "sasuke" },
-      ],
+      default_targets: [],
       enabled_workflow_ids: ["telegram-lead-intake"],
       rules: [
         {
           rule_id: "bot-owner-escalation",
           description: "Bot endpoint can start workflow triggers or delegate operator replies to Naruto.",
-          match: { chat_type: "direct" },
+          match: { endpoint_id: "telegram-bot-naruto", chat_type: "direct" },
           targets: [
             { target_type: "workflow", target_id: "telegram-lead-intake" },
             { target_type: "agent", target_id: "naruto" },
@@ -159,9 +157,15 @@ export const CURRENT_TELEGRAM_CONNECTOR_CATALOG: MessengerConnectorCatalog = {
           enabled_workflow_ids: ["telegram-lead-intake"],
         },
         {
+          rule_id: "bot-compat-routing",
+          description: "Bot endpoint falls back to the bot compatibility runtime.",
+          match: { endpoint_id: "telegram-bot-naruto" },
+          targets: [{ target_type: "agent", target_id: "naruto" }],
+        },
+        {
           rule_id: "user-account-routing",
           description: "User-account endpoint routes direct/group messages through Sasuke compatibility runtime.",
-          match: { chat_type: "unknown" },
+          match: { endpoint_id: "telegram-user-sasuke" },
           targets: [{ target_type: "agent", target_id: "sasuke" }],
         },
       ],
@@ -246,10 +250,16 @@ export function resolveMessengerTargets(
   const policy = catalog.routing_policies.find(item => item.policy_id === binding.routing_policy_id);
   if (!policy) return [];
 
-  const rule = policy.rules.find(item =>
-    !item.match.chat_type
-    || item.match.chat_type === "unknown"
-    || item.match.chat_type === input.chat_type
-  );
+  const rule = policy.rules.find(item => ruleMatches(item, input));
   return rule?.targets.length ? rule.targets : policy.default_targets;
+}
+
+function ruleMatches(
+  rule: MessengerRoutingRule,
+  input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
+): boolean {
+  if (rule.match.endpoint_id && rule.match.endpoint_id !== input.endpoint_id) return false;
+  if (rule.match.chat_id && rule.match.chat_id !== input.chat_ref) return false;
+  if (rule.match.chat_type && rule.match.chat_type !== input.chat_type) return false;
+  return true;
 }
