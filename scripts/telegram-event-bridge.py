@@ -22,6 +22,8 @@ GROUP = os.environ.get("TELEGRAM_EVENT_GROUP", "event-bridge")
 CONSUMER = os.environ.get("TELEGRAM_EVENT_CONSUMER", "event-bridge-1")
 AUDIT_STREAM = os.environ.get("TELEGRAM_EVENT_AUDIT_STREAM", "telegram:event_bridge:audit")
 DEAD_STREAM = os.environ.get("TELEGRAM_EVENT_DEAD_STREAM", "telegram:event_bridge:dead_letter")
+CONNECTOR_ID = os.environ.get("TELEGRAM_EVENT_CONNECTOR_ID", "telegram-main")
+ENDPOINT_ID = os.environ.get("TELEGRAM_EVENT_ENDPOINT_ID", "")
 KONOHA_URL = os.environ.get("KONOHA_INTERNAL_URL", f"http://127.0.0.1:{os.environ.get('KONOHA_PORT', '3200')}")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 VILLAGE_ID = os.environ.get("KONOHA_VILLAGE_ID", "comind.konoha")
@@ -40,16 +42,65 @@ def decode_fields(raw: dict[Any, Any]) -> dict[str, str]:
 
 
 def event_type(fields: dict[str, str]) -> str:
-    if fields.get("new_reaction") or fields.get("old_reaction"):
+    if event_kind(fields) == "reaction":
         return "telegram.reaction.received"
     return "telegram.message.received"
 
 
+def event_kind(fields: dict[str, str]) -> str:
+    if fields.get("new_reaction") or fields.get("old_reaction"):
+        return "reaction"
+    return "message"
+
+
+def endpoint_id(fields: dict[str, str]) -> str:
+    if ENDPOINT_ID:
+        return ENDPOINT_ID
+    stream = fields.get("target_stream") or STREAM
+    if stream == "telegram:bot:incoming":
+        return "telegram-bot-naruto"
+    return "telegram-user-sasuke"
+
+
+def chat_ref(fields: dict[str, str]) -> str:
+    return fields.get("chat_id") or fields.get("chat") or "*"
+
+
+def chat_type(fields: dict[str, str]) -> str:
+    raw = (fields.get("chat_type") or fields.get("type") or "").lower()
+    if raw in {"private", "direct"}:
+        return "direct"
+    if raw in {"group", "supergroup", "channel"}:
+        return raw
+    if fields.get("is_group") in {"1", "true", "True", "yes"}:
+        return "group"
+    return "unknown"
+
+
+def first_present(fields: dict[str, str], *keys: str) -> str:
+    for key in keys:
+        value = fields.get(key)
+        if value:
+            return value
+    return ""
+
+
 def event_payload(entry_id: str, fields: dict[str, str]) -> dict[str, Any]:
+    kind = event_kind(fields)
     payload: dict[str, Any] = {
         **fields,
         "telegram_stream": STREAM,
         "telegram_stream_id": entry_id,
+        "provider": "telegram",
+        "connector_id": CONNECTOR_ID,
+        "endpoint_id": endpoint_id(fields),
+        "event_kind": kind,
+        "chat_ref": chat_ref(fields),
+        "chat_type": chat_type(fields),
+        "message_id": first_present(fields, "msg_id", "message_id"),
+        "sender_ref": first_present(fields, "sender_id", "from_id", "user_id"),
+        "sender_name": first_present(fields, "sender_name", "from_name", "username"),
+        "timestamp": first_present(fields, "timestamp", "ts"),
     }
     if "text" in payload and payload["text"] is None:
         payload["text"] = ""
@@ -88,6 +139,8 @@ def process_entry(r: redis.Redis, entry_id: str, fields: dict[str, str]) -> None
     audit: dict[str, str] = {
         "original_id": entry_id,
         "event_type": event_type(fields),
+        "connector_id": CONNECTOR_ID,
+        "endpoint_id": endpoint_id(fields),
         "chat_id": fields.get("chat_id", ""),
         "chat_title": fields.get("chat_title", ""),
         "msg_id": fields.get("msg_id", ""),

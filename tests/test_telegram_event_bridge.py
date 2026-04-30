@@ -31,13 +31,28 @@ def test_builds_generic_message_event_payload():
     fields = {
         "chat_id": "-1001",
         "chat_title": "coMind Лиды",
+        "is_group": "1",
         "msg_id": "42",
+        "sender_id": "100",
+        "sender_name": "Client",
         "text": "Нужен AI ассистент",
+        "target_stream": "telegram:incoming",
+        "timestamp": "2026-04-30T12:00:00+00:00",
     }
 
     assert bridge.event_type(fields) == "telegram.message.received"
     payload = bridge.event_payload("171-0", fields)
 
+    assert payload["provider"] == "telegram"
+    assert payload["connector_id"] == "telegram-main"
+    assert payload["endpoint_id"] == "telegram-user-sasuke"
+    assert payload["event_kind"] == "message"
+    assert payload["chat_ref"] == "-1001"
+    assert payload["chat_type"] == "group"
+    assert payload["message_id"] == "42"
+    assert payload["sender_ref"] == "100"
+    assert payload["sender_name"] == "Client"
+    assert payload["timestamp"] == "2026-04-30T12:00:00+00:00"
     assert payload["chat_title"] == "coMind Лиды"
     assert payload["telegram_stream"] == "telegram:log"
     assert payload["telegram_stream_id"] == "171-0"
@@ -45,6 +60,24 @@ def test_builds_generic_message_event_payload():
 
 def test_builds_generic_reaction_event_type():
     assert bridge.event_type({"new_reaction": "👍"}) == "telegram.reaction.received"
+
+
+def test_infers_bot_endpoint_from_target_stream():
+    payload = bridge.event_payload("172-0", {
+        "chat_id": "1001",
+        "chat_type": "private",
+        "message_id": "99",
+        "from_id": "200",
+        "from_name": "Owner",
+        "target_stream": "telegram:bot:incoming",
+    })
+
+    assert payload["endpoint_id"] == "telegram-bot-naruto"
+    assert payload["chat_ref"] == "1001"
+    assert payload["chat_type"] == "direct"
+    assert payload["message_id"] == "99"
+    assert payload["sender_ref"] == "200"
+    assert payload["sender_name"] == "Owner"
 
 
 def test_process_entry_publishes_and_acks(monkeypatch):
@@ -62,6 +95,8 @@ def test_process_entry_publishes_and_acks(monkeypatch):
     assert published == [("1-0", {"chat_title": "coMind Лиды", "msg_id": "42"})]
     assert r.acked == [(bridge.STREAM, bridge.GROUP, "1-0")]
     assert r.audit[0]["result"] == "published"
+    assert r.audit[0]["connector_id"] == "telegram-main"
+    assert r.audit[0]["endpoint_id"] == "telegram-user-sasuke"
     assert json.loads(r.audit[0]["cases_created"]) == ["case-1"]
 
 

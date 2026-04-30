@@ -28,6 +28,20 @@ Current runtime ids stay unchanged:
 These records are compatibility records only. They do not rename systemd units,
 tmux sessions, Redis streams, or watchdogs.
 
+`telegram-event-bridge.py` now publishes connector-normalized workflow events
+while preserving the existing Redis streams. The compatibility defaults are:
+
+| Setting | Default | Notes |
+|---|---|---|
+| `TELEGRAM_EVENT_CONNECTOR_ID` | `telegram-main` | Connector id added to every `/events` payload. |
+| `TELEGRAM_EVENT_ENDPOINT_ID` | inferred | Optional override for dedicated bridge instances. |
+| `target_stream=telegram:bot:incoming` | `telegram-bot-naruto` | Bot endpoint inference. |
+| `target_stream=telegram:incoming` or `telegram:log` | `telegram-user-sasuke` | User-account endpoint inference. |
+
+The endpoint names are compatibility ids. Business workflows should depend on
+roles, documents, workflow triggers, and connector metadata, not on Naruto/Sasuke
+as business actors.
+
 ## Future Routing
 
 One connector can own multiple endpoints, and each endpoint can bind chats to
