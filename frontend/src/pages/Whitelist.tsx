@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type React from 'react';
 import { api } from '../api/client';
+import { useI18n } from '../context/I18nContext';
 
 interface TrustedUserEntry {
   type: 'user';
@@ -82,6 +83,7 @@ const styles = `
 `;
 
 export function Whitelist() {
+  const { t } = useI18n();
   const [data, setData] = useState<WhitelistData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -109,6 +111,13 @@ export function Whitelist() {
     setTimeout(() => setSuccess(null), 3000);
   }
 
+  function format(key: string, fallback: string, values: Record<string, string | number>) {
+    return Object.entries(values).reduce(
+      (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+      t(key, fallback),
+    );
+  }
+
   function applyActionResult(result: { state?: WhitelistData } | undefined) {
     if (result?.state) setData(result.state);
     else void load();
@@ -119,11 +128,11 @@ export function Whitelist() {
       if (entry.type === 'user' && entry.telegram_id) {
         const result = await api.whitelist.approve({ type: 'user', telegram_id: entry.telegram_id });
         applyActionResult(result);
-        flash(`Пользователь ${entry.name ?? entry.telegram_id} одобрен`);
+        flash(format('whitelist.flash.userApproved', 'User {name} approved', { name: entry.name ?? entry.telegram_id }));
       } else if (entry.type === 'group' && entry.chat_id) {
         const result = await api.whitelist.approve({ type: 'group', chat_id: entry.chat_id });
         applyActionResult(result);
-        flash(`Группа ${entry.chat_id} одобрена`);
+        flash(format('whitelist.flash.groupApproved', 'Group {chatId} approved', { chatId: entry.chat_id }));
       }
     } catch (e: any) {
       setError(e.message);
@@ -135,11 +144,11 @@ export function Whitelist() {
       if (entry.type === 'user' && entry.telegram_id) {
         const result = await api.whitelist.reject({ type: 'user', telegram_id: entry.telegram_id });
         applyActionResult(result);
-        flash(`Пользователь ${entry.name ?? entry.telegram_id} отклонён`);
+        flash(format('whitelist.flash.userRejected', 'User {name} rejected', { name: entry.name ?? entry.telegram_id }));
       } else if (entry.type === 'group' && entry.chat_id) {
         const result = await api.whitelist.reject({ type: 'group', chat_id: entry.chat_id });
         applyActionResult(result);
-        flash(`Группа ${entry.chat_id} отклонена`);
+        flash(format('whitelist.flash.groupRejected', 'Group {chatId} rejected', { chatId: entry.chat_id }));
       }
     } catch (e: any) {
       setError(e.message);
@@ -150,7 +159,7 @@ export function Whitelist() {
     e.preventDefault();
     const telegram_id = Number(newUser.telegram_id);
     if (!newUser.name.trim() || Number.isNaN(telegram_id)) {
-      setError('Имя и числовой Telegram ID обязательны');
+      setError(t('whitelist.error.userRequired', 'Name and numeric Telegram ID are required'));
       return;
     }
     try {
@@ -162,7 +171,7 @@ export function Whitelist() {
       });
       applyActionResult(result);
       setNewUser({ name: '', telegram_id: '', username: '', position: '' });
-      flash('Доверенный пользователь сохранён');
+      flash(t('whitelist.flash.userSaved', 'Trusted user saved'));
     } catch (e: any) {
       setError(e.message);
     }
@@ -172,36 +181,36 @@ export function Whitelist() {
     e.preventDefault();
     const chat_id = Number(newGroup);
     if (Number.isNaN(chat_id)) {
-      setError('Chat ID должен быть числом');
+      setError(t('whitelist.error.chatIdNumber', 'Chat ID must be a number'));
       return;
     }
     try {
       const result = await api.whitelist.addGroup({ chat_id });
       applyActionResult(result);
       setNewGroup('');
-      flash('Группа добавлена');
+      flash(t('whitelist.flash.groupAdded', 'Group added'));
     } catch (e: any) {
       setError(e.message);
     }
   }
 
   async function deleteUser(telegram_id: number) {
-    if (!confirm('Удалить пользователя из белого списка?')) return;
+    if (!confirm(t('whitelist.confirm.deleteUser', 'Remove user from whitelist?'))) return;
     try {
       const result = await api.whitelist.deleteUser(telegram_id);
       applyActionResult(result);
-      flash('Пользователь удалён');
+      flash(t('whitelist.flash.userDeleted', 'User removed'));
     } catch (e: any) {
       setError(e.message);
     }
   }
 
   async function deleteGroup(chat_id: number) {
-    if (!confirm('Удалить группу из белого списка?')) return;
+    if (!confirm(t('whitelist.confirm.deleteGroup', 'Remove group from whitelist?'))) return;
     try {
       const result = await api.whitelist.deleteGroup(chat_id);
       applyActionResult(result);
-      flash('Группа удалена');
+      flash(t('whitelist.flash.groupDeleted', 'Group removed'));
     } catch (e: any) {
       setError(e.message);
     }
@@ -215,8 +224,8 @@ export function Whitelist() {
       <style>{styles}</style>
       <div className="wl-body">
         <div className="container">
-          <h1>Белый список</h1>
-          <p className="subtitle">Управление доверенными пользователями и разрешёнными группами Telegram</p>
+          <h1>{t('whitelist.title', 'Whitelist')}</h1>
+          <p className="subtitle">{t('whitelist.subtitle', 'Manage trusted Telegram users and allowed groups')}</p>
 
           {error && <div className="error-banner">{error}</div>}
           {success && <div className="success-banner">✓ {success}</div>}
@@ -224,18 +233,18 @@ export function Whitelist() {
           {data?.owner && (
             <div className="owner-card">
               <div>
-                <div className="owner-label">Владелец</div>
+                <div className="owner-label">{t('whitelist.owner', 'Owner')}</div>
                 <div className="owner-name">{data.owner.name}</div>
                 <div className="meta">@{data.owner.username} · ID: {data.owner.telegram_id}</div>
               </div>
             </div>
           )}
 
-          <div className="section-title">Добавить доверенного пользователя</div>
+          <div className="section-title">{t('whitelist.addTrustedUser', 'Add trusted user')}</div>
           <form className="quick-form" onSubmit={addUser}>
             <div className="quick-field">
-              <label>Имя *</label>
-              <input value={newUser.name} onChange={e => setNewUser(v => ({ ...v, name: e.target.value }))} placeholder="Наташа Апрельская" />
+              <label>{t('profile.name', 'Name *')}</label>
+              <input value={newUser.name} onChange={e => setNewUser(v => ({ ...v, name: e.target.value }))} placeholder={t('whitelist.namePlaceholder', 'Jane Smith')} />
             </div>
             <div className="quick-field">
               <label>Telegram ID *</label>
@@ -246,28 +255,28 @@ export function Whitelist() {
               <input value={newUser.username} onChange={e => setNewUser(v => ({ ...v, username: e.target.value }))} placeholder="@username" />
             </div>
             <div className="quick-field">
-              <label>Должность</label>
+              <label>{t('profile.position', 'Position')}</label>
               <input value={newUser.position} onChange={e => setNewUser(v => ({ ...v, position: e.target.value }))} placeholder="Sales / PM / Founder" />
             </div>
-            <button className="btn-add" type="submit">Добавить</button>
+            <button className="btn-add" type="submit">{t('action.add', 'Add')}</button>
           </form>
 
           {/* Pending section */}
           {(pendingUsers.length > 0 || pendingGroups.length > 0) && (
             <>
               <div className="section-title">
-                Ожидают решения
+                {t('whitelist.pending', 'Pending approval')}
                 <span className="badge badge-pending">{data!.pending.length}</span>
               </div>
               {pendingUsers.length > 0 && (
                 <table className="table" style={{ marginBottom: 16 }}>
                   <thead>
                     <tr>
-                      <th>Пользователь</th>
+                      <th>{t('whitelist.user', 'User')}</th>
                       <th>ID</th>
-                      <th>Последняя активность</th>
-                      <th>Источник</th>
-                      <th>Действия</th>
+                      <th>{t('whitelist.lastSeen', 'Last activity')}</th>
+                      <th>{t('whitelist.source', 'Source')}</th>
+                      <th>{t('label.actions', 'Actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -279,11 +288,11 @@ export function Whitelist() {
                         </td>
                         <td style={{ fontFamily: 'monospace', color: '#475569' }}>{p.telegram_id}</td>
                         <td style={{ color: '#64748b' }}>{p.last_seen ? new Date(p.last_seen).toLocaleString() : '—'}</td>
-                        <td>{p.source === 'direct' ? 'Личное' : p.source === 'group' ? 'Группа' : '—'}</td>
+                        <td>{p.source === 'direct' ? t('whitelist.sourceDirect', 'Direct') : p.source === 'group' ? t('whitelist.sourceGroup', 'Group') : '—'}</td>
                         <td>
                           <div className="actions">
-                            <button className="action-btn btn-approve" onClick={() => approve(p)}>✓ Одобрить</button>
-                            <button className="action-btn btn-reject" onClick={() => reject(p)}>✗ Отклонить</button>
+                            <button className="action-btn btn-approve" onClick={() => approve(p)}>✓ {t('whitelist.approve', 'Approve')}</button>
+                            <button className="action-btn btn-reject" onClick={() => reject(p)}>✗ {t('whitelist.reject', 'Reject')}</button>
                           </div>
                         </td>
                       </tr>
@@ -295,11 +304,11 @@ export function Whitelist() {
                 <table className="table" style={{ marginBottom: 16 }}>
                   <thead>
                     <tr>
-                      <th>Группа</th>
+                      <th>{t('whitelist.group', 'Group')}</th>
                       <th>Chat ID</th>
-                      <th>Участников</th>
-                      <th>Последняя активность</th>
-                      <th>Действия</th>
+                      <th>{t('whitelist.members', 'Members')}</th>
+                      <th>{t('whitelist.lastSeen', 'Last activity')}</th>
+                      <th>{t('label.actions', 'Actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -311,8 +320,8 @@ export function Whitelist() {
                         <td style={{ color: '#64748b' }}>{p.last_seen ? new Date(p.last_seen).toLocaleString() : '—'}</td>
                         <td>
                           <div className="actions">
-                            <button className="action-btn btn-approve" onClick={() => approve(p)}>✓ Одобрить</button>
-                            <button className="action-btn btn-reject" onClick={() => reject(p)}>✗ Отклонить</button>
+                            <button className="action-btn btn-approve" onClick={() => approve(p)}>✓ {t('whitelist.approve', 'Approve')}</button>
+                            <button className="action-btn btn-reject" onClick={() => reject(p)}>✗ {t('whitelist.reject', 'Reject')}</button>
                           </div>
                         </td>
                       </tr>
@@ -326,25 +335,25 @@ export function Whitelist() {
           {/* Trusted users */}
           <div className="section-header">
             <div className="section-title">
-              Доверенные пользователи
+              {t('whitelist.trustedUsers', 'Trusted users')}
               <span className="badge">{data?.trusted.length ?? 0}</span>
             </div>
-            <button className="refresh-btn" onClick={load} disabled={loading}>↺ Обновить</button>
+            <button className="refresh-btn" onClick={load} disabled={loading}>↺ {t('action.refresh', 'Refresh')}</button>
           </div>
           <table className="table" style={{ marginBottom: 16 }}>
             <thead>
               <tr>
-                <th>Имя</th>
+                <th>{t('label.name', 'Name')}</th>
                 <th>Username</th>
                 <th>Telegram ID</th>
-                <th>Должность</th>
-                <th>Уровень</th>
-                <th>Действия</th>
+                <th>{t('profile.position', 'Position')}</th>
+                <th>{t('whitelist.level', 'Level')}</th>
+                <th>{t('label.actions', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
               {data?.trusted.length === 0 && (
-                <tr><td colSpan={6}><div className="empty">Нет доверенных пользователей</div></td></tr>
+                <tr><td colSpan={6}><div className="empty">{t('whitelist.emptyTrustedUsers', 'No trusted users')}</div></td></tr>
               )}
               {data?.trusted.map(u => (
                 <tr key={u.telegram_id}>
@@ -354,12 +363,12 @@ export function Whitelist() {
                   <td style={{ color: '#64748b' }}>{u.position ?? '—'}</td>
                   <td>
                     <span className={`level-${u.level}`}>
-                      {u.level === 1 ? 'Владелец' : u.level === 2 ? 'Доверенный' : `L${u.level}`}
+                      {u.level === 1 ? t('whitelist.owner', 'Owner') : u.level === 2 ? t('whitelist.trusted', 'Trusted') : `L${u.level}`}
                     </span>
                   </td>
                   <td>
                     <button className="action-btn btn-delete" onClick={() => deleteUser(u.telegram_id)}>
-                      🗑 Удалить
+                      {t('action.delete', 'Delete')}
                     </button>
                   </td>
                 </tr>
@@ -369,7 +378,7 @@ export function Whitelist() {
 
           {/* Whitelisted groups */}
           <div className="section-title">
-            Разрешённые группы
+            {t('whitelist.allowedGroups', 'Allowed groups')}
             <span className="badge">{data?.whitelisted_groups.length ?? 0}</span>
           </div>
           <form className="quick-form group" onSubmit={addGroup}>
@@ -377,19 +386,19 @@ export function Whitelist() {
               <label>Chat ID *</label>
               <input value={newGroup} onChange={e => setNewGroup(e.target.value)} placeholder="-1001234567890" />
             </div>
-            <button className="btn-add" type="submit">Добавить группу</button>
+            <button className="btn-add" type="submit">{t('whitelist.addGroup', 'Add group')}</button>
           </form>
           <table className="table">
             <thead>
               <tr>
                 <th>Chat ID</th>
-                <th>Название</th>
-                <th>Действия</th>
+                <th>{t('label.name', 'Name')}</th>
+                <th>{t('label.actions', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
               {data?.whitelisted_groups.length === 0 && (
-                <tr><td colSpan={3}><div className="empty">Нет разрешённых групп</div></td></tr>
+                <tr><td colSpan={3}><div className="empty">{t('whitelist.emptyAllowedGroups', 'No allowed groups')}</div></td></tr>
               )}
               {data?.whitelisted_groups.map(g => (
                 <tr key={g.chat_id}>
@@ -397,7 +406,7 @@ export function Whitelist() {
                   <td style={{ color: '#64748b' }}>{g.name ?? '—'}</td>
                   <td>
                     <button className="action-btn btn-delete" onClick={() => deleteGroup(g.chat_id)}>
-                      🗑 Удалить
+                      {t('action.delete', 'Delete')}
                     </button>
                   </td>
                 </tr>
