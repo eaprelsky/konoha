@@ -27,7 +27,8 @@ When a process is deployed, each event in the diagram has a text label (e.g. "З
 
 All descriptors include a `confidence` field (0.0–1.0).
 
-Known external sources for `message` and `condition` triggers: `bitrix`, `telegram`, `tracker`, `bus`, `webhook`.
+Known external sources for `message` triggers: `bitrix`, `telegram`, `tracker`, `github`, `bus`, `webhook`.
+Known external sources for `condition` triggers: `bitrix`, `telegram`, `tracker`.
 
 ### Programmatic API
 
@@ -190,6 +191,7 @@ interface DataAdapter {
 | `bitrix` | `bitrix` | CRM leads/deals/tasks (webhook push) |
 | `telegram-bot` | `telegram` | Bot messages (Grammy long-poll) |
 | `tracker` | `tracker` | Yandex Tracker issues/comments |
+| `github` | `github` | Normalized issue/PR/check events for SDD workflow triggers |
 
 Listeners are registered in the shared in-memory `listenerRegistry` (Map). Webhook routes dispatch incoming payloads to matching listeners.
 

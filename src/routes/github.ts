@@ -9,6 +9,8 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { redis } from "../redis";
 import { sendMessage } from "../redis";
 import { createLogger } from "../logger";
+import { dispatchGithubIssueEvent } from "../adapters/github";
+import { normalizeGithubIssueEvent } from "../github-issue-events";
 
 const log = createLogger("routes:github");
 
@@ -100,6 +102,14 @@ router.post("/webhooks/github", async (c) => {
   ).catch(e => { log.error("stream publish error", { error: e.message }); return ""; });
 
   log.info("webhook received", { event: eventType, action, repo, number, stream: streamId });
+
+  const normalized = normalizeGithubIssueEvent(eventType, payload);
+  if (normalized) {
+    const delivered = dispatchGithubIssueEvent(normalized);
+    if (delivered > 0) {
+      log.info("dispatched normalized github issue event", { type: normalized.type, delivered });
+    }
+  }
 
   // Route to agents
   try {

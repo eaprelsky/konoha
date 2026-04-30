@@ -11,6 +11,7 @@ import { redis, sendMessage } from "../redis";
 import type { DataAdapter, ListenerHandle } from "../adapters/data-adapter";
 import { listenerRegistry } from "../adapters/data-adapter";
 import { bitrixAdapter } from "../adapters/bitrix";
+import { githubAdapter } from "../adapters/github";
 import { telegramBotAdapter } from "../adapters/telegram-bot";
 import { trackerAdapter } from "../adapters/tracker";
 import { parseBdDuration } from "../work-calendar";
@@ -43,6 +44,7 @@ export const activeTasks = new Map<string, nodeCron.ScheduledTask>();
 
 export const dataAdapters = new Map<string, DataAdapter>([
   ["bitrix", bitrixAdapter],
+  ["github", githubAdapter],
   ["telegram", telegramBotAdapter],
   ["tracker", trackerAdapter],
 ]);
