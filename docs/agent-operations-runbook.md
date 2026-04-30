@@ -190,6 +190,12 @@ The healthcheck covers:
 - tmux session presence and obvious stuck signals for runtime ids `naruto`, `sasuke`, `kakashi`, `kiba`
 - shared credentials and trusted-user config without printing secrets
 
+Healthcheck and Akamaru are infrastructure monitor runtime. They collect raw
+deployment state and may mention runtime ids. Operator-visible decisions such as
+incident triage, recovery approval, stuck-work review, and post-incident
+follow-up should be represented as workflow cases with business roles. See
+`docs/monitor-reliability-boundary.md`.
+
 ## Common Failures
 
 Telegram not replying:

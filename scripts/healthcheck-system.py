@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Konoha production healthcheck with actionable, redacted output."""
 
+# Boundary note:
+# This script is infrastructure monitor runtime. It reports raw deployment
+# health and readiness. Operator decisions, escalation, and post-incident
+# follow-up should be represented as workflow-visible reliability cases; see
+# docs/monitor-reliability-boundary.md.
+
 from __future__ import annotations
 
 import json
