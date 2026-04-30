@@ -305,6 +305,15 @@ export interface Agent {
   protected?: boolean;
   seed_classification?: 'core' | 'optional_worker' | 'connector_owned' | 'deprecated_compat' | 'out_of_scope';
   lifecycle_mode?: 'core' | 'optional_on_demand' | 'connector_owned' | 'deprecated';
+  display?: {
+    name: string;
+    alias?: string;
+    locale: string;
+    source: {
+      name: 'org_override' | 'locale_catalog' | 'neutral_default';
+      alias?: 'org_override' | 'locale_catalog' | 'neutral_default';
+    };
+  };
 }
 
 export interface AdapterHealth {

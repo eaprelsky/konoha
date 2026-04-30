@@ -9,6 +9,7 @@ import { EditAgentModal } from '../components/agents/EditAgentModal';
 import { useAgents } from '../hooks/useAgents';
 import { useAgentFilters } from '../hooks/useAgentFilters';
 import { busColor, lifecycleColor, formatUptime, getAgentType, BUS_STATUS_LABELS, LIFECYCLE_STATUS_LABELS } from '../components/agents/agentUtils';
+import { agentDisplayName } from '../utils/agentDisplay';
 
 export function Agents() {
   const { agents, loading, error: loadError, lastUpdate, load } = useAgents();
@@ -96,7 +97,7 @@ export function Agents() {
                     const atype = getAgentType(a);
                     const isProtected = !!(a as any).protected;
                     const canEdit = atype === 'managed' || isProtected;
-                    const displayName = a.name;
+                    const displayName = agentDisplayName(a);
                     return (
                       <tr key={a.id}>
                         <td>
@@ -111,7 +112,7 @@ export function Agents() {
                                 <AgentTypeBadge type={atype} />
                               </div>
                               <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>
-                                {a.display_alias ? `${a.display_alias} · ` : ''}{a.id}
+                                {(a.display?.alias || a.display_alias) ? `${a.display?.alias || a.display_alias} · ` : ''}{a.id}
                               </div>
                             </div>
                           </div>

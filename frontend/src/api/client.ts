@@ -232,8 +232,20 @@ export const api = {
   },
 
   agents: {
-    list: () => apiFetch<Agent[]>(`${BASE}/agents`),
-    get: (id: string) => apiFetch<Agent>(`${BASE}/agents/${id}`),
+    list: (params?: { locale?: string; scope?: string }) => {
+      const p = new URLSearchParams();
+      if (params?.locale) p.set('locale', params.locale);
+      if (params?.scope) p.set('scope', params.scope);
+      const qs = p.toString();
+      return apiFetch<Agent[]>(`${BASE}/agents${qs ? '?' + qs : ''}`);
+    },
+    get: (id: string, params?: { locale?: string; scope?: string }) => {
+      const p = new URLSearchParams();
+      if (params?.locale) p.set('locale', params.locale);
+      if (params?.scope) p.set('scope', params.scope);
+      const qs = p.toString();
+      return apiFetch<Agent>(`${BASE}/agents/${id}${qs ? '?' + qs : ''}`);
+    },
     create: (params: { id: string; name: string; display_alias?: string; system_prompt?: string; model?: string }) =>
       apiFetch<Agent>(`${BASE}/agents`, { method: 'POST', body: JSON.stringify(params) }),
     update: (id: string, patch: { name?: string; display_alias?: string; system_prompt?: string; runtime?: string; fallback_runtime?: string; model?: string; reasoning_effort?: string; capabilities?: string[]; gender?: string }) =>

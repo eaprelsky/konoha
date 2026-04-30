@@ -37,6 +37,7 @@ import {
   composeAgentView,
 } from "../agent-lifecycle";
 import type { AgentRuntimeState, LifecycleStatus, AgentProvider, AgentView } from "../agent-lifecycle";
+import { resolveAgentDisplay } from "../display-catalog";
 import { silentCatch } from "../logger";
 
 const router = new Hono<HonoEnv>();
@@ -398,6 +399,8 @@ router.post("/:id/memory/:filename", requireAgentSelfOrAdmin(), async (c) => {
 // GET /agents/:id — get single agent (bus data merged with def)
 router.get("/:id", requireAgentSelfOrAdmin(), async (c) => {
   const id = c.req.param("id")!;
+  const locale = c.req.query("locale") ?? c.req.header("accept-language") ?? undefined;
+  const orgScope = c.req.query("scope") ?? undefined;
   const [busAgents, def] = await Promise.all([
     listAgents(false),
     getAgentDef(id),
@@ -418,12 +421,14 @@ router.get("/:id", requireAgentSelfOrAdmin(), async (c) => {
     lifecycle = { status: state.status, pid: state.pid, uptime_seconds: state.uptime_seconds };
   }
 
-  return c.json(composeAgentView({
+  const view = composeAgentView({
     id,
     def,
     busAgent: base,
     runtimeState: routeRuntimeState(id, lifecycle),
-  }));
+  });
+  view.display = await resolveAgentDisplay(def, { locale, org_scope: orgScope });
+  return c.json(view);
 });
 
 // PUT /agents/:id — update agent definition fields through Action Spine
@@ -464,6 +469,8 @@ const LIFECYCLE_CACHE_TTL_MS = 5_000;
 
 router.get("/", requireAdmin, async (c) => {
   const onlineOnly = c.req.query("online") === "true";
+  const locale = c.req.query("locale") ?? c.req.header("accept-language") ?? undefined;
+  const orgScope = c.req.query("scope") ?? undefined;
   const [busAgents, defs] = await Promise.all([
     listAgents(onlineOnly),
     listAgentDefs(),
@@ -497,12 +504,14 @@ router.get("/", requireAdmin, async (c) => {
       const def = defMap.get(a.id);
       if (!def) return a;
       const lifecycle = await lifecycleForDef(a.id, def);
-      return composeAgentView({
+      const view = composeAgentView({
         id: a.id,
         def,
         busAgent: a,
         runtimeState: routeRuntimeState(a.id, lifecycle),
       });
+      view.display = await resolveAgentDisplay(def, { locale, org_scope: orgScope });
+      return view;
     })
   );
   // Also include managed agents not yet on the bus
@@ -511,12 +520,14 @@ router.get("/", requireAdmin, async (c) => {
   const unmatchedWithState = await Promise.all(
     unmatchedDefs.map(async (d) => {
       const lifecycle = await lifecycleForDef(d.id, d);
-      return composeAgentView({
+      const view = composeAgentView({
         id: d.id,
         def: d,
         busAgent: { id: d.id, status: "offline" },
         runtimeState: routeRuntimeState(d.id, lifecycle),
       });
+      view.display = await resolveAgentDisplay(d, { locale, org_scope: orgScope });
+      return view;
     })
   );
   const allViews = [...agentsWithState, ...unmatchedWithState];

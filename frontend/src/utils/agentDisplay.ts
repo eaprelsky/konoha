@@ -1,14 +1,15 @@
 import type { Agent, RoleDef } from '../api/types';
 
 export type AssigneeOption = { value: string; label: string };
+type AgentDisplayFields = Pick<Agent, 'id' | 'name' | 'display_alias' | 'display'>;
 
-export function agentDisplayName(agent: Pick<Agent, 'id' | 'name' | 'display_alias'>): string {
-  return agent.name || agent.id;
+export function agentDisplayName(agent: AgentDisplayFields): string {
+  return agent.display?.name || agent.name || agent.id;
 }
 
-export function agentActorLabel(agent: Pick<Agent, 'id' | 'name' | 'display_alias'>): string {
+export function agentActorLabel(agent: AgentDisplayFields): string {
   const name = agentDisplayName(agent);
-  const alias = agent.display_alias?.trim();
+  const alias = (agent.display?.alias || agent.display_alias)?.trim();
   if (!alias || alias === name) return name;
   return `${name} (alias: ${alias})`;
 }

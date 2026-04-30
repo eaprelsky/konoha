@@ -16,6 +16,7 @@ export type AgentLifecycleMode =
   | "optional_on_demand"
   | "connector_owned"
   | "deprecated";
+export type AgentDisplaySource = "org_override" | "locale_catalog" | "neutral_default";
 
 export type LifecycleStatus = "stopped" | "starting" | "running" | "stopping" | "error";
 
@@ -107,6 +108,16 @@ export interface AgentTemplate {
   updated_at: string;
 }
 
+export interface AgentDisplayProjection {
+  name: string;
+  alias?: string;
+  locale: string;
+  source: {
+    name: AgentDisplaySource;
+    alias?: AgentDisplaySource;
+  };
+}
+
 export interface AgentRuntimeConfig {
   runtime?: AgentProvider;
   fallback_runtime?: AgentProvider;
@@ -146,6 +157,7 @@ export interface AgentState {
 export type AgentRuntimeState = AgentState;
 
 export interface AgentView extends AgentDef {
+  display?: AgentDisplayProjection;
   presence?: AgentPresence;
   runtime_config: AgentRuntimeConfig;
   template: AgentTemplate;

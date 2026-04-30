@@ -46,6 +46,24 @@ describe('agent display helpers', () => {
       .toBe('Разбор входящих лидов -> Юзер-агент (alias: Саске)');
   });
 
+  it('prefers resolved display catalog values over runtime defaults', () => {
+    const agent = {
+      id: 'kakashi',
+      name: 'SDD lead',
+      display_alias: 'Kakashi',
+      status: 'offline',
+      display: {
+        name: 'Тимлид SDD',
+        alias: 'Какаши',
+        locale: 'ru',
+        source: { name: 'locale_catalog' as const, alias: 'locale_catalog' as const },
+      },
+    } satisfies Agent;
+
+    expect(agentDisplayName(agent)).toBe('Тимлид SDD');
+    expect(agentActorLabel(agent)).toBe('Тимлид SDD (alias: Какаши)');
+  });
+
   it('classifies lifecycle modes without hardcoded runtime ids', () => {
     expect(getLifecycleAgentType({ id: 'any-core', name: 'Советник', status: 'online', lifecycle_mode: 'core' }))
       .toBe('core');

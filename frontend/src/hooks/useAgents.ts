@@ -3,6 +3,7 @@ import { useToken } from '../context/TokenContext';
 import { useInterval } from './useApi';
 import { api } from '../api/client';
 import type { Agent } from '../api/types';
+import { useI18n } from '../context/I18nContext';
 
 export interface UseAgentsResult {
   agents: Agent[];
@@ -14,6 +15,7 @@ export interface UseAgentsResult {
 
 export function useAgents(intervalMs = 10000): UseAgentsResult {
   const token = useToken();
+  const { lang } = useI18n();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +23,7 @@ export function useAgents(intervalMs = 10000): UseAgentsResult {
 
   const load = useCallback(() => {
     if (!token) return;
-    api.agents.list()
+    api.agents.list({ locale: lang })
       .then(data => {
         setAgents(data);
         setLastUpdate(new Date().toLocaleTimeString());
@@ -32,7 +34,7 @@ export function useAgents(intervalMs = 10000): UseAgentsResult {
         setError(e.message);
         setLoading(false);
       });
-  }, [token]);
+  }, [token, lang]);
 
   useEffect(() => { load(); }, [load]);
   useInterval(load, intervalMs);

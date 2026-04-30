@@ -21,9 +21,32 @@ import {
   setAutonomyLevel,
   type AutonomyLevel,
 } from "../assistant-actions";
+import {
+  listDisplayCatalogEntries,
+  type DisplayEntityType,
+  type DisplayField,
+} from "../display-catalog";
 const log = createLogger("routes:audit");
 
 const router = new Hono<HonoEnv>();
+
+// ── Display Catalog ───────────────────────────────────────────────────────────
+
+router.use("/display-catalog", requireAuth);
+router.get("/display-catalog", async (c) => {
+  const { scope, entity_type, entity_id, locale, field } = c.req.query();
+  const entries = await listDisplayCatalogEntries({
+    scope,
+    entity_type: entity_type as DisplayEntityType | undefined,
+    entity_id,
+    locale,
+    field: field as DisplayField | undefined,
+  });
+  return c.json({
+    schema_version: 1,
+    entries,
+  });
+});
 
 // ── Audit Log ──────────────────────────────────────────────────────────────────
 
