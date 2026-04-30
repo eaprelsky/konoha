@@ -366,7 +366,7 @@ function drawSideEdge(svg: Element, funcId: string, sideId: string, isOutput: bo
 }
 
 // ── Main render function ──────────────────────────────────────────────────────
-function renderProcessSvg(wf: Workflow, caseData?: Case): SVGSVGElement {
+function renderProcessSvg(wf: Workflow, caseData?: Case, roleLabels: Record<string, string> = {}): SVGSVGElement {
   const { elements, flow } = wf;
   if (!elements || elements.length === 0) {
     const svg = el('svg', { width: 300, height: 60 }) as SVGSVGElement;
@@ -442,11 +442,17 @@ function renderProcessSvg(wf: Workflow, caseData?: Case): SVGSVGElement {
     // Use SIDE_W for side elements
     const w = isSide(node) ? SIDE_W : NODE_W;
     const g = el('g', { transform: `translate(${pos.x},${pos.y})`, 'data-node-id': node.id, 'data-node-type': node.type }, nodeLayer);
-    // Suppress inline role badge on function when a dedicated role element with the same label is connected
+    // Suppress inline role badge on function when a dedicated role element with the same label is connected.
+    // Otherwise render the registry label instead of leaking the stable role id.
     let renderNode = node;
     if (node.type === 'function' && node.role) {
+      const roleLabel = roleLabels[node.role] || node.role;
       const connRoles = funcConnectedRoleLabels.get(node.id);
-      if (connRoles?.has(node.role)) renderNode = { ...node, role: undefined };
+      if (connRoles?.has(node.role) || connRoles?.has(roleLabel)) {
+        renderNode = { ...node, role: undefined };
+      } else {
+        renderNode = { ...node, role: roleLabel };
+      }
     }
     if (isSide(renderNode)) {
       drawNodeScaled(g, renderNode, s, SIDE_W);
@@ -466,9 +472,10 @@ function renderProcessSvg(wf: Workflow, caseData?: Case): SVGSVGElement {
 interface EpcRendererProps {
   workflow: Workflow;
   caseData?: Case;
+  roleLabels?: Record<string, string>;
 }
 
-export function EpcRenderer({ workflow, caseData }: EpcRendererProps) {
+export function EpcRenderer({ workflow, caseData, roleLabels = {} }: EpcRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -476,12 +483,12 @@ export function EpcRenderer({ workflow, caseData }: EpcRendererProps) {
     if (!container) return;
     container.innerHTML = '';
     try {
-      const svg = renderProcessSvg(workflow, caseData);
+      const svg = renderProcessSvg(workflow, caseData, roleLabels);
       container.appendChild(svg);
     } catch (e: any) {
       container.innerHTML = `<div style="color:#ef4444;font-size:13px">Render error: ${e.message}</div>`;
     }
-  }, [workflow, caseData]);
+  }, [workflow, caseData, roleLabels]);
 
   return <div ref={containerRef} />;
 }

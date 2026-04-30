@@ -14,6 +14,7 @@ import { useState, useEffect, useRef } from 'react';
 import { EpcRenderer } from './EpcRenderer';
 import { api } from '../api/client';
 import type { Run, Workflow, HistoryEntry } from '../api/types';
+import { buildRoleLabelMap } from '../utils/agentDisplay';
 import './RunOverlay.css';
 
 
@@ -41,6 +42,7 @@ export function RunOverlay({ caseId, onClose }: RunOverlayProps) {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(true);
   const [wfError, setWfError] = useState(false);
+  const [roleLabels, setRoleLabels] = useState<Record<string, string>>({});
   const [live, setLive] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const esRef = useRef<EventSource | null>(null);
@@ -64,6 +66,12 @@ export function RunOverlay({ caseId, onClose }: RunOverlayProps) {
     }
     load();
   }, [caseId]);
+
+  useEffect(() => {
+    api.roles.list()
+      .then(roles => setRoleLabels(buildRoleLabelMap(roles)))
+      .catch(() => {});
+  }, []);
 
   // SSE stream for real-time updates
   useEffect(() => {
@@ -154,7 +162,7 @@ export function RunOverlay({ caseId, onClose }: RunOverlayProps) {
                 </div>
               )}
               {workflow && run && (
-                <EpcRenderer workflow={workflow} caseData={run} />
+                <EpcRenderer workflow={workflow} caseData={run} roleLabels={roleLabels} />
               )}
             </div>
 

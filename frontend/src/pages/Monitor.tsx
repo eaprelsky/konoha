@@ -11,6 +11,7 @@ import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Run, Workflow } from '../api/types';
+import { buildRoleLabelMap } from '../utils/agentDisplay';
 import './Monitor.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ export function Monitor() {
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [selectedWf, setSelectedWf] = useState<Workflow | null>(null);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
+  const [roleLabels, setRoleLabels] = useState<Record<string, string>>({});
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [wfLoadState, setWfLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
 
@@ -77,6 +79,9 @@ export function Monitor() {
       wfs.forEach(wf => { m[wf.id] = wf.name || wf.id; });
       setWfNameMap(m);
     }).catch(() => {});
+    api.roles.list()
+      .then(roles => setRoleLabels(buildRoleLabelMap(roles)))
+      .catch(() => {});
   }, [token]);
 
   const load = useCallback(() => {
@@ -314,7 +319,7 @@ export function Monitor() {
               {/* EPC Diagram with highlighted current step */}
               <div className="run-diagram">
                 {selectedWf ? (
-                  <EpcRenderer workflow={selectedWf} caseData={selectedRun} />
+                  <EpcRenderer workflow={selectedWf} caseData={selectedRun} roleLabels={roleLabels} />
                 ) : wfLoadState === 'loading' ? (
                   <div style={{ padding: 40, color: '#94a3b8', textAlign: 'center', fontSize: 14 }}>
                     {lang === 'ru' ? 'Загрузка диаграммы…' : 'Loading diagram…'}
