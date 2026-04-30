@@ -1,4 +1,4 @@
-import type { WorkItemStatus } from '../api/types';
+import { useI18n } from '../context/I18nContext';
 
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   pending:   { bg: '#e8e8e8', color: '#333' },
@@ -15,22 +15,8 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   escalated: { bg: '#dc2626', color: '#fff' },
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  pending:   'Ожидает',
-  assigned:  'Назначено',
-  running:   'Выполняется',
-  completed: 'Выполнено',
-  done:      'Выполнено',
-  failed:    'Ошибка',
-  error:     'Ошибка',
-  cancelled: 'Отменено',
-  active:    'Ожидает',
-  fired:     'Сработал',
-  overdue:   'Просрочено',
-  escalated: 'Эскалация',
-};
-
 export function StatusBadge({ status }: { status: string }) {
+  const { t } = useI18n();
   const { bg, color } = STATUS_COLORS[status] || { bg: '#e2e8f0', color: '#475569' };
   return (
     <span
@@ -46,7 +32,7 @@ export function StatusBadge({ status }: { status: string }) {
         color,
       }}
     >
-      {STATUS_LABELS[status] ?? status}
+      {t(`statusBadge.${status}`, status)}
     </span>
   );
 }
