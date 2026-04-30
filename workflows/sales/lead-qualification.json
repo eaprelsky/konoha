@@ -1,45 +1,45 @@
 {
   "id": "lead-qualification",
   "version": "3.0.0",
-  "name": "Sales Lead Intake",
-  "description": "Human-in-the-loop sales workflow for signals from Telegram lead chats. A lead triage specialist reviews the incoming signal, the sales owner reviews it, prepares a content proposal, requests an estimate, and assembles the commercial proposal/follow-up. This replaces hardcoded agent reminders with explicit workflow state.",
+  "name": "Продажи: входящий лид",
+  "description": "Human-in-the-loop процесс продаж для сигналов из Telegram-чата лидов. Специалист разбора лидов структурирует входящий сигнал, владелец продаж принимает решение, готовит содержательное предложение, запрашивает оценку и собирает КП/follow-up. Процесс заменяет захардкоженные напоминания явным состоянием workflow.",
   "triggers": [
     { "event_type": "telegram.message.received", "start_node": "e1" }
   ],
   "documents": [
     {
       "doc_id": "sales.lead.triage",
-      "name": "Sales lead triage instruction",
+      "name": "Инструкция по разбору входящего лида",
       "type": "instruction",
       "content": "Classify the Telegram signal from the lead chat. Return structured output with lead_relevant:boolean, lead_type:string, summary:string, customer_need:string, company:string|null, contact:string|null, source_chat:string, next_action:string. Do not prepare a proposal at this step; only triage and extract facts."
     },
     {
       "doc_id": "sales.lead.human-review",
-      "name": "Sales lead human review instruction",
+      "name": "Инструкция по human review лида",
       "type": "instruction",
       "content": "Review the lead triage output and decide whether the signal should continue through the sales funnel. Return decision:string, lead_relevant:boolean, missing_context:string[], next_action:string, owner_notes:string. If context is insufficient, request clarification instead of inventing facts."
     },
     {
       "doc_id": "sales.lead.content-proposal",
-      "name": "Content proposal preparation instruction",
+      "name": "Инструкция по содержательному предложению",
       "type": "instruction",
       "content": "Prepare the meaningful proposal before pricing: problem framing, value hypothesis, target users, scope outline, discovery questions, assumptions, risks, and suggested next client-facing message. Return proposal_outline and open_questions."
     },
     {
       "doc_id": "sales.lead.estimate-request",
-      "name": "Estimate request preparation instruction",
+      "name": "Инструкция по запросу оценки",
       "type": "instruction",
       "content": "Translate the content proposal into an estimate request for PM/tech review. Include scope, deliverables, integrations, non-functional risks, unknowns, and estimation questions. Return estimate_scope, risks, and questions_for_team."
     },
     {
       "doc_id": "sales.lead.commercial-followup",
-      "name": "Commercial proposal and follow-up instruction",
+      "name": "Инструкция по КП и follow-up",
       "type": "instruction",
       "content": "Assemble the commercial proposal or next follow-up from the approved content and estimate inputs. Return client_summary, pricing_input, open_questions, follow_up, and next_action."
     },
     {
       "doc_id": "sales.lead.followup-reminder",
-      "name": "Sales follow-up reminder instruction",
+      "name": "Инструкция по follow-up напоминанию",
       "type": "instruction",
       "content": "A follow-up reminder became due. Review the case context and prepare the next manual follow-up action. Return follow_up_status, recommended_message, and next_action."
     }
@@ -48,7 +48,7 @@
     {
       "id": "e1",
       "type": "event",
-      "label": "Lead signal received",
+      "label": "Получен сигнал о лиде",
       "trigger": {
         "kind": "message",
         "source": "telegram",
@@ -60,46 +60,46 @@
     {
       "id": "f1",
       "type": "function",
-      "label": "Triage lead signal",
+      "label": "Разобрать входящий сигнал",
       "role": "lead_triage_specialist",
       "documents": ["sales.lead.triage"]
     },
-    { "id": "e2", "type": "event", "label": "Lead triaged" },
+    { "id": "e2", "type": "event", "label": "Лид структурирован" },
     {
       "id": "f2",
       "type": "function",
-      "label": "Review lead and decide next step",
+      "label": "Проверить лид и выбрать следующий шаг",
       "role": "sales_owner",
       "documents": ["sales.lead.human-review"]
     },
-    { "id": "e3", "type": "event", "label": "Lead review completed" },
+    { "id": "e3", "type": "event", "label": "Решение по лиду принято" },
     {
       "id": "f3",
       "type": "function",
-      "label": "Prepare content proposal",
+      "label": "Подготовить содержательное предложение",
       "role": "sales_owner",
       "documents": ["sales.lead.content-proposal"]
     },
-    { "id": "e4", "type": "event", "label": "Content proposal prepared" },
+    { "id": "e4", "type": "event", "label": "Содержательное предложение готово" },
     {
       "id": "f4",
       "type": "function",
-      "label": "Prepare estimate request",
+      "label": "Подготовить запрос оценки",
       "role": "sales_owner",
       "documents": ["sales.lead.estimate-request"]
     },
-    { "id": "e5", "type": "event", "label": "Estimate request prepared" },
+    { "id": "e5", "type": "event", "label": "Запрос оценки готов" },
     {
       "id": "f5",
       "type": "function",
-      "label": "Assemble commercial proposal and follow-up",
+      "label": "Собрать КП и следующий follow-up",
       "role": "sales_owner",
       "documents": ["sales.lead.commercial-followup"]
     },
     {
       "id": "e6",
       "type": "event",
-      "label": "Follow-up reminder due",
+      "label": "Наступило время follow-up",
       "trigger": {
         "kind": "delay_after",
         "duration": "P1D",
@@ -109,11 +109,11 @@
     {
       "id": "f6",
       "type": "function",
-      "label": "Review due follow-up reminder",
+      "label": "Обработать follow-up напоминание",
       "role": "sales_owner",
       "documents": ["sales.lead.followup-reminder"]
     },
-    { "id": "e7", "type": "event", "label": "Sales follow-up handled" }
+    { "id": "e7", "type": "event", "label": "Follow-up по лиду обработан" }
   ],
   "flow": [
     ["e1", "f1"],

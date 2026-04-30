@@ -92,12 +92,12 @@ describe("workflow-loader e2e: lead-qualification", () => {
       .filter(el => el.type === "function")
       .map(el => ({ id: el.id, label: el.label, role: el.role, documents: el.documents }));
     expect(stages).toEqual([
-      { id: "f1", label: "Triage lead signal", role: "lead_triage_specialist", documents: ["sales.lead.triage"] },
-      { id: "f2", label: "Review lead and decide next step", role: "sales_owner", documents: ["sales.lead.human-review"] },
-      { id: "f3", label: "Prepare content proposal", role: "sales_owner", documents: ["sales.lead.content-proposal"] },
-      { id: "f4", label: "Prepare estimate request", role: "sales_owner", documents: ["sales.lead.estimate-request"] },
-      { id: "f5", label: "Assemble commercial proposal and follow-up", role: "sales_owner", documents: ["sales.lead.commercial-followup"] },
-      { id: "f6", label: "Review due follow-up reminder", role: "sales_owner", documents: ["sales.lead.followup-reminder"] },
+      { id: "f1", label: "Разобрать входящий сигнал", role: "lead_triage_specialist", documents: ["sales.lead.triage"] },
+      { id: "f2", label: "Проверить лид и выбрать следующий шаг", role: "sales_owner", documents: ["sales.lead.human-review"] },
+      { id: "f3", label: "Подготовить содержательное предложение", role: "sales_owner", documents: ["sales.lead.content-proposal"] },
+      { id: "f4", label: "Подготовить запрос оценки", role: "sales_owner", documents: ["sales.lead.estimate-request"] },
+      { id: "f5", label: "Собрать КП и следующий follow-up", role: "sales_owner", documents: ["sales.lead.commercial-followup"] },
+      { id: "f6", label: "Обработать follow-up напоминание", role: "sales_owner", documents: ["sales.lead.followup-reminder"] },
     ]);
   });
 
