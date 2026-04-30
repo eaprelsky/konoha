@@ -17,7 +17,7 @@ export type { ActionActorPolicy, ActionCategory, ActionSecurityPolicy } from "./
 
 // ── Version ─────────────────────────────────────────────────────────────────
 
-export const ACTION_VERSION = 3;
+export const ACTION_VERSION = 4;
 
 // ── Core types ──────────────────────────────────────────────────────────────
 
@@ -33,6 +33,7 @@ export type ObjectScope =
   | "skill"       // skill CRUD
   | "person"      // people directory
   | "access"      // trusted users and Telegram group access
+  | "connector"   // external system connectors such as messengers
   | "adapter"     // data adapter operations
   | "reminder"    // scheduled reminders
   | "issue"       // GitHub issue operations
@@ -767,6 +768,27 @@ const ACTIONS: ActionDef[] = [
     currentEndpoint: "GET /messages/:agentId",
     autonomy: "auto",
     audited: false,
+  },
+
+  // ── Connectors ───────────────────────────────────────────────────────────
+  {
+    id: "connector.send_message",
+    description: "Send an outbound message through a messenger connector endpoint.",
+    scope: "connector",
+    args: [
+      { name: "connector_id", type: "string",  required: true,  description: "Connector ID, e.g. telegram-main." },
+      { name: "endpoint_id",  type: "string",  required: true,  description: "Endpoint ID under the connector." },
+      { name: "chat_ref",     type: "string",  required: true,  description: "Provider chat reference." },
+      { name: "text",         type: "string",  required: true,  description: "Message text." },
+      { name: "reply_to",     type: "string",  required: false, description: "Provider message id to reply to." },
+      { name: "parse_mode",   type: "string",  required: false, description: "Provider parse mode when supported." },
+      { name: "dry_run",      type: "boolean", required: false, description: "Validate and build the outbound message without publishing it." },
+      { name: "metadata",     type: "object",  required: false, description: "Optional audit/debug metadata." },
+    ],
+    implementation: { kind: "direct", note: "Writes connector-normalized messages to the outbound transport stream." },
+    security: { actor: "authenticated" },
+    autonomy: "confirm",
+    audited: true,
   },
 
   // ── Audit ─────────────────────────────────────────────────────────────────

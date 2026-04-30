@@ -42,6 +42,30 @@ The endpoint names are compatibility ids. Business workflows should depend on
 roles, documents, workflow triggers, and connector metadata, not on Naruto/Sasuke
 as business actors.
 
+## Outbound Messages
+
+Outbound connector delivery is exposed through Action Spine as
+`connector.send_message`. The action accepts `connector_id`, `endpoint_id`,
+`chat_ref`, `text`, optional `reply_to`, optional `parse_mode`, optional
+`metadata`, and `dry_run`.
+
+For the Telegram compatibility connector the action validates the endpoint
+against `telegram-main` and publishes connector-normalized entries to
+`telegram:outgoing`:
+
+| Field | Purpose |
+|---|---|
+| `connector_id` | Connector used for delivery. |
+| `endpoint_id` | Bot/user-account endpoint used for delivery. |
+| `chat_ref` / `chat_id` | Provider chat reference. |
+| `text` | Outbound message body. |
+| `source_action` | `connector.send_message` for audit/debug. |
+| `metadata` | Optional case/work item/workflow context. |
+
+`dry_run=true` validates and returns the exact outbound entry without writing to
+Redis. This is the preferred mode for agents and tests before an actual external
+send is confirmed.
+
 ## Future Routing
 
 One connector can own multiple endpoints, and each endpoint can bind chats to

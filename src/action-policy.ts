@@ -34,6 +34,7 @@ const ADMIN_DEFAULT_SCOPES = new Set<ObjectScope>([
   "skill",
   "person",
   "access",
+  "connector",
   "adapter",
   "reminder",
   "issue",

@@ -46,6 +46,7 @@ import {
   stopAgent,
   updateAgentDef,
 } from "./agent-lifecycle";
+import { sendConnectorMessage } from "./messenger-outbound";
 import { ServiceError } from "./errors";
 
 export interface ActionExecution {
@@ -636,6 +637,34 @@ async function executeAgentAction(action: string, args: Record<string, unknown>)
   }
 }
 
+async function executeConnectorAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "connector.send_message": {
+      const invalid = validationFailure("connector.send_message", args);
+      if (invalid) return invalid;
+      try {
+        return {
+          status: 200,
+          data: await sendConnectorMessage({
+            connector_id: String(args.connector_id),
+            endpoint_id: String(args.endpoint_id),
+            chat_ref: String(args.chat_ref),
+            text: String(args.text),
+            reply_to: args.reply_to ? String(args.reply_to) : undefined,
+            parse_mode: args.parse_mode ? String(args.parse_mode) : undefined,
+            dry_run: args.dry_run === true,
+            metadata: args.metadata as Record<string, unknown> | undefined,
+          }),
+        };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    default:
+      return null;
+  }
+}
+
 export async function executeActionDirect(
   action: string,
   args: Record<string, unknown>,
@@ -664,6 +693,9 @@ export async function executeActionDirect(
   }
   if (action.startsWith("agent.")) {
     return executeAgentAction(action, args);
+  }
+  if (action.startsWith("connector.")) {
+    return executeConnectorAction(action, args);
   }
   return null;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { validateActionArgs, getActionContract, dumpRegistry, listActions, isValidAction, listActionSurface } from "../src/action-registry";
+import { ACTION_VERSION, validateActionArgs, getActionContract, dumpRegistry, listActions, isValidAction, listActionSurface } from "../src/action-registry";
 import { canonicalActionType } from "../src/assistant-actions";
 
 describe("workflow action contract validation", () => {
@@ -118,6 +118,7 @@ describe("workflow action contract validation", () => {
     expect(isValidAction("case.start")).toBe(true);
     expect(isValidAction("agent.restart")).toBe(true);
     expect(isValidAction("message.send")).toBe(true);
+    expect(isValidAction("connector.send_message")).toBe(true);
     expect(isValidAction("fake.action")).toBe(false);
   });
 
@@ -131,7 +132,7 @@ describe("workflow action contract validation", () => {
   });
 
   it("dumpRegistry version matches ACTION_VERSION", () => {
-    expect(dump.version).toBe(3);
+    expect(dump.version).toBe(ACTION_VERSION);
     expect(dump.actions.length).toBeGreaterThan(30);
     expect(dump.surface.length).toBe(dump.actions.length);
   });
@@ -147,6 +148,27 @@ describe("workflow action contract validation", () => {
     expect(isValidAction("access.add_group")).toBe(true);
     expect(isValidAction("access.remove_user")).toBe(true);
     expect(isValidAction("access.remove_group")).toBe(true);
+  });
+
+  it("registers connector outbound action for messenger/API/agent parity", () => {
+    expect(isValidAction("connector.send_message")).toBe(true);
+
+    const missing = validateActionArgs("connector.send_message", {});
+    expect(missing.valid).toBe(false);
+    expect(missing.errors).toContain("Missing required argument: connector_id");
+    expect(missing.errors).toContain("Missing required argument: endpoint_id");
+    expect(missing.errors).toContain("Missing required argument: chat_ref");
+    expect(missing.errors).toContain("Missing required argument: text");
+
+    const valid = validateActionArgs("connector.send_message", {
+      connector_id: "telegram-main",
+      endpoint_id: "telegram-user-sasuke",
+      chat_ref: "-4982206077",
+      text: "dry-run",
+      dry_run: true,
+      metadata: { case_id: "case-1" },
+    });
+    expect(valid.valid).toBe(true);
   });
 
   it("every registered action has a valid contract", () => {

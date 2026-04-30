@@ -68,6 +68,7 @@ function checkTestCoverage(actionId: string): boolean {
     issue: [],
     audit: ["workflow-action-contract"],
     message: ["workflow-action-contract"],
+    connector: ["workflow-action-contract"],
     knowledge: ["workflow-action-contract"],
     skill: [],
     person: [],
