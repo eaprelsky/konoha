@@ -13,6 +13,12 @@ const AGENT_RUNTIME_CONFIG_KEY = "konoha:agent-runtime-configs"; // hash: id →
 const AGENT_STATE_KEY = "konoha:agent-states";   // hash: id → AgentState JSON
 const AUDIT_STREAM    = "konoha:agent-audit";    // stream: lifecycle events
 
+export interface AgentDefUpsertOptions {
+  preserveOrgDisplayFields?: boolean;
+}
+
+const ORG_OWNED_DISPLAY_FIELDS = ["name", "display_alias", "avatar_url"] as const;
+
 // ── Audit helper (local, also used by process.ts) ────────────────────────────
 
 async function audit(agent_id: string, action: string, detail?: string): Promise<void> {
@@ -63,12 +69,23 @@ export async function createAgentDef(input: Omit<AgentDef, "created_at" | "updat
   return def;
 }
 
-export async function upsertAgentDef(input: Omit<AgentDef, "created_at" | "updated_at">): Promise<{ def: AgentDef; created: boolean }> {
+export async function upsertAgentDef(
+  input: Omit<AgentDef, "created_at" | "updated_at">,
+  options: AgentDefUpsertOptions = {},
+): Promise<{ def: AgentDef; created: boolean }> {
   const existing = await getAgentDef(input.id);
   const now = new Date().toISOString();
   const def: AgentDef = existing
     ? { ...existing, ...input, id: input.id, created_at: existing.created_at, updated_at: now }
     : { ...input, created_at: now, updated_at: now };
+  if (existing && options.preserveOrgDisplayFields) {
+    for (const field of ORG_OWNED_DISPLAY_FIELDS) {
+      const value = existing[field];
+      if (value !== undefined) {
+        def[field] = value;
+      }
+    }
+  }
   await storeAgentDef(def);
   await audit(def.id, existing ? "updated" : "created");
   return { def, created: !existing };

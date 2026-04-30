@@ -354,6 +354,12 @@ Seed is idempotent and can be re-run via `POST /admin/seed-system-agents`.
 Existing runtime ids, tmux sessions, and systemd unit names remain stable until
 #620.
 
+When seed runs over an existing definition, structural/runtime metadata is
+refreshed from code, but org-owned display fields are preserved: `name`,
+`display_alias`, and `avatar_url`. This lets migrations add
+`seed_classification`, `lifecycle_mode`, profiles, tags, and capabilities
+without clobbering local product labels or callsigns.
+
 Kakashi is seeded as a protected optional worker but must not autostart. Keep
 `agent-kakashi.service` and `agent-watchdog-kakashi.service` disabled unless an
 operator explicitly starts him for a delegated task.

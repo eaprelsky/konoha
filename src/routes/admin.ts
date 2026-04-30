@@ -371,6 +371,8 @@ async function syncSystemAgent(ag: (typeof SYSTEM_AGENTS)[number]): Promise<"cre
   const { created } = await upsertAgentDef({
     ...ag,
     protected: true,
+  }, {
+    preserveOrgDisplayFields: true,
   });
   return created ? "created" : "updated";
 }
