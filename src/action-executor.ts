@@ -49,6 +49,7 @@ import {
 import { invokeAssistant } from "./assistant-invocation";
 import { sendConnectorMessage } from "./messenger-outbound";
 import { ServiceError } from "./errors";
+import { buildPgOnlyRetentionReport, retentionReportForAction } from "./retention/report";
 
 export interface ActionExecution {
   status: number;
@@ -697,6 +698,24 @@ async function executeAssistantAction(action: string, args: Record<string, unkno
   }
 }
 
+async function executeRetentionAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "retention.report": {
+      const invalid = validationFailure("retention.report", args);
+      if (invalid) return invalid;
+      try {
+        const limit = typeof args.limit === "number" ? args.limit : 120;
+        const report = await buildPgOnlyRetentionReport();
+        return { status: 200, data: retentionReportForAction(report, limit) };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    default:
+      return null;
+  }
+}
+
 export async function executeActionDirect(
   action: string,
   args: Record<string, unknown>,
@@ -731,6 +750,9 @@ export async function executeActionDirect(
   }
   if (action.startsWith("connector.")) {
     return executeConnectorAction(action, args);
+  }
+  if (action.startsWith("retention.")) {
+    return executeRetentionAction(action, args);
   }
   return null;
 }

@@ -5,8 +5,9 @@ import {
   groupRetentionRows,
   idPrefix,
   processPrefix,
+  retentionReportForAction,
   type PgOnlyRow,
-} from "../scripts/pg-only-retention-report";
+} from "../src/retention/report";
 
 const NOW = new Date("2026-04-30T12:00:00Z");
 
@@ -84,5 +85,23 @@ describe("PG-only retention report classification", () => {
     expect(processPrefix("xor-gw1777399300852")).toBe("xor-gw");
     expect(ageBucket("2026-04-30T01:00:00Z", NOW)).toBe("<1d");
     expect(ageBucket("2026-04-20T00:00:00Z", NOW)).toBe("7-30d");
+  });
+
+  test("truncates action reports without changing source counts", () => {
+    const groups = groupRetentionRows([
+      row({ entity: "cases", id: "case-1", status: "done", process: "act-wf-1", updated_at: "2026-04-01T00:00:00Z" }),
+      row({ entity: "work_items", id: "wi-1", status: "done", process: "or-gw1", updated_at: "2026-04-01T00:00:00Z" }),
+    ], NOW);
+    const report = retentionReportForAction({
+      mode: "dry_run",
+      generated_at: NOW.toISOString(),
+      hard_fail: false,
+      entityCounts: [],
+      groups,
+    }, 1);
+
+    expect(report.groups).toHaveLength(1);
+    expect(report.omitted_groups).toBe(1);
+    expect(report.mode).toBe("dry_run");
   });
 });

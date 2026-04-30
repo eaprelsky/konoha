@@ -590,6 +590,19 @@ export const ACTIONS: ActionDef[] = [
     audited: false,
   },
 
+  // ── Retention ────────────────────────────────────────────────────────────
+  {
+    id: "retention.report",
+    description: "Generate a read-only PG-only runtime artifact retention report. Does not delete or update data.",
+    scope: "retention",
+    args: [
+      { name: "limit", type: "number", required: false, description: "Maximum number of candidate groups to return. Omit for default; use 0 for counts only." },
+    ],
+    implementation: { kind: "direct", note: "Handled by executeActionDirect; destructive cleanup is intentionally not implemented yet." },
+    autonomy: "auto",
+    audited: false,
+  },
+
   // ── Issue (GitHub) ────────────────────────────────────────────────────────
   {
     id: "issue.create",

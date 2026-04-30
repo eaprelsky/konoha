@@ -40,6 +40,7 @@ const ADMIN_DEFAULT_SCOPES = new Set<ObjectScope>([
   "issue",
   "subscription",
   "audit",
+  "retention",
 ]);
 
 export function classifyAction(actionId: string): ActionCategory {

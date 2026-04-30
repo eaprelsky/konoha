@@ -18,7 +18,7 @@ export type { ActionActorPolicy, ActionCategory, ActionSecurityPolicy } from "./
 
 // ── Version ─────────────────────────────────────────────────────────────────
 
-export const ACTION_VERSION = 5;
+export const ACTION_VERSION = 6;
 
 // ── Core types ──────────────────────────────────────────────────────────────
 
@@ -42,6 +42,7 @@ export type ObjectScope =
   | "subscription"// event manager subscriptions
   | "audit"       // audit log reads
   | "knowledge"   // knowledge base operations
+  | "retention"   // data lifecycle reports and cleanup previews
   | "message";    // bus messages
 
 export type AutonomyLevel = "auto" | "confirm" | "disabled";
