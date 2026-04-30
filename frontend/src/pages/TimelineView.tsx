@@ -4,6 +4,7 @@
  */
 import type { Subscription } from './eventMonitorUtils';
 import { EventCard } from './EventCard';
+import { useI18n } from '../context/I18nContext';
 
 function TimelineSection({ title, subs, className }: { title: string; subs: Subscription[]; className?: string }) {
   if (subs.length === 0) return null;
@@ -19,6 +20,7 @@ function TimelineSection({ title, subs, className }: { title: string; subs: Subs
 }
 
 export function TimelineView({ subs }: { subs: Subscription[] }) {
+  const { t } = useI18n();
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
@@ -49,15 +51,15 @@ export function TimelineView({ subs }: { subs: Subscription[] }) {
 
   return (
     <div>
-      <TimelineSection title="Просрочено" subs={overdue} className="overdue" />
-      <TimelineSection title="Ожидают (без расписания)" subs={[...waitingNoTime, ...manual]} />
-      <TimelineSection title="Сегодня" subs={today} className="today" />
-      <TimelineSection title="Эта неделя" subs={thisWeek} />
-      <TimelineSection title="Позже" subs={later} />
+      <TimelineSection title={t('eventMonitor.section.overdue')} subs={overdue} className="overdue" />
+      <TimelineSection title={t('eventMonitor.section.unscheduled')} subs={[...waitingNoTime, ...manual]} />
+      <TimelineSection title={t('eventMonitor.today')} subs={today} className="today" />
+      <TimelineSection title={t('eventMonitor.section.thisWeek')} subs={thisWeek} />
+      <TimelineSection title={t('eventMonitor.section.later')} subs={later} />
       {fired.length > 0 && (
-        <TimelineSection title={`Сработавшие (последние ${fired.length})`} subs={fired} />
+        <TimelineSection title={t('eventMonitor.section.firedRecent').replace('{count}', String(fired.length))} subs={fired} />
       )}
-      {subs.length === 0 && <div className="em-empty">Нет подписок</div>}
+      {subs.length === 0 && <div className="em-empty">{t('eventMonitor.emptySubscriptions')}</div>}
     </div>
   );
 }

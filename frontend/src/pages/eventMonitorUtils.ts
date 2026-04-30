@@ -58,10 +58,10 @@ export const TRIGGER_ICONS: Record<string, string> = {
 };
 
 export const STATUS_LABELS: Record<UiStatus, string> = {
-  waiting: 'Ожидает',
-  fired: 'Сработал',
-  error: 'Ошибка',
-  manual_fallback: 'Вручную',
+  waiting: 'eventMonitor.waiting',
+  fired: 'eventMonitor.statusFired',
+  error: 'eventMonitor.errors',
+  manual_fallback: 'eventMonitor.statusManualFallback',
 };
 
 export const STATUS_DOTS: Record<UiStatus, string> = {
@@ -92,14 +92,14 @@ export function formatDate(iso?: string): string {
   return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export function formatDateShort(iso?: string): string {
+export function formatDateShort(iso?: string, todayLabel = 'Today'): string {
   if (!iso) return '—';
   const d = new Date(iso);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const itemDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   if (itemDay.getTime() === today.getTime()) {
-    return 'Сегодня ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    return todayLabel + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   }
   return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 }

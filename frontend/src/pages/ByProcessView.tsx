@@ -5,8 +5,10 @@
 import { useState } from 'react';
 import type { Subscription } from './eventMonitorUtils';
 import { STATUS_LABELS, STATUS_DOTS, formatDateShort } from './eventMonitorUtils';
+import { useI18n } from '../context/I18nContext';
 
 export function ByProcessView({ subs }: { subs: Subscription[] }) {
+  const { t } = useI18n();
   const [openProcesses, setOpenProcesses] = useState<Set<string>>(new Set());
   const [openInstances, setOpenInstances] = useState<Set<string>>(new Set());
 
@@ -17,7 +19,7 @@ export function ByProcessView({ subs }: { subs: Subscription[] }) {
   }, {});
 
   if (Object.keys(byProcess).length === 0) {
-    return <div className="em-empty">Нет подписок</div>;
+    return <div className="em-empty">{t('eventMonitor.emptySubscriptions')}</div>;
   }
 
   function toggleProcess(id: string) {
@@ -44,8 +46,8 @@ export function ByProcessView({ subs }: { subs: Subscription[] }) {
               <span style={{ fontSize: 13 }}>{processOpen ? '▼' : '▶'}</span>
               <span className="em-process-name">{processName}</span>
               <span className="em-process-meta">
-                {Object.keys(byInstance).length} экз. · {psubs.length} подп.
-                {psubs.some(s => s.ui_status === 'error') && ' · ⚠ ошибки'}
+                {Object.keys(byInstance).length} {t('eventMonitor.instancesShort')} · {psubs.length} {t('eventMonitor.subscriptionsShort')}
+                {psubs.some(s => s.ui_status === 'error') && ` · ⚠ ${t('eventMonitor.errors')}`}
               </span>
             </div>
             {processOpen && Object.entries(byInstance).map(([instanceId, isubs]) => {
@@ -55,7 +57,7 @@ export function ByProcessView({ subs }: { subs: Subscription[] }) {
                   <div className="em-instance-header" onClick={() => toggleInstance(instanceId)}>
                     <span style={{ fontSize: 12 }}>{instOpen ? '▼' : '▶'}</span>
                     <span className="em-instance-name">{instanceId}</span>
-                    <span className="em-process-meta">{isubs.length} событий</span>
+                    <span className="em-process-meta">{t('eventMonitor.eventCount').replace('{count}', String(isubs.length))}</span>
                   </div>
                   {instOpen && (
                     <div className="em-instance-events">
@@ -64,10 +66,10 @@ export function ByProcessView({ subs }: { subs: Subscription[] }) {
                           <span className="em-tree-event-dot">{STATUS_DOTS[s.ui_status]}</span>
                           <span className="em-tree-event-label">{s.event_label ?? s.event_id}</span>
                           <span className={`em-status-badge ${s.ui_status}`} style={{ fontSize: 10 }}>
-                            {STATUS_LABELS[s.ui_status]}
+                            {t(STATUS_LABELS[s.ui_status])}
                           </span>
                           <span className="em-tree-event-time">
-                            {s.next_fire_at ? formatDateShort(s.next_fire_at) : formatDateShort(s.last_fired_at)}
+                            {s.next_fire_at ? formatDateShort(s.next_fire_at, t('eventMonitor.today')) : formatDateShort(s.last_fired_at, t('eventMonitor.today'))}
                           </span>
                         </div>
                       ))}

@@ -57,7 +57,7 @@ function fmtDate(iso: string): string {
 
 export function Dashboard() {
   const token = useToken();
-  const { lang } = useI18n();
+  const { t } = useI18n();
   const [wfCount, setWfCount] = useState<number | null>(null);
   const [wiCount, setWiCount] = useState<number | null>(null);
   const [recentRuns, setRecentRuns] = useState<Run[]>([]);
@@ -115,60 +115,60 @@ export function Dashboard() {
       <div className="container">
         <div className="grid" id="stats">
           <div className="card">
-            <h3>{lang === 'ru' ? 'Процессы' : 'Processes'}</h3>
+            <h3>{t('operator.dashboard.processes')}</h3>
             <div className="value" id="wf-count">{wfCount ?? '—'}</div>
-            <div className="sub">{lang === 'ru' ? 'зарегистрировано' : 'registered'}</div>
+            <div className="sub">{t('operator.dashboard.processesSub')}</div>
           </div>
           <div className="card">
-            <h3>{lang === 'ru' ? 'Кейсы' : 'Cases'}</h3>
+            <h3>{t('operator.dashboard.runs')}</h3>
             <div className="value">{runCount ?? '—'}</div>
-            <div className="sub">{lang === 'ru' ? 'всего запущено' : 'total runs'}</div>
+            <div className="sub">{t('operator.dashboard.runsSub')}</div>
           </div>
           <div className="card">
-            <h3>{lang === 'ru' ? 'Задачи' : 'Tasks'}</h3>
+            <h3>{t('operator.dashboard.workItems')}</h3>
             <div className="value" id="wi-count">{wiCount ?? '—'}</div>
-            <div className="sub">{lang === 'ru' ? 'ожидание + назначены' : 'pending + assigned'}</div>
+            <div className="sub">{t('operator.dashboard.workItemsSub')}</div>
           </div>
         </div>
 
         <div className="dash-panels">
           <div className="panel">
-            <h2>{lang === 'ru' ? 'Runtime Health' : 'Runtime Health'}</h2>
+            <h2>{t('operator.dashboard.runtimeHealth')}</h2>
             <div className="runtime-metrics">
               <div className="runtime-metric info">
-                <div className="label">{lang === 'ru' ? 'Активные кейсы' : 'Running cases'}</div>
+                <div className="label">{t('operator.dashboard.runningRuns')}</div>
                 <div className="value">{runtimeHealth.runningCases}</div>
               </div>
               <div className={`runtime-metric${runtimeHealth.errorCases > 0 ? ' err' : ''}`}>
-                <div className="label">{lang === 'ru' ? 'Ошибки кейсов' : 'Case errors'}</div>
+                <div className="label">{t('operator.dashboard.runErrors')}</div>
                 <div className="value">{runtimeHealth.errorCases}</div>
               </div>
               <div className="runtime-metric info">
-                <div className="label">{lang === 'ru' ? 'Активные waits' : 'Active waits'}</div>
+                <div className="label">{t('operator.dashboard.activeWaits')}</div>
                 <div className="value">{runtimeHealth.activeWaits}</div>
               </div>
               <div className={`runtime-metric${runtimeHealth.overdueWaits + runtimeHealth.escalatedWaits > 0 ? ' warn' : ''}`}>
-                <div className="label">{lang === 'ru' ? 'Проблемные waits' : 'Attention waits'}</div>
+                <div className="label">{t('operator.dashboard.attentionWaits')}</div>
                 <div className="value">{runtimeHealth.overdueWaits + runtimeHealth.escalatedWaits}</div>
               </div>
               <div className="runtime-metric info">
-                <div className="label">{lang === 'ru' ? 'Активные шаги' : 'Active work items'}</div>
+                <div className="label">{t('operator.dashboard.activeWorkItems')}</div>
                 <div className="value">{runtimeHealth.pendingTasks}</div>
               </div>
               <div className={`runtime-metric${runtimeHealth.eventErrors + runtimeHealth.manualFallback > 0 ? ' err' : ''}`}>
-                <div className="label">{lang === 'ru' ? 'Event pipeline' : 'Event pipeline'}</div>
+                <div className="label">{t('operator.dashboard.eventPipeline')}</div>
                 <div className="value">{runtimeHealth.eventErrors + runtimeHealth.manualFallback}</div>
               </div>
             </div>
-            <Link to="/event-monitor" className="panel-footer">{lang === 'ru' ? 'Мониторинг событий и waits →' : 'Event and wait health →'}</Link>
+            <Link to="/event-monitor" className="panel-footer">{t('operator.dashboard.eventHealthLink')}</Link>
           </div>
 
           {/* Recent runs */}
           <div className="panel">
-            <h2>{lang === 'ru' ? 'Последние прогоны' : 'Recent Runs'}</h2>
+            <h2>{t('operator.dashboard.recentRuns')}</h2>
             <div className="run-list">
               {recentRuns.length === 0 && (
-                <div style={{ color: '#94a3b8', fontSize: 13 }}>{lang === 'ru' ? 'Нет прогонов' : 'No runs'}</div>
+                <div style={{ color: '#94a3b8', fontSize: 13 }}>{t('operator.dashboard.noRuns')}</div>
               )}
               {recentRuns.map(r => (
                 <div key={r.case_id} className="run-row">
@@ -178,15 +178,15 @@ export function Dashboard() {
                 </div>
               ))}
             </div>
-            <Link to="/monitor" className="panel-footer">{lang === 'ru' ? 'Все прогоны →' : 'All runs →'}</Link>
+            <Link to="/monitor" className="panel-footer">{t('operator.dashboard.allRuns')}</Link>
           </div>
 
           {/* Online agents */}
           <div className="panel">
-            <h2>{lang === 'ru' ? `Агенты онлайн (${onlineAgents.length})` : `Agents online (${onlineAgents.length})`}</h2>
+            <h2>{t('operator.dashboard.agentsOnline').replace('{count}', String(onlineAgents.length))}</h2>
             <div className="agent-list">
               {onlineAgents.length === 0 && (
-                <div style={{ color: '#94a3b8', fontSize: 13 }}>{lang === 'ru' ? 'Нет активных агентов' : 'No agents online'}</div>
+                <div style={{ color: '#94a3b8', fontSize: 13 }}>{t('operator.dashboard.noAgentsOnline')}</div>
               )}
               {onlineAgents.slice(0, 8).map(a => (
                 <div key={a.id} className="agent-row">
@@ -196,16 +196,16 @@ export function Dashboard() {
                 </div>
               ))}
             </div>
-            <Link to="/agents" className="panel-footer">{lang === 'ru' ? 'Все агенты →' : 'All agents →'}</Link>
+            <Link to="/agents" className="panel-footer">{t('operator.dashboard.allAgents')}</Link>
           </div>
         </div>
 
         <div className="panel">
-          <h2>{lang === 'ru' ? 'Навигация' : 'Navigation'}</h2>
+          <h2>{t('operator.dashboard.navigation')}</h2>
           <div className="links">
-            <a href="/ui/editor"><span className="icon">🗂</span> {lang === 'ru' ? 'Редактор процессов — eEPC-процессы и активные кейсы' : 'Process Editor — eEPC processes and cases'}</a>
-            <a href="/ui/workitems"><span className="icon">✅</span> {lang === 'ru' ? 'Executor Workbench — задачи, waits, дедлайны и действия' : 'Executor Workbench — tasks, waits, deadlines and actions'}</a>
-            <a href="/ui/event-monitor"><span className="icon">📡</span> {lang === 'ru' ? 'Ops Dashboard — health event/wait/case pipeline' : 'Ops Dashboard — event/wait/case health'}</a>
+            <a href="/ui/editor"><span className="icon">🗂</span> {t('operator.dashboard.processEditorLink')}</a>
+            <a href="/ui/workitems"><span className="icon">✅</span> {t('operator.dashboard.workbenchLink')}</a>
+            <a href="/ui/event-monitor"><span className="icon">📡</span> {t('operator.dashboard.opsLink')}</a>
           </div>
         </div>
       </div>

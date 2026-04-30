@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import type React from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { WorkItem, WorkItemFilters, Case, Workflow, EventWait, EventWaitStatus, Agent, RoleDef } from '../api/types';
@@ -95,6 +96,7 @@ function getStepLabel(kase: Case, wiId: string): string {
 
 interface NewTaskModalProps { onClose: () => void; onCreated: () => void; assigneeOptions: AssigneeOption[]; workflows: Workflow[]; }
 function NewTaskModal({ onClose, onCreated, assigneeOptions, workflows }: NewTaskModalProps) {
+  const { t } = useI18n();
   const [label, setLabel] = useState('');
   const [assignee, setAssignee] = useState('');
   const [processId, setProcessId] = useState('');
@@ -110,7 +112,7 @@ function NewTaskModal({ onClose, onCreated, assigneeOptions, workflows }: NewTas
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!label.trim() || !assignee.trim()) { setError('Введите описание и исполнителя'); return; }
+    if (!label.trim() || !assignee.trim()) { setError(t('operator.workitems.labelRequired')); return; }
     setSubmitting(true);
     setError(null);
     try {
@@ -132,36 +134,36 @@ function NewTaskModal({ onClose, onCreated, assigneeOptions, workflows }: NewTas
     <div className="details-modal show" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-content">
         <button className="modal-close" onClick={onClose}>✕</button>
-        <h2>Новая задача</h2>
+        <h2>{t('operator.workitems.newTaskTitle')}</h2>
         {error && <div className="error-banner" style={{ marginBottom: 12 }}>{error}</div>}
         <form className="new-task-form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="ntLabel">Описание *</label>
-            <input id="ntLabel" type="text" placeholder="Описание задачи..." value={label}
+            <label htmlFor="ntLabel">{t('operator.workitems.descriptionRequired')}</label>
+            <input id="ntLabel" type="text" placeholder={t('input.taskDescription')} value={label}
               onChange={e => setLabel(e.target.value)} autoFocus required />
           </div>
           <div className="form-group">
-            <label htmlFor="ntAssignee">Исполнитель *</label>
+            <label htmlFor="ntAssignee">{t('operator.workitems.assigneeRequired')}</label>
             <select id="ntAssignee" value={assignee} onChange={e => setAssignee(e.target.value)} required>
-              <option value="">— выберите исполнителя —</option>
+              <option value="">{t('operator.workitems.selectAssignee')}</option>
               {assigneeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
           </div>
           <div className="form-group">
-            <label htmlFor="ntProcess">Процесс</label>
+            <label htmlFor="ntProcess">{t('operator.runs.process')}</label>
             <select id="ntProcess" value={processId} onChange={e => setProcessId(e.target.value)}>
-              <option value="">— без процесса —</option>
+              <option value="">{t('operator.workitems.noProcess')}</option>
               {workflows.map(wf => <option key={wf.id} value={wf.id}>{wf.name || wf.id}</option>)}
             </select>
           </div>
           <div className="form-group">
-            <label htmlFor="ntDeadline">Срок</label>
+            <label htmlFor="ntDeadline">{t('operator.workitems.dueDate')}</label>
             <input id="ntDeadline" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
           </div>
           <div className="form-actions">
-            <button type="button" className="btn-cancel" onClick={onClose}>Отмена</button>
+            <button type="button" className="btn-cancel" onClick={onClose}>{t('action.cancel')}</button>
             <button type="submit" className="btn-submit" disabled={submitting}>
-              {submitting ? 'Создание…' : 'Создать'}
+              {submitting ? t('operator.workitems.creating') : t('action.create')}
             </button>
           </div>
         </form>
@@ -172,6 +174,7 @@ function NewTaskModal({ onClose, onCreated, assigneeOptions, workflows }: NewTas
 
 interface DetailsModalProps { item: WorkItem | null; onClose: () => void; }
 function DetailsModal({ item, onClose }: DetailsModalProps) {
+  const { t } = useI18n();
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handler);
@@ -184,12 +187,12 @@ function DetailsModal({ item, onClose }: DetailsModalProps) {
         <button className="modal-close" onClick={onClose}>✕</button>
         {item && (
           <>
-            <h2 id="detailsTitle">Детали: {item.label}</h2>
+            <h2 id="detailsTitle">{t('operator.workitems.detailTitle').replace('{label}', item.label)}</h2>
             <div id="detailsContent">
               <div className="detail-field"><strong>ID</strong><code>{item.work_item_id}</code></div>
-              {item.case_id && <div className="detail-field"><strong>ID прогона</strong><code>{item.case_id}</code></div>}
-              <div className="detail-field"><strong>Входные данные</strong><code>{JSON.stringify(item.input || {}, null, 2)}</code></div>
-              <div className="detail-field"><strong>Выходные данные</strong><code>{JSON.stringify(item.output || {}, null, 2)}</code></div>
+              {item.case_id && <div className="detail-field"><strong>{t('operator.workitems.runId')}</strong><code>{item.case_id}</code></div>}
+              <div className="detail-field"><strong>{t('operator.workitems.inputData')}</strong><code>{JSON.stringify(item.input || {}, null, 2)}</code></div>
+              <div className="detail-field"><strong>{t('operator.workitems.outputData')}</strong><code>{JSON.stringify(item.output || {}, null, 2)}</code></div>
             </div>
           </>
         )}
@@ -200,6 +203,7 @@ function DetailsModal({ item, onClose }: DetailsModalProps) {
 
 export function WorkItems() {
   const token = useToken();
+  const { t } = useI18n();
   const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [items, setItems] = useState<WorkItem[]>([]);
   const [waits, setWaits] = useState<EventWait[]>([]);
@@ -279,17 +283,17 @@ export function WorkItems() {
   useInterval(loadItems, 10000);
 
   function completeItem(id: string) {
-    if (!confirm('Завершить задачу?')) return;
+    if (!confirm(t('operator.workitems.confirmComplete'))) return;
     api.workitems.complete(id)
       .then(() => loadItems())
-      .catch(e => setError(`Ошибка завершения: ${e.message}`));
+      .catch(e => setError(t('operator.workitems.completeError').replace('{message}', e.message)));
   }
 
   function confirmWait(wait: EventWait) {
-    if (!confirm(`Подтвердить ожидание "${wait.element_label || wait.element_id}"?`)) return;
+    if (!confirm(t('operator.workitems.confirmWait').replace('{label}', wait.element_label || wait.element_id))) return;
     api.waits.confirm(wait.wait_id, { confirmed_by: 'workbench' })
       .then(() => loadItems())
-      .catch(e => setError(`Ошибка подтверждения: ${e.message}`));
+      .catch(e => setError(t('operator.workitems.confirmError').replace('{message}', e.message)));
   }
 
   const hiddenProcessIds = useMemo(
@@ -312,103 +316,103 @@ export function WorkItems() {
         <div className="container">
           <div className="page-header">
             <div>
-              <h1>Очередь исполнения</h1>
-              <div className="page-subtitle">Все задачи, ожидания и ручные подтверждения runtime-движка</div>
+              <h1>{t('operator.workitems.title')}</h1>
+              <div className="page-subtitle">{t('operator.workitems.subtitle')}</div>
             </div>
-            <button className="btn-new-task" onClick={() => setShowNewTask(true)}>+ Новая задача</button>
+            <button className="btn-new-task" onClick={() => setShowNewTask(true)}>{t('operator.workitems.newTask')}</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
 
           <div className="summary-grid">
             <div className="summary-card info">
-              <div className="summary-label">Активные задачи</div>
+              <div className="summary-label">{t('operator.workitems.activeTasks')}</div>
               <div className="summary-value">{activeTasks}</div>
             </div>
             <div className="summary-card info">
-              <div className="summary-label">Активные ожидания</div>
+              <div className="summary-label">{t('operator.workitems.activeWaits')}</div>
               <div className="summary-value">{visibleWaits.length}</div>
             </div>
             <div className={`summary-card${overdueWaits > 0 ? ' warn' : ''}`}>
-              <div className="summary-label">Просроченные ожидания</div>
+              <div className="summary-label">{t('operator.workitems.overdueWaits')}</div>
               <div className="summary-value">{overdueWaits}</div>
             </div>
             <div className={`summary-card${escalatedWaits > 0 ? ' err' : ''}`}>
-              <div className="summary-label">Эскалированные ожидания</div>
+              <div className="summary-label">{t('operator.workitems.escalatedWaits')}</div>
               <div className="summary-value">{escalatedWaits}</div>
             </div>
           </div>
 
           <div className="filters">
             <div className="filter-group">
-              <label htmlFor="filterAssignee">Исполнитель</label>
+              <label htmlFor="filterAssignee">{t('operator.workitems.assignee')}</label>
               <select id="filterAssignee"
                 value={filters.assignee || ''}
                 onChange={e => setFilters(f => ({ ...f, assignee: e.target.value || undefined }))}>
-                <option value="">Все исполнители</option>
+                <option value="">{t('operator.workitems.allAssignees')}</option>
                 {assigneeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
             </div>
             <div className="filter-group">
-              <label htmlFor="filterProcess">Процесс</label>
+              <label htmlFor="filterProcess">{t('operator.runs.process')}</label>
               <select id="filterProcess"
                 value={filters.process_id || ''}
                 onChange={e => setFilters(f => ({ ...f, process_id: e.target.value || undefined }))}>
-                <option value="">Все процессы</option>
+                <option value="">{t('operator.workitems.allProcesses')}</option>
                 {workflows.map(wf => (
                   <option key={wf.id} value={wf.id}>{wf.name || wf.id}</option>
                 ))}
               </select>
             </div>
             <div className="filter-group">
-              <label htmlFor="filterStatus">Статус</label>
+              <label htmlFor="filterStatus">{t('operator.runs.status')}</label>
               <select id="filterStatus" value={filters.status || ''}
                 onChange={e => setFilters(f => ({ ...f, status: (e.target.value || undefined) as any }))}>
-                <option value="">Все статусы</option>
-                <option value="pending">Ожидает</option>
-                <option value="assigned">Назначено</option>
-                <option value="running">Выполняется</option>
-                <option value="done">Завершено</option>
-                <option value="error">Ошибка</option>
+                <option value="">{t('operator.workitems.allStatuses')}</option>
+                <option value="pending">{t('operator.workitems.waiting')}</option>
+                <option value="assigned">{t('operator.workitems.statusAssigned')}</option>
+                <option value="running">{t('operator.runs.statusRunning')}</option>
+                <option value="done">{t('operator.runs.statusDone')}</option>
+                <option value="error">{t('operator.runs.statusError')}</option>
               </select>
             </div>
             <div className="filter-group">
-              <label htmlFor="filterDeadline">Срок до</label>
+              <label htmlFor="filterDeadline">{t('operator.workitems.deadlineBefore')}</label>
               <input id="filterDeadline" type="date"
                 value={filters.deadline_before || ''}
                 onChange={e => setFilters(f => ({ ...f, deadline_before: e.target.value || undefined }))} />
             </div>
             <div className="button-group">
-              <button className="reset" onClick={() => setFilters({})}>Сбросить</button>
+              <button className="reset" onClick={() => setFilters({})}>{t('action.reset')}</button>
             </div>
             {hiddenQueueCount > 0 && (
-              <label className="hidden-toggle" title="Показать скрытые test/debug/generated задачи и ожидания. То же доступно через ?view=debug.">
+              <label className="hidden-toggle" title={t('operator.workitems.showHiddenTitle')}>
                 <input
                   type="checkbox"
                   checked={showHiddenArtifacts}
                   onChange={e => setShowHiddenArtifacts(e.target.checked)}
                 />
-                Показать служебные ({hiddenQueueCount})
+                {t('operator.workitems.showHidden').replace('{count}', String(hiddenQueueCount))}
               </label>
             )}
           </div>
 
-          {loading && <div className="loading-msg">Загрузка…</div>}
+          {loading && <div className="loading-msg">{t('operator.runs.loading')}</div>}
 
           {!loading && visibleItems.length === 0 && !error && (
-            <div className="empty">Задачи не найдены.</div>
+            <div className="empty">{t('empty.workitems')}</div>
           )}
 
           {visibleItems.length > 0 && (
             <table className="items-table" id="itemsTable">
               <thead>
                 <tr>
-                  <th>Описание</th>
-                  <th>Исполнитель</th>
-                  <th>Статус</th>
-                  <th>Процесс / Прогон</th>
-                  <th>Прогресс</th>
-                  <th>Срок</th>
-                  <th>Действия</th>
+                  <th>{t('operator.workitems.description')}</th>
+                  <th>{t('operator.workitems.assignee')}</th>
+                  <th>{t('operator.runs.status')}</th>
+                  <th>{t('operator.workitems.processRun')}</th>
+                  <th>{t('operator.workitems.progress')}</th>
+                  <th>{t('operator.workitems.deadline')}</th>
+                  <th>{t('label.actions')}</th>
                 </tr>
               </thead>
               <tbody id="itemsBody">
@@ -428,7 +432,7 @@ export function WorkItems() {
                       <td>
                         {(item.process_id || item.case_id)
                           ? <span title={fullTitle} style={{ cursor: 'default' }}>{processCell}</span>
-                          : <span className="standalone-badge">Автономная</span>}
+                          : <span className="standalone-badge">{t('operator.workitems.standalone')}</span>}
                       </td>
                       <td className="step-progress"
                           data-case-id={item.case_id || ''}
@@ -437,8 +441,8 @@ export function WorkItems() {
                       </td>
                       <td>{deadline}</td>
                       <td className="item-actions">
-                        <button className="complete" onClick={() => completeItem(item.work_item_id)}>Завершить</button>
-                        <button onClick={() => setDetailItem(item)}>Детали</button>
+                        <button className="complete" onClick={() => completeItem(item.work_item_id)}>{t('operator.workitems.complete')}</button>
+                        <button onClick={() => setDetailItem(item)}>{t('operator.workitems.details')}</button>
                       </td>
                     </tr>
                   );
@@ -448,39 +452,39 @@ export function WorkItems() {
           )}
 
           <div className="refresh-info">
-            Авто-обновление 10с • Последнее: <span id="lastUpdate">{lastUpdate}</span>
+            {t('operator.workitems.refresh').replace('{time}', lastUpdate)}
           </div>
 
           <div className="section-card">
-            <h2>Ожидания</h2>
-            <p>Ожидания событий, дедлайнов и ручных подтверждений в активных прогонах.</p>
+            <h2>{t('operator.workitems.waits')}</h2>
+            <p>{t('operator.workitems.waitsSubtitle')}</p>
             <div className="filters" style={{ paddingBottom: 12, marginBottom: 12 }}>
               <div className="filter-group">
-                <label htmlFor="waitStatus">Статус ожидания</label>
+                <label htmlFor="waitStatus">{t('operator.workitems.waitStatus')}</label>
                 <select id="waitStatus" value={waitStatusFilter} onChange={e => setWaitStatusFilter((e.target.value || '') as EventWaitStatus | '')}>
-                  <option value="">Активные / проблемные</option>
-                  <option value="active">Ожидает</option>
-                  <option value="overdue">Просрочено</option>
-                  <option value="escalated">Эскалация</option>
+                  <option value="">{t('operator.workitems.activeProblemWaits')}</option>
+                  <option value="active">{t('operator.workitems.waiting')}</option>
+                  <option value="overdue">{t('operator.workitems.overdue')}</option>
+                  <option value="escalated">{t('operator.workitems.escalated')}</option>
                 </select>
               </div>
             </div>
 
             {!loading && visibleWaits.length === 0 && (
-              <div className="empty">Активные ожидания не найдены.</div>
+              <div className="empty">{t('operator.workitems.noActiveWaits')}</div>
             )}
 
             {visibleWaits.length > 0 && (
               <table className="items-table">
                 <thead>
                   <tr>
-                    <th>Ожидание</th>
-                    <th>Тип</th>
-                    <th>Статус</th>
-                    <th>Исполнитель</th>
-                    <th>Процесс / Прогон</th>
-                    <th>Срок</th>
-                    <th>Действия</th>
+                    <th>{t('operator.workitems.wait')}</th>
+                    <th>{t('operator.workitems.type')}</th>
+                    <th>{t('operator.runs.status')}</th>
+                    <th>{t('operator.workitems.assignee')}</th>
+                    <th>{t('operator.workitems.processRun')}</th>
+                    <th>{t('operator.workitems.deadline')}</th>
+                    <th>{t('label.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -510,9 +514,9 @@ export function WorkItems() {
                         <td>{wait.deadline ? new Date(wait.deadline).toLocaleString() : '-'}</td>
                         <td className="item-actions">
                           {wait.trigger_kind === 'manual' && (
-                            <button className="complete" onClick={() => confirmWait(wait)}>Подтвердить</button>
+                            <button className="complete" onClick={() => confirmWait(wait)}>{t('operator.workitems.complete')}</button>
                           )}
-                          <button onClick={() => wait.case_id && api.cases.get(wait.case_id).then(kase => setCaseCache(prev => ({ ...prev, [wait.case_id]: kase }))).catch(() => {})}>Обновить прогон</button>
+                          <button onClick={() => wait.case_id && api.cases.get(wait.case_id).then(kase => setCaseCache(prev => ({ ...prev, [wait.case_id]: kase }))).catch(() => {})}>{t('operator.workitems.updateRun')}</button>
                         </td>
                       </tr>
                     );

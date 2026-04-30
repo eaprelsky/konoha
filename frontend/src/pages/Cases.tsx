@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { RunOverlay } from '../components/RunOverlay';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Case, Workflow } from '../api/types';
@@ -84,6 +85,7 @@ const GROUP_LIMIT = 500;
 
 export function Cases() {
   const token = useToken();
+  const { t } = useI18n();
   const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [cases, setCases] = useState<Case[]>([]);
   const [total, setTotal] = useState(0);
@@ -206,49 +208,49 @@ export function Cases() {
       <style>{styles}</style>
       <div className="cs-body">
         <div className="container">
-          <div className="page-header"><h1>Прогоны</h1></div>
+          <div className="page-header"><h1>{t('operator.runs.title')}</h1></div>
           {error && <div className="error-banner">{error}</div>}
 
           <div className="filters">
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option value="">Все статусы</option>
-              <option value="running">Выполняется</option>
-              <option value="done">Завершено</option>
-              <option value="error">Ошибка</option>
+              <option value="">{t('operator.runs.allStatuses')}</option>
+              <option value="running">{t('operator.runs.statusRunning')}</option>
+              <option value="done">{t('operator.runs.statusDone')}</option>
+              <option value="error">{t('operator.runs.statusError')}</option>
             </select>
-            <input type="text" placeholder="Фильтр по процессу..."
+            <input type="text" placeholder={t('operator.runs.filterProcess')}
               value={processFilter} onChange={e => setProcessFilter(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && applyFilters()} />
-            <button onClick={applyFilters}>Применить</button>
-            <button className="reset" onClick={resetFilters}>Сбросить</button>
+            <button onClick={applyFilters}>{t('action.apply')}</button>
+            <button className="reset" onClick={resetFilters}>{t('action.reset')}</button>
             {hiddenCaseCount > 0 && (
-              <label className="hidden-toggle" title="Показать скрытые test/debug/generated прогоны. То же доступно через ?view=debug.">
+              <label className="hidden-toggle" title={t('operator.runs.showHiddenTitle')}>
                 <input
                   type="checkbox"
                   checked={showHiddenArtifacts}
                   onChange={e => setShowHiddenArtifacts(e.target.checked)}
                 />
-                Показать служебные ({hiddenCaseCount})
+                {t('operator.runs.showHidden').replace('{count}', String(hiddenCaseCount))}
               </label>
             )}
             <div className="view-toggle">
-              <button className={viewMode === 'grouped' ? 'active' : ''} onClick={() => setViewMode('grouped')}>Группировка</button>
-              <button className={viewMode === 'flat' ? 'active' : ''} onClick={() => setViewMode('flat')}>Список</button>
+              <button className={viewMode === 'grouped' ? 'active' : ''} onClick={() => setViewMode('grouped')}>{t('operator.runs.grouped')}</button>
+              <button className={viewMode === 'flat' ? 'active' : ''} onClick={() => setViewMode('flat')}>{t('operator.runs.list')}</button>
             </div>
           </div>
 
-          {loading && <div className="empty">Загрузка…</div>}
-          {!loading && visibleCases.length === 0 && <div className="empty">Прогоны не найдены.</div>}
+          {loading && <div className="empty">{t('operator.runs.loading')}</div>}
+          {!loading && visibleCases.length === 0 && <div className="empty">{t('operator.runs.empty')}</div>}
 
           {visibleCases.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Тема</th>
-                  <th>Процесс</th>
-                  <th>Статус</th>
-                  <th>Позиция</th>
-                  <th>Создано</th>
+                  <th>{t('operator.runs.subject')}</th>
+                  <th>{t('operator.runs.process')}</th>
+                  <th>{t('operator.runs.status')}</th>
+                  <th>{t('operator.runs.position')}</th>
+                  <th>{t('operator.runs.created')}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -261,22 +263,22 @@ export function Cases() {
                           <span className={`group-arrow${expandedGroups.has(group.process_id) ? ' open' : ''}`}>▶</span>
                           <strong>{group.process_name}</strong>
                           <span className="group-count">
-                            <span>{group.counts.total} всего</span>
-                            {group.counts.running > 0 && <span className="gc-running">{group.counts.running} активных</span>}
-                            {group.counts.done > 0 && <span className="gc-done">{group.counts.done} завершено</span>}
-                            {group.counts.error > 0 && <span className="gc-error">{group.counts.error} ошибок</span>}
+                            <span>{t('operator.runs.total').replace('{count}', String(group.counts.total))}</span>
+                            {group.counts.running > 0 && <span className="gc-running">{t('operator.runs.active').replace('{count}', String(group.counts.running))}</span>}
+                            {group.counts.done > 0 && <span className="gc-done">{t('operator.runs.completed').replace('{count}', String(group.counts.done))}</span>}
+                            {group.counts.error > 0 && <span className="gc-error">{t('operator.runs.errors').replace('{count}', String(group.counts.error))}</span>}
                           </span>
                         </td>
                       </tr>
                       {expandedGroups.has(group.process_id) && group.cases.map(c => (
                         <tr key={c.case_id} className="child-row" onClick={() => openDetail(c)}>
-                          <td><span className="link">{c.subject || '(без темы)'}</span></td>
+                          <td><span className="link">{c.subject || t('operator.runs.noSubject')}</span></td>
                           <td>{wfNameMap[c.process_id] || c.process_id}</td>
                           <td><StatusBadge status={c.status} /></td>
                           <td className="mono">{positionLabel(c)}</td>
                           <td>{new Date(c.created_at).toLocaleString()}</td>
                           <td onClick={e => { e.stopPropagation(); setRunCaseId(c.case_id); }}>
-                            <button className="btn-open-schema">Схема</button>
+                            <button className="btn-open-schema">{t('operator.runs.schema')}</button>
                           </td>
                         </tr>
                       ))}
@@ -284,13 +286,13 @@ export function Cases() {
                   ))
                   : visibleCases.map(c => (
                     <tr key={c.case_id} onClick={() => openDetail(c)}>
-                      <td><span className="link">{c.subject || '(без темы)'}</span></td>
+                      <td><span className="link">{c.subject || t('operator.runs.noSubject')}</span></td>
                       <td>{wfNameMap[c.process_id] || c.process_id}</td>
                       <td><StatusBadge status={c.status} /></td>
                       <td className="mono">{positionLabel(c)}</td>
                       <td>{new Date(c.created_at).toLocaleString()}</td>
                       <td onClick={e => { e.stopPropagation(); setRunCaseId(c.case_id); }}>
-                        <button className="btn-open-schema">Схема</button>
+                        <button className="btn-open-schema">{t('operator.runs.schema')}</button>
                       </td>
                     </tr>
                   ))
@@ -301,13 +303,13 @@ export function Cases() {
 
           {viewMode === 'flat' && total > PAGE_SIZE && (
             <div className="pagination">
-              <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>← Назад</button>
-              <span>Стр. {currentPage} из {totalPages} (всего: {total})</span>
-              <button disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Вперёд →</button>
+              <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>{t('operator.runs.back')}</button>
+              <span>{t('operator.runs.pageSummary').replace('{page}', String(currentPage)).replace('{pages}', String(totalPages)).replace('{total}', String(total))}</span>
+              <button disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>{t('operator.runs.next')}</button>
             </div>
           )}
 
-          <div className="refresh-info">Авто-обновление 15с • Последнее: {lastUpdate}</div>
+          <div className="refresh-info">{t('operator.runs.refresh').replace('{time}', lastUpdate)}</div>
         </div>
       </div>
 
@@ -327,13 +329,13 @@ export function Cases() {
             </div>
 
             <button className="btn-schema" onClick={() => { setRunCaseId(selectedCase.case_id); setSelectedCase(null); }}>
-              🗺 Открыть схему
+              🗺 {t('operator.runs.openDiagram')}
             </button>
 
-            <div className="section-title">Данные</div>
+            <div className="section-title">{t('operator.runs.data')}</div>
             <pre className="payload-code">{JSON.stringify(selectedCase.payload, null, 2)}</pre>
 
-            <div className="section-title">История ({selectedCase.history?.length || 0} шагов)</div>
+            <div className="section-title">{t('operator.runs.history').replace('{count}', String(selectedCase.history?.length || 0))}</div>
             {(selectedCase.history || []).map((h, i) => (
               <div className="timeline-item" key={i}>
                 <div className={`timeline-dot${i === (selectedCase.history.length - 1) ? ' active' : ''}`} />
@@ -347,7 +349,7 @@ export function Cases() {
               </div>
             ))}
             {(!selectedCase.history || selectedCase.history.length === 0) && (
-              <div style={{ color: '#999', fontSize: 13 }}>История пуста.</div>
+              <div style={{ color: '#999', fontSize: 13 }}>{t('operator.runs.emptyHistory')}</div>
             )}
           </div>
         </div>

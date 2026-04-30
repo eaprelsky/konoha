@@ -19,7 +19,7 @@ import { ByProcessView } from './ByProcessView';
 import { BySourceView } from './BySourceView';
 
 export function EventMonitor() {
-  const { lang } = useI18n();
+  const { t } = useI18n();
   const {
     subs, summary, adapters, loading, error, lastUpdate,
     tab, setTab,
@@ -32,12 +32,12 @@ export function EventMonitor() {
   } = useEventMonitor();
 
   const badge = summary.errors + summary.manual_fallback;
-  useSetSubtitle(badge > 0 ? `${badge} требуют внимания` : undefined);
+  useSetSubtitle(badge > 0 ? t('eventMonitor.subtitleAttention').replace('{count}', String(badge)) : undefined);
 
   const tabs: [Tab, string][] = [
-    ['timeline',   lang === 'ru' ? 'Лента'        : 'Timeline'],
-    ['by-process', lang === 'ru' ? 'По процессу'  : 'By Process'],
-    ['by-source',  lang === 'ru' ? 'По источнику' : 'By Source'],
+    ['timeline',   t('eventMonitor.tab.timeline')],
+    ['by-process', t('eventMonitor.tab.byProcess')],
+    ['by-source',  t('eventMonitor.tab.bySource')],
   ];
 
   const hasFilters = !!(filterKind || filterStatus || filterProcess || filterSource);
@@ -50,18 +50,18 @@ export function EventMonitor() {
 
           {/* Summary counters */}
           <div className="em-summary">
-            <div className="em-counter info"><div className="val">{summary.total}</div><div className="lbl">Всего</div></div>
-            <div className="em-counter ok"><div className="val">{summary.waiting}</div><div className="lbl">Ожидают</div></div>
-            <div className="em-counter ok"><div className="val">{summary.fired_today}</div><div className="lbl">Сегодня</div></div>
-            <div className="em-counter err"><div className="val">{summary.errors}</div><div className="lbl">Ошибки</div></div>
-            <div className="em-counter warn"><div className="val">{summary.manual_fallback}</div><div className="lbl">Вручную</div></div>
+            <div className="em-counter info"><div className="val">{summary.total}</div><div className="lbl">{t('eventMonitor.total')}</div></div>
+            <div className="em-counter ok"><div className="val">{summary.waiting}</div><div className="lbl">{t('eventMonitor.waiting')}</div></div>
+            <div className="em-counter ok"><div className="val">{summary.fired_today}</div><div className="lbl">{t('eventMonitor.today')}</div></div>
+            <div className="em-counter err"><div className="val">{summary.errors}</div><div className="lbl">{t('eventMonitor.errors')}</div></div>
+            <div className="em-counter warn"><div className="val">{summary.manual_fallback}</div><div className="lbl">{t('eventMonitor.manual')}</div></div>
             <div className="em-refresh" style={{ marginLeft: 'auto' }}>
               <span className="em-refresh-dot" />
-              Обновлено: {lastUpdate || '—'} (30s)
+              {t('eventMonitor.updated').replace('{time}', lastUpdate || '—')}
             </div>
           </div>
 
-          {error && <div className="em-error-banner">Ошибка загрузки: {error}</div>}
+          {error && <div className="em-error-banner">{t('eventMonitor.loadError').replace('{message}', error)}</div>}
 
           {/* Tabs */}
           <div className="em-tabs">
@@ -79,7 +79,7 @@ export function EventMonitor() {
           {/* Filter bar */}
           <div className="em-filters">
             <select value={filterKind} onChange={e => { setFilterKind(e.target.value); updateUrl({ kind: e.target.value }); }}>
-              <option value="">Все типы</option>
+              <option value="">{t('eventMonitor.allTypes')}</option>
               <option value="timer">Timer</option>
               <option value="delay_after">Delay After</option>
               <option value="message">Message</option>
@@ -88,38 +88,38 @@ export function EventMonitor() {
               <option value="system">System</option>
             </select>
             <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); updateUrl({ status: e.target.value }); }}>
-              <option value="">Все статусы</option>
-              <option value="waiting">Ожидает</option>
-              <option value="fired">Сработал</option>
-              <option value="error">Ошибка</option>
-              <option value="manual_fallback">Вручную</option>
+              <option value="">{t('eventMonitor.allStatuses')}</option>
+              <option value="waiting">{t('operator.workitems.waiting')}</option>
+              <option value="fired">{t('eventMonitor.statusFired')}</option>
+              <option value="error">{t('run.status.error')}</option>
+              <option value="manual_fallback">{t('eventMonitor.statusManualFallback')}</option>
             </select>
             <select value={filterProcess} onChange={e => { setFilterProcess(e.target.value); updateUrl({ process: e.target.value }); }}>
-              <option value="">Все процессы</option>
+              <option value="">{t('eventMonitor.allProcesses')}</option>
               {processes.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
             <select value={filterSource} onChange={e => { setFilterSource(e.target.value); updateUrl({ source: e.target.value }); }}>
-              <option value="">Все источники</option>
-              <option value="bitrix">Битрикс24</option>
-              <option value="telegram">Телеграм</option>
-              <option value="tracker">Яндекс Трекер</option>
+              <option value="">{t('eventMonitor.allSources')}</option>
+              <option value="bitrix">{t('eventMonitor.sourceBitrix')}</option>
+              <option value="telegram">{t('eventMonitor.sourceTelegram')}</option>
+              <option value="tracker">{t('eventMonitor.sourceTracker')}</option>
             </select>
             {hiddenSubscriptionCount > 0 && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }} title="Показать скрытые test/debug/generated подписки. То же можно открыть через ?view=debug.">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }} title={t('eventMonitor.hiddenTitle')}>
                 <input
                   type="checkbox"
                   checked={showHiddenArtifacts}
                   onChange={e => setShowHiddenArtifacts(e.target.checked)}
                 />
-                Служебные ({hiddenSubscriptionCount})
+                {t('eventMonitor.hidden').replace('{count}', String(hiddenSubscriptionCount))}
               </label>
             )}
-            {hasFilters && <button className="reset-btn" onClick={resetFilters}>Сбросить</button>}
+            {hasFilters && <button className="reset-btn" onClick={resetFilters}>{t('eventMonitor.reset')}</button>}
           </div>
 
           {/* Content */}
           {loading ? (
-            <div className="em-loading">Загрузка...</div>
+            <div className="em-loading">{t('eventMonitor.loading')}</div>
           ) : (
             <>
               {tab === 'timeline'   && <TimelineView subs={subs} />}

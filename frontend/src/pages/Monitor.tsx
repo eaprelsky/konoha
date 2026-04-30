@@ -24,9 +24,9 @@ function fmtTime(iso: string): string {
 }
 
 function fmtElapsed(ms: number): string {
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}с`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}м`;
-  return `${Math.floor(ms / 3_600_000)}ч ${Math.floor((ms % 3_600_000) / 60_000)}м`;
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}s`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m`;
+  return `${Math.floor(ms / 3_600_000)}h ${Math.floor((ms % 3_600_000) / 60_000)}m`;
 }
 
 function elapsedMs(iso: string): number {
@@ -40,10 +40,10 @@ function statusColor(s: string) {
   return '#94a3b8';
 }
 
-function statusLabel(s: string, lang: string): string {
-  if (s === 'running') return lang === 'ru' ? 'Выполняется' : 'Running';
-  if (s === 'done') return lang === 'ru' ? 'Выполнено' : 'Done';
-  if (s === 'error') return lang === 'ru' ? 'Ошибка' : 'Error';
+function statusLabel(s: string, t: (key: string) => string): string {
+  if (s === 'running') return t('operator.runs.statusRunning');
+  if (s === 'done') return t('run.status.done');
+  if (s === 'error') return t('run.status.error');
   return s;
 }
 
@@ -54,7 +54,7 @@ function statusLabel(s: string, lang: string): string {
 
 export function Monitor() {
   const token = useToken();
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
   const location = useLocation();
   const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
 
@@ -185,67 +185,67 @@ export function Monitor() {
         <div className="mon-left">
           <div className="mon-left-head">
             <h2>
-              {lang === 'ru' ? 'Прогоны' : 'Process Runs'}
+              {t('operator.runs.title')}
               {operatorRuns.length > 0 && <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: 13, marginLeft: 8 }}>({operatorRuns.length})</span>}
             </h2>
             <div className="mon-filters">
               <div className="mon-filter-row">
                 <input
-                  placeholder={lang === 'ru' ? 'Поиск…' : 'Search…'}
+                  placeholder={t('operator.monitor.search')}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                 />
               </div>
               <div className="mon-filter-row">
                 <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                  <option value="">{lang === 'ru' ? 'Все статусы' : 'All statuses'}</option>
-                  <option value="running">{lang === 'ru' ? 'Выполняется' : 'Running'}</option>
-                  <option value="done">{lang === 'ru' ? 'Выполнено' : 'Done'}</option>
-                  <option value="error">{lang === 'ru' ? 'Ошибка' : 'Error'}</option>
+                  <option value="">{t('operator.runs.allStatuses')}</option>
+                  <option value="running">{t('operator.runs.statusRunning')}</option>
+                  <option value="done">{t('run.status.done')}</option>
+                  <option value="error">{t('run.status.error')}</option>
                 </select>
               </div>
               {hiddenRunCount > 0 && (
                 <label
                   style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b' }}
-                  title={lang === 'ru' ? 'Показать скрытые test/debug/generated прогоны. То же доступно через ?view=debug.' : 'Show hidden test/debug/generated runs. Also available with ?view=debug.'}
+                  title={t('operator.monitor.hiddenTitle')}
                 >
                   <input
                     type="checkbox"
                     checked={showHiddenArtifacts}
                     onChange={e => setShowHiddenArtifacts(e.target.checked)}
                   />
-                  {lang === 'ru' ? `Служебные (${hiddenRunCount})` : `Hidden (${hiddenRunCount})`}
+                  {t('operator.monitor.hidden').replace('{count}', String(hiddenRunCount))}
                 </label>
               )}
             </div>
           </div>
 
           <div style={{ padding: '4px 16px 6px', display: 'flex', gap: 12, fontSize: 11, color: '#64748b', borderBottom: '1px solid #f1f5f9', flexWrap: 'wrap' }}>
-            <span title={lang === 'ru' ? 'Статус прогона' : 'Run status'}>
+            <span title={t('operator.monitor.runStatus')}>
               <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#3b82f6', marginRight: 3 }} />
-              {lang === 'ru' ? 'активен' : 'running'}
+              {t('operator.monitor.runningLegend')}
             </span>
             <span>
               <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef4444', marginRight: 3 }} />
-              {lang === 'ru' ? 'ошибка' : 'error'}
+              {t('operator.monitor.errorLegend')}
             </span>
             <span style={{ marginLeft: 8, color: '#94a3b8' }}>SLA:</span>
-            <span title={lang === 'ru' ? 'Выполняется > 4 часов' : 'Running > 4 hours'}>
+            <span title={t('operator.monitor.running4h')}>
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', marginRight: 3 }} />
-              {lang === 'ru' ? '>4ч' : '>4h'}
+              &gt;4h
             </span>
-            <span title={lang === 'ru' ? 'Застрял: выполняется > 24 часов' : 'Stuck: running > 24 hours'}>
+            <span title={t('operator.monitor.running24h')}>
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#ef4444', marginRight: 3 }} />
-              {lang === 'ru' ? '>24ч (застрял)' : '>24h (stuck)'}
+              &gt;24h ({t('operator.monitor.stuck')})
             </span>
           </div>
 
           <div className="mon-runs-list">
-            {loading && <div className="mon-loading">{lang === 'ru' ? 'Загрузка…' : 'Loading…'}</div>}
+            {loading && <div className="mon-loading">{t('operator.runs.loading')}</div>}
             {error && <div className="mon-error">{error}</div>}
             {!loading && filtered.length === 0 && (
               <div className="mon-loading" style={{ color: '#94a3b8' }}>
-                {lang === 'ru' ? 'Прогоны не найдены' : 'No runs found'}
+                {t('operator.runs.empty')}
               </div>
             )}
             {Object.entries(grouped).map(([pid, groupRuns]) => {
@@ -266,21 +266,21 @@ export function Monitor() {
                       <div
                         className={`run-dot ${r.status}`}
                         title={r.status === 'error'
-                          ? (lang === 'ru' ? 'Ошибка выполнения' : 'Execution error')
+                          ? t('operator.monitor.executionError')
                           : r.status === 'running'
-                          ? (lang === 'ru' ? 'Выполняется' : 'Running')
-                          : (lang === 'ru' ? 'Завершено' : 'Done')}
+                          ? t('operator.runs.statusRunning')
+                          : t('operator.monitor.done')}
                       />
                       <div className="run-info">
                         <div className="run-subject">{r.subject}</div>
                         <div className="run-step">{currentStep(r)}</div>
                         <div className="run-meta">
-                          <span>{statusLabel(r.status, lang)}</span>
+                          <span>{statusLabel(r.status, t)}</span>
                           <span>{fmtTime(r.created_at)}</span>
                           {r.status === 'running' && <span>{fmtElapsed(elapsedMs(r.created_at))}</span>}
                           {r.status === 'running' && elapsedMs(r.created_at) > 24 * 3_600_000 && (
                             <span style={{ color: '#ef4444', fontWeight: 600 }}>
-                              {lang === 'ru' ? '⚠ застрял' : '⚠ stuck'}
+                              ⚠ {t('operator.monitor.stuck')}
                             </span>
                           )}
                         </div>
@@ -291,10 +291,10 @@ export function Monitor() {
                             className={`sla-dot ${slaClass(r)}`}
                             title={
                               slaClass(r) === 'sla-bad'
-                                ? (lang === 'ru' ? 'Застрял: выполняется > 24 часов' : 'Stuck: running > 24 hours')
+                                ? t('operator.monitor.running24h')
                                 : slaClass(r) === 'sla-warn'
-                                ? (lang === 'ru' ? 'Задержка: выполняется > 4 часов' : 'Delayed: running > 4 hours')
-                                : (lang === 'ru' ? 'В норме' : 'On schedule')
+                                ? t('operator.monitor.delayed')
+                                : t('operator.monitor.onSchedule')
                             }
                           />
                         </div>
@@ -311,7 +311,7 @@ export function Monitor() {
         <div className="mon-right">
           {!selectedRun ? (
             <div className="mon-placeholder">
-              {lang === 'ru' ? '← Выберите прогон для просмотра деталей' : '← Select a run to view details'}
+              {t('placeholder.selectRun')}
             </div>
           ) : (
             <div className="run-detail">
@@ -320,19 +320,19 @@ export function Monitor() {
                 <div className="run-detail-meta">
                   <div className="chip">
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor(selectedRun.status), display: 'inline-block' }} />
-                    <b>{statusLabel(selectedRun.status, lang)}</b>
+                    <b>{statusLabel(selectedRun.status, t)}</b>
                   </div>
                   <div className="chip">
-                    {lang === 'ru' ? 'Процесс: ' : 'Process: '}
+                    {t('operator.monitor.processLabel')}
                     <b>{wfNameMap[selectedRun.process_id] || selectedRun.process_id}</b>
                   </div>
                   <div className="chip">
-                    {lang === 'ru' ? 'Запущен: ' : 'Started: '}
+                    {t('operator.monitor.startedLabel')}
                     <b>{fmtTime(selectedRun.created_at)}</b>
                   </div>
                   {selectedRun.status === 'running' && (
                     <div className="chip">
-                      {lang === 'ru' ? 'Время: ' : 'Duration: '}
+                      {t('operator.monitor.durationLabel')}
                       <b>{fmtElapsed(elapsedMs(selectedRun.created_at))}</b>
                     </div>
                   )}
@@ -343,7 +343,7 @@ export function Monitor() {
               {selectedRun.payload && Object.keys(selectedRun.payload).length > 0 && (
                 <details style={{ padding: '4px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff', flexShrink: 0 }}>
                   <summary style={{ fontSize: 12, color: '#64748b', cursor: 'pointer', userSelect: 'none', fontWeight: 600 }}>
-                    {lang === 'ru' ? 'Данные запуска (payload)' : 'Run payload'}
+                    {t('operator.monitor.runPayload')}
                   </summary>
                   <pre style={{ fontSize: 11, fontFamily: 'monospace', background: '#f1f5f9', borderRadius: 4, padding: '6px 8px', margin: '4px 0 6px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#334155', maxHeight: 100, overflowY: 'auto' }}>
                     {JSON.stringify(selectedRun.payload, null, 2)}
@@ -357,11 +357,11 @@ export function Monitor() {
                   <EpcRenderer workflow={selectedWf} caseData={selectedRun} roleLabels={roleLabels} />
                 ) : wfLoadState === 'loading' ? (
                   <div style={{ padding: 40, color: '#94a3b8', textAlign: 'center', fontSize: 14 }}>
-                    {lang === 'ru' ? 'Загрузка диаграммы…' : 'Loading diagram…'}
+                    {t('operator.monitor.loadingDiagram')}
                   </div>
                 ) : wfLoadState === 'error' ? (
                   <div style={{ padding: 40, color: '#ef4444', textAlign: 'center', fontSize: 14 }}>
-                    {lang === 'ru' ? 'Диаграмма недоступна — процесс не найден или удалён' : 'Diagram unavailable — process not found or deleted'}
+                    {t('operator.monitor.diagramUnavailable')}
                   </div>
                 ) : null}
               </div>
@@ -369,13 +369,13 @@ export function Monitor() {
               {/* Timeline */}
               <div className="run-timeline">
                 <div className="timeline-head">
-                  <span style={{ flex: 1 }}>{lang === 'ru' ? 'История' : 'History'}</span>
+                  <span style={{ flex: 1 }}>{t('operator.monitor.history')}</span>
                   {selectedRun.status === 'running' && (
                     <button
                       className="btn-close-run"
                       disabled={closingRun}
                       onClick={async () => {
-                        if (!confirm(lang === 'ru' ? 'Принудительно закрыть прогон?' : 'Force-close this run?')) return;
+                        if (!confirm(t('operator.monitor.confirmForceClose'))) return;
                         setClosingRun(true);
                         try {
                           await api.cases.close(selectedRun.case_id);
@@ -383,7 +383,7 @@ export function Monitor() {
                           setSelectedRun(r => r ? { ...r, status: 'done' } : r);
                         } finally { setClosingRun(false); }
                       }}
-                    >{lang === 'ru' ? 'Закрыть' : 'Force close'}</button>
+                    >{t('operator.monitor.forceClose')}</button>
                   )}
                 </div>
                 <div className="tl-items">
@@ -407,7 +407,7 @@ export function Monitor() {
                   })}
                   {selectedRun.history.length === 0 && (
                     <div style={{ color: '#94a3b8', fontSize: 13, padding: '8px 0' }}>
-                      {lang === 'ru' ? 'История пуста' : 'No history yet'}
+                      {t('operator.monitor.noHistory')}
                     </div>
                   )}
                 </div>
