@@ -19,6 +19,7 @@ const PRODUCT_SURFACES = [
   "workflows/knowledge/intake.json",
   "workflows/knowledge/source-classification.json",
   "workflows/reliability/incident-triage.json",
+  "workflows/reliability/retention-cleanup.json",
   "workflows/sales/lead-qualification.json",
   "workflows/sdd/harness-factory.json",
 ];

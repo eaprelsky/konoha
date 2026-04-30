@@ -1,0 +1,253 @@
+{
+  "id": "retention-cleanup",
+  "version": "1.0.0",
+  "name": "Runtime Data Retention Cleanup",
+  "description": "Scheduled retention audit with read-only report, read-only cleanup preview, human approval, and guarded Action Spine cleanup apply.",
+  "triggers": [
+    {
+      "event_type": "retention.audit_due",
+      "start_node": "e_retention_audit_due"
+    }
+  ],
+  "documents": [
+    {
+      "doc_id": "retention.cleanup.report",
+      "name": "Retention Report Instructions",
+      "type": "instruction",
+      "content": "Run the retention.report action. Treat Redis-only rows as a hard stop. Summarize entity counts, PG-only groups, safe candidate counts, and review-only groups. Do not delete anything in this step."
+    },
+    {
+      "doc_id": "retention.cleanup.preview",
+      "name": "Retention Preview Instructions",
+      "type": "instruction",
+      "content": "Run the retention.cleanup_preview action only when the report has safe candidates and no Redis-only mismatches. Preserve the exact candidate tuples returned by preview: entity, id, and candidate. Do not rewrite or infer IDs."
+    },
+    {
+      "doc_id": "retention.cleanup.approval",
+      "name": "Retention Approval Instructions",
+      "type": "instruction",
+      "content": "Review the report and preview output. Approve only exact safe_candidate rows that are still expected to be test, demo, debug, or orphaned runtime artifacts. Record approved=true and approved_candidates only when deletion is intentional. Otherwise record approved=false and a rejection reason."
+    },
+    {
+      "doc_id": "retention.cleanup.apply",
+      "name": "Retention Apply Instructions",
+      "type": "instruction",
+      "content": "Run retention.cleanup_apply through Action Spine only after explicit human approval. Pass confirm=true and the exact approved candidate tuples from preview. If the action reports stale, invalid, or mismatched candidates, stop and return to review."
+    },
+    {
+      "doc_id": "retention.cleanup.summary",
+      "name": "Retention Summary Instructions",
+      "type": "instruction",
+      "content": "Publish the retention cycle summary: report status, preview counts, operator decision, deleted_count, blocked_count, and follow-up risks. Link the audit trail entry for the destructive action when cleanup was applied."
+    }
+  ],
+  "elements": [
+    {
+      "id": "e_retention_audit_due",
+      "type": "event",
+      "label": "Scheduled retention audit is due",
+      "trigger": {
+        "kind": "timer",
+        "cron": "0 3 * * *"
+      }
+    },
+    {
+      "id": "f_generate_retention_report",
+      "type": "function",
+      "label": "Generate retention report",
+      "role": "data_lifecycle_operator",
+      "documents": [
+        "retention.cleanup.report"
+      ],
+      "systems": [
+        {
+          "connector": "action_spine",
+          "operation": "retention.report"
+        }
+      ]
+    },
+    {
+      "id": "e_retention_report_ready",
+      "type": "event",
+      "label": "Retention report is ready"
+    },
+    {
+      "id": "g_cleanup_candidates_found",
+      "type": "gateway",
+      "label": "Cleanup candidates found?",
+      "operator": "XOR"
+    },
+    {
+      "id": "e_no_cleanup_needed",
+      "type": "event",
+      "label": "No safe cleanup candidates found"
+    },
+    {
+      "id": "e_cleanup_candidates_found",
+      "type": "event",
+      "label": "Safe cleanup candidates found"
+    },
+    {
+      "id": "f_generate_cleanup_preview",
+      "type": "function",
+      "label": "Generate cleanup preview",
+      "role": "data_lifecycle_operator",
+      "documents": [
+        "retention.cleanup.preview"
+      ],
+      "systems": [
+        {
+          "connector": "action_spine",
+          "operation": "retention.cleanup_preview"
+        }
+      ]
+    },
+    {
+      "id": "e_cleanup_preview_ready",
+      "type": "event",
+      "label": "Cleanup preview is ready"
+    },
+    {
+      "id": "f_review_cleanup_approval",
+      "type": "function",
+      "label": "Review cleanup preview and approve batch",
+      "role": "platform_owner",
+      "documents": [
+        "retention.cleanup.approval"
+      ]
+    },
+    {
+      "id": "e_cleanup_review_recorded",
+      "type": "event",
+      "label": "Cleanup review decision recorded"
+    },
+    {
+      "id": "g_cleanup_approved",
+      "type": "gateway",
+      "label": "Cleanup approved?",
+      "operator": "XOR"
+    },
+    {
+      "id": "e_cleanup_rejected",
+      "type": "event",
+      "label": "Cleanup rejected by operator"
+    },
+    {
+      "id": "e_cleanup_approved",
+      "type": "event",
+      "label": "Cleanup approved by operator"
+    },
+    {
+      "id": "f_apply_cleanup",
+      "type": "function",
+      "label": "Apply approved cleanup batch",
+      "role": "data_lifecycle_operator",
+      "documents": [
+        "retention.cleanup.apply"
+      ],
+      "systems": [
+        {
+          "connector": "action_spine",
+          "operation": "retention.cleanup_apply"
+        }
+      ]
+    },
+    {
+      "id": "e_cleanup_applied",
+      "type": "event",
+      "label": "Cleanup batch applied"
+    },
+    {
+      "id": "f_publish_retention_summary",
+      "type": "function",
+      "label": "Publish retention cycle summary",
+      "role": "reliability_operator",
+      "documents": [
+        "retention.cleanup.summary"
+      ]
+    },
+    {
+      "id": "e_retention_cycle_complete",
+      "type": "event",
+      "label": "Retention cycle complete"
+    }
+  ],
+  "flow": [
+    [
+      "e_retention_audit_due",
+      "f_generate_retention_report"
+    ],
+    [
+      "f_generate_retention_report",
+      "e_retention_report_ready"
+    ],
+    [
+      "e_retention_report_ready",
+      "g_cleanup_candidates_found"
+    ],
+    [
+      "g_cleanup_candidates_found",
+      "e_no_cleanup_needed",
+      "payload.safe_candidate_count === 0"
+    ],
+    [
+      "e_no_cleanup_needed",
+      "f_publish_retention_summary"
+    ],
+    [
+      "g_cleanup_candidates_found",
+      "e_cleanup_candidates_found",
+      "payload.safe_candidate_count > 0"
+    ],
+    [
+      "e_cleanup_candidates_found",
+      "f_generate_cleanup_preview"
+    ],
+    [
+      "f_generate_cleanup_preview",
+      "e_cleanup_preview_ready"
+    ],
+    [
+      "e_cleanup_preview_ready",
+      "f_review_cleanup_approval"
+    ],
+    [
+      "f_review_cleanup_approval",
+      "e_cleanup_review_recorded"
+    ],
+    [
+      "e_cleanup_review_recorded",
+      "g_cleanup_approved"
+    ],
+    [
+      "g_cleanup_approved",
+      "e_cleanup_rejected",
+      "payload.approved !== true"
+    ],
+    [
+      "e_cleanup_rejected",
+      "f_publish_retention_summary"
+    ],
+    [
+      "g_cleanup_approved",
+      "e_cleanup_approved",
+      "payload.approved === true"
+    ],
+    [
+      "e_cleanup_approved",
+      "f_apply_cleanup"
+    ],
+    [
+      "f_apply_cleanup",
+      "e_cleanup_applied"
+    ],
+    [
+      "e_cleanup_applied",
+      "f_publish_retention_summary"
+    ],
+    [
+      "f_publish_retention_summary",
+      "e_retention_cycle_complete"
+    ]
+  ]
+}

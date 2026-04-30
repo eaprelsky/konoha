@@ -256,3 +256,49 @@ describe("workflow-loader e2e: knowledge source classification", () => {
     expect(review?.documents).toEqual(["knowledge.source.classification.policy"]);
   });
 });
+
+describe("workflow-loader e2e: retention cleanup", () => {
+  const workflowPath = join(import.meta.dir, "..", "workflows", "reliability", "retention-cleanup.json");
+  let def: WorkflowDefinition;
+
+  test("loads and validates retention cleanup workflow from disk", () => {
+    const raw = readFileSync(workflowPath, "utf-8");
+    def = JSON.parse(raw);
+    expect(def.id).toBe("retention-cleanup");
+    expect(validateWorkflow(def)).toEqual([]);
+  });
+
+  test("models scheduled report, preview, approval, and guarded apply through Action Spine", () => {
+    const start = def.elements.find(el => el.id === "e_retention_audit_due");
+    expect(start?.type).toBe("event");
+    expect(start?.trigger).toEqual({ kind: "timer", cron: "0 3 * * *" });
+
+    const actionFunctions = def.elements
+      .filter(el => el.type === "function")
+      .map(el => ({ id: el.id, operation: el.systems?.[0]?.operation }));
+    expect(actionFunctions).toContainEqual({ id: "f_generate_retention_report", operation: "retention.report" });
+    expect(actionFunctions).toContainEqual({ id: "f_generate_cleanup_preview", operation: "retention.cleanup_preview" });
+    expect(actionFunctions).toContainEqual({ id: "f_apply_cleanup", operation: "retention.cleanup_apply" });
+  });
+
+  test("requires human approval before destructive cleanup apply", () => {
+    const approval = def.elements.find(el => el.id === "f_review_cleanup_approval");
+    const apply = def.elements.find(el => el.id === "f_apply_cleanup");
+
+    expect(approval?.type).toBe("function");
+    expect(approval?.role).toBe("platform_owner");
+    expect(approval?.documents).toEqual(["retention.cleanup.approval"]);
+    expect(apply?.documents).toEqual(["retention.cleanup.apply"]);
+
+    expect(def.flow).toContainEqual(["f_review_cleanup_approval", "e_cleanup_review_recorded"]);
+    expect(def.flow).toContainEqual(["g_cleanup_approved", "e_cleanup_approved", "payload.approved === true"]);
+    expect(def.flow).toContainEqual(["e_cleanup_approved", "f_apply_cleanup"]);
+  });
+
+  test("publishes a summary for every terminal branch", () => {
+    expect(def.flow).toContainEqual(["e_no_cleanup_needed", "f_publish_retention_summary"]);
+    expect(def.flow).toContainEqual(["e_cleanup_rejected", "f_publish_retention_summary"]);
+    expect(def.flow).toContainEqual(["e_cleanup_applied", "f_publish_retention_summary"]);
+    expect(def.flow).toContainEqual(["f_publish_retention_summary", "e_retention_cycle_complete"]);
+  });
+});

@@ -33,6 +33,19 @@ PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-only-retention-report.ts --l
 PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-only-retention-report.ts --json
 ```
 
+## Workflow
+
+`workflows/reliability/retention-cleanup.json` is the canonical eEPC wrapper around retention operations:
+
+1. A scheduled timer event starts the retention audit.
+2. `retention.report` generates a read-only summary.
+3. `retention.cleanup_preview` returns exact safe-candidate tuples.
+4. A `platform_owner` reviews and approves or rejects the batch.
+5. `retention.cleanup_apply` runs only after approval and only with exact preview tuples.
+6. A summary function records the outcome for operations.
+
+This keeps lifecycle policy visible in the workflow engine instead of hiding it in scripts or UI filters.
+
 ## Policy
 
 Safe cleanup must be implemented in stages:
@@ -40,7 +53,7 @@ Safe cleanup must be implemented in stages:
 1. Report only: identify candidate groups without writing data.
 2. Preview: return exact IDs that would be deleted, still without writing data.
 3. Apply: require admin confirmation, audit trail, and backup/rollback assumptions.
-4. Scheduled workflow: retention audit event -> report -> human approval -> cleanup -> health event.
+4. Scheduled workflow: retention audit event -> report -> preview -> human approval -> cleanup -> summary event.
 
 Default cleanup rules must not delete business artifacts. Only generated/test/debug artifacts or orphaned artifacts from archived/deleted workflows can become default cleanup candidates.
 
