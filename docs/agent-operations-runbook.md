@@ -158,6 +158,31 @@ python3 scripts/healthcheck-system.py
 
 Exit code `0` means there are no hard failures. `WARN` lines are degraded signals to watch; `FAIL` lines require action before delegation.
 
+Connector and optional monitor checks are deployment-policy driven. By default,
+healthcheck keeps the current production posture with Telegram enabled:
+
+```bash
+KONOHA_HEALTH_ENABLED_CONNECTORS=telegram
+KONOHA_HEALTH_ENABLED_OPTIONAL_MONITORS=akamaru,kakashi,kiba
+```
+
+For a fresh non-Telegram install, disable Telegram connector checks without
+removing the healthcheck:
+
+```bash
+KONOHA_HEALTH_ENABLED_CONNECTORS=none python3 scripts/healthcheck-system.py
+python3 scripts/healthcheck-system.py --policy-dry-run
+```
+
+The same values can live in `/opt/shared/konoha-health-policy.json`:
+
+```json
+{
+  "enabled_connectors": ["telegram"],
+  "enabled_optional_monitors": ["akamaru", "kakashi", "kiba"]
+}
+```
+
 The healthcheck covers:
 - `systemctl --failed` and core services: Konoha, Akamaru, Telegram bus/bot, context packer, vision packer, permanent agents, per-agent watchdogs
 - Konoha `/health` and `/agents`

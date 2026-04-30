@@ -38,6 +38,19 @@ OPTIONAL_WORKER_SERVICES = [
     "agent-kiba",
     "agent-watchdog-kiba",
 ]
+CONNECTOR_SERVICE_GROUPS = {
+    "telegram": CONNECTOR_OWNED_SERVICES,
+}
+OPTIONAL_MONITOR_SERVICE_GROUPS = {
+    "akamaru": ["akamaru"],
+    "kiba": ["agent-kiba", "agent-watchdog-kiba"],
+}
+CONNECTOR_AGENTS = {
+    "naruto": "telegram",
+    "sasuke": "telegram",
+}
+DEFAULT_ENABLED_CONNECTORS = {"telegram"}
+DEFAULT_ENABLED_OPTIONAL_MONITORS = {"akamaru", "kakashi", "kiba"}
 PROXY_SERVICES = ["sing-box", "privoxy"]
 AGENT_HEALTH_TARGETS = {
     "naruto": {"classification": "connector_owned", "service": "agent-naruto.service"},
@@ -86,6 +99,7 @@ DASHBOARD_AUTH_FILE = Path(os.environ.get("KONOHA_DASHBOARD_AUTH_FILE", "/opt/sh
 SENSITIVE_TEMP_FILES = [
     Path("/home/ubuntu/.dashboard-initial-password"),
 ]
+HEALTH_POLICY_FILE = Path(os.environ.get("KONOHA_HEALTH_POLICY_FILE", "/opt/shared/konoha-health-policy.json"))
 
 
 @dataclass
@@ -94,6 +108,63 @@ class Check:
     name: str
     detail: str
     hint: str = ""
+
+
+@dataclass(frozen=True)
+class HealthcheckPolicy:
+    enabled_connectors: frozenset[str]
+    enabled_optional_monitors: frozenset[str]
+
+    def as_dict(self) -> dict[str, list[str]]:
+        return {
+            "enabled_connectors": sorted(self.enabled_connectors),
+            "enabled_optional_monitors": sorted(self.enabled_optional_monitors),
+        }
+
+
+def parse_policy_csv(value: str | None, default: set[str]) -> set[str]:
+    if value is None:
+        return set(default)
+    normalized = value.strip().lower()
+    if normalized in {"", "none", "off", "false", "0"}:
+        return set()
+    if normalized == "all":
+        return set(default)
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
+def load_healthcheck_policy(environ: dict[str, str] | None = None, policy_file: Path | None = None) -> HealthcheckPolicy:
+    env = environ or os.environ
+    connectors = set(DEFAULT_ENABLED_CONNECTORS)
+    optional_monitors = set(DEFAULT_ENABLED_OPTIONAL_MONITORS)
+    path = policy_file or Path(env.get("KONOHA_HEALTH_POLICY_FILE", str(HEALTH_POLICY_FILE)))
+
+    if path.exists():
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if "enabled_connectors" in raw:
+            connectors = {str(item) for item in raw.get("enabled_connectors") or []}
+        if "enabled_optional_monitors" in raw:
+            optional_monitors = {str(item) for item in raw.get("enabled_optional_monitors") or []}
+
+    connector_env = env.get("KONOHA_HEALTH_ENABLED_CONNECTORS") or env.get("KONOHA_ENABLED_CONNECTORS")
+    optional_env = env.get("KONOHA_HEALTH_ENABLED_OPTIONAL_MONITORS") or env.get("KONOHA_ENABLED_OPTIONAL_MONITORS")
+    connectors = parse_policy_csv(connector_env, connectors)
+    optional_monitors = parse_policy_csv(optional_env, optional_monitors)
+    return HealthcheckPolicy(frozenset(connectors), frozenset(optional_monitors))
+
+
+def connector_for_service(service: str) -> str | None:
+    for connector, services in CONNECTOR_SERVICE_GROUPS.items():
+        if service in services:
+            return connector
+    return None
+
+
+def optional_monitor_for_service(service: str) -> str | None:
+    for monitor, services in OPTIONAL_MONITOR_SERVICE_GROUPS.items():
+        if service in services:
+            return monitor
+    return None
 
 
 def load_env_defaults() -> None:
@@ -163,7 +234,44 @@ def pane_stuck_signal(content: str) -> str:
     return ""
 
 
-def check_systemd() -> list[Check]:
+def systemd_service_check(service: str, state: str, group: str, policy: HealthcheckPolicy) -> Check:
+    connector = connector_for_service(service)
+    optional_monitor = optional_monitor_for_service(service)
+    is_active = state == "active"
+    is_unknown = state in {"unknown", "not-found", ""}
+
+    if group == "required_core":
+        if is_active:
+            return Check("OK", f"service.{service}", "active classification=required_core")
+        return Check("FAIL", f"service.{service}", f"{state} classification=required_core", f"Run: sudo systemctl restart {service}")
+
+    if connector:
+        enabled = connector in policy.enabled_connectors
+        detail = f"{state} classification=connector_owned connector={connector} policy={'enabled' if enabled else 'disabled'}"
+        if enabled:
+            if is_active:
+                return Check("OK", f"service.{service}", f"active classification=connector_owned connector={connector} policy=enabled")
+            return Check("WARN", f"service.{service}", detail, f"Enable/start connector service only if this deployment uses {connector}")
+        if is_unknown:
+            return Check("OK", f"service.{service}", f"absent connector={connector} policy=disabled")
+        return Check("WARN", f"service.{service}", detail, f"Disable/remove {service} or enable connector policy for {connector}")
+
+    if optional_monitor:
+        enabled = optional_monitor in policy.enabled_optional_monitors
+        detail = f"{state} classification=optional_worker monitor={optional_monitor} policy={'enabled' if enabled else 'disabled'}"
+        if is_active:
+            level = "OK" if enabled else "WARN"
+            hint = "" if enabled else f"Stop {service} or enable optional monitor policy for {optional_monitor}"
+            return Check(level, f"service.{service}", detail, hint)
+        return Check("OK", f"service.{service}", f"{detail} optional")
+
+    if is_active:
+        return Check("OK", f"service.{service}", f"active classification={group}")
+    return Check("OK", f"service.{service}", f"{state} classification={group} optional")
+
+
+def check_systemd(policy: HealthcheckPolicy | None = None) -> list[Check]:
+    policy = policy or load_healthcheck_policy()
     checks: list[Check] = []
     rc, stdout, stderr = run(["systemctl", "--failed", "--no-pager"], timeout=10)
     failed_output = stdout + stderr
@@ -173,24 +281,15 @@ def check_systemd() -> list[Check]:
         checks.append(Check("FAIL", "systemd.failed", failed_output[:240], "Run: systemctl --failed --no-pager"))
 
     service_groups = [
-        ("required_core", CORE_SERVICES, "FAIL"),
-        ("connector_owned", CONNECTOR_OWNED_SERVICES, "WARN"),
-        ("optional_worker", OPTIONAL_WORKER_SERVICES, "OK"),
+        ("required_core", CORE_SERVICES),
+        ("connector_owned", CONNECTOR_OWNED_SERVICES),
+        ("optional_worker", OPTIONAL_WORKER_SERVICES),
     ]
-    for group, services, inactive_level in service_groups:
+    for group, services in service_groups:
         rc, stdout, stderr = run(["systemctl", "is-active", *services], timeout=15)
         states = stdout.splitlines()
         for service, state in zip(services, states):
-            if state == "active":
-                checks.append(Check("OK", f"service.{service}", f"active classification={group}"))
-                continue
-            detail = f"{state or stderr[:120]} classification={group}"
-            if inactive_level == "OK":
-                checks.append(Check("OK", f"service.{service}", f"{detail} optional"))
-            elif inactive_level == "WARN":
-                checks.append(Check("WARN", f"service.{service}", detail, f"Enable/start connector service only if this deployment uses {service}"))
-            else:
-                checks.append(Check("FAIL", f"service.{service}", detail, f"Run: sudo systemctl restart {service}"))
+            checks.append(systemd_service_check(service, state or stderr[:120], group, policy))
     return checks
 
 
@@ -211,7 +310,8 @@ def check_api() -> list[Check]:
     return checks
 
 
-def check_redis_streams() -> list[Check]:
+def check_redis_streams(policy: HealthcheckPolicy | None = None) -> list[Check]:
+    policy = policy or load_healthcheck_policy()
     checks: list[Check] = []
     try:
         if redis_json("PING") != "PONG":
@@ -220,6 +320,10 @@ def check_redis_streams() -> list[Check]:
         checks.append(Check("OK", "redis.ping", "PONG"))
     except Exception as exc:
         return [Check("FAIL", "redis.ping", str(exc), "Run: sudo systemctl restart redis-server")]
+
+    if "telegram" not in policy.enabled_connectors:
+        checks.append(Check("OK", "redis.connector.telegram", "disabled by policy; telegram stream checks skipped"))
+        return checks
 
     for stream, expected_groups in STREAM_GROUPS.items():
         try:
@@ -258,7 +362,8 @@ def check_redis_streams() -> list[Check]:
     return checks
 
 
-def check_agents() -> list[Check]:
+def check_agents(policy: HealthcheckPolicy | None = None) -> list[Check]:
+    policy = policy or load_healthcheck_policy()
     checks: list[Check] = []
     # Fetch agent defs to report LLM profiles
     agent_profiles: dict[str, str] = {}
@@ -274,13 +379,17 @@ def check_agents() -> list[Check]:
 
     for agent, meta in AGENT_HEALTH_TARGETS.items():
         classification = str(meta["classification"])
+        connector = CONNECTOR_AGENTS.get(agent)
+        connector_enabled = connector is None or connector in policy.enabled_connectors
         profile = agent_profiles.get(agent, "unknown")
         rc, _, _ = run(["tmux", "-L", agent, "has-session", "-t", agent], timeout=5)
         if rc != 0:
             if classification == "core":
                 checks.append(Check("FAIL", f"agent.{agent}.tmux", f"missing classification={classification} profile={profile}", f"Run: sudo systemctl restart agent-{agent}.service"))
-            elif classification == "connector_owned":
+            elif classification == "connector_owned" and connector_enabled:
                 checks.append(Check("WARN", f"agent.{agent}.tmux", f"missing classification={classification} profile={profile}", "Start connector-owned runtime only when the connector is enabled"))
+            elif classification == "connector_owned":
+                checks.append(Check("OK", f"agent.{agent}.tmux", f"missing classification={classification} connector={connector} policy=disabled"))
             else:
                 checks.append(Check("OK", f"agent.{agent}.tmux", f"not running classification={classification} optional"))
             continue
@@ -289,7 +398,9 @@ def check_agents() -> list[Check]:
             checks.append(Check("WARN", f"agent.{agent}.pane", f"{stderr[:160]} classification={classification} profile={profile}", f"Run: tmux -L {agent} capture-pane -pt {agent}"))
             continue
         signal = pane_stuck_signal(pane)
-        if signal:
+        if classification == "connector_owned" and not connector_enabled:
+            checks.append(Check("WARN", f"agent.{agent}.tmux", f"running classification={classification} connector={connector} policy=disabled", f"Stop agent-{agent}.service or enable connector policy"))
+        elif signal:
             checks.append(Check("WARN", f"agent.{agent}.signal", f"{signal} classification={classification} profile={profile}", f"Inspect pane; if persistent restart agent-{agent}.service"))
         else:
             checks.append(Check("OK", f"agent.{agent}.tmux", f"alive idle={str(pane_is_idle(pane)).lower()} classification={classification} profile={profile}"))
@@ -303,15 +414,43 @@ def systemd_exec_start(service: str) -> str:
     return stdout
 
 
-def check_lifecycle_control_plane() -> list[Check]:
+def agent_policy_enabled(agent: str, classification: str, policy: HealthcheckPolicy) -> bool:
+    connector = CONNECTOR_AGENTS.get(agent)
+    if connector:
+        return connector in policy.enabled_connectors
+    if classification == "optional_worker":
+        return agent in policy.enabled_optional_monitors
+    return True
+
+
+def watchdog_policy(service: str, policy: HealthcheckPolicy) -> tuple[bool, str]:
+    if service in {"agent-watchdog-naruto.service", "agent-watchdog-sasuke.service"}:
+        return "telegram" in policy.enabled_connectors, "connector=telegram"
+    if service == "agent-watchdog-lifecycle.service":
+        return True, "required_core"
+    if service in {"agent-watchdog-kiba.service", "agent-watchdog-kakashi.service"}:
+        monitor = "kiba" if service == "agent-watchdog-kiba.service" else "kakashi"
+        return monitor in policy.enabled_optional_monitors, f"optional_monitor={monitor}"
+    return True, "unknown"
+
+
+def check_lifecycle_control_plane(policy: HealthcheckPolicy | None = None) -> list[Check]:
+    policy = policy or load_healthcheck_policy()
     checks: list[Check] = []
     for agent, service in PERMANENT_AGENT_SERVICES.items():
         classification = str(AGENT_HEALTH_TARGETS.get(agent, {}).get("classification", "core"))
+        enabled = agent_policy_enabled(agent, classification, policy)
         try:
             exec_start = systemd_exec_start(service)
         except Exception as exc:
+            if not enabled:
+                checks.append(Check("OK", f"control_plane.agent_service.{agent}", f"not configured policy=disabled classification={classification}"))
+                continue
             level = "FAIL" if classification == "core" else "WARN"
             checks.append(Check(level, f"control_plane.agent_service.{agent}", f"{exc} classification={classification}", f"Inspect: systemctl cat {service}"))
+            continue
+        if not enabled:
+            checks.append(Check("WARN", f"control_plane.agent_service.{agent}", f"configured while policy=disabled classification={classification}", f"Disable/remove {service} or enable policy"))
             continue
         expected = f"scripts/agent-api-service.sh {agent}"
         if expected in exec_start:
@@ -322,10 +461,17 @@ def check_lifecycle_control_plane() -> list[Check]:
 
     legacy_watchdog_users: list[str] = []
     for service, expected_script in WATCHDOG_ENTRYPOINTS.items():
+        enabled, policy_detail = watchdog_policy(service, policy)
         try:
             exec_start = systemd_exec_start(service)
         except Exception as exc:
+            if not enabled:
+                checks.append(Check("OK", f"control_plane.watchdog.{service}", f"not configured policy=disabled {policy_detail}"))
+                continue
             checks.append(Check("FAIL", f"control_plane.watchdog.{service}", str(exc), f"Inspect: systemctl cat {service}"))
+            continue
+        if not enabled:
+            checks.append(Check("WARN", f"control_plane.watchdog.{service}", f"configured while policy=disabled {policy_detail}", f"Disable/remove {service} or enable policy"))
             continue
         if "scripts/watchdog.py" in exec_start:
             legacy_watchdog_users.append(service)
@@ -702,8 +848,18 @@ def check_large_source_files() -> list[Check]:
 
 def main() -> int:
     load_env_defaults()
+    if "--policy-dry-run" in sys.argv:
+        policy = load_healthcheck_policy()
+        print(json.dumps(policy.as_dict(), ensure_ascii=False, indent=2))
+        return 0
+    policy = load_healthcheck_policy()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_lifecycle_control_plane, check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_role_registry_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
+    checks.extend(check_systemd(policy))
+    checks.extend(check_api())
+    checks.extend(check_redis_streams(policy))
+    checks.extend(check_agents(policy))
+    checks.extend(check_lifecycle_control_plane(policy))
+    for fn in (check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_role_registry_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
         checks.extend(fn())
     return print_report(checks)
 
