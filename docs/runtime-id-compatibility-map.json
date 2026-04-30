@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "migration_issue": 620,
+  "updated_for_issue": 645,
+  "fields": {
+    "runtime_id": "Stable technical id used by lifecycle, tmux, systemd, streams, memory paths, and compatibility APIs.",
+    "product_role_key": "Portable product/business role key that should be used in workflow and customer-facing language.",
+    "display_alias": "Mutable local callsign/persona alias for this installation.",
+    "service_name": "Current systemd service or template instance. Compatibility only; do not rename in this slice.",
+    "tmux_session": "Current tmux/session identifier. Compatibility only; do not rename in this slice.",
+    "connector_role": "Whether the runtime actor is core, connector-owned, optional worker, or deprecated compatibility."
+  },
+  "agents": [
+    {
+      "runtime_id": "tsunade",
+      "product_role_key": "advisor",
+      "canonical_name": "Советник",
+      "display_alias": "Цунаде",
+      "service_name": "konoha.service",
+      "tmux_session": "tsunade",
+      "connector_role": "core",
+      "allowed_internal_surfaces": ["assistant runtime", "legacy frontend api alias", "debug css class names"]
+    },
+    {
+      "runtime_id": "naruto",
+      "product_role_key": "telegram_bot_connector",
+      "canonical_name": "Telegram bot connector",
+      "display_alias": "Наруто",
+      "service_name": "agent-naruto.service",
+      "tmux_session": "naruto",
+      "connector_role": "connector_owned",
+      "allowed_internal_surfaces": ["systemd", "tmux", "watchdog", "Redis agent id", "MCP/bus addressing", "debug UI"]
+    },
+    {
+      "runtime_id": "sasuke",
+      "product_role_key": "telegram_user_connector",
+      "canonical_name": "Telegram user-account connector",
+      "display_alias": "Саске",
+      "service_name": "agent-sasuke.service",
+      "tmux_session": "sasuke",
+      "connector_role": "connector_owned",
+      "allowed_internal_surfaces": ["systemd", "tmux", "watchdog", "Redis agent id", "MCP/bus addressing", "debug UI"]
+    },
+    {
+      "runtime_id": "kiba",
+      "product_role_key": "system_monitor",
+      "canonical_name": "Системный монитор",
+      "display_alias": "Киба",
+      "service_name": "agent-kiba.service",
+      "tmux_session": "kiba",
+      "connector_role": "optional_worker",
+      "allowed_internal_surfaces": ["systemd", "tmux", "watchdog", "Redis agent id", "debug UI"]
+    },
+    {
+      "runtime_id": "kakashi",
+      "product_role_key": "sdd_lead",
+      "canonical_name": "SDD тимлид",
+      "display_alias": "Какаши",
+      "service_name": "agent-kakashi.service",
+      "tmux_session": "kakashi",
+      "connector_role": "optional_worker",
+      "allowed_internal_surfaces": ["systemd", "tmux", "watchdog", "Redis agent id", "debug UI", "delegation command compatibility"]
+    },
+    {
+      "runtime_id": "shino",
+      "product_role_key": "sdd_test_lead",
+      "canonical_name": "SDD тестлид",
+      "display_alias": "Шино",
+      "service_name": "agent-managed@shino.service",
+      "tmux_session": "shino",
+      "connector_role": "optional_worker",
+      "allowed_internal_surfaces": ["systemd template", "tmux", "watchdog lifecycle", "Redis agent id", "debug UI"]
+    },
+    {
+      "runtime_id": "hinata",
+      "product_role_key": "sdd_test_executor",
+      "canonical_name": "SDD тестовый исполнитель",
+      "display_alias": "Хината",
+      "service_name": "agent-managed@hinata.service",
+      "tmux_session": "hinata",
+      "connector_role": "optional_worker",
+      "allowed_internal_surfaces": ["systemd template", "tmux", "watchdog lifecycle", "Redis agent id", "debug UI"]
+    },
+    {
+      "runtime_id": "guy",
+      "product_role_key": "sdd_developer",
+      "canonical_name": "SDD разработчик",
+      "display_alias": "Гай",
+      "service_name": "agent-managed@guy.service",
+      "tmux_session": "guy",
+      "connector_role": "optional_worker",
+      "allowed_internal_surfaces": ["systemd template", "tmux", "watchdog lifecycle", "Redis agent id", "debug UI"]
+    },
+    {
+      "runtime_id": "mirai",
+      "product_role_key": "external_source_connector",
+      "canonical_name": "External source connector",
+      "display_alias": "Мирай",
+      "service_name": "agent-managed@mirai.service",
+      "tmux_session": "mirai",
+      "connector_role": "connector_owned",
+      "allowed_internal_surfaces": ["systemd template", "tmux", "watchdog lifecycle", "Redis agent id", "debug UI"]
+    },
+    {
+      "runtime_id": "jiraiya",
+      "product_role_key": "legacy_knowledge_assistant",
+      "canonical_name": "legacy knowledge assistant",
+      "display_alias": "Дзирайя",
+      "service_name": "agent-managed@jiraiya.service",
+      "tmux_session": "jiraiya",
+      "connector_role": "deprecated_compat",
+      "allowed_internal_surfaces": ["legacy frontend api alias", "debug css class names", "Redis agent id"]
+    },
+    {
+      "runtime_id": "ino",
+      "product_role_key": "legacy_specialist",
+      "canonical_name": "legacy specialist",
+      "display_alias": "Ино",
+      "service_name": "agent-managed@ino.service",
+      "tmux_session": "ino",
+      "connector_role": "deprecated_compat",
+      "allowed_internal_surfaces": ["systemd template", "tmux", "Redis agent id"]
+    },
+    {
+      "runtime_id": "inojin",
+      "product_role_key": "legacy_specialist",
+      "canonical_name": "legacy specialist",
+      "display_alias": "Иноджин",
+      "service_name": "agent-managed@inojin.service",
+      "tmux_session": "inojin",
+      "connector_role": "deprecated_compat",
+      "allowed_internal_surfaces": ["systemd template", "tmux", "Redis agent id"]
+    },
+    {
+      "runtime_id": "shikadai",
+      "product_role_key": "legacy_external_operator",
+      "canonical_name": "legacy external operator",
+      "display_alias": "Шикадай",
+      "service_name": "agent-managed@shikadai.service",
+      "tmux_session": "shikadai",
+      "connector_role": "deprecated_compat",
+      "allowed_internal_surfaces": ["systemd template", "tmux", "Redis agent id"]
+    },
+    {
+      "runtime_id": "itachi",
+      "product_role_key": "remote_operator",
+      "canonical_name": "Удалённый оператор",
+      "display_alias": "Итачи",
+      "service_name": "agent-watchdog-itachi.service",
+      "tmux_session": "itachi",
+      "connector_role": "external_operator",
+      "allowed_internal_surfaces": ["manual remote operator setup", "watchdog", "tmux", "Redis agent id"]
+    }
+  ]
+}
