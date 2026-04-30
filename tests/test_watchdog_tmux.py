@@ -46,6 +46,21 @@ tab to queue message
     assert watchdog_tmux._has_idle_prompt(pane) is False
 
 
+def test_codex_queued_messages_hint_is_not_idle():
+    import watchdog_tmux
+
+    pane = """
+◦ Working (17s • esc to interrupt)
+
+• Messages to be submitted after next tool call (press esc to interrupt and send immediately)
+  ↳ next task
+
+› follow-up prompt
+"""
+
+    assert watchdog_tmux._has_idle_prompt(pane) is False
+
+
 def test_working_marker_after_current_prompt_confirms_submission():
     import watchdog_tmux
 
