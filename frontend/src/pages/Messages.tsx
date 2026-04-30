@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type React from 'react';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { KonohaMessage, Agent } from '../api/types';
@@ -40,14 +41,15 @@ const styles = `
   .refresh-info { font-size: 11px; color: #999; text-align: right; margin-top: 8px; }
 `;
 
-function formatTs(ts: string | undefined): string {
+function formatTs(ts: string | undefined, lang: string): string {
   if (!ts) return '—';
   const d = new Date(ts);
-  return isNaN(d.getTime()) ? ts : d.toLocaleString();
+  return isNaN(d.getTime()) ? ts : d.toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US');
 }
 
 export function Messages() {
   const token = useToken();
+  const { lang, t } = useI18n();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState('');
   const [history, setHistory] = useState<KonohaMessage[]>([]);
@@ -98,7 +100,7 @@ export function Messages() {
     setSending(true); setSendError(null); setSendOk(null);
     try {
       const r = await api.messages.send({ from: from.trim(), to: to.trim(), text: text.trim(), type: msgType });
-      setSendOk('Sent: ' + r.id);
+      setSendOk(r.id);
       setText('');
       setTimeout(loadHistory, 500);
     } catch (err: any) {
@@ -114,17 +116,17 @@ export function Messages() {
       <div className="msg-body">
         <div className="container">
           <div className="panel">
-            <h2>Отправить сообщение</h2>
+            <h2>{t('messages.sendTitle')}</h2>
             {sendError && <div className="error-banner">{sendError}</div>}
-            {sendOk && <div className="success-banner">Отправлено: {sendOk.replace('Sent: ', '')}</div>}
+            {sendOk && <div className="success-banner">{t('messages.sent').replace('{id}', sendOk)}</div>}
             <form onSubmit={send}>
               <div className="send-grid">
                 <div className="form-group">
-                  <label>От кого</label>
+                  <label>{t('messages.from')}</label>
                   <input value={from} onChange={e => setFrom(e.target.value)} placeholder="admin" required />
                 </div>
                 <div className="form-group">
-                  <label>Кому (ID агента)</label>
+                  <label>{t('messages.toAgent')}</label>
                   <input
                     value={to}
                     onChange={e => setTo(e.target.value)}
@@ -137,7 +139,7 @@ export function Messages() {
                   </datalist>
                 </div>
                 <div className="form-group">
-                  <label>Тип</label>
+                  <label>{t('label.type')}</label>
                   <select value={msgType} onChange={e => setMsgType(e.target.value)}>
                     <option value="message">message</option>
                     <option value="task">task</option>
@@ -149,11 +151,11 @@ export function Messages() {
               </div>
               <div className="send-row">
                 <div className="form-group">
-                  <label>Текст</label>
-                  <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Текст сообщения…" required />
+                  <label>{t('label.message')}</label>
+                  <textarea value={text} onChange={e => setText(e.target.value)} placeholder={t('messages.textPlaceholder')} required />
                 </div>
                 <button className="btn-send" type="submit" disabled={sending}>
-                  {sending ? 'Отправка…' : 'Отправить'}
+                  {sending ? t('messages.sending') : t('messages.send')}
                 </button>
               </div>
             </form>
@@ -161,13 +163,13 @@ export function Messages() {
 
           <div className="panel">
             <div className="history-header">
-              <h2>История сообщений</h2>
+              <h2>{t('messages.historyTitle')}</h2>
               <button style={{ padding: '5px 14px', border: '1px solid #ddd', borderRadius: 4, background: 'white', cursor: 'pointer', fontSize: 13 }} onClick={loadHistory}>
-                Обновить
+                {t('action.refresh')}
               </button>
             </div>
             <div className="agent-tabs">
-              {agentOptions.length === 0 && <div className="empty">Нет зарегистрированных агентов</div>}
+              {agentOptions.length === 0 && <div className="empty">{t('empty.agents')}</div>}
               {agentOptions.map(agent => (
                   <button
                     key={agent.value}
@@ -181,21 +183,21 @@ export function Messages() {
             </div>
             {historyError && <div className="error-banner" style={{ marginTop: 12 }}>{historyError}</div>}
             <div className="msg-list" style={{ marginTop: 14 }}>
-              {loadingHistory && history.length === 0 && <div className="empty">Загрузка…</div>}
-              {!loadingHistory && history.length === 0 && <div className="empty">Нет сообщений для {selectedAgent}</div>}
+              {loadingHistory && history.length === 0 && <div className="empty">{t('status.loading')}</div>}
+              {!loadingHistory && history.length === 0 && <div className="empty">{t('messages.emptyForAgent').replace('{agent}', selectedAgent)}</div>}
               {[...history].reverse().map(m => (
                 <div key={m.id} className={`msg-item ${m.from === 'admin' ? 'sent' : 'received'}`}>
                   <div className="msg-meta">
                     <span className="msg-from">{m.from} → {m.to}</span>
                     <span className="msg-type">{m.type}</span>
-                    <span>{formatTs(m.timestamp)}</span>
+                    <span>{formatTs(m.timestamp, lang)}</span>
                     {m.channel && <span>#{m.channel}</span>}
                   </div>
                   <div className="msg-text">{m.text}</div>
                 </div>
               ))}
             </div>
-            <div className="refresh-info">Авто-обновление 10с · Обновлено: {lastUpdate}</div>
+            <div className="refresh-info">{t('messages.refreshInfo').replace('{time}', lastUpdate)}</div>
           </div>
         </div>
       </div>

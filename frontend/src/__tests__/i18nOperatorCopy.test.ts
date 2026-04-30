@@ -133,4 +133,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['workspace.unsupportedFormat']).toContain('{allowed}');
     expect(translations.ru['workspace.confirmDelete']).toContain('{name}');
   });
+
+  it('keeps message bus copy in the translation catalog', () => {
+    expect(translations.en['messages.sent']).toContain('{id}');
+    expect(translations.ru['messages.sent']).toContain('{id}');
+    expect(translations.en['messages.emptyForAgent']).toContain('{agent}');
+    expect(translations.ru['messages.refreshInfo']).toContain('{time}');
+  });
 });
