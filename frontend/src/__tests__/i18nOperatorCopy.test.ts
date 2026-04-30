@@ -27,4 +27,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['status.starting']).toBe('Starting');
     expect(translations.ru['status.starting']).toBe('Запускается');
   });
+
+  it('keeps agent memory copy in the translation catalog', () => {
+    expect(translations.en['agent.memory.files']).toBe('Memory files');
+    expect(translations.ru['agent.memory.files']).toBe('Файлы памяти');
+    expect(translations.en['agent.memory.confirmDelete']).toContain('{filename}');
+    expect(translations.ru['agent.memory.confirmDelete']).toContain('{filename}');
+  });
 });

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../api/client';
+import { useI18n } from '../../context/I18nContext';
 
 interface MemoryFile { name: string; size: number; updated_at: string; }
 
@@ -9,6 +10,7 @@ interface AgentMemoryTabProps {
 }
 
 export function AgentMemoryTab({ agentId, onClose }: AgentMemoryTabProps) {
+  const { t } = useI18n();
   const [memFiles, setMemFiles] = useState<MemoryFile[]>([]);
   const [memContent, setMemContent] = useState<{ name: string; text: string } | null>(null);
   const [memLoading, setMemLoading] = useState(false);
@@ -30,14 +32,14 @@ export function AgentMemoryTab({ agentId, onClose }: AgentMemoryTabProps) {
 
   async function openFile(filename: string) {
     setMemError(null);
-    const text = await api.agents.memoryRead(agentId, filename).catch(() => '(ошибка чтения)');
+    const text = await api.agents.memoryRead(agentId, filename).catch(() => t('agent.memory.readError', '(read error)'));
     setMemContent({ name: filename, text });
     setMemEditing(false);
     setMemEditText(text);
   }
 
   async function deleteFile(filename: string) {
-    if (!confirm(`Удалить файл памяти "${filename}"? Это действие необратимо.`)) return;
+    if (!confirm(t('agent.memory.confirmDelete', 'Delete memory file "{filename}"? This action cannot be undone.').replace('{filename}', filename))) return;
     await api.agents.memoryDelete(agentId, filename).catch(() => {});
     if (memContent?.name === filename) { setMemContent(null); setMemEditing(false); }
     loadMemory();
@@ -81,11 +83,11 @@ export function AgentMemoryTab({ agentId, onClose }: AgentMemoryTabProps) {
       {memError && <div className="error-banner">{memError}</div>}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Файлы памяти</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{t('agent.memory.files', 'Memory files')}</span>
         <button
           onClick={() => { setMemCreating(v => !v); setMemNewName(''); setMemError(null); }}
           style={{ padding: '4px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
-        >+ Новый файл</button>
+        >{t('agent.memory.newFile', '+ New file')}</button>
       </div>
 
       {memCreating && (
@@ -95,23 +97,23 @@ export function AgentMemoryTab({ agentId, onClose }: AgentMemoryTabProps) {
             value={memNewName}
             onChange={e => setMemNewName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') createFile(); if (e.key === 'Escape') { setMemCreating(false); setMemNewName(''); } }}
-            placeholder="имя_файла.md"
+            placeholder={t('agent.memory.filenamePlaceholder', 'filename.md')}
             style={{ flex: 1, padding: '5px 8px', border: '1px solid #86efac', borderRadius: 4, fontSize: 13, fontFamily: 'monospace' }}
           />
           <button onClick={createFile} disabled={memSaving || !memNewName.trim()}
             style={{ padding: '5px 12px', background: '#16a34a', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: !memNewName.trim() ? 0.5 : 1 }}>
-            Создать
+            {t('action.create', 'Create')}
           </button>
           <button onClick={() => { setMemCreating(false); setMemNewName(''); }}
             style={{ padding: '5px 8px', background: 'white', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-            Отмена
+            {t('action.cancel', 'Cancel')}
           </button>
         </div>
       )}
 
-      {memLoading && <div style={{ color: '#94a3b8', fontSize: 13, padding: '8px 0' }}>Загрузка…</div>}
+      {memLoading && <div style={{ color: '#94a3b8', fontSize: 13, padding: '8px 0' }}>{t('status.loading', 'Loading...')}</div>}
       {!memLoading && memFiles.length === 0 && !memCreating && (
-        <div style={{ color: '#94a3b8', fontSize: 13, padding: '8px 0' }}>Файлов памяти нет. Нажмите «+ Новый файл».</div>
+        <div style={{ color: '#94a3b8', fontSize: 13, padding: '8px 0' }}>{t('agent.memory.empty', 'No memory files. Click "+ New file".')}</div>
       )}
       {!memLoading && memFiles.length > 0 && (
         <div style={{ border: '1px solid #e2e8f0', borderRadius: 6, overflow: 'hidden' }}>
@@ -126,11 +128,11 @@ export function AgentMemoryTab({ agentId, onClose }: AgentMemoryTabProps) {
               <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0 }}>{(f.size / 1024).toFixed(1)} KB</span>
               <button onClick={() => openFile(f.name)}
                 style={{ padding: '3px 8px', fontSize: 11, border: '1px solid #e2e8f0', background: memContent?.name === f.name ? '#dbeafe' : 'white', color: '#3b82f6', borderRadius: 4, cursor: 'pointer', fontWeight: 500 }}>
-                Открыть
+                {t('action.open', 'Open')}
               </button>
               <button onClick={() => deleteFile(f.name)}
                 style={{ padding: '3px 8px', fontSize: 11, border: '1px solid #fca5a5', background: 'white', color: '#ef4444', borderRadius: 4, cursor: 'pointer', fontWeight: 500 }}>
-                Удалить
+                {t('action.delete', 'Delete')}
               </button>
             </div>
           ))}
@@ -146,17 +148,17 @@ export function AgentMemoryTab({ agentId, onClose }: AgentMemoryTabProps) {
                 <>
                   <button onClick={saveFile} disabled={memSaving}
                     style={{ padding: '4px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: memSaving ? 0.6 : 1 }}>
-                    {memSaving ? 'Сохранение…' : '💾 Сохранить'}
+                    {memSaving ? t('status.saving', 'Saving...') : t('action.saveIcon', 'Save')}
                   </button>
                   <button onClick={() => { setMemEditing(false); setMemEditText(memContent.text); }}
                     style={{ padding: '4px 10px', background: 'white', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-                    Отмена
+                    {t('action.cancel', 'Cancel')}
                   </button>
                 </>
               ) : (
                 <button onClick={() => { setMemEditing(true); setMemEditText(memContent.text); }}
                   style={{ padding: '4px 12px', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-                  ✏️ Редактировать
+                  {t('action.editIcon', 'Edit')}
                 </button>
               )}
               <button onClick={() => { setMemContent(null); setMemEditing(false); }}
@@ -178,7 +180,7 @@ export function AgentMemoryTab({ agentId, onClose }: AgentMemoryTabProps) {
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-        <button className="btn-cancel-f" onClick={onClose}>Закрыть</button>
+        <button className="btn-cancel-f" onClick={onClose}>{t('action.close', 'Close')}</button>
       </div>
     </div>
   );

@@ -36,6 +36,10 @@ export const translations: Record<Lang, Record<string, string>> = {
     'action.export':    'Export',
     'action.create':    'Create',
     'action.duplicate': 'Duplicate',
+    'action.open':      'Open',
+    'action.close':     'Close',
+    'action.saveIcon':  'Save',
+    'action.editIcon':  'Edit',
     // Status
     'status.online':    'Online',
     'status.offline':   'Offline',
@@ -46,6 +50,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'status.pending':   'Pending',
     'status.done':      'Done',
     'status.loading':   'Loading...',
+    'status.saving':    'Saving...',
     'status.overdue':   'Overdue',
     // Common labels
     'label.name':        'Name',
@@ -73,6 +78,12 @@ export const translations: Record<Lang, Record<string, string>> = {
     'agent.type.deprecated': 'Compatibility',
     'agent.type.external':   'External',
     'agent.type.managed':    'Managed',
+    'agent.memory.files': 'Memory files',
+    'agent.memory.newFile': '+ New file',
+    'agent.memory.filenamePlaceholder': 'filename.md',
+    'agent.memory.empty': 'No memory files. Click "+ New file".',
+    'agent.memory.readError': '(read error)',
+    'agent.memory.confirmDelete': 'Delete memory file "{filename}"? This action cannot be undone.',
     // Pages
     'page.myTasks.title':     'My Tasks',
     'page.monitor.title':     'Monitor',
@@ -357,6 +368,10 @@ export const translations: Record<Lang, Record<string, string>> = {
     'action.export':    'Экспорт',
     'action.create':    'Создать',
     'action.duplicate': 'Дублировать',
+    'action.open':      'Открыть',
+    'action.close':     'Закрыть',
+    'action.saveIcon':  'Сохранить',
+    'action.editIcon':  'Редактировать',
     // Status
     'status.online':    'Онлайн',
     'status.offline':   'Офлайн',
@@ -367,6 +382,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'status.pending':   'Ожидание',
     'status.done':      'Выполнено',
     'status.loading':   'Загрузка...',
+    'status.saving':    'Сохранение...',
     'status.overdue':   'Просрочено',
     // Common labels
     'label.name':        'Название',
@@ -394,6 +410,12 @@ export const translations: Record<Lang, Record<string, string>> = {
     'agent.type.deprecated': 'Совместимость',
     'agent.type.external':   'Внешний',
     'agent.type.managed':    'Управляемый',
+    'agent.memory.files': 'Файлы памяти',
+    'agent.memory.newFile': '+ Новый файл',
+    'agent.memory.filenamePlaceholder': 'имя_файла.md',
+    'agent.memory.empty': 'Файлов памяти нет. Нажмите "+ Новый файл".',
+    'agent.memory.readError': '(ошибка чтения)',
+    'agent.memory.confirmDelete': 'Удалить файл памяти "{filename}"? Это действие необратимо.',
     // Pages
     'page.myTasks.title':     'Мои задачи',
     'page.monitor.title':     'Монитор',
