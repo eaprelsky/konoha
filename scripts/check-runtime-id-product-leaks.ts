@@ -16,7 +16,11 @@ interface Leak {
 const ROOT = join(import.meta.dir, "..");
 const PRODUCT_SURFACES = [
   "docs/guides/website-copy-workflow.md",
+  "workflows/knowledge/intake.json",
+  "workflows/knowledge/source-classification.json",
+  "workflows/reliability/incident-triage.json",
   "workflows/sales/lead-qualification.json",
+  "workflows/sdd/harness-factory.json",
 ];
 
 const ALLOWLIST = new Set([

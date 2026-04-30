@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { findRuntimeIdProductLeaks } from "../scripts/check-runtime-id-product-leaks";
+import { SYSTEM_AGENTS } from "../src/routes/admin";
 
 interface RuntimeIdMap {
   schema_version: number;
@@ -40,6 +41,21 @@ describe("runtime id compatibility map", () => {
       expect(agent.tmux_session.length).toBeGreaterThan(1);
       expect(agent.connector_role.length).toBeGreaterThan(2);
       expect(agent.allowed_internal_surfaces.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("keeps map display values locale-neutral", () => {
+    const localized = /[А-Яа-яЁё]/;
+    for (const agent of loadMap().agents) {
+      expect(agent.canonical_name).not.toMatch(localized);
+      expect(agent.display_alias).not.toMatch(localized);
+    }
+  });
+
+  test("covers every seeded system agent runtime id", () => {
+    const mapped = new Set(loadMap().agents.map(agent => agent.runtime_id));
+    for (const seeded of SYSTEM_AGENTS) {
+      expect(mapped.has(seeded.id)).toBe(true);
     }
   });
 

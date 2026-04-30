@@ -40,6 +40,16 @@ Required fields:
 4. Add runtime ID -> service/session lookup in lifecycle code so future service renames only change the compatibility map.
 5. Add migration scripts for systemd/tmux names only after dashboards and prompts no longer depend on runtime IDs.
 
+## Rollback Rules
+
+Every migration slice must preserve a compatibility path:
+
+- UI/copy changes roll back by reverting the single UI or docs commit; runtime ids are unchanged.
+- API alias changes must keep compatibility wrappers until access logs show no production callers.
+- CSS/component renames must keep old test selectors or data attributes for one release.
+- Service/session lookup changes must read from `docs/runtime-id-compatibility-map.json`; rollback is restoring the previous map entry.
+- Actual systemd/tmux renames require a two-step rollout: add alias lookup first, then rename one non-critical optional worker, then only proceed if healthcheck stays green.
+
 ## Guard
 
 `scripts/check-runtime-id-product-leaks.ts` scans selected product-surface files for known runtime IDs. Existing compatibility examples are allowlisted with reasons; new occurrences fail until they are either removed or classified.
