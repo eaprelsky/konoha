@@ -1,0 +1,111 @@
+{
+  "id": "knowledge-intake",
+  "version": "1.0.0",
+  "name": "Knowledge intake: curated source to KB",
+  "description": "Workflow skeleton for curated knowledge intake. The knowledge base is modeled as an information system; execution is assigned to business roles that may be backed by optional workers.",
+  "documents": [
+    {
+      "doc_id": "knowledge.intake.discovery",
+      "name": "Knowledge source discovery instruction",
+      "type": "instruction",
+      "content": "Discover candidate source material for intake. Return sources, owner, provenance, access_constraints, and recommended next_action. Do not ingest secrets or private chat content."
+    },
+    {
+      "doc_id": "knowledge.intake.classification",
+      "name": "Knowledge source classification instruction",
+      "type": "instruction",
+      "content": "Classify each source by domain, sensitivity, freshness, reliability, and target KB location. Return accepted_sources, rejected_sources, sensitivity_notes, and extraction_plan."
+    },
+    {
+      "doc_id": "knowledge.intake.extraction",
+      "name": "Knowledge extraction instruction",
+      "type": "instruction",
+      "content": "Extract reusable knowledge from accepted sources. Return normalized_notes, citations, tags, stale_claims, and review_questions."
+    },
+    {
+      "doc_id": "knowledge.intake.review",
+      "name": "Knowledge review instruction",
+      "type": "instruction",
+      "content": "Review extracted knowledge for correctness, source attribution, sensitivity, and duplication. Return approved:boolean, required_edits, publish_path, and reviewer_notes."
+    },
+    {
+      "doc_id": "knowledge.intake.publish",
+      "name": "Knowledge publishing instruction",
+      "type": "instruction",
+      "content": "Publish approved knowledge into the curated KB path. Return published_path, changed_files, summary, and follow_up_maintenance."
+    }
+  ],
+  "elements": [
+    {
+      "id": "e_source_detected",
+      "type": "event",
+      "label": "Candidate knowledge source discovered",
+      "trigger": {
+        "kind": "manual",
+        "action": "start_knowledge_intake",
+        "role": "knowledge_intake_lead"
+      }
+    },
+    {
+      "id": "f_discover_sources",
+      "type": "function",
+      "label": "Discover candidate sources",
+      "role": "knowledge_intake_lead",
+      "documents": ["knowledge.intake.discovery"],
+      "systems": [
+        { "connector": "knowledge_base", "operation": "source.discover" }
+      ]
+    },
+    { "id": "e_sources_ready", "type": "event", "label": "Candidate sources ready" },
+    {
+      "id": "f_classify_sources",
+      "type": "function",
+      "label": "Classify knowledge sources",
+      "role": "knowledge_curator",
+      "documents": ["knowledge.intake.classification"]
+    },
+    { "id": "e_sources_classified", "type": "event", "label": "Sources classified" },
+    {
+      "id": "f_extract_knowledge",
+      "type": "function",
+      "label": "Extract reusable knowledge",
+      "role": "knowledge_curator",
+      "documents": ["knowledge.intake.extraction"],
+      "systems": [
+        { "connector": "knowledge_base", "operation": "draft.extract" }
+      ]
+    },
+    { "id": "e_extract_ready", "type": "event", "label": "Knowledge extract ready" },
+    {
+      "id": "f_review_extract",
+      "type": "function",
+      "label": "Review extracted knowledge",
+      "role": "knowledge_reviewer",
+      "documents": ["knowledge.intake.review"]
+    },
+    { "id": "e_review_complete", "type": "event", "label": "Knowledge review complete" },
+    {
+      "id": "f_publish_knowledge",
+      "type": "function",
+      "label": "Publish curated knowledge",
+      "role": "knowledge_publisher",
+      "documents": ["knowledge.intake.publish"],
+      "systems": [
+        { "connector": "knowledge_base", "operation": "entry.publish" }
+      ]
+    },
+    { "id": "e_published", "type": "event", "label": "Knowledge published" }
+  ],
+  "flow": [
+    ["e_source_detected", "f_discover_sources"],
+    ["f_discover_sources", "e_sources_ready"],
+    ["e_sources_ready", "f_classify_sources"],
+    ["f_classify_sources", "e_sources_classified"],
+    ["e_sources_classified", "f_extract_knowledge"],
+    ["f_extract_knowledge", "e_extract_ready"],
+    ["e_extract_ready", "f_review_extract"],
+    ["f_review_extract", "e_review_complete"],
+    ["e_review_complete", "f_publish_knowledge"],
+    ["f_publish_knowledge", "e_published"]
+  ]
+}

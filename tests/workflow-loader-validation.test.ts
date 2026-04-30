@@ -179,3 +179,39 @@ describe("workflow-loader e2e: sdd-harness-factory", () => {
     expect(def.flow).toContainEqual(["e_rework_ready", "f_test"]);
   });
 });
+
+describe("workflow-loader e2e: knowledge-intake", () => {
+  const workflowPath = join(import.meta.dir, "..", "workflows", "knowledge", "intake.json");
+  let def: WorkflowDefinition;
+
+  test("loads and validates knowledge intake workflow from disk", () => {
+    const raw = readFileSync(workflowPath, "utf-8");
+    def = JSON.parse(raw);
+    expect(def.id).toBe("knowledge-intake");
+    expect(validateWorkflow(def)).toEqual([]);
+  });
+
+  test("uses business roles and treats KB as an information system", () => {
+    const functions = def.elements.filter(el => el.type === "function");
+    expect(functions.map(el => el.role)).toEqual([
+      "knowledge_intake_lead",
+      "knowledge_curator",
+      "knowledge_curator",
+      "knowledge_reviewer",
+      "knowledge_publisher",
+    ]);
+    expect(functions.map(el => el.role).some(role => String(role).toLowerCase().includes("jiraiya"))).toBe(false);
+    expect(functions.flatMap(el => el.systems ?? []).map(system => system.connector)).toEqual([
+      "knowledge_base",
+      "knowledge_base",
+      "knowledge_base",
+    ]);
+    expect(def.documents?.map(doc => doc.doc_id).sort()).toEqual([
+      "knowledge.intake.classification",
+      "knowledge.intake.discovery",
+      "knowledge.intake.extraction",
+      "knowledge.intake.publish",
+      "knowledge.intake.review",
+    ]);
+  });
+});

@@ -371,6 +371,58 @@ describe("eEPC state-machine regression suite", () => {
     expect(afterPassingRerun.case?.position).toBe("f_review");
   });
 
+  test("knowledge intake workflow progresses discovery to review and publish", async () => {
+    const id = wfId("knowledge-intake");
+    const raw = readFileSync(join(import.meta.dir, "..", "workflows", "knowledge", "intake.json"), "utf-8");
+    const def: WorkflowDefinition = { ...JSON.parse(raw), id };
+    await registerWorkflow(def);
+
+    const kase = await createCase(id, "Knowledge source intake", {
+      source_url: "https://example.test/runbook",
+      source_owner: "engineering",
+    });
+    expect(kase.status).toBe("running");
+    expect(kase.position).toBe("f_discover_sources");
+
+    const discovery = await pendingWorkItemForCase(kase.case_id, "f_discover_sources");
+    expect(discovery.assignee).toBe("knowledge_intake_lead");
+    expect(await loadInstructionText(["knowledge.intake.discovery"])).toContain("candidate source material");
+    await completeWorkItem(discovery.work_item_id, {
+      sources: ["https://example.test/runbook"],
+      provenance: "operator-submitted",
+    });
+
+    const classification = await pendingWorkItemForCase(kase.case_id, "f_classify_sources");
+    expect(classification.assignee).toBe("knowledge_curator");
+    await completeWorkItem(classification.work_item_id, {
+      accepted_sources: ["https://example.test/runbook"],
+      sensitivity_notes: "public",
+    });
+
+    const extraction = await pendingWorkItemForCase(kase.case_id, "f_extract_knowledge");
+    expect(extraction.assignee).toBe("knowledge_curator");
+    await completeWorkItem(extraction.work_item_id, {
+      normalized_notes: ["Use Action Spine for user-visible mutations."],
+      citations: ["https://example.test/runbook"],
+    });
+
+    const review = await pendingWorkItemForCase(kase.case_id, "f_review_extract");
+    expect(review.assignee).toBe("knowledge_reviewer");
+    await completeWorkItem(review.work_item_id, {
+      approved: true,
+      publish_path: "docs/runbooks/action-spine.md",
+    });
+
+    const publish = await pendingWorkItemForCase(kase.case_id, "f_publish_knowledge");
+    expect(publish.assignee).toBe("knowledge_publisher");
+    const done = await completeWorkItem(publish.work_item_id, {
+      published_path: "docs/runbooks/action-spine.md",
+    });
+
+    expect(done.case?.status).toBe("done");
+    expect(done.case?.position).toBe("e_published");
+  });
+
   test("XOR gateway selects the first matching conditional branch", async () => {
     const id = wfId("xor");
     await registerWorkflow({
