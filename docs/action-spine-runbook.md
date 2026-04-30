@@ -37,6 +37,35 @@ Current consumer status:
 | GUI | Migration is incremental; new mutations should call `/act` | `docs/action-surface.json`, issue `#602` |
 | Testbench | Harness should consume the same action surface when migrated | `docs/action-surface.json`, issue `#603` |
 
+## Assistant Invocation Testbench
+
+`assistant.invoke` is the canonical non-streaming Action Spine entry point for
+testing product assistants such as Tsunade. It is intentionally deterministic by
+default for regression scenarios: tests may pass `fixture_response` and
+`persist_history: false` to exercise server-side response normalization, action
+receipts, and policy behavior without depending on a live LLM provider.
+
+Minimal deterministic envelope:
+
+```json
+{
+  "action": "assistant.invoke",
+  "category": "act",
+  "args": {
+    "assistant_id": "tsunade",
+    "message": "Create a workflow",
+    "persist_history": false,
+    "execute_actions": false,
+    "fixture_response": "{\"reply\":\"Prepared workflow\"}"
+  }
+}
+```
+
+Use `/api/ai/chat` for streaming UI chat until the UI is migrated. Use
+`assistant.invoke` for HTTP/MCP/testbench assertions where the caller needs a
+stable response containing `reply`, `normalized_response`, `actions_taken`,
+`action_results`, `pending_confirmations`, `conversation_id`, and `trace_id`.
+
 ## When To Use `/act`
 
 Use `/act` for any user-visible operation that changes system state or should be

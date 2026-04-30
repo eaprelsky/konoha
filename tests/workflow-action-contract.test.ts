@@ -171,6 +171,24 @@ describe("workflow action contract validation", () => {
     expect(valid.valid).toBe(true);
   });
 
+  it("registers assistant invocation action for API/MCP/testbench parity", () => {
+    expect(isValidAction("assistant.invoke")).toBe(true);
+
+    const missing = validateActionArgs("assistant.invoke", {});
+    expect(missing.valid).toBe(false);
+    expect(missing.errors).toContain("Missing required argument: assistant_id");
+    expect(missing.errors).toContain("Missing required argument: message");
+
+    const valid = validateActionArgs("assistant.invoke", {
+      assistant_id: "tsunade",
+      message: "test",
+      stream: false,
+      persist_history: false,
+      fixture_response: "{\"reply\":\"ok\"}",
+    });
+    expect(valid.valid).toBe(true);
+  });
+
   it("every registered action has a valid contract", () => {
     for (const action of dump.actions) {
       const contract = getActionContract(action.id);
@@ -226,5 +244,6 @@ describe("workflow action contract validation", () => {
     expect(byId.get("message.send")?.security.actor).toBe("authenticated");
     expect(byId.get("message.read")?.security).toEqual({ actor: "agent_self", selfArg: "agent_id" });
     expect(byId.get("knowledge.read")?.security.actor).toBe("authenticated");
+    expect(byId.get("assistant.invoke")?.security.actor).toBe("authenticated");
   });
 });

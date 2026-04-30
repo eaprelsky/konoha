@@ -46,6 +46,7 @@ import {
   stopAgent,
   updateAgentDef,
 } from "./agent-lifecycle";
+import { invokeAssistant } from "./assistant-invocation";
 import { sendConnectorMessage } from "./messenger-outbound";
 import { ServiceError } from "./errors";
 
@@ -665,6 +666,37 @@ async function executeConnectorAction(action: string, args: Record<string, unkno
   }
 }
 
+async function executeAssistantAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "assistant.invoke": {
+      const invalid = validationFailure("assistant.invoke", args);
+      if (invalid) return invalid;
+      try {
+        return {
+          status: 200,
+          data: await invokeAssistant({
+            assistant_id: String(args.assistant_id),
+            message: String(args.message),
+            conversation_id: typeof args.conversation_id === "string" ? args.conversation_id : undefined,
+            context: args.context as Record<string, unknown> | undefined,
+            operator_state: args.operator_state,
+            schema: args.schema,
+            stream: args.stream === true,
+            execute_actions: args.execute_actions !== false,
+            persist_history: args.persist_history !== false,
+            fixture_response: typeof args.fixture_response === "string" ? args.fixture_response : undefined,
+            include_raw_response: args.include_raw_response === true,
+          }),
+        };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    default:
+      return null;
+  }
+}
+
 export async function executeActionDirect(
   action: string,
   args: Record<string, unknown>,
@@ -693,6 +725,9 @@ export async function executeActionDirect(
   }
   if (action.startsWith("agent.")) {
     return executeAgentAction(action, args);
+  }
+  if (action.startsWith("assistant.")) {
+    return executeAssistantAction(action, args);
   }
   if (action.startsWith("connector.")) {
     return executeConnectorAction(action, args);

@@ -17,7 +17,7 @@ export type { ActionActorPolicy, ActionCategory, ActionSecurityPolicy } from "./
 
 // ── Version ─────────────────────────────────────────────────────────────────
 
-export const ACTION_VERSION = 4;
+export const ACTION_VERSION = 5;
 
 // ── Core types ──────────────────────────────────────────────────────────────
 
@@ -30,6 +30,7 @@ export type ObjectScope =
   | "workitem"    // dispatched work items
   | "role"        // role definitions and assignments
   | "agent"       // agent lifecycle (register, start, stop, restart)
+  | "assistant"   // product assistant invocation and testbench entry points
   | "skill"       // skill CRUD
   | "person"      // people directory
   | "access"      // trusted users and Telegram group access
@@ -768,6 +769,30 @@ const ACTIONS: ActionDef[] = [
     currentEndpoint: "GET /messages/:agentId",
     autonomy: "auto",
     audited: false,
+  },
+
+  // ── Assistants ───────────────────────────────────────────────────────────
+  {
+    id: "assistant.invoke",
+    description: "Invoke a product assistant in deterministic non-streaming mode for API/MCP/testbench scenarios.",
+    scope: "assistant",
+    args: [
+      { name: "assistant_id",        type: "string",  required: true,  description: "Assistant ID, currently tsunade or kiba." },
+      { name: "message",             type: "string",  required: true,  description: "User message to send to the assistant." },
+      { name: "conversation_id",     type: "string",  required: false, description: "Stable conversation ID. Generated if omitted." },
+      { name: "context",             type: "object",  required: false, description: "Optional structured context or fixture payload." },
+      { name: "operator_state",      type: "object",  required: false, description: "Optional operator/page state for future UI parity." },
+      { name: "schema",              type: "object",  required: false, description: "Optional workflow/schema context for Tsunade." },
+      { name: "stream",              type: "boolean", required: false, description: "Must be false or omitted; streaming is intentionally out of scope for this action." },
+      { name: "execute_actions",     type: "boolean", required: false, description: "Whether normalized assistant actions may execute. Defaults to true." },
+      { name: "persist_history",     type: "boolean", required: false, description: "Whether to persist conversation history. Defaults to true." },
+      { name: "fixture_response",    type: "string",  required: false, description: "Deterministic raw assistant response for regression tests." },
+      { name: "include_raw_response", type: "boolean", required: false, description: "Include raw assistant output in the result for debugging." },
+    ],
+    implementation: { kind: "direct", note: "Reuses the server-side assistant response normalizer for testbench-safe invocation." },
+    security: { actor: "authenticated" },
+    autonomy: "confirm",
+    audited: true,
   },
 
   // ── Connectors ───────────────────────────────────────────────────────────
