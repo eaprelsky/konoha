@@ -61,6 +61,20 @@ def test_codex_queued_messages_hint_is_not_idle():
     assert watchdog_tmux._has_idle_prompt(pane) is False
 
 
+def test_report_mentioning_codex_queue_hint_does_not_block_idle():
+    import watchdog_tmux
+
+    pane = """
+• Review completed.
+
+  The string tab to queue message is treated as busy only when it is the UI hint.
+
+› next task
+"""
+
+    assert watchdog_tmux._has_idle_prompt(pane) is True
+
+
 def test_working_marker_after_current_prompt_confirms_submission():
     import watchdog_tmux
 

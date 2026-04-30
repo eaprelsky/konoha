@@ -73,11 +73,11 @@ def _has_idle_prompt(content: str) -> bool:
         return False
     # Codex shows a prompt while a task is running and asks Tab to queue a
     # follow-up. Enter does not submit in that state, so treat it as busy.
-    if any(CODEX_QUEUE_HINT in l.lower() for l in last_lines):
+    if any(l.lower() == CODEX_QUEUE_HINT for l in last_lines):
         return False
     # Codex may also display an input prompt below the active task while queued
     # follow-ups are pending. That prompt is not a true idle state.
-    if any(CODEX_QUEUED_MESSAGES_HINT in l.lower() for l in last_lines):
+    if any(l.lower().lstrip("• ").startswith(CODEX_QUEUED_MESSAGES_HINT) for l in last_lines):
         return False
     has_claude_queue = any("queued messages" in l.lower() for l in last_lines)
     has_claude_prompt = any(
