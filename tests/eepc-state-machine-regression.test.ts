@@ -172,7 +172,18 @@ describe("eEPC state-machine regression suite", () => {
       classification: "sales_lead",
       summary: "Client asks for an AI assistant for lead handling and proposal preparation.",
     });
-    expect(afterTriage.case?.position).toBe("f2");
+    expect(afterTriage.case?.position).toBe("f_notify_owner");
+
+    const ownerNotification = await pendingWorkItemForCase(kase.case_id, "f_notify_owner");
+    expect(ownerNotification.assignee).toBe("sales_owner");
+    const notificationInstruction = await loadInstructionText(["sales.lead.owner-notification"]);
+    expect(notificationInstruction).toContain("Notify the sales owner");
+
+    const afterNotification = await completeWorkItem(ownerNotification.work_item_id, {
+      owner_summary: "New lead needs sales owner review.",
+      next_review_action: "decide_continue",
+    });
+    expect(afterNotification.case?.position).toBe("f2");
 
     const review = await pendingWorkItemForCase(kase.case_id, "f2");
     expect(review.assignee).toBe("sales_owner");

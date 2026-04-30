@@ -1,6 +1,6 @@
 {
   "id": "lead-qualification",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "name": "Продажи: входящий лид",
   "description": "Human-in-the-loop процесс продаж для сигналов из Telegram-чата лидов. Специалист разбора лидов структурирует входящий сигнал, владелец продаж принимает решение, готовит содержательное предложение, запрашивает оценку и собирает КП/follow-up. Процесс заменяет захардкоженные напоминания явным состоянием workflow.",
   "triggers": [
@@ -18,6 +18,12 @@
       "name": "Инструкция по human review лида",
       "type": "instruction",
       "content": "Review the lead triage output and decide whether the signal should continue through the sales funnel. Return decision:string, lead_relevant:boolean, missing_context:string[], next_action:string, owner_notes:string. If context is insufficient, request clarification instead of inventing facts."
+    },
+    {
+      "doc_id": "sales.lead.owner-notification",
+      "name": "Инструкция по уведомлению владельца продаж",
+      "type": "instruction",
+      "content": "Notify the sales owner that a new Telegram lead reached human review. Include source chat, short summary, why it may be sales-relevant, and what decision is needed next. Do not qualify the lead silently; produce an explicit owner-facing notification and next_review_action."
     },
     {
       "doc_id": "sales.lead.content-proposal",
@@ -72,6 +78,14 @@
       "role": "sales_owner",
       "documents": ["sales.lead.human-review"]
     },
+    {
+      "id": "f_notify_owner",
+      "type": "function",
+      "label": "Уведомить владельца продаж о новом лиде",
+      "role": "sales_owner",
+      "documents": ["sales.lead.owner-notification"]
+    },
+    { "id": "e_owner_notified", "type": "event", "label": "Владелец продаж уведомлен" },
     { "id": "e3", "type": "event", "label": "Решение по лиду принято" },
     {
       "id": "f3",
@@ -118,7 +132,9 @@
   "flow": [
     ["e1", "f1"],
     ["f1", "e2"],
-    ["e2", "f2"],
+    ["e2", "f_notify_owner"],
+    ["f_notify_owner", "e_owner_notified"],
+    ["e_owner_notified", "f2"],
     ["f2", "e3"],
     ["e3", "f3"],
     ["f3", "e4"],
