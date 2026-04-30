@@ -2,7 +2,7 @@
 
 Issue #639 defines the first normalized GitHub issue event shape for future SDD
 workflows. This does not replace the watchdog scanner yet; the current
-`delegate:teamlead` label delivery remains intact.
+`delegate:teamlead` and `delegate:architect` label delivery remain intact.
 
 ## Normalized Events
 
@@ -11,7 +11,7 @@ The source id is `github`. Workflows should use message triggers with
 
 | Event | GitHub source | Purpose |
 |---|---|---|
-| `issue_labeled` | `issues.labeled` | Start delegated work from labels such as `delegate:teamlead`. |
+| `issue_labeled` | `issues.labeled` | Start delegated work from labels such as `delegate:teamlead` or `delegate:architect`. |
 | `issue_comment` | `issue_comment.created/edited` | Feed operator comments into an active case. |
 | `branch_ready` | `pull_request.opened/reopened/synchronize/ready_for_review` | Signal that an implementation branch exists. |
 | `checks_passed` | successful `check_suite.completed` or `check_run.completed` | Signal that required checks are green. |
@@ -23,7 +23,7 @@ The TypeScript contract is in `src/github-issue-events.ts`.
 
 Current behavior:
 
-1. An operator adds `delegate:teamlead` to the batch issue.
+1. An operator adds `delegate:teamlead` to an implementation batch issue or `delegate:architect` to an architecture-decomposition issue.
 2. The watchdog sees the label and injects the task into Kakashi.
 3. Child issues report progress with `delegate:done` or `blocked`.
 

@@ -8,7 +8,7 @@ Type=simple
 User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
 Environment=PYTHONUNBUFFERED=1
-Environment=WATCHDOG_AGENTS=mirai,jiraiya,shino,hinata,ibiki,ino,inojin,guy,shikadai
+Environment=WATCHDOG_AGENTS=mirai,jiraiya,shino,hinata,ibiki,ino,inojin,guy
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-lifecycle.py
 Restart=always
 RestartSec=10

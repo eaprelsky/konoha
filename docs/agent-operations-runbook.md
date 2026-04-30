@@ -40,6 +40,7 @@ Delivery watchdogs are adapters, not lifecycle owners:
 | `agent-watchdog-naruto.service` | Telegram bot queue + Konoha SSE delivery to Naruto |
 | `agent-watchdog-sasuke.service` | Telegram userbot Redis streams + Konoha SSE delivery to Sasuke |
 | `agent-watchdog-kakashi.service` | GitHub/Konoha delivery to Kakashi |
+| `agent-watchdog-shikadai.service` | GitHub/Konoha architecture delegation to Shikadai |
 | `agent-watchdog-kiba.service` | Akamaru/Konoha delivery to Kiba |
 | `agent-watchdog-lifecycle.service` | Generic delivery for on-demand lifecycle-managed agents |
 
@@ -69,7 +70,11 @@ curl -fsS -X POST \
   "http://127.0.0.1:3200/agents/<id>/start"
 ```
 
-Delivery for on-demand agents is handled by `agent-watchdog-lifecycle.service`.
+Delivery for most on-demand agents is handled by `agent-watchdog-lifecycle.service`.
+Shikadai is the exception: architecture delegation uses the explicit
+`delegate:architect` GitHub label and `agent-watchdog-shikadai.service`, which
+also owns his Konoha SSE delivery to avoid duplicate delivery from the lifecycle
+watchdog.
 
 Kakashi is a special on-demand interactive worker. His dedicated systemd units exist for manual starts, but are disabled by default:
 
@@ -95,6 +100,12 @@ issue and add `kakashi-batch`. Batch issues are re-delivered after
 and are not marked `delegate:done` or `blocked`. Child issues should use
 `delegate:done`/`blocked` for progress and must not receive `delegate:teamlead`,
 otherwise they become separate watchdog triggers.
+
+GitHub is also Shikadai's compatibility intake for architecture decomposition.
+Add `delegate:architect` to an issue when the expected output is an architecture
+breakdown, sequencing recommendation, acceptance criteria, or risk review. Do
+not use it for implementation tasks; those should go to Kakashi through
+`delegate:teamlead` after the architecture slice is approved.
 
 When an agent is intentionally parked, add its short id and any dedicated units to `/opt/shared/kiba/paused-services.txt` so Akamaru suppresses expected inactive-state alerts.
 

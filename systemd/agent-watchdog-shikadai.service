@@ -1,0 +1,18 @@
+[Unit]
+Description=Konoha GitHub Architecture Delegation Watchdog Shikadai
+After=network.target redis.service konoha.service
+Wants=konoha.service
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.agent-env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-shikadai.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

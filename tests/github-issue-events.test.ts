@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  GITHUB_DELEGATE_ARCHITECT_TRIGGER,
   GITHUB_DELEGATE_TEAMLEAD_TRIGGER,
   githubEventMatchesFilter,
+  isDelegateArchitectIssueEvent,
   isDelegateTeamleadIssueEvent,
   normalizeGithubIssueEvent,
 } from "../src/github-issue-events";
@@ -28,6 +30,26 @@ describe("github issue connector events", () => {
     expect(event?.labels).toContain("kakashi-batch");
     expect(event && isDelegateTeamleadIssueEvent(event)).toBe(true);
     expect(event && githubEventMatchesFilter(event, GITHUB_DELEGATE_TEAMLEAD_TRIGGER.filter)).toBe(true);
+  });
+
+  test("normalizes delegate:architect issue label events", () => {
+    const event = normalizeGithubIssueEvent("issues", {
+      action: "labeled",
+      repository: { full_name: "eaprelsky/konoha" },
+      sender: { login: "itachi" },
+      label: { name: "delegate:architect" },
+      issue: {
+        number: 654,
+        title: "Architecture decomposition intake",
+        html_url: "https://github.com/eaprelsky/konoha/issues/654",
+        labels: [{ name: "delegate:architect" }, { name: "P2" }],
+      },
+    }, "2026-04-30T00:00:00.000Z");
+
+    expect(event?.type).toBe("issue_labeled");
+    expect(event?.label).toBe("delegate:architect");
+    expect(event && isDelegateArchitectIssueEvent(event)).toBe(true);
+    expect(event && githubEventMatchesFilter(event, GITHUB_DELEGATE_ARCHITECT_TRIGGER.filter)).toBe(true);
   });
 
   test("normalizes issue comments", () => {

@@ -51,6 +51,15 @@ export const GITHUB_DELEGATE_TEAMLEAD_TRIGGER: MessageTrigger = {
   },
 };
 
+export const GITHUB_DELEGATE_ARCHITECT_TRIGGER: MessageTrigger = {
+  kind: "message",
+  source: "github",
+  filter: {
+    event: "issue_labeled",
+    label: "delegate:architect",
+  },
+};
+
 export function normalizeGithubIssueEvent(
   githubEvent: string,
   payload: Record<string, unknown>,
@@ -164,6 +173,10 @@ export function githubEventMatchesFilter(
 
 export function isDelegateTeamleadIssueEvent(event: NormalizedGithubIssueEvent): boolean {
   return event.type === "issue_labeled" && event.label === "delegate:teamlead";
+}
+
+export function isDelegateArchitectIssueEvent(event: NormalizedGithubIssueEvent): boolean {
+  return event.type === "issue_labeled" && event.label === "delegate:architect";
 }
 
 function baseEvent(

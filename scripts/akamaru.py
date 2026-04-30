@@ -70,6 +70,7 @@ AGENT_WATCHDOGS = {
     "naruto":    "agent-watchdog-naruto.service",
     "sasuke":    "agent-watchdog-sasuke.service",
     "kakashi":   "agent-watchdog-kakashi.service",
+    "shikadai":  "agent-watchdog-shikadai.service",
     "kiba":      "agent-watchdog-kiba.service",
     "jiraiya":   "agent-watchdog-lifecycle.service",
     "mirai":     "agent-watchdog-lifecycle.service",
@@ -79,7 +80,6 @@ AGENT_WATCHDOGS = {
     "ino":       "agent-watchdog-lifecycle.service",
     "inojin":    "agent-watchdog-lifecycle.service",
     "guy":       "agent-watchdog-lifecycle.service",
-    "shikadai":  "agent-watchdog-lifecycle.service",
 }
 
 PAUSED_FILE = os.getenv("AKAMARU_PAUSED_FILE", "/opt/shared/kiba/paused-services.txt")

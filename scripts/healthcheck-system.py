@@ -56,13 +56,14 @@ CONNECTOR_AGENTS = {
     "sasuke": "telegram",
 }
 DEFAULT_ENABLED_CONNECTORS = {"telegram"}
-DEFAULT_ENABLED_OPTIONAL_MONITORS = {"akamaru", "kakashi", "kiba"}
+DEFAULT_ENABLED_OPTIONAL_MONITORS = {"akamaru", "kakashi", "kiba", "shikadai"}
 PROXY_SERVICES = ["sing-box", "privoxy"]
 AGENT_HEALTH_TARGETS = {
     "naruto": {"classification": "connector_owned", "service": "agent-naruto.service"},
     "sasuke": {"classification": "connector_owned", "service": "agent-sasuke.service"},
     "kiba": {"classification": "optional_worker", "service": "agent-kiba.service"},
     "kakashi": {"classification": "optional_worker", "service": "agent-kakashi.service"},
+    "shikadai": {"classification": "optional_worker"},
     "shino": {"classification": "optional_worker"},
     "hinata": {"classification": "optional_worker"},
     "guy": {"classification": "optional_worker"},
@@ -76,6 +77,7 @@ WATCHDOG_ENTRYPOINTS = {
     "agent-watchdog-naruto.service": "scripts/watchdog-naruto.py",
     "agent-watchdog-sasuke.service": "scripts/watchdog-sasuke.py",
     "agent-watchdog-kakashi.service": "scripts/watchdog-kakashi.py",
+    "agent-watchdog-shikadai.service": "scripts/watchdog-shikadai.py",
     "agent-watchdog-kiba.service": "scripts/watchdog-kiba.py",
     "agent-watchdog-lifecycle.service": "scripts/watchdog-lifecycle.py",
 }
@@ -434,8 +436,8 @@ def watchdog_policy(service: str, policy: HealthcheckPolicy) -> tuple[bool, str]
         return "telegram" in policy.enabled_connectors, "connector=telegram"
     if service == "agent-watchdog-lifecycle.service":
         return True, "required_core"
-    if service in {"agent-watchdog-kiba.service", "agent-watchdog-kakashi.service"}:
-        monitor = "kiba" if service == "agent-watchdog-kiba.service" else "kakashi"
+    if service in {"agent-watchdog-kiba.service", "agent-watchdog-kakashi.service", "agent-watchdog-shikadai.service"}:
+        monitor = service.removeprefix("agent-watchdog-").removesuffix(".service")
         return monitor in policy.enabled_optional_monitors, f"optional_monitor={monitor}"
     return True, "unknown"
 
