@@ -11,7 +11,7 @@ function mockActionResponse(data: unknown = {}) {
 }
 
 function lastAction(fetchMock: ReturnType<typeof vi.fn>) {
-  const [, init] = fetchMock.mock.calls.at(-1)!;
+  const [, init] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1]!;
   return JSON.parse(String((init as RequestInit).body));
 }
 
