@@ -126,6 +126,22 @@ describe("PG-only retention report classification", () => {
     expect(preview.candidates.some(candidate => candidate.id === "case-business")).toBe(false);
   });
 
+  test("cleanup preview supports explicit null limit for full operator review", () => {
+    const preview = buildCleanupPreviewFromRows([
+      row({ entity: "cases", id: "case-1", status: "done", process: "act-wf-1", updated_at: "2026-04-01T00:00:00Z" }),
+      row({ entity: "cases", id: "case-2", status: "done", process: "act-wf-2", updated_at: "2026-04-01T00:00:00Z" }),
+    ], {
+      generatedAt: NOW.toISOString(),
+      hardFail: false,
+      limit: null,
+      now: NOW,
+    });
+
+    expect(preview.total_candidates).toBe(2);
+    expect(preview.omitted_candidates).toBe(0);
+    expect(preview.candidates.map(candidate => candidate.id)).toEqual(["case-1", "case-2"]);
+  });
+
   test("cleanup preview is blocked when Redis-only mismatch exists", () => {
     const preview = buildCleanupPreviewFromRows([
       row({ entity: "cases", id: "case-safe", status: "done", process: "act-wf-1", updated_at: "2026-04-01T00:00:00Z" }),

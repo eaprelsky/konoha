@@ -330,7 +330,7 @@ export function buildCleanupPreviewFromRows(
   rows: PgOnlyRow[],
   options: { generatedAt: string; hardFail: boolean; limit?: number | null; now?: Date },
 ): RetentionCleanupPreview {
-  const limit = options.limit ?? 200;
+  const limit = options.limit === undefined ? 200 : options.limit;
   const now = options.now ?? new Date(options.generatedAt);
   const allCandidates = rows
     .map(row => ({ row, candidate: classifyRetentionCandidate(row, now) }))
