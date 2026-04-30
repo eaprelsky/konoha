@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { WorkspaceFile } from '../api/types';
@@ -47,6 +48,7 @@ function getExt(name: string): string {
 
 export function Workspace() {
   const token = useToken();
+  const { lang, t } = useI18n();
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,13 +70,13 @@ export function Workspace() {
   async function uploadFile(file: File) {
     const ext = getExt(file.name);
     if (!ALLOWED_EXT.includes(ext)) {
-      setError(`Формат не поддерживается: ${ext}. Разрешено: ${ALLOWED_EXT.join(', ')}`);
+      setError(t('workspace.unsupportedFormat').replace('{ext}', ext).replace('{allowed}', ALLOWED_EXT.join(', ')));
       return;
     }
     setUploading(true); setError(null); setSuccess(null);
     try {
       const result = await api.workspace.upload(file);
-      setSuccess(`Файл загружен: ${result.name} (${formatSize(result.size)})`);
+      setSuccess(t('workspace.uploaded').replace('{name}', result.name).replace('{size}', formatSize(result.size)));
       load();
     } catch (e: any) {
       setError(e.message);
@@ -96,10 +98,10 @@ export function Workspace() {
   }
 
   async function deleteFile(name: string) {
-    if (!confirm(`Удалить файл "${name}"?`)) return;
+    if (!confirm(t('workspace.confirmDelete').replace('{name}', name))) return;
     try {
       await api.workspace.delete(name);
-      setSuccess(`Файл удалён: ${name}`);
+      setSuccess(t('workspace.deleted').replace('{name}', name));
       load();
     } catch (e: any) {
       setError(e.message);
@@ -114,11 +116,11 @@ export function Workspace() {
           <div className="page-header">
             <div>
               <h1>Workspace</h1>
-              <div className="page-subtitle">/opt/shared/workspace — общая папка для артефактов процессов</div>
+              <div className="page-subtitle">{t('workspace.subtitle')}</div>
             </div>
             <div className="header-right">
               <button className="btn-upload" disabled={uploading} onClick={() => inputRef.current?.click()}>
-                {uploading ? 'Загрузка…' : '+ Загрузить файл'}
+                {uploading ? t('workspace.uploading') : `+ ${t('workspace.uploadFile')}`}
               </button>
               <input ref={inputRef} type="file" style={{ display: 'none' }} onChange={onFileInput} />
             </div>
@@ -134,19 +136,19 @@ export function Workspace() {
             onDrop={onDrop}
             onClick={() => inputRef.current?.click()}
           >
-            Перетащите файл сюда или нажмите для выбора
+            {t('workspace.dropHint')}
             <div className="allowed-hint">{ALLOWED_EXT.join(' · ')}</div>
           </div>
 
-          {loading && <div className="empty">Загрузка…</div>}
-          {!loading && files.length === 0 && <div className="empty">Папка пуста.</div>}
+          {loading && <div className="empty">{t('status.loading')}</div>}
+          {!loading && files.length === 0 && <div className="empty">{t('workspace.empty')}</div>}
           {!loading && files.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Файл</th>
-                  <th>Размер</th>
-                  <th>Изменён</th>
+                  <th>{t('workspace.file')}</th>
+                  <th>{t('workspace.size')}</th>
+                  <th>{t('workspace.modified')}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -158,9 +160,9 @@ export function Workspace() {
                       <span className="file-ext">{getExt(f.name)}</span>
                     </td>
                     <td className="file-size">{formatSize(f.size)}</td>
-                    <td className="file-date">{new Date(f.modified_at).toLocaleString('ru-RU')}</td>
+                    <td className="file-date">{new Date(f.modified_at).toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US')}</td>
                     <td style={{ width: 60, textAlign: 'right' }}>
-                      <button className="btn-delete" onClick={() => deleteFile(f.name)}>Удалить</button>
+                      <button className="btn-delete" onClick={() => deleteFile(f.name)}>{t('action.delete')}</button>
                     </td>
                   </tr>
                 ))}

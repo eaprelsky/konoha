@@ -126,4 +126,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['tasks.deadlineHours']).toContain('{hours}');
     expect(translations.ru['tasks.deadlineDays']).toContain('{days}');
   });
+
+  it('keeps workspace copy in the translation catalog', () => {
+    expect(translations.en['workspace.uploaded']).toContain('{name}');
+    expect(translations.ru['workspace.uploaded']).toContain('{size}');
+    expect(translations.en['workspace.unsupportedFormat']).toContain('{allowed}');
+    expect(translations.ru['workspace.confirmDelete']).toContain('{name}');
+  });
 });
