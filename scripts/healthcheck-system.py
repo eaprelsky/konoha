@@ -429,6 +429,34 @@ def check_agent_naming_policy() -> list[Check]:
     return [Check("WARN", "agent_naming.product_surface", summary[:300], f"Run: {script}")]
 
 
+def check_role_registry_hygiene() -> list[Check]:
+    script = Path(__file__).resolve().parent / "audit-role-registry.ts"
+    bun = Path(os.environ.get("BUN_BIN", "/home/ubuntu/.bun/bin/bun"))
+    bun_cmd = str(bun) if bun.exists() else "bun"
+    rc, stdout, stderr = run([bun_cmd, str(script), "--dry-run", "--json"], timeout=20)
+    if rc != 0:
+        return [Check("WARN", "role_registry.hygiene", (stderr or stdout)[:300], f"Run: {bun_cmd} {script} --dry-run")]
+
+    try:
+        summary = json.loads(stdout)
+    except Exception as exc:
+        return [Check("WARN", "role_registry.hygiene", f"invalid audit JSON: {exc}", f"Run: {bun_cmd} {script} --dry-run")]
+
+    stale = len(summary.get("stale_reverse_refs") or [])
+    missing_role_keys = len(summary.get("sorted_set_missing_role_key") or [])
+    reverse_without_role = len(summary.get("reverse_indexes_without_role_key") or [])
+    agent_like = len(summary.get("agent_like_roles") or [])
+    detail = (
+        f"stale_reverse_refs={stale} "
+        f"sorted_set_missing_role_key={missing_role_keys} "
+        f"reverse_indexes_without_role_key={reverse_without_role} "
+        f"agent_like_roles={agent_like}"
+    )
+    if stale or missing_role_keys:
+        return [Check("WARN", "role_registry.hygiene", detail, f"Run: {bun_cmd} {script} --apply to remove stale reverse refs; migrate roles manually")]
+    return [Check("OK", "role_registry.hygiene", detail)]
+
+
 def print_report(checks: list[Check]) -> int:
     order = {"FAIL": 0, "WARN": 1, "OK": 2}
     for check in sorted(checks, key=lambda item: (order[item.level], item.name)):
@@ -638,7 +666,7 @@ def check_large_source_files() -> list[Check]:
 def main() -> int:
     load_env_defaults()
     checks: list[Check] = []
-    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_lifecycle_control_plane, check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
+    for fn in (check_systemd, check_api, check_redis_streams, check_agents, check_lifecycle_control_plane, check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_role_registry_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
         checks.extend(fn())
     return print_report(checks)
 
