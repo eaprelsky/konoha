@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { ACTION_VERSION } from "../src/action-registry";
 import { actionCall, actionCatalog, actionGet } from "../src/mcp-action-bridge";
 import { unregisterAgent } from "../src/redis";
 
@@ -49,7 +50,7 @@ afterAll(async () => {
 describe("MCP Action Spine bridge", () => {
   test("exposes action catalog and single-action contracts", () => {
     const catalog = parseResult(actionCatalog({ scope: "message" }));
-    expect(catalog.action_version).toBe(2);
+    expect(catalog.action_version).toBe(ACTION_VERSION);
     expect(catalog.actions.map((action: any) => action.id)).toEqual(["message.send", "message.read"]);
     expect(catalog.actions.every((action: any) => action.security.actor !== undefined)).toBe(true);
 
@@ -75,14 +76,14 @@ describe("MCP Action Spine bridge", () => {
       {
         api: async (method, path, body, token) => {
           captured = { method, path, body, token };
-          return { ok: true, action: (body as any).action, action_version: 2, data: { id: "mcp-message-id" } } as any;
+          return { ok: true, action: (body as any).action, action_version: ACTION_VERSION, data: { id: "mcp-message-id" } } as any;
         },
         tokenProvider: () => agentToken,
       },
     ));
     expect(result.ok).toBe(true);
     expect(result.action).toBe("message.send");
-    expect(result.action_version).toBe(2);
+    expect(result.action_version).toBe(ACTION_VERSION);
     expect(result.data.id).toBe("mcp-message-id");
     expect(captured).toEqual({
       method: "POST",
