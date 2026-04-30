@@ -7,9 +7,14 @@
  */
 
 import { describe, it, expect } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { normalizeAssistantResponse, buildSseParsedEvent } from "../src/assistant-response";
 import { buildWorkflowObservableResult } from "../src/workflow-action-contract";
-import { createWorkflow } from "../src/workflow-loader";
+import { createWorkflow, WORKFLOW_INDEX_KEY } from "../src/workflow-loader";
+import { deleteCasesByProcess } from "../src/runtime";
+import { redis } from "../src/redis";
+import { pgDeleteWorkflow } from "../src/storage/pg";
 
 describe("normalizeAssistantResponse", () => {
   const baseOpts = { chat_id: "test-chat-1" };
@@ -192,6 +197,46 @@ describe("normalizeAssistantResponse", () => {
     expect(resp.ui_actions[0]).toMatchObject({ type: "navigate" });
     expect(String(resp.ui_actions[0].path)).toContain("/monitor?case_id=");
     expect(resp.observable_result.status).toBe("succeeded");
+  });
+
+  it("starts the sales demo case and returns the next business-role work item", async () => {
+    const processId = `assistant-sales-demo-${Date.now()}`;
+    const rawWorkflow = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");
+    await createWorkflow({ ...JSON.parse(rawWorkflow), id: processId }, { draft: true });
+
+    try {
+      const resp = await normalizeAssistantResponse(JSON.stringify({
+        reply: "Запускаю демо продаж по Telegram-лиду.",
+        start_case: {
+          process_id: processId,
+          subject: "Demo Telegram lead",
+          payload: {
+            chat_title: "coMind Лиды",
+            text: "Нужен AI ассистент для заявок и КП",
+            source: "demo",
+          },
+        },
+      }), { ...baseOpts, execute_actions: true, agent_id: "tsunade", session_id: "sales-demo-session" });
+
+      const receipt = resp.action_receipts.find(item => item.action === "case.start");
+      expect(resp.actions_taken[0]).toMatchObject({ action: "case.start", status: "executed" });
+      expect(receipt).toMatchObject({ action: "case.start", status: "succeeded" });
+      expect(receipt?.summary).toContain("Следующая задача: Разобрать входящий сигнал -> lead_triage_specialist");
+      expect(receipt?.summary).not.toContain("sasuke");
+      expect(receipt?.changed_resources.some(resource =>
+        resource.kind === "work_item"
+        && resource.label === "Разобрать входящий сигнал"
+        && resource.change === "pending"
+      )).toBe(true);
+      expect(resp.ui_actions[0]).toMatchObject({ type: "navigate" });
+      expect(String(resp.ui_actions[0].path)).toContain("/monitor?case_id=");
+      expect(resp.observable_result.status).toBe("succeeded");
+    } finally {
+      await deleteCasesByProcess(processId).catch(() => 0);
+      await redis.del(`workflow:${processId}`).catch(() => 0);
+      await redis.srem(WORKFLOW_INDEX_KEY, processId).catch(() => 0);
+      await pgDeleteWorkflow(processId).catch(() => 0);
+    }
   });
 });
 
