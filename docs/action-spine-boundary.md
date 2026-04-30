@@ -8,7 +8,8 @@ Core files are registry/policy/bridge code that can be imported without Konoha w
 
 | File | Role | Coupling rule |
 | --- | --- | --- |
-| `src/action-registry.ts` | Canonical action vocabulary, contracts, surface dump | No workflow/runtime/agent imports |
+| `src/action-definitions.ts` | Declarative action vocabulary | No workflow/runtime/agent imports |
+| `src/action-registry.ts` | Registry API, contracts, validation, surface dump | No workflow/runtime/agent imports |
 | `src/action-policy.ts` | Category and default security classification | No workflow/runtime/agent imports |
 | `src/mcp-action-bridge.ts` | MCP catalog/get/call helpers over injected HTTP API | May depend on `zod` and registry only |
 

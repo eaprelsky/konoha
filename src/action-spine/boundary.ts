@@ -6,6 +6,7 @@
  */
 
 export const ACTION_SPINE_CORE_FILES = [
+  "src/action-definitions.ts",
   "src/action-registry.ts",
   "src/action-policy.ts",
   "src/mcp-action-bridge.ts",
