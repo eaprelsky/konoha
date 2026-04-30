@@ -54,7 +54,8 @@ unless a deployment policy explicitly enables them. Current SDD workers are
 Kakashi, Shino, Hinata, and Guy; they should be assigned through workflow roles
 instead of being treated as a hardcoded default fleet.
 
-Mirai is connector-owned and Jiraiya/Ino/Inojin/Shikadai are deprecated
+Mirai is connector-owned; Jiraiya/Ino/Inojin are deprecated; Shikadai is an
+optional architecture decomposition worker
 compatibility aliases; they are not required seeded system agents.
 
 Start an on-demand agent through the Konoha lifecycle API:

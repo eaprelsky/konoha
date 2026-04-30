@@ -347,7 +347,8 @@ explicit:
 | `kiba` | Системный монитор | `optional_worker` | `optional_on_demand` | optional, enabled on deployments that need active monitoring |
 | `kakashi`, `guy`, `shino`, `hinata` | SDD workflow workers | `optional_worker` | `optional_on_demand` | no; started by assignment/policy |
 | `mirai` | External-source connector compatibility actor | `connector_owned` | `connector_owned` | no default autostart |
-| `jiraiya`, `ino`, `inojin`, `shikadai` | legacy specialist aliases | `deprecated_compat` | `deprecated` | no |
+| `shikadai` | architecture decomposition worker | `optional_worker` | `optional_on_demand` | no; started by assignment/policy |
+| `jiraiya`, `ino`, `inojin` | legacy specialist aliases | `deprecated_compat` | `deprecated` | no |
 | `ibiki` | optional security worker | `optional_worker` | `optional_on_demand` | no |
 
 Seed is idempotent and can be re-run via `POST /admin/seed-system-agents`.

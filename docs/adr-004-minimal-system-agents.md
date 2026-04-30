@@ -43,7 +43,8 @@ A workflow function may be executed by an agent, person, or system adapter, but 
 | Jiraiya | Knowledge-base module plus workflow-defined ingestion/curation rules. |
 | Mirai | External-source connector/classifier, not a durable autonomous agent by default. |
 | Ino, Inojin | Optional situational roles/workers, not seeded core system agents. |
-| Shikamaru, Shikadai, Itachi | External operator/bus-client scenario, not seeded system agents. |
+| Shikadai | Optional architecture decomposition/review worker assigned through workflow or operator dispatch. |
+| Shikamaru, Itachi | External operator/bus-client scenario, not seeded system agents. |
 | Kiba / Akamaru | Optional system monitor; some monitoring can become workflow-driven, but deployment-specific probes may remain operational infrastructure. |
 
 ## Messenger Architecture Direction
