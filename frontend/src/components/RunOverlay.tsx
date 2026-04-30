@@ -13,13 +13,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { EpcRenderer } from './EpcRenderer';
 import { api } from '../api/client';
+import { useI18n } from '../context/I18nContext';
 import type { Run, Workflow, HistoryEntry } from '../api/types';
 import { buildRoleLabelMap } from '../utils/agentDisplay';
 import './RunOverlay.css';
 
 
-function fmtTime(ts: string): string {
-  try { return new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+function fmtTime(ts: string, lang: string): string {
+  try { return new Date(ts).toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
   catch { return ts; }
 }
 
@@ -38,6 +39,7 @@ interface RunOverlayProps {
 }
 
 export function RunOverlay({ caseId, onClose }: RunOverlayProps) {
+  const { lang, t } = useI18n();
   const [run, setRun] = useState<Run | null>(null);
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,38 +129,38 @@ export function RunOverlay({ caseId, onClose }: RunOverlayProps) {
           {/* Header */}
           <div className="ro-header">
             <div className="ro-title">
-              🔄 Прогон: {run?.subject ?? caseId}
+              🔄 {t('label.run')}: {run?.subject ?? caseId}
               {run && (
                 <span className={`ro-badge ${run.status}`}>
-                  {run.status === 'running' ? 'В работе' : run.status === 'done' ? 'Завершён' : 'Ошибка'}
+                  {run.status === 'running' ? t('status.running') : run.status === 'done' ? t('status.done') : t('status.error')}
                 </span>
               )}
             </div>
-            {live && <span><span className="ro-live-dot" />live</span>}
-            <button className="ro-close" onClick={onClose} title="Закрыть (Esc)">✕</button>
+            {live && <span><span className="ro-live-dot" />{t('runOverlay.live')}</span>}
+            <button className="ro-close" onClick={onClose} title={t('runOverlay.closeEsc')}>✕</button>
           </div>
 
           {/* Legend */}
           <div className="ro-legend">
-            <div className="ro-legend-item"><div className="ro-dot not_reached" />Не начата</div>
-            <div className="ro-legend-item"><div className="ro-dot running" />В работе</div>
-            <div className="ro-legend-item"><div className="ro-dot completed" />Завершена</div>
-            <div className="ro-legend-item"><div className="ro-dot error" />Ошибка</div>
+            <div className="ro-legend-item"><div className="ro-dot not_reached" />{t('runOverlay.notReached')}</div>
+            <div className="ro-legend-item"><div className="ro-dot running" />{t('status.running')}</div>
+            <div className="ro-legend-item"><div className="ro-dot completed" />{t('runOverlay.completed')}</div>
+            <div className="ro-legend-item"><div className="ro-dot error" />{t('status.error')}</div>
           </div>
 
           <div className="ro-body">
             {/* Schema pane */}
             <div className="ro-schema">
-              {loading && <div className="ro-empty">Загрузка…</div>}
+              {loading && <div className="ro-empty">{t('status.loading')}</div>}
               {!loading && !run && (
-                <div className="ro-empty">Прогон не найден</div>
+                <div className="ro-empty">{t('runOverlay.runNotFound')}</div>
               )}
               {!loading && run && !workflow && !wfError && (
-                <div className="ro-empty">Загрузка схемы…</div>
+                <div className="ro-empty">{t('runOverlay.loadingSchema')}</div>
               )}
               {!loading && run && wfError && (
                 <div className="ro-empty" style={{ color: '#f59e0b' }}>
-                  Схема недоступна — процесс был удалён или ещё не сохранён
+                  {t('runOverlay.schemaUnavailable')}
                 </div>
               )}
               {workflow && run && (
@@ -169,17 +171,17 @@ export function RunOverlay({ caseId, onClose }: RunOverlayProps) {
             {/* Event log */}
             <div className="ro-log">
               <div className="ro-log-header">
-                Хронология событий ({history.length})
+                {t('runOverlay.timeline').replace('{count}', String(history.length))}
               </div>
               <div className="ro-log-items">
                 {history.length === 0 && (
-                  <div className="ro-empty">Событий ещё нет</div>
+                  <div className="ro-empty">{t('runOverlay.noEvents')}</div>
                 )}
                 {history.map((h, i) => (
                   <div key={i} className="ro-log-item">
                     <div className="ro-log-label">{h.label}</div>
                     <div className="ro-log-meta">
-                      <span className="ro-log-ts">{fmtTime(h.timestamp)}</span>
+                      <span className="ro-log-ts">{fmtTime(h.timestamp, lang)}</span>
                       {i > 0 && <span>+{fmtDelay(h.timestamp, history[i - 1].timestamp)}</span>}
                       {h.element_type && <span style={{ color: '#c4b5fd' }}>{h.element_type}</span>}
                     </div>
@@ -192,11 +194,11 @@ export function RunOverlay({ caseId, onClose }: RunOverlayProps) {
 
           {/* Footer */}
           <div className="ro-footer">
-            <span>Прогон: <code>{caseId.slice(0, 12)}…</code></span>
-            {run?.current_step_label && <span>Шаг: <b>{run.current_step_label}</b></span>}
-            {lastUpdate && <span>Обновлено: {lastUpdate}</span>}
+            <span>{t('label.run')}: <code>{caseId.slice(0, 12)}…</code></span>
+            {run?.current_step_label && <span>{t('label.step')}: <b>{run.current_step_label}</b></span>}
+            {lastUpdate && <span>{t('runOverlay.updated')}: {lastUpdate}</span>}
             {run?.elapsed_ms !== undefined && (
-              <span>Время: {run.elapsed_ms < 60000 ? `${(run.elapsed_ms / 1000).toFixed(1)}s` : `${Math.round(run.elapsed_ms / 60000)}m`}</span>
+              <span>{t('runOverlay.elapsed')}: {run.elapsed_ms < 60000 ? `${(run.elapsed_ms / 1000).toFixed(1)}s` : `${Math.round(run.elapsed_ms / 60000)}m`}</span>
             )}
           </div>
         </div>

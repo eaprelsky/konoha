@@ -140,4 +140,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['messages.emptyForAgent']).toContain('{agent}');
     expect(translations.ru['messages.refreshInfo']).toContain('{time}');
   });
+
+  it('keeps run overlay copy in the translation catalog', () => {
+    expect(translations.en['runOverlay.timeline']).toContain('{count}');
+    expect(translations.ru['runOverlay.timeline']).toContain('{count}');
+    expect(translations.en['runOverlay.runNotFound']).toBe('Run not found');
+    expect(translations.ru['runOverlay.runNotFound']).toBe('Прогон не найден');
+  });
 });
