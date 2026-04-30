@@ -49,6 +49,11 @@ Until that migration lands:
 
 ## Seeded System Agents
 
+This table describes the current compatibility fleet, not the desired product
+minimum. ADR-004 narrows the mandatory target to `Советник` and optionally
+`Системный монитор`; the rest should become optional runtime workers,
+connectors, or workflow-defined roles over time.
+
 | Runtime id | Canonical `name` | Default `display_alias` | Lifecycle mode |
 |------------|------------------|--------------------------|----------------|
 | `naruto` | `Бот-агент` | `Наруто` | permanent |
@@ -56,4 +61,3 @@ Until that migration lands:
 | `tsunade` | `Советник` | `Цунаде` | bus/process assistant |
 | `kakashi` | `Тимлид` | `Какаши` | on-demand |
 | `shino` | `Тестлид` | `Шино` | on-demand |
-

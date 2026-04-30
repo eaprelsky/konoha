@@ -4,6 +4,9 @@ Konoha is a multi-agent control plane for Telegram-facing assistants, coding age
 
 This document is the high-level map. Entity-level ownership rules live in `docs/entity-contracts.md`; agent startup/runtime details live in `docs/agent-lifecycle.md`; watchdog delivery details live in `docs/watchdog-architecture.md`.
 
+The target product architecture is intentionally workflow-first and keeps the
+mandatory system-agent footprint small. See `docs/adr-004-minimal-system-agents.md`.
+
 ## Current Shape
 
 ```text
@@ -63,6 +66,12 @@ See `docs/api-mcp-parity.md` for the current parity matrix.
 
 Permanent agents are supervised by systemd wrappers that call lifecycle API routes. Manual tmux edits are not the control plane.
 
+Long-term rule: durable system agents are exceptional. The required product
+core is `Советник` and, where needed, `Системный монитор`. Development workers,
+knowledge curators, messenger responders, and external operator aliases should
+be optional runtime workers assigned by workflow roles rather than hardcoded as
+the product model.
+
 ### Agent Presence And Bus
 
 - Owner: `src/redis.ts` facade plus `src/storage/pg-bus.ts`
@@ -74,6 +83,26 @@ Permanent agents are supervised by systemd wrappers that call lifecycle API rout
 - Push notifications: Redis pub/sub `konoha:notify:{id}`
 
 Important distinction: `AgentDef` is durable managed-agent configuration. Bus presence is online/offline history. Presence must not overwrite managed definitions.
+
+External bus clients are a user/operator scenario, not a reason to seed more
+system agents. They should authenticate, appear as runtime actors, and receive
+work through roles or explicit messages.
+
+### Channel Connectors
+
+Messenger accounts, bots, user sessions, CRM webhooks, GitHub webhooks, and
+similar adapters are information-system connectors. They should ingest events,
+emit normalized workflow events, and send outbound messages on request. They
+should not own business logic hidden in a long-lived agent prompt.
+
+Target message-processing shape:
+
+```text
+connector event -> classifier/router -> workflow event -> role-assigned function
+```
+
+This lets many workflows share one account and one workflow use many accounts or
+messengers.
 
 ### Workflow Runtime Storage
 
@@ -218,6 +247,8 @@ Current rule before larger Workflow Engine changes: `preflight OK` is the produc
 - Workflow before agent: deterministic business flows should live in Workflow Engine, not hidden in agent prompts.
 - Agent lifecycle through API: no manual tmux/systemd business logic.
 - One mutation path: action contracts first, wrappers second.
+- Connectors are information systems; business behavior belongs in workflows.
+- Credentials are scoped connector/secret references, not raw workflow documents.
 - Redis-primary workflow runtime until `PG_READ=true` cutover criteria are met.
 - MCP tools expose stable agent-useful capabilities, not every admin endpoint.
 - Legacy compatibility surfaces are bounded by `docs/legacy-retirement.md`.
