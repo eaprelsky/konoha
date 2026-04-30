@@ -70,4 +70,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['whitelist.flash.userApproved']).toContain('{name}');
     expect(translations.ru['whitelist.flash.groupApproved']).toContain('{chatId}');
   });
+
+  it('keeps people directory copy in the translation catalog', () => {
+    expect(translations.en['people.title']).toBe('People');
+    expect(translations.ru['people.title']).toBe('Люди');
+    expect(translations.en['people.confirmDelete']).toContain('{name}');
+    expect(translations.ru['people.confirmDelete']).toContain('{name}');
+  });
 });

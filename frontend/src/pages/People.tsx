@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type React from 'react';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Person, Skill } from '../api/types';
@@ -54,6 +55,7 @@ interface PersonModalProps {
 }
 
 function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
+  const { t } = useI18n();
   const isFile = person?.source === 'file';
   const isNew = !person;
 
@@ -81,7 +83,7 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) { setError('Имя обязательно'); return; }
+    if (!name.trim()) { setError(t('profile.nameRequired')); return; }
     setSubmitting(true); setError(null);
     try {
       await api.people.save({
@@ -103,19 +105,19 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
   }
 
   async function doGenerateAvatar() {
-    if (!person?.id) { setError('Сначала сохраните пользователя'); return; }
+    if (!person?.id) { setError(t('people.saveBeforeAvatar')); return; }
     setGeneratingAvatar(true);
     try {
       const res = await api.people.generateAvatar(person.id, { style: avatarStyle, description: position || undefined });
       setAvatarUrl(res.avatar_url);
     } catch (e: any) {
-      setError(`Аватар: ${e.message}`);
+      setError(`${t('agent.settings.avatar')}: ${e.message}`);
     } finally {
       setGeneratingAvatar(false);
     }
   }
 
-  const title = isNew ? 'Новый пользователь' : isFile ? person!.name : 'Редактировать';
+  const title = isNew ? t('people.newPerson') : isFile ? person!.name : t('action.edit');
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -123,7 +125,7 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
         <h2>{title}</h2>
         {isFile && (
           <div style={{ background: '#f0fdf4', color: '#166534', padding: '8px 12px', borderRadius: 4, fontSize: 13, marginBottom: 16 }}>
-            Пользователь из файла (trusted-users.json). Интеграционные поля доступны для редактирования.
+            {t('people.fileBasedNotice')}
           </div>
         )}
         {error && <div className="error-banner">{error}</div>}
@@ -139,7 +141,7 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
             </div>
             {!isNew && (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Аватар</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{t('agent.settings.avatar')}</div>
                 <input
                   type="text"
                   value={avatarStyle}
@@ -149,69 +151,69 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
                 />
                 <button type="button" onClick={doGenerateAvatar} disabled={generatingAvatar}
                   style={{ padding: '5px 12px', background: '#0066cc', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: generatingAvatar ? 0.6 : 1 }}>
-                  {generatingAvatar ? '⏳ Генерируется…' : '✨ Сгенерировать аватар'}
+                  {generatingAvatar ? `⏳ ${t('agent.settings.avatarGenerating')}` : `✨ ${t('agent.settings.generateAvatar')}`}
                 </button>
               </div>
             )}
           </div>
-          <div className="form-section">Основное</div>
+          <div className="form-section">{t('profile.sectionBasic')}</div>
           <div className="form-group">
-            <label>Имя *</label>
+            <label>{t('profile.name')}</label>
             <input value={name} onChange={e => setName(e.target.value)} autoFocus required disabled={isFile} />
           </div>
           <div className="form-group">
-            <label>Должность</label>
-            <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Например: Разработчик" disabled={isFile} />
+            <label>{t('profile.position')}</label>
+            <input value={position} onChange={e => setPosition(e.target.value)} placeholder={t('people.positionPlaceholder')} disabled={isFile} />
           </div>
           <div className="form-group">
             <label>Telegram ID</label>
             <input
               value={tgId}
               onChange={e => setTgId(e.target.value)}
-              placeholder="Числовой ID"
+              placeholder={t('people.numericIdPlaceholder')}
               type="number"
               disabled={isFile}
             />
           </div>
           <div className="form-group">
             <label>Telegram username</label>
-            <input value={tgUsername} onChange={e => setTgUsername(e.target.value)} placeholder="username (без @)" disabled={isFile} />
+            <input value={tgUsername} onChange={e => setTgUsername(e.target.value)} placeholder={t('people.telegramUsernamePlaceholder')} disabled={isFile} />
           </div>
           <div className="form-group">
             <label>Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" disabled={isFile} />
           </div>
 
-          <div className="form-section">Уведомления</div>
+          <div className="form-section">{t('people.notificationsSection')}</div>
           <div className="form-group">
-            <label>Предпочтительный канал</label>
+            <label>{t('people.preferredChannel')}</label>
             <select value={channel} onChange={e => setChannel(e.target.value as 'telegram' | 'email')} style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: 4, fontSize: 14, fontFamily: 'inherit' }}>
-              <option value="telegram">Telegram (по умолчанию)</option>
+              <option value="telegram">{t('people.telegramDefault')}</option>
               <option value="email">Email</option>
             </select>
-            <span className="form-hint">Используется при диспетчеризации задач пользователю</span>
+            <span className="form-hint">{t('people.channelHint')}</span>
           </div>
 
-          <div className="form-section">Интеграции</div>
+          <div className="form-section">{t('people.integrationsSection')}</div>
           <div className="form-group">
             <label>Bitrix24 User ID</label>
-            <input value={bitrix24Id} onChange={e => setBitrix24Id(e.target.value)} placeholder="Числовой ID в Bitrix24" />
-            <span className="form-hint">Используется адаптером Bitrix24 для маппинга</span>
+            <input value={bitrix24Id} onChange={e => setBitrix24Id(e.target.value)} placeholder={t('people.bitrixIdPlaceholder')} />
+            <span className="form-hint">{t('people.bitrixHint')}</span>
           </div>
           <div className="form-group">
             <label>Yandex Tracker Login</label>
             <input value={trackerLogin} onChange={e => setTrackerLogin(e.target.value)} placeholder="login" />
-            <span className="form-hint">Логин в Яндекс Трекере</span>
+            <span className="form-hint">{t('people.trackerHint')}</span>
           </div>
           <div className="form-group">
             <label>Yonote User ID</label>
-            <input value={yonoteId} onChange={e => setYonoteId(e.target.value)} placeholder="UUID или логин" />
-            <span className="form-hint">ID пользователя в Yonote</span>
+            <input value={yonoteId} onChange={e => setYonoteId(e.target.value)} placeholder={t('people.yonoteIdPlaceholder')} />
+            <span className="form-hint">{t('people.yonoteHint')}</span>
           </div>
 
           {skills.length > 0 && (
             <>
-              <div className="form-section">Навыки</div>
+              <div className="form-section">{t('agent.settings.capabilities')}</div>
               <div className="form-group">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 0' }}>
                   {skills.map(s => (
@@ -226,9 +228,9 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
           )}
 
           <div className="form-actions">
-            <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
+            <button type="button" className="btn-cancel-f" onClick={onClose}>{t('action.cancel')}</button>
             <button type="submit" className="btn-submit" disabled={submitting}>
-              {submitting ? 'Сохранение…' : 'Сохранить'}
+              {submitting ? t('status.saving') : t('action.save')}
             </button>
           </div>
         </form>
@@ -239,6 +241,7 @@ function PersonModal({ person, skills, onClose, onSaved }: PersonModalProps) {
 
 export function People() {
   const token = useToken();
+  const { t } = useI18n();
   const [people, setPeople] = useState<Person[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -274,7 +277,7 @@ export function People() {
 
   async function deletePerson(e: React.MouseEvent, p: Person) {
     e.stopPropagation();
-    if (!confirm(`Удалить пользователя "${p.name}"?`)) return;
+    if (!confirm(t('people.confirmDelete').replace('{name}', p.name))) return;
     try {
       await api.people.delete(p.id);
       load();
@@ -290,26 +293,26 @@ export function People() {
       <div className="ppl-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="page-header">
-            <h1>Люди</h1>
+            <h1>{t('people.title')}</h1>
             <div className="header-right">
               <input
                 className="search-input"
-                placeholder="Поиск…"
+                placeholder={t('people.searchPlaceholder')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
-              <button className="btn-new" onClick={openNew}>+ Добавить</button>
+              <button className="btn-new" onClick={openNew}>+ {t('action.add')}</button>
             </div>
           </div>
           {error && <div className="error-banner">{error}</div>}
-          {loading && <div className="empty">Загрузка…</div>}
-          {!loading && filtered.length === 0 && <div className="empty">Ничего не найдено.</div>}
+          {loading && <div className="empty">{t('status.loading')}</div>}
+          {!loading && filtered.length === 0 && <div className="empty">{t('people.emptySearch')}</div>}
           {!loading && filtered.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Имя</th>
-                  <th>Должность</th>
+                  <th>{t('people.nameColumn')}</th>
+                  <th>{t('profile.position')}</th>
                   <th>Telegram</th>
                   <th>Email</th>
                   <th></th>
@@ -326,8 +329,8 @@ export function People() {
                         }
                         <span>
                           {p.name}
-                          {p.source === 'custom' && <span className="badge-custom">custom</span>}
-                          {p.source === 'file' && <span className="badge-file">trusted</span>}
+                          {p.source === 'custom' && <span className="badge-custom">{t('people.sourceCustom')}</span>}
+                          {p.source === 'file' && <span className="badge-file">{t('people.sourceTrusted')}</span>}
                         </span>
                       </div>
                     </td>
@@ -355,9 +358,9 @@ export function People() {
                         <button
                           className="btn-delete"
                           onClick={e => deletePerson(e, p)}
-                          title="Удалить"
+                          title={t('action.delete')}
                         >
-                          Удалить
+                          {t('action.delete')}
                         </button>
                       )}
                     </td>
