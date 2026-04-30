@@ -613,6 +613,18 @@ export const ACTIONS: ActionDef[] = [
     autonomy: "confirm",
     audited: false,
   },
+  {
+    id: "retention.cleanup_apply",
+    description: "Delete exact PG-only safe retention candidates after explicit admin confirmation.",
+    scope: "retention",
+    args: [
+      { name: "confirm", type: "boolean", required: true, description: "Must be true to apply cleanup." },
+      { name: "candidates", type: "array", required: true, description: "Exact candidates returned by retention.cleanup_preview: { entity, id, candidate }." },
+    ],
+    implementation: { kind: "direct", note: "All-or-nothing PG-only cleanup; revalidates candidates before deleting." },
+    autonomy: "confirm",
+    audited: true,
+  },
 
   // ── Issue (GitHub) ────────────────────────────────────────────────────────
   {

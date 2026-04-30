@@ -65,6 +65,33 @@ export interface RetentionCleanupPreview {
   candidates: RetentionCleanupCandidate[];
 }
 
+export interface RetentionCleanupApplyRequest {
+  entity: RetentionEntity;
+  id: string;
+  candidate: string;
+}
+
+export interface RetentionCleanupRejectedCandidate {
+  entity?: string;
+  id?: string;
+  candidate?: string;
+  reason: string;
+}
+
+export interface RetentionCleanupApplyResult {
+  mode: "apply";
+  generated_at: string;
+  applied: boolean;
+  hard_fail: boolean;
+  blocked_reason?: string;
+  requested_count: number;
+  approved_count: number;
+  deleted_count: number;
+  max_batch_size: number;
+  deleted: RetentionCleanupCandidate[];
+  rejected: RetentionCleanupRejectedCandidate[];
+}
+
 interface RetentionDataset {
   report: PgOnlyRetentionReport;
   pgOnlyRows: PgOnlyRow[];
@@ -102,6 +129,7 @@ const GENERATED_PREFIXES = [
 const GENERATED_RE = /^(act-wf|assistant-start|autonomy-eval|eepc|operator-eval|or-gw|test|xor-gw)(?:-|\d|$)/;
 const COMPLETED_STATUSES = new Set(["done", "completed", "sent", "closed", "archived"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const MAX_CLEANUP_APPLY_BATCH = 200;
 
 function asDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
@@ -143,6 +171,19 @@ function isOld(row: PgOnlyRow, now: Date, minAgeDays: number): boolean {
 function isoOrNull(value: Date | string | null): string | null {
   const d = asDate(value);
   return d ? d.toISOString() : null;
+}
+
+function cleanupCandidateFromRow(row: PgOnlyRow, candidate: string, now: Date): RetentionCleanupCandidate {
+  return {
+    entity: row.entity,
+    id: row.id,
+    candidate,
+    status: row.status ?? "unknown",
+    process: row.process,
+    age_bucket: ageBucket(row.updated_at ?? row.created_at, now),
+    created_at: isoOrNull(row.created_at),
+    updated_at: isoOrNull(row.updated_at),
+  };
 }
 
 export function classifyRetentionCandidate(row: PgOnlyRow, now = new Date()): string {
@@ -312,16 +353,7 @@ export function buildCleanupPreviewFromRows(
     ...(blockedReason ? { blocked_reason: blockedReason } : {}),
     total_candidates: allCandidates.length,
     omitted_candidates: allCandidates.length - selected.length,
-    candidates: options.hardFail ? [] : selected.map(({ row, candidate }) => ({
-      entity: row.entity,
-      id: row.id,
-      candidate,
-      status: row.status ?? "unknown",
-      process: row.process,
-      age_bucket: ageBucket(row.updated_at ?? row.created_at, now),
-      created_at: isoOrNull(row.created_at),
-      updated_at: isoOrNull(row.updated_at),
-    })),
+    candidates: options.hardFail ? [] : selected.map(({ row, candidate }) => cleanupCandidateFromRow(row, candidate, now)),
   };
 }
 
@@ -340,6 +372,215 @@ export async function buildPgOnlyRetentionCleanupPreview(
       limit: options.limit,
       now,
     });
+  } finally {
+    redis.disconnect();
+    await sql.end();
+  }
+}
+
+function entityConfig(entity: RetentionEntity): EntityConfig {
+  const config = ENTITY_CONFIGS.find(item => item.entity === entity);
+  if (!config) throw new Error(`Unknown retention entity: ${entity}`);
+  return config;
+}
+
+function safeCandidateIndex(rows: PgOnlyRow[], now: Date): Map<string, RetentionCleanupCandidate> {
+  const index = new Map<string, RetentionCleanupCandidate>();
+  for (const row of rows) {
+    const candidate = classifyRetentionCandidate(row, now);
+    if (!candidate.startsWith("safe_candidate:")) continue;
+    index.set(`${row.entity}:${row.id}`, cleanupCandidateFromRow(row, candidate, now));
+  }
+  return index;
+}
+
+function isApplyRequest(value: unknown): value is RetentionCleanupApplyRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.entity === "string"
+    && ENTITY_CONFIGS.some(config => config.entity === item.entity)
+    && typeof item.id === "string"
+    && typeof item.candidate === "string";
+}
+
+export function buildCleanupApplyPlanFromRows(
+  rows: PgOnlyRow[],
+  requests: unknown[],
+  options: { generatedAt: string; hardFail: boolean; confirmed: boolean; maxBatchSize?: number; now?: Date },
+): RetentionCleanupApplyResult {
+  const now = options.now ?? new Date(options.generatedAt);
+  const maxBatchSize = options.maxBatchSize ?? MAX_CLEANUP_APPLY_BATCH;
+  const rejected: RetentionCleanupRejectedCandidate[] = [];
+  const approved: RetentionCleanupCandidate[] = [];
+  const safeIndex = safeCandidateIndex(rows, now);
+  const seen = new Set<string>();
+
+  if (!options.confirmed) {
+    return {
+      mode: "apply",
+      generated_at: options.generatedAt,
+      applied: false,
+      hard_fail: options.hardFail,
+      blocked_reason: "cleanup_apply requires confirm=true",
+      requested_count: requests.length,
+      approved_count: 0,
+      deleted_count: 0,
+      max_batch_size: maxBatchSize,
+      deleted: [],
+      rejected,
+    };
+  }
+
+  if (options.hardFail) {
+    return {
+      mode: "apply",
+      generated_at: options.generatedAt,
+      applied: false,
+      hard_fail: true,
+      blocked_reason: "Redis-only rows detected; cleanup_apply is blocked until Redis/Postgres consistency is restored.",
+      requested_count: requests.length,
+      approved_count: 0,
+      deleted_count: 0,
+      max_batch_size: maxBatchSize,
+      deleted: [],
+      rejected,
+    };
+  }
+
+  if (requests.length === 0) {
+    rejected.push({ reason: "at least one candidate is required" });
+  }
+  if (requests.length > maxBatchSize) {
+    rejected.push({ reason: `batch size ${requests.length} exceeds max ${maxBatchSize}` });
+  }
+
+  for (const value of requests) {
+    if (!isApplyRequest(value)) {
+      rejected.push({ reason: "candidate must include valid entity, id, and candidate fields" });
+      continue;
+    }
+    const key = `${value.entity}:${value.id}`;
+    if (seen.has(key)) {
+      rejected.push({ entity: value.entity, id: value.id, candidate: value.candidate, reason: "duplicate candidate" });
+      continue;
+    }
+    seen.add(key);
+
+    const current = safeIndex.get(key);
+    if (!current) {
+      rejected.push({ entity: value.entity, id: value.id, candidate: value.candidate, reason: "not present in current safe PG-only candidate set" });
+      continue;
+    }
+    if (current.candidate !== value.candidate) {
+      rejected.push({ entity: value.entity, id: value.id, candidate: value.candidate, reason: `candidate mismatch; current=${current.candidate}` });
+      continue;
+    }
+    approved.push(current);
+  }
+
+  if (rejected.length > 0) {
+    return {
+      mode: "apply",
+      generated_at: options.generatedAt,
+      applied: false,
+      hard_fail: false,
+      blocked_reason: "cleanup_apply is all-or-nothing; rejected candidates must be fixed before retry",
+      requested_count: requests.length,
+      approved_count: 0,
+      deleted_count: 0,
+      max_batch_size: maxBatchSize,
+      deleted: [],
+      rejected,
+    };
+  }
+
+  return {
+    mode: "apply",
+    generated_at: options.generatedAt,
+    applied: false,
+    hard_fail: false,
+    requested_count: requests.length,
+    approved_count: approved.length,
+    deleted_count: 0,
+    max_batch_size: maxBatchSize,
+    deleted: approved,
+    rejected: [],
+  };
+}
+
+async function verifyNotInRedis(redis: Redis, candidates: RetentionCleanupCandidate[]): Promise<RetentionCleanupRejectedCandidate[]> {
+  const rejected: RetentionCleanupRejectedCandidate[] = [];
+  const byEntity = new Map<RetentionEntity, Set<string>>();
+  for (const candidate of candidates) {
+    const ids = byEntity.get(candidate.entity) ?? new Set<string>();
+    ids.add(candidate.id);
+    byEntity.set(candidate.entity, ids);
+  }
+
+  for (const [entity, ids] of byEntity) {
+    const config = entityConfig(entity);
+    const redisIds = new Set(await config.redisIds(redis));
+    for (const id of ids) {
+      if (redisIds.has(id)) {
+        rejected.push({ entity, id, reason: "candidate reappeared in Redis before delete" });
+      }
+    }
+  }
+  return rejected;
+}
+
+async function deletePgOnlyCandidates(sql: postgres.Sql, candidates: RetentionCleanupCandidate[]): Promise<RetentionCleanupCandidate[]> {
+  const deleted: RetentionCleanupCandidate[] = [];
+  for (const candidate of candidates) {
+    const config = entityConfig(candidate.entity);
+    const rows = await sql<Array<{ id: string }>>`
+      DELETE FROM ${sql(config.table)}
+      WHERE ${sql(config.idColumn)} = ${candidate.id}
+      RETURNING ${sql(config.idColumn)}::text AS id
+    `;
+    if (rows.length > 0) deleted.push(candidate);
+  }
+  return deleted;
+}
+
+export async function buildPgOnlyRetentionCleanupApply(
+  options: { candidates: unknown[]; confirm: boolean; now?: Date; maxBatchSize?: number },
+): Promise<RetentionCleanupApplyResult> {
+  const redis = new Redis({ host: "127.0.0.1", port: 6379, db: 0, lazyConnect: false });
+  const sql = postgres(getDatabaseUrl(), { max: 3, idle_timeout: 10, connect_timeout: 5, onnotice: () => {} });
+  const now = options.now ?? new Date();
+
+  try {
+    const dataset = await collectPgOnlyRetentionDataset(redis, sql, now);
+    const plan = buildCleanupApplyPlanFromRows(dataset.pgOnlyRows, options.candidates, {
+      generatedAt: dataset.report.generated_at,
+      hardFail: dataset.report.hard_fail,
+      confirmed: options.confirm,
+      maxBatchSize: options.maxBatchSize,
+      now,
+    });
+    if (plan.blocked_reason || plan.deleted.length === 0) return plan;
+
+    const redisRejected = await verifyNotInRedis(redis, plan.deleted);
+    if (redisRejected.length > 0) {
+      return {
+        ...plan,
+        applied: false,
+        blocked_reason: "cleanup_apply is all-or-nothing; one or more candidates reappeared in Redis",
+        approved_count: 0,
+        deleted_count: 0,
+        deleted: [],
+        rejected: redisRejected,
+      };
+    }
+
+    const deleted = await deletePgOnlyCandidates(sql, plan.deleted);
+    return {
+      ...plan,
+      applied: true,
+      deleted,
+      deleted_count: deleted.length,
+    };
   } finally {
     redis.disconnect();
     await sql.end();

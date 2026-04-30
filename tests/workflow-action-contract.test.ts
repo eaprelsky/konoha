@@ -192,12 +192,24 @@ describe("workflow action contract validation", () => {
   it("registers retention report as a read-only admin action", () => {
     expect(isValidAction("retention.report")).toBe(true);
     expect(isValidAction("retention.cleanup_preview")).toBe(true);
+    expect(isValidAction("retention.cleanup_apply")).toBe(true);
 
     const valid = validateActionArgs("retention.report", { limit: 20 });
     expect(valid.valid).toBe(true);
 
     const previewValid = validateActionArgs("retention.cleanup_preview", { limit: 20 });
     expect(previewValid.valid).toBe(true);
+
+    const applyMissing = validateActionArgs("retention.cleanup_apply", {});
+    expect(applyMissing.valid).toBe(false);
+    expect(applyMissing.errors).toContain("Missing required argument: confirm");
+    expect(applyMissing.errors).toContain("Missing required argument: candidates");
+
+    const applyValid = validateActionArgs("retention.cleanup_apply", {
+      confirm: true,
+      candidates: [{ entity: "cases", id: "case-1", candidate: "safe_candidate:old_completed_cases" }],
+    });
+    expect(applyValid.valid).toBe(true);
 
     const surface = listActionSurface().find(action => action.id === "retention.report");
     expect(surface).toMatchObject({
@@ -213,6 +225,15 @@ describe("workflow action contract validation", () => {
       category: "inspect",
       implemented: true,
       security: { actor: "admin" },
+    });
+
+    const applySurface = listActionSurface().find(action => action.id === "retention.cleanup_apply");
+    expect(applySurface).toMatchObject({
+      id: "retention.cleanup_apply",
+      category: "act",
+      implemented: true,
+      security: { actor: "admin" },
+      audited: true,
     });
   });
 

@@ -16,6 +16,16 @@ Konoha stores active runtime data in Redis and shadows operational history into 
 
 `retention.cleanup_preview` is also read-only. It returns exact IDs only for rows classified as `safe_candidate:*`, omits review-only rows, and blocks candidate output when Redis-only mismatches exist. It is a preview contract for future cleanup, not a delete operation.
 
+`retention.cleanup_apply` is the destructive Action Spine entry point. It is deliberately narrow:
+
+- requires admin confirmation through `/act`;
+- requires `confirm: true`;
+- accepts only exact `{ entity, id, candidate }` tuples from preview;
+- re-runs the PG-only report before deleting;
+- deletes only rows that are still absent from Redis and still classify as `safe_candidate:*`;
+- blocks the whole batch if any requested candidate is invalid, stale, duplicated, mismatched, or if Redis-only rows exist;
+- deletes from Postgres shadow/historical tables only.
+
 The script remains available for operations:
 
 ```bash
@@ -36,6 +46,6 @@ Default cleanup rules must not delete business artifacts. Only generated/test/de
 
 ## Non-Goals
 
-- No destructive cleanup is implemented by `retention.report` or `retention.cleanup_preview`.
+- Destructive cleanup is limited to exact PG-only `safe_candidate:*` rows via `retention.cleanup_apply`.
 - UI hidden-artifact filtering remains independent from retention.
 - Sales/business workflow runs are retained unless an operator chooses a narrower future policy.

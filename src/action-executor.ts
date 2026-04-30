@@ -50,6 +50,7 @@ import { invokeAssistant } from "./assistant-invocation";
 import { sendConnectorMessage } from "./messenger-outbound";
 import { ServiceError } from "./errors";
 import {
+  buildPgOnlyRetentionCleanupApply,
   buildPgOnlyRetentionCleanupPreview,
   buildPgOnlyRetentionReport,
   retentionReportForAction,
@@ -721,6 +722,19 @@ async function executeRetentionAction(action: string, args: Record<string, unkno
       try {
         const limit = typeof args.limit === "number" ? args.limit : 200;
         return { status: 200, data: await buildPgOnlyRetentionCleanupPreview({ limit }) };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    case "retention.cleanup_apply": {
+      const invalid = validationFailure("retention.cleanup_apply", args);
+      if (invalid) return invalid;
+      try {
+        const result = await buildPgOnlyRetentionCleanupApply({
+          confirm: args.confirm === true,
+          candidates: Array.isArray(args.candidates) ? args.candidates : [],
+        });
+        return { status: result.applied ? 200 : 409, data: result };
       } catch (e) {
         return serviceFailure(e);
       }

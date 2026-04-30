@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   ageBucket,
+  buildCleanupApplyPlanFromRows,
   buildCleanupPreviewFromRows,
   classifyRetentionCandidate,
   groupRetentionRows,
@@ -139,5 +140,74 @@ describe("PG-only retention report classification", () => {
     expect(preview.blocked_reason).toContain("Redis-only rows");
     expect(preview.total_candidates).toBe(1);
     expect(preview.candidates).toEqual([]);
+  });
+
+  test("cleanup apply plan approves only exact current safe candidates", () => {
+    const plan = buildCleanupApplyPlanFromRows([
+      row({ entity: "cases", id: "case-safe", status: "done", process: "act-wf-1", updated_at: "2026-04-01T00:00:00Z" }),
+    ], [
+      { entity: "cases", id: "case-safe", candidate: "safe_candidate:old_completed_cases" },
+    ], {
+      generatedAt: NOW.toISOString(),
+      hardFail: false,
+      confirmed: true,
+      now: NOW,
+    });
+
+    expect(plan.blocked_reason).toBeUndefined();
+    expect(plan.approved_count).toBe(1);
+    expect(plan.deleted_count).toBe(0);
+    expect(plan.deleted.map(candidate => candidate.id)).toEqual(["case-safe"]);
+  });
+
+  test("cleanup apply plan is all-or-nothing for invalid or stale candidates", () => {
+    const plan = buildCleanupApplyPlanFromRows([
+      row({ entity: "cases", id: "case-safe", status: "done", process: "act-wf-1", updated_at: "2026-04-01T00:00:00Z" }),
+      row({ entity: "cases", id: "case-business", status: "running", process: "sales-lead", updated_at: "2026-04-01T00:00:00Z" }),
+    ], [
+      { entity: "cases", id: "case-safe", candidate: "safe_candidate:old_completed_cases" },
+      { entity: "cases", id: "case-business", candidate: "safe_candidate:old_completed_cases" },
+    ], {
+      generatedAt: NOW.toISOString(),
+      hardFail: false,
+      confirmed: true,
+      now: NOW,
+    });
+
+    expect(plan.applied).toBe(false);
+    expect(plan.blocked_reason).toContain("all-or-nothing");
+    expect(plan.approved_count).toBe(0);
+    expect(plan.deleted).toEqual([]);
+    expect(plan.rejected).toEqual([
+      {
+        entity: "cases",
+        id: "case-business",
+        candidate: "safe_candidate:old_completed_cases",
+        reason: "not present in current safe PG-only candidate set",
+      },
+    ]);
+  });
+
+  test("cleanup apply plan requires explicit confirmation and bounded batches", () => {
+    const unconfirmed = buildCleanupApplyPlanFromRows([], [], {
+      generatedAt: NOW.toISOString(),
+      hardFail: false,
+      confirmed: false,
+      now: NOW,
+    });
+    expect(unconfirmed.blocked_reason).toContain("confirm=true");
+
+    const oversized = buildCleanupApplyPlanFromRows([], [
+      { entity: "cases", id: "case-1", candidate: "safe_candidate:old_completed_cases" },
+      { entity: "cases", id: "case-2", candidate: "safe_candidate:old_completed_cases" },
+    ], {
+      generatedAt: NOW.toISOString(),
+      hardFail: false,
+      confirmed: true,
+      maxBatchSize: 1,
+      now: NOW,
+    });
+    expect(oversized.blocked_reason).toContain("all-or-nothing");
+    expect(oversized.rejected.some(item => item.reason.includes("exceeds max 1"))).toBe(true);
   });
 });
