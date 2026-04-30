@@ -302,3 +302,19 @@ describe("workflow-loader e2e: retention cleanup", () => {
     expect(def.flow).toContainEqual(["f_publish_retention_summary", "e_retention_cycle_complete"]);
   });
 });
+
+describe("workflow-loader e2e: bitrix monitor", () => {
+  const workflowPath = join(import.meta.dir, "..", "workflows", "operations", "bitrix-monitor.json");
+
+  test("loads and validates Bitrix monitor workflow from disk", () => {
+    const raw = readFileSync(workflowPath, "utf-8");
+    const def = JSON.parse(raw) as WorkflowDefinition;
+    expect(def.id).toBe("bitrix-monitor");
+    expect(validateWorkflow(def)).toEqual([]);
+
+    const runMonitor = def.elements.find(el => el.id === "f1");
+    expect(runMonitor?.type).toBe("function");
+    expect(runMonitor?.role).toBe("automation_service");
+    expect(runMonitor?.role).not.toMatch(/[А-Яа-яЁё]/);
+  });
+});

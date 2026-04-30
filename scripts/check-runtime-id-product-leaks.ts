@@ -18,6 +18,7 @@ const PRODUCT_SURFACES = [
   "docs/guides/website-copy-workflow.md",
   "workflows/knowledge/intake.json",
   "workflows/knowledge/source-classification.json",
+  "workflows/operations/bitrix-monitor.json",
   "workflows/reliability/incident-triage.json",
   "workflows/reliability/retention-cleanup.json",
   "workflows/sales/lead-qualification.json",

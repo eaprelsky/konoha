@@ -2,7 +2,7 @@
   "id": "bitrix-monitor",
   "version": "1.0.0",
   "name": "Bitrix Monitor",
-  "description": "Периодический мониторинг изменений в воронке Bitrix24: новые сделки, смена стадии, изменение суммы. Алерт уходит в группу coMind Лиды.",
+  "description": "Periodic monitoring of Bitrix24 pipeline changes: new deals, stage changes, and amount changes. Alerts are routed to the configured sales lead channel.",
   "elements": [
     {
       "id": "e1",
@@ -17,7 +17,7 @@
       "id": "f1",
       "type": "function",
       "label": "Run Bitrix Monitor",
-      "role": "Система"
+      "role": "automation_service"
     },
     {
       "id": "e2",
