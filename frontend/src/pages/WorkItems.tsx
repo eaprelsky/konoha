@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type React from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { useToken } from '../context/TokenContext';
@@ -6,6 +6,7 @@ import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { WorkItem, WorkItemFilters, Case, Workflow, EventWait, EventWaitStatus, Agent, RoleDef } from '../api/types';
 import { buildAgentLabelMap, buildRoleLabelMap, formatAssignee, type AssigneeOption } from '../utils/agentDisplay';
+import { filterOperatorWaits, filterOperatorWorkItems, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
 
 const styles = `
   .wf-body { padding: 20px; }
@@ -21,6 +22,7 @@ const styles = `
   .button-group button:hover { background: #0052a3; }
   .button-group .reset { background: #999; }
   .button-group .reset:hover { background: #777; }
+  .hidden-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
   .items-table { width: 100%; border-collapse: collapse; }
   .items-table th { background: #f9f9f9; padding: 12px; text-align: left; font-size: 12px; font-weight: 600; color: #666; border-bottom: 2px solid #eee; text-transform: uppercase; }
   .items-table td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
@@ -185,7 +187,7 @@ function DetailsModal({ item, onClose }: DetailsModalProps) {
             <h2 id="detailsTitle">Детали: {item.label}</h2>
             <div id="detailsContent">
               <div className="detail-field"><strong>ID</strong><code>{item.work_item_id}</code></div>
-              {item.case_id && <div className="detail-field"><strong>ID кейса</strong><code>{item.case_id}</code></div>}
+              {item.case_id && <div className="detail-field"><strong>ID прогона</strong><code>{item.case_id}</code></div>}
               <div className="detail-field"><strong>Входные данные</strong><code>{JSON.stringify(item.input || {}, null, 2)}</code></div>
               <div className="detail-field"><strong>Выходные данные</strong><code>{JSON.stringify(item.output || {}, null, 2)}</code></div>
             </div>
@@ -198,6 +200,7 @@ function DetailsModal({ item, onClose }: DetailsModalProps) {
 
 export function WorkItems() {
   const token = useToken();
+  const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [items, setItems] = useState<WorkItem[]>([]);
   const [waits, setWaits] = useState<EventWait[]>([]);
   const [loading, setLoading] = useState(true);
@@ -289,9 +292,18 @@ export function WorkItems() {
       .catch(e => setError(`Ошибка подтверждения: ${e.message}`));
   }
 
-  const activeTasks = items.filter(item => item.status === 'pending' || item.status === 'running').length;
-  const overdueWaits = waits.filter(wait => wait.status === 'overdue').length;
-  const escalatedWaits = waits.filter(wait => wait.status === 'escalated').length;
+  const hiddenProcessIds = useMemo(
+    () => new Set(workflows.filter(isWorkflowHiddenFromOperator).map(wf => wf.id)),
+    [workflows],
+  );
+  const visibleItems = filterOperatorWorkItems(items, hiddenProcessIds, { showHiddenArtifacts });
+  const visibleWaits = filterOperatorWaits(waits, hiddenProcessIds, { showHiddenArtifacts });
+  const hiddenQueueCount =
+    (items.length - filterOperatorWorkItems(items, hiddenProcessIds).length) +
+    (waits.length - filterOperatorWaits(waits, hiddenProcessIds).length);
+  const activeTasks = visibleItems.filter(item => item.status === 'pending' || item.status === 'running').length;
+  const overdueWaits = visibleWaits.filter(wait => wait.status === 'overdue').length;
+  const escalatedWaits = visibleWaits.filter(wait => wait.status === 'escalated').length;
 
   return (
     <>
@@ -300,8 +312,8 @@ export function WorkItems() {
         <div className="container">
           <div className="page-header">
             <div>
-              <h1>Executor Workbench</h1>
-              <div className="page-subtitle">Очередь шагов и ожиданий на canonical runtime objects</div>
+              <h1>Очередь исполнения</h1>
+              <div className="page-subtitle">Все задачи, ожидания и ручные подтверждения runtime-движка</div>
             </div>
             <button className="btn-new-task" onClick={() => setShowNewTask(true)}>+ Новая задача</button>
           </div>
@@ -314,7 +326,7 @@ export function WorkItems() {
             </div>
             <div className="summary-card info">
               <div className="summary-label">Активные ожидания</div>
-              <div className="summary-value">{waits.length}</div>
+              <div className="summary-value">{visibleWaits.length}</div>
             </div>
             <div className={`summary-card${overdueWaits > 0 ? ' warn' : ''}`}>
               <div className="summary-label">Просроченные ожидания</div>
@@ -368,29 +380,39 @@ export function WorkItems() {
             <div className="button-group">
               <button className="reset" onClick={() => setFilters({})}>Сбросить</button>
             </div>
+            {hiddenQueueCount > 0 && (
+              <label className="hidden-toggle" title="Показать скрытые test/debug/generated задачи и ожидания. То же доступно через ?view=debug.">
+                <input
+                  type="checkbox"
+                  checked={showHiddenArtifacts}
+                  onChange={e => setShowHiddenArtifacts(e.target.checked)}
+                />
+                Показать служебные ({hiddenQueueCount})
+              </label>
+            )}
           </div>
 
           {loading && <div className="loading-msg">Загрузка…</div>}
 
-          {!loading && items.length === 0 && !error && (
+          {!loading && visibleItems.length === 0 && !error && (
             <div className="empty">Задачи не найдены.</div>
           )}
 
-          {items.length > 0 && (
+          {visibleItems.length > 0 && (
             <table className="items-table" id="itemsTable">
               <thead>
                 <tr>
                   <th>Описание</th>
                   <th>Исполнитель</th>
                   <th>Статус</th>
-                  <th>Процесс / Кейс</th>
+                  <th>Процесс / Прогон</th>
                   <th>Прогресс</th>
                   <th>Срок</th>
                   <th>Действия</th>
                 </tr>
               </thead>
               <tbody id="itemsBody">
-                {items.map(item => {
+                {visibleItems.map(item => {
                   const kase = item.case_id ? caseCache[item.case_id] : undefined;
                   const progress = kase ? getStepLabel(kase, item.work_item_id) : '-';
                   const processCell = formatProcessCase(item, wfNameMap);
@@ -431,7 +453,7 @@ export function WorkItems() {
 
           <div className="section-card">
             <h2>Ожидания</h2>
-            <p>Manual waits и runtime ожидания с дедлайнами, эскалацией и быстрым подтверждением.</p>
+            <p>Ожидания событий, дедлайнов и ручных подтверждений в активных прогонах.</p>
             <div className="filters" style={{ paddingBottom: 12, marginBottom: 12 }}>
               <div className="filter-group">
                 <label htmlFor="waitStatus">Статус ожидания</label>
@@ -444,11 +466,11 @@ export function WorkItems() {
               </div>
             </div>
 
-            {!loading && waits.length === 0 && (
+            {!loading && visibleWaits.length === 0 && (
               <div className="empty">Активные ожидания не найдены.</div>
             )}
 
-            {waits.length > 0 && (
+            {visibleWaits.length > 0 && (
               <table className="items-table">
                 <thead>
                   <tr>
@@ -456,13 +478,13 @@ export function WorkItems() {
                     <th>Тип</th>
                     <th>Статус</th>
                     <th>Исполнитель</th>
-                    <th>Процесс / Кейс</th>
+                    <th>Процесс / Прогон</th>
                     <th>Срок</th>
                     <th>Действия</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {waits.map(wait => {
+                  {visibleWaits.map(wait => {
                     const processCell = formatProcessCase({
                       work_item_id: wait.wait_id,
                       case_id: wait.case_id,
@@ -490,7 +512,7 @@ export function WorkItems() {
                           {wait.trigger_kind === 'manual' && (
                             <button className="complete" onClick={() => confirmWait(wait)}>Подтвердить</button>
                           )}
-                          <button onClick={() => wait.case_id && api.cases.get(wait.case_id).then(kase => setCaseCache(prev => ({ ...prev, [wait.case_id]: kase }))).catch(() => {})}>Обновить кейс</button>
+                          <button onClick={() => wait.case_id && api.cases.get(wait.case_id).then(kase => setCaseCache(prev => ({ ...prev, [wait.case_id]: kase }))).catch(() => {})}>Обновить прогон</button>
                         </td>
                       </tr>
                     );
