@@ -26,11 +26,11 @@ export function Agents() {
 
   async function action(id: string, fn: () => Promise<unknown>, label: string, isProtected?: boolean) {
     if (label === 'Delete') {
-      if (isProtected) { setActionError(`Агент "${id}" является системным и не может быть удалён.`); return; }
-      if (!confirm(`Удалить агента "${id}"? Это действие необратимо.`)) return;
+      if (isProtected) { setActionError(t('agent.page.protectedDeleteError', 'Agent "{id}" is protected and cannot be deleted.').replace('{id}', id)); return; }
+      if (!confirm(t('agent.page.confirmDelete', 'Delete agent "{id}"? This action cannot be undone.').replace('{id}', id))) return;
     }
     if ((label === 'Start' || label === 'Stop' || label === 'Restart') && isProtected) {
-      if (!confirm(`Агент "${id}" — системный. Управление через konoha.service / systemd.\nПродолжить?`)) return;
+      if (!confirm(t('agent.page.confirmProtectedLifecycle', 'Agent "{id}" is protected. Lifecycle is managed through konoha.service / systemd.\nContinue?').replace('{id}', id))) return;
     }
     try { await fn(); load(); } catch (e: any) { setActionError(e.message); }
   }
@@ -42,68 +42,68 @@ export function Agents() {
         <div className="ag-body" style={{ flex: 1, overflowY: 'auto' }}>
           <div className="container">
             <div className="page-header">
-              <h1>Агенты</h1>
-              <button className="btn-new" onClick={() => setShowNew(true)}>+ Новый агент</button>
+              <h1>{t('page.agents.title', 'Agents')}</h1>
+              <button className="btn-new" onClick={() => setShowNew(true)}>{t('page.agents.new', '+ New Agent')}</button>
             </div>
             {error && <div className="error-banner">{error}</div>}
-            {loading && <div className="empty">Загрузка…</div>}
+            {loading && <div className="empty">{t('status.loading', 'Loading...')}</div>}
             {!loading && (
               <div className="ag-filters">
-                <span className="ag-filter-label">Поиск:</span>
-                <input className="ag-filter-input" placeholder="Имя или ID…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 160 }} />
-                <span className="ag-filter-label">Шина:</span>
+                <span className="ag-filter-label">{t('agent.page.search', 'Search')}:</span>
+                <input className="ag-filter-input" placeholder={t('agent.page.searchPlaceholder', 'Name or ID...')} value={search} onChange={e => setSearch(e.target.value)} style={{ width: 160 }} />
+                <span className="ag-filter-label">{t('agent.page.bus', 'Bus')}:</span>
                 <select className="ag-filter-select" value={filterBus} onChange={e => setFilterBus(e.target.value)}>
-                  <option value="all">Все</option>
-                  <option value="online">Онлайн</option>
-                  <option value="offline">Офлайн</option>
+                  <option value="all">{t('filter.all', 'All')}</option>
+                  <option value="online">{t('status.online', 'Online')}</option>
+                  <option value="offline">{t('status.offline', 'Offline')}</option>
                 </select>
-                <span className="ag-filter-label">Класс:</span>
+                <span className="ag-filter-label">{t('agent.page.class', 'Class')}:</span>
                 <select className="ag-filter-select" value={filterClass} onChange={e => setFilterClass(e.target.value as AgentLifecycleClassFilter)}>
-                  <option value="all">Все</option>
-                  <option value="core">Ядро</option>
-                  <option value="connector">Коннекторы</option>
-                  <option value="optional">Опциональные воркеры</option>
-                  <option value="deprecated">Совместимость</option>
-                  <option value="external">Внешние</option>
-                  <option value="managed">Управляемые</option>
+                  <option value="all">{t('filter.all', 'All')}</option>
+                  <option value="core">{t('agent.type.core', 'Core')}</option>
+                  <option value="connector">{t('agent.type.connectorPlural', 'Connectors')}</option>
+                  <option value="optional">{t('agent.type.optionalPlural', 'Optional workers')}</option>
+                  <option value="deprecated">{t('agent.type.deprecated', 'Compatibility')}</option>
+                  <option value="external">{t('agent.type.externalPlural', 'External')}</option>
+                  <option value="managed">{t('agent.type.managedPlural', 'Managed')}</option>
                 </select>
-                <span className="ag-filter-label">Процесс:</span>
+                <span className="ag-filter-label">{t('label.process', 'Process')}:</span>
                 <select className="ag-filter-select" value={filterLifecycle} onChange={e => setFilterLifecycle(e.target.value)}>
-                  <option value="all">Все</option>
-                  <option value="running">Запущен</option>
-                  <option value="stopped">Остановлен</option>
-                  <option value="error">Ошибка</option>
-                  <option value="none">Нет процесса</option>
+                  <option value="all">{t('filter.all', 'All')}</option>
+                  <option value="running">{t('status.running', 'Running')}</option>
+                  <option value="stopped">{t('status.stopped', 'Stopped')}</option>
+                  <option value="error">{t('status.error', 'Error')}</option>
+                  <option value="none">{t('agent.page.noProcess', 'No process')}</option>
                 </select>
                 {allModels.length > 1 && <>
-                  <span className="ag-filter-label">Модель:</span>
+                  <span className="ag-filter-label">{t('label.model', 'Model')}:</span>
                   <select className="ag-filter-select" value={filterModel} onChange={e => setFilterModel(e.target.value)}>
-                    <option value="all">Все</option>
+                    <option value="all">{t('filter.all', 'All')}</option>
                     {allModels.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </>}
-                <span className="ag-filter-label">Сортировка:</span>
+                <span className="ag-filter-label">{t('agent.page.sort', 'Sort')}:</span>
                 <select className="ag-filter-select" value={sortBy} onChange={e => setSortBy(e.target.value as any)}>
-                  <option value="name">По имени</option>
-                  <option value="status">По статусу</option>
-                  <option value="model">По модели</option>
+                  <option value="name">{t('agent.page.sortByName', 'By name')}</option>
+                  <option value="status">{t('agent.page.sortByStatus', 'By status')}</option>
+                  <option value="model">{t('agent.page.sortByModel', 'By model')}</option>
                 </select>
                 {filteredAgents.length !== agents.length && (
-                  <span style={{ fontSize: 12, color: '#6366f1', marginLeft: 4 }}>{filteredAgents.length} из {agents.length}</span>
+                  <span style={{ fontSize: 12, color: '#6366f1', marginLeft: 4 }}>{t('agent.page.filteredCount', '{shown} of {total}').replace('{shown}', String(filteredAgents.length)).replace('{total}', String(agents.length))}</span>
                 )}
-                <div className="ag-filter-help">Опциональные воркеры запускаются назначением или политикой; deprecated-акторы оставлены только для совместимости.</div>
+                <div className="ag-filter-help">{t('agent.page.filterHelp', 'Optional workers are started by assignment or policy; deprecated actors are kept only for compatibility.')}</div>
               </div>
             )}
-            {!loading && agents.length === 0 && <div className="empty">Агенты не зарегистрированы.</div>}
+            {!loading && agents.length === 0 && <div className="empty">{t('empty.agents', 'No agents registered.')}</div>}
             {agents.length > 0 && (
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Агент</th>
-                    <th>Шина</th>
-                    <th>Процесс</th>
-                    <th>Модель</th>
-                    <th>Действия</th>
+                    <th>{t('agent.page.agent', 'Agent')}</th>
+                    <th>{t('agent.page.bus', 'Bus')}</th>
+                    <th>{t('label.process', 'Process')}</th>
+                    <th>{t('label.model', 'Model')}</th>
+                    <th>{t('label.actions', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -158,12 +158,12 @@ export function Agents() {
                         <td>
                           <div className="actions">
                             {canEdit && a.lifecycle && <>
-                              <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start', isProtected)}>▶ Запустить</button>
-                              <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop', isProtected)}>■ Остановить</button>
+                              <button className="btn-start" onClick={() => action(a.id, () => api.agents.start(a.id), 'Start', isProtected)}>▶ {t('agent.page.start', 'Start')}</button>
+                              <button className="btn-stop" onClick={() => action(a.id, () => api.agents.stop(a.id), 'Stop', isProtected)}>■ {t('agent.page.stop', 'Stop')}</button>
                               <button className="btn-restart" onClick={() => action(a.id, () => api.agents.restart(a.id), 'Restart', isProtected)}>↺</button>
-                              <button onClick={() => setEditAgent(a)}>Изменить</button>
+                              <button onClick={() => setEditAgent(a)}>{t('action.edit', 'Edit')}</button>
                             </>}
-                            <button onClick={() => setTmuxAgent(a.id)}>Логи</button>
+                            <button onClick={() => setTmuxAgent(a.id)}>{t('agent.page.logs', 'Logs')}</button>
                             {canEdit && !isProtected && <button className="btn-del" onClick={() => action(a.id, () => api.agents.delete(a.id), 'Delete')}>🗑</button>}
                           </div>
                         </td>
@@ -173,7 +173,7 @@ export function Agents() {
                 </tbody>
               </table>
             )}
-            <div className="refresh-info">Авто-обновление 10с • Последнее: {lastUpdate}</div>
+            <div className="refresh-info">{t('agent.page.refresh', 'Auto-refresh 10s - Last: {time}').replace('{time}', lastUpdate)}</div>
           </div>
         </div>
       </div>

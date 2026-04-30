@@ -44,5 +44,9 @@ describe('operator i18n terminology', () => {
     expect(translations.ru['agent.edit.title']).toBe('Изменить агента');
     expect(translations.en['agent.new.title']).toBe('New agent');
     expect(translations.ru['agent.new.title']).toBe('Новый агент');
+    expect(translations.en['agent.page.bus']).toBe('Bus');
+    expect(translations.ru['agent.page.bus']).toBe('Шина');
+    expect(translations.en['agent.page.confirmDelete']).toContain('{id}');
+    expect(translations.ru['agent.page.confirmDelete']).toContain('{id}');
   });
 });
