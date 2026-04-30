@@ -6,12 +6,19 @@ export function agentDisplayName(agent: Pick<Agent, 'id' | 'name' | 'display_ali
   return agent.name || agent.id;
 }
 
+export function agentActorLabel(agent: Pick<Agent, 'id' | 'name' | 'display_alias'>): string {
+  const name = agentDisplayName(agent);
+  const alias = agent.display_alias?.trim();
+  if (!alias || alias === name) return name;
+  return `${name} (alias: ${alias})`;
+}
+
 export function agentAlias(agent: Pick<Agent, 'display_alias'>): string | undefined {
   return agent.display_alias || undefined;
 }
 
 export function buildAgentLabelMap(agents: Agent[]): Record<string, string> {
-  return Object.fromEntries(agents.map(agent => [agent.id, agentDisplayName(agent)]));
+  return Object.fromEntries(agents.map(agent => [agent.id, agentActorLabel(agent)]));
 }
 
 export function buildRoleLabelMap(roles: RoleDef[]): Record<string, string> {

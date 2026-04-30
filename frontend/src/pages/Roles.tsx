@@ -5,7 +5,7 @@ import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { RoleDef, AssignmentStrategy, Agent, Person, Skill } from '../api/types';
-import { agentDisplayName, buildAgentLabelMap, roleAssigneeLabel } from '../utils/agentDisplay';
+import { agentActorLabel, buildAgentLabelMap, roleAssigneeLabel } from '../utils/agentDisplay';
 
 const STRATEGIES: { value: AssignmentStrategy; label: string }[] = [
   { value: 'manual',          label: 'Вручную' },
@@ -208,7 +208,7 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
   }
 
   const assigneeOptions: AssigneeOption[] = [
-    ...agents.map(a => ({ id: a.id, label: agentDisplayName(a), group: 'Агенты' })),
+    ...agents.map(a => ({ id: a.id, label: agentActorLabel(a), group: 'Агенты' })),
     ...people.map(p => ({ id: p.id, label: `${p.name}${p.position ? ` (${p.position})` : ''}`, group: 'Люди' })),
   ];
 
