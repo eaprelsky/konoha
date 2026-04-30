@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Watchdog for Kakashi (Claude Agent #8, Bug Fixer).
+Watchdog for Kakashi (on-demand engineering lead worker).
 Watches Konoha SSE /messages/kakashi/stream.
-Also polls GitHub Issues every SCAN_INTERVAL seconds and delivers new issues.
+Also polls GitHub Issues every SCAN_INTERVAL seconds and delivers explicitly
+delegated issues.
 Auto-push is disabled by default; set KAKASHI_AUTO_PUSH_ENABLED=1 to opt in.
 
 Trigger messages: kakashi:fix issue=N, kakashi:scan, kakashi:review
@@ -11,6 +12,7 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(__file__))
 import watchdog_base as _b
@@ -31,19 +33,85 @@ SCAN_INTERVAL     = 60    # 1 minute between GitHub Issue scans
 KONOHA_REPO       = os.path.expanduser("~/konoha")
 AUTO_PUSH_INTERVAL = 300  # 5 minutes — push unpushed commits (#367)
 AUTO_PUSH_ENABLED = os.environ.get("KAKASHI_AUTO_PUSH_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+GITHUB_DELEGATION_LABELS_ENV = (
+    os.environ.get("AGENT_GITHUB_DELEGATION_LABELS")
+    or "delegate:teamlead"
+)
+GITHUB_SKIP_LABELS_ENV = (
+    os.environ.get("AGENT_GITHUB_SKIP_LABELS")
+    or "delegate:done,blocked"
+)
+DELEGATION_LABELS = {
+    label.strip()
+    for label in GITHUB_DELEGATION_LABELS_ENV.split(",")
+    if label.strip()
+}
+SKIP_LABELS = {
+    label.strip()
+    for label in GITHUB_SKIP_LABELS_ENV.split(",")
+    if label.strip()
+}
+DISPATCH_STATE_PATH = Path(os.environ.get(
+    "AGENT_GITHUB_DISPATCH_STATE",
+    os.path.expanduser("~/.cache/konoha/kakashi-github-dispatched.json"),
+))
+
+
+def issue_label_names(issue: dict) -> set[str]:
+    return {
+        label.get("name", "")
+        for label in issue.get("labels", [])
+        if isinstance(label, dict) and label.get("name")
+    }
+
+
+def is_delegated_issue(issue: dict) -> bool:
+    labels = issue_label_names(issue)
+    return bool(labels & DELEGATION_LABELS) and not bool(labels & SKIP_LABELS)
+
+
+def load_dispatched_issue_ids() -> set[int]:
+    try:
+        if not DISPATCH_STATE_PATH.exists():
+            return set()
+        raw = json.loads(DISPATCH_STATE_PATH.read_text())
+        return {int(issue_id) for issue_id in raw.get("dispatched_issue_ids", [])}
+    except Exception as e:
+        _b.log.warning(f"Could not load Kakashi GitHub dispatch state: {e!r}")
+        return set()
+
+
+def save_dispatched_issue_ids(issue_ids: set[int]) -> None:
+    try:
+        DISPATCH_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DISPATCH_STATE_PATH.write_text(json.dumps({
+            "dispatched_issue_ids": sorted(issue_ids),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, ensure_ascii=False, indent=2))
+    except Exception as e:
+        _b.log.warning(f"Could not save Kakashi GitHub dispatch state: {e!r}")
 
 
 # ── GitHub Issues scanner (extra_watcher) ────────────────────────────────────
 
 async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
-    """Poll GitHub Issues every SCAN_INTERVAL seconds for new open bugs."""
+    """Poll GitHub Issues and dispatch only issues explicitly labeled for Kakashi."""
     if not GH_TOKEN:
         _b.log.warning("GH_TOKEN not set — GitHub Issues scanning disabled")
         return
+    if not DELEGATION_LABELS:
+        _b.log.warning("AGENT_GITHUB_DELEGATION_LABELS is empty — GitHub Issues scanning disabled")
+        return
 
     env = {**os.environ, "GH_TOKEN": GH_TOKEN}
-    last_seen_ids: set[int] = set()
-    bootstrapped = False
+    dispatched_ids = load_dispatched_issue_ids()
+    _b.log.info(
+        "Kakashi GitHub scanner enabled: repo=%s labels=%s skip_labels=%s dispatched=%d",
+        GH_REPO,
+        ",".join(sorted(DELEGATION_LABELS)),
+        ",".join(sorted(SKIP_LABELS)),
+        len(dispatched_ids),
+    )
 
     while True:
         try:
@@ -51,7 +119,7 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
                 "gh", "issue", "list",
                 "--repo", GH_REPO,
                 "--state", "open",
-                "--json", "number,title,labels,createdAt",
+                "--json", "number,title,labels,createdAt,updatedAt",
                 "--limit", "50",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
@@ -60,29 +128,27 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
             issues = json.loads(stdout) if stdout else []
 
-            if not bootstrapped:
-                last_seen_ids = {i["number"] for i in issues}
-                bootstrapped = True
-                _b.log.info(f"GitHub scanner bootstrap: learned {len(last_seen_ids)} existing open issue(s) without dispatch")
-                await asyncio.sleep(SCAN_INTERVAL)
-                continue
-
-            new_issues = [i for i in issues if i["number"] not in last_seen_ids]
-            if new_issues:
-                for issue in new_issues:
-                    _b.log.info(f"New GitHub issue #{issue['number']}: {issue['title']}")
+            delegated_issues = [
+                issue for issue in issues
+                if is_delegated_issue(issue) and int(issue["number"]) not in dispatched_ids
+            ]
+            if delegated_issues:
+                for issue in delegated_issues:
+                    issue_number = int(issue["number"])
+                    labels = ",".join(sorted(issue_label_names(issue)))
+                    _b.log.info(
+                        f"Delegated GitHub issue #{issue_number}: {issue['title']} labels={labels}"
+                    )
                     await raw_queue.put({
                         "source": "github",
                         "data": {
                             "from": "github",
-                            "text": f"kakashi:fix issue={issue['number']} title={issue['title']}",
+                            "text": f"kakashi:fix issue={issue_number} title={issue['title']}",
                             "timestamp": issue.get("createdAt", ""),
                         }
                     })
-                    last_seen_ids.add(issue["number"])
-            current_ids = {i["number"] for i in issues}
-            last_seen_ids.intersection_update(current_ids)
-            # No periodic kakashi:scan — tasks come from Naruto directly
+                    dispatched_ids.add(issue_number)
+                save_dispatched_issue_ids(dispatched_ids)
 
         except Exception as e:
             _b.log.warning(f"GitHub scan error: {e!r}")

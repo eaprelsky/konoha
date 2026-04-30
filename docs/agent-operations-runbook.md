@@ -67,6 +67,16 @@ sudo systemctl start agent-kakashi.service
 sudo systemctl stop agent-kakashi.service agent-watchdog-kakashi.service
 ```
 
+GitHub is Kakashi's canonical task intake for delegated code work. Add the
+`delegate:teamlead` label to an issue to make the dedicated watchdog deliver it.
+This label names the delegated role, not the Naruto-style worker alias. GitHub
+assignee is not used as the routing signal. The scanner skips issues
+with `delegate:done` or `blocked`, persists dispatched issue numbers in
+`~/.cache/konoha/kakashi-github-dispatched.json`, and never scans the whole
+open queue as implicit work. Override labels with
+`AGENT_GITHUB_DELEGATION_LABELS` and `AGENT_GITHUB_SKIP_LABELS` only for a
+deliberate migration.
+
 When an agent is intentionally parked, add its short id and any dedicated units to `/opt/shared/kiba/paused-services.txt` so Akamaru suppresses expected inactive-state alerts.
 
 ## Stop
