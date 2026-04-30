@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth";
 import { publishEvent, type KonohaEvent } from "../redis";
 import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, handleEventFired, type Case, type HistoryEntry } from "../runtime";
 import { getWorkflow, type WorkflowElement } from "../workflow-loader";
+import { CURRENT_TELEGRAM_CONNECTOR_CATALOG, resolveMessengerWorkflowIds, type MessengerChatType } from "../messenger-connectors";
 import { loadActiveWaitsForCase, resolveEventWaitForNode } from "../runtime/event-waits";
 import { emitEvent } from "../runtime/event-log";
 const log = createLogger("routes:events");
@@ -31,13 +32,15 @@ router.post("/", async (c) => {
 
   const id = await publishEvent(event);
 
+  const workflowIds = resolveWorkflowScope(type, source, payload);
+
   // Trigger workflow runtime: find matching process definitions and create cases
-  const cases = await processEvent(type, source, payload).catch((e) => {
+  const cases = await processEvent(type, source, payload, workflowIds ? { workflowIds } : undefined).catch((e) => {
     log.error("processEvent error", { error: e.message, event_type: type, source });
     return [];
   });
 
-  return c.json({ id, cases_created: cases.map((c: Case) => c.case_id) });
+  return c.json({ id, cases_created: cases.map((c: Case) => c.case_id), workflow_scope: workflowIds ?? null });
 });
 
 router.get("/log", async (c) => {
@@ -247,3 +250,24 @@ miningRouter.post("/case/:id/confirm-event", async (c) => {
 });
 
 export default router;
+
+function resolveWorkflowScope(type: string, source: string, payload: Record<string, unknown>): string[] | null {
+  if (source !== "telegram" || !type.startsWith("telegram.")) return null;
+  const endpointId = stringField(payload.endpoint_id);
+  const chatRef = stringField(payload.chat_ref ?? payload.chat_id);
+  if (!endpointId || !chatRef) return null;
+  return resolveMessengerWorkflowIds(CURRENT_TELEGRAM_CONNECTOR_CATALOG, {
+    endpoint_id: endpointId,
+    chat_ref: chatRef,
+    chat_type: messengerChatType(payload.chat_type),
+  });
+}
+
+function stringField(value: unknown): string | undefined {
+  return value === undefined || value === null ? undefined : String(value);
+}
+
+function messengerChatType(value: unknown): MessengerChatType | undefined {
+  if (value === "direct" || value === "group" || value === "channel" || value === "unknown") return value;
+  return undefined;
+}

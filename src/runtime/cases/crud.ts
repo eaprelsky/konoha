@@ -76,13 +76,16 @@ export async function processEvent(
   eventType: string,
   source: string,
   payload: Record<string, unknown>,
+  options: { workflowIds?: string[] } = {},
 ): Promise<Case[]> {
   const WORKFLOW_INDEX_KEY = "konoha:workflow:index";
   const WORKFLOW_KEY_PREFIX = "workflow:";
   const ids = await redis.smembers(WORKFLOW_INDEX_KEY);
+  const workflowIdScope = options.workflowIds ? new Set(options.workflowIds) : null;
   const cases: Case[] = [];
 
   for (const id of ids) {
+    if (workflowIdScope && !workflowIdScope.has(id)) continue;
     const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
     if (!raw) continue;
     const def: WorkflowDefinition = JSON.parse(raw);

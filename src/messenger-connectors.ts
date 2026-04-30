@@ -38,6 +38,14 @@ export interface MessengerRouteTarget {
   target_id: string;
 }
 
+export interface MessengerRoutingResolution {
+  targets: MessengerRouteTarget[];
+  workflow_ids: string[] | null;
+  binding_id?: string;
+  policy_id?: string;
+  rule_id?: string;
+}
+
 export interface MessengerRoutingRule {
   rule_id: string;
   description: string;
@@ -183,6 +191,16 @@ export const CURRENT_TELEGRAM_CONNECTOR_CATALOG: MessengerConnectorCatalog = {
       enabled: true,
     },
     {
+      binding_id: "telegram-user-comind-leads",
+      connector_id: "telegram-main",
+      endpoint_id: "telegram-user-sasuke",
+      chat_ref: "-4982206077",
+      chat_type: "group",
+      routing_policy_id: "telegram-compat-routing",
+      enabled_workflow_ids: ["lead-qualification"],
+      enabled: true,
+    },
+    {
       binding_id: "telegram-user-default",
       connector_id: "telegram-main",
       endpoint_id: "telegram-user-sasuke",
@@ -240,18 +258,68 @@ export function resolveMessengerTargets(
   catalog: MessengerConnectorCatalog,
   input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
 ): MessengerRouteTarget[] {
-  const binding = catalog.chat_bindings.find(item =>
+  return resolveMessengerRouting(catalog, input)?.targets ?? [];
+}
+
+export function resolveMessengerWorkflowIds(
+  catalog: MessengerConnectorCatalog,
+  input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
+): string[] | null {
+  return resolveMessengerRouting(catalog, input)?.workflow_ids ?? null;
+}
+
+export function resolveMessengerRouting(
+  catalog: MessengerConnectorCatalog,
+  input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
+): MessengerRoutingResolution | null {
+  const binding = findChatBinding(catalog, input);
+  if (!binding) return null;
+
+  const policy = catalog.routing_policies.find(item => item.policy_id === binding.routing_policy_id);
+  if (!policy) return null;
+
+  const rule = policy.rules.find(item => ruleMatches(item, input));
+  const targets = rule?.targets.length ? rule.targets : policy.default_targets;
+  return {
+    targets,
+    workflow_ids: explicitWorkflowIds(binding.enabled_workflow_ids, rule, targets),
+    binding_id: binding.binding_id,
+    policy_id: policy.policy_id,
+    rule_id: rule?.rule_id,
+  };
+}
+
+function findChatBinding(
+  catalog: MessengerConnectorCatalog,
+  input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
+): MessengerChatBinding | undefined {
+  const candidates = catalog.chat_bindings.filter(item =>
     item.enabled
     && item.endpoint_id === input.endpoint_id
     && (item.chat_ref === input.chat_ref || item.chat_ref === "*")
+    && (!item.chat_type || item.chat_type === "unknown" || !input.chat_type || item.chat_type === input.chat_type)
   );
-  if (!binding) return [];
+  return candidates.sort(bindingSpecificity)[0];
+}
 
-  const policy = catalog.routing_policies.find(item => item.policy_id === binding.routing_policy_id);
-  if (!policy) return [];
+function bindingSpecificity(a: MessengerChatBinding, b: MessengerChatBinding): number {
+  const score = (item: MessengerChatBinding) =>
+    (item.chat_ref === "*" ? 0 : 2) + (item.chat_type === "unknown" ? 0 : 1);
+  return score(b) - score(a);
+}
 
-  const rule = policy.rules.find(item => ruleMatches(item, input));
-  return rule?.targets.length ? rule.targets : policy.default_targets;
+function explicitWorkflowIds(
+  bindingWorkflowIds: string[],
+  rule: MessengerRoutingRule | undefined,
+  targets: MessengerRouteTarget[],
+): string[] | null {
+  const ids = [
+    ...bindingWorkflowIds,
+    ...(rule?.enabled_workflow_ids ?? []),
+    ...targets.filter(target => target.target_type === "workflow").map(target => target.target_id),
+  ];
+  const unique = [...new Set(ids.filter(Boolean))];
+  return unique.length ? unique : null;
 }
 
 function ruleMatches(

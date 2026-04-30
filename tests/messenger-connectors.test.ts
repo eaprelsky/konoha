@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   CURRENT_TELEGRAM_CONNECTOR_CATALOG,
+  resolveMessengerWorkflowIds,
   resolveMessengerTargets,
   validateMessengerConnectorCatalog,
   type MessengerConnectorCatalog,
@@ -48,6 +49,20 @@ describe("messenger connector model", () => {
       chat_ref: "chat:group",
       chat_type: "group",
     })).toEqual([{ target_type: "agent", target_id: "sasuke" }]);
+  });
+
+  test("resolves explicit workflow scope for bound Telegram chats only", () => {
+    expect(resolveMessengerWorkflowIds(CURRENT_TELEGRAM_CONNECTOR_CATALOG, {
+      endpoint_id: "telegram-user-sasuke",
+      chat_ref: "-4982206077",
+      chat_type: "group",
+    })).toEqual(["lead-qualification"]);
+
+    expect(resolveMessengerWorkflowIds(CURRENT_TELEGRAM_CONNECTOR_CATALOG, {
+      endpoint_id: "telegram-user-sasuke",
+      chat_ref: "unbound-chat",
+      chat_type: "group",
+    })).toBeNull();
   });
 
   test("routes one messenger connector to multiple workflows and agents", () => {

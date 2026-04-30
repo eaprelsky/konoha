@@ -38,3 +38,15 @@ endpoint for dedicated bridge instances.
 Compatibility fields such as `telegram_stream`, `telegram_stream_id`,
 `chat_id`, and `msg_id` are preserved in payloads so existing tests and
 operational debugging remain stable.
+
+## Workflow Scope
+
+`POST /events` resolves Telegram connector metadata against the messenger
+catalog before calling the workflow runtime. If a matching chat binding, rule,
+or workflow target explicitly enables workflow ids, the runtime only evaluates
+those workflows for the event. If no explicit workflow scope is configured, the
+legacy behavior is preserved and all workflow triggers can match normally.
+
+This makes the migration compatibility-safe: the current sales process can keep
+matching `coMind Лиды` through its eEPC trigger filter, while dedicated chat
+bindings can progressively narrow events to specific workflows.

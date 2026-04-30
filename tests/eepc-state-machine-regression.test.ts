@@ -327,6 +327,34 @@ describe("eEPC state-machine regression suite", () => {
     });
   });
 
+  test("workflow event routing can be scoped by messenger connector policy", async () => {
+    const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");
+    const allowedId = wfId("sales-connector-scope-allowed");
+    const blockedId = wfId("sales-connector-scope-blocked");
+    const chatTitle = `${RUN} Scoped Connector Leads`;
+
+    for (const id of [allowedId, blockedId]) {
+      const def: WorkflowDefinition = { ...JSON.parse(raw), id };
+      const start = def.elements.find(el => el.id === "e1");
+      if (start?.trigger?.filter) start.trigger.filter = { chat_title: chatTitle };
+      await registerWorkflow(def);
+    }
+
+    const cases = await processEvent("telegram.message.received", "telegram", {
+      connector_id: "telegram-main",
+      endpoint_id: "telegram-user-sasuke",
+      chat_ref: "-4982206077",
+      chat_type: "group",
+      chat_title: chatTitle,
+      sender_name: "Client",
+      text: "Нужен workflow для входящих лидов",
+      msg_id: "88",
+    }, { workflowIds: [allowedId] });
+
+    expect(cases).toHaveLength(1);
+    expect(cases[0].process_id).toBe(allowedId);
+  });
+
   test("SDD harness happy path reaches merge gate through business roles", async () => {
     const id = wfId("sdd-happy-path");
     const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sdd", "harness-factory.json"), "utf-8");
