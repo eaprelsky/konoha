@@ -286,6 +286,10 @@ TOKEN_EXHAUSTION_PATTERNS = [
     "context limit",
 ]
 
+ACTIVE_WORK_MARKERS = ("◦ Working", "• Working", "esc to interrupt")
+CODEX_QUEUE_HINT = "tab to queue message"
+CODEX_QUEUED_MESSAGES_HINT = "messages to be submitted after next tool call"
+
 # Per-session idle tracking: {session: last_seen_idle_monotonic}
 _last_idle: dict[str, float] = {}
 
@@ -386,6 +390,76 @@ def nudge_tmux(session: str) -> tuple[bool, str]:
     return run_command(["tmux", "-L", session, "send-keys", "-t", session, "Enter"], timeout=5)
 
 
+def tmux_pane_pid(session: str) -> int | None:
+    """Return tmux pane root pid for runtime detection, or None if unavailable."""
+    try:
+        pid = subprocess.check_output(
+            ["tmux", "-L", session, "display-message", "-pt", session, "#{pane_pid}"],
+            timeout=3,
+        ).decode("utf-8", errors="replace").strip()
+        return int(pid) if pid else None
+    except Exception:
+        return None
+
+
+def descendant_cmdlines(root_pid: int) -> list[str]:
+    """Collect process command lines under a tmux pane pid."""
+    try:
+        output = subprocess.check_output(
+            ["ps", "-eo", "pid=,ppid=,args="],
+            timeout=5,
+        ).decode("utf-8", errors="replace")
+    except Exception:
+        return []
+
+    children: dict[int, list[tuple[int, str]]] = {}
+    for line in output.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) < 3:
+            continue
+        try:
+            pid = int(parts[0])
+            ppid = int(parts[1])
+        except ValueError:
+            continue
+        children.setdefault(ppid, []).append((pid, parts[2]))
+
+    cmdlines: list[str] = []
+    stack = [root_pid]
+    seen: set[int] = set()
+    while stack:
+        parent = stack.pop()
+        if parent in seen:
+            continue
+        seen.add(parent)
+        for pid, cmdline in children.get(parent, []):
+            cmdlines.append(cmdline)
+            stack.append(pid)
+    return cmdlines
+
+
+def classify_agent_process_tree(cmdlines: list[str]) -> str:
+    """Classify agent runtime from descendant process command lines."""
+    runtime = "unknown"
+    for cmdline in cmdlines:
+        argv0 = cmdline.split(None, 1)[0].rsplit("/", 1)[-1].lower()
+        lowered = cmdline.lower()
+        if argv0 == "codex" or "/codex" in lowered or "codex-cli" in lowered:
+            return "codex"
+        if argv0 == "claude" or "/claude" in lowered or "claude code" in lowered:
+            runtime = "claude"
+        elif argv0 == "opencode" or "/opencode" in lowered:
+            runtime = "opencode"
+    return runtime
+
+
+def detect_agent_runtime(session: str) -> str:
+    pid = tmux_pane_pid(session)
+    if pid is None:
+        return "unknown"
+    return classify_agent_process_tree(descendant_cmdlines(pid))
+
+
 def restart_agent_session(agent: str) -> tuple[bool, str]:
     if agent not in WATCHED_AGENTS:
         return False, f"unknown agent {agent}"
@@ -438,6 +512,56 @@ def remediate_alert(alert: str) -> str | None:
         return f"auto_restart_agent={agent} ok={int(ok)} detail={output[:160]!r}"
 
     return None
+
+
+def _has_active_work(line: str) -> bool:
+    return any(marker in line for marker in ACTIVE_WORK_MARKERS)
+
+
+def is_idle_prompt_state(lines: list[str]) -> bool:
+    """Return True when a Claude/Codex/opencode-like terminal is ready for input."""
+    normalized = [l.strip() for l in lines if l.strip()]
+    last_lines = normalized[-12:]
+    if any(_has_active_work(l) for l in last_lines):
+        return False
+    # Codex displays an input prompt while a task runs and Enter only queues a
+    # follow-up in that state. Treat those panes as busy, not idle.
+    if any(l.lower() == CODEX_QUEUE_HINT for l in last_lines):
+        return False
+    if any(l.lower().lstrip("• ").startswith(CODEX_QUEUED_MESSAGES_HINT) for l in last_lines):
+        return False
+
+    has_claude_queue = any("queued messages" in l.lower() for l in last_lines)
+    has_claude_prompt = any(
+        (l == "❯" or l == "❯\xa0" or l.startswith("❯ ") or l.startswith("❯\xa0"))
+        and "Pasted text" not in l
+        for l in last_lines
+    ) and not has_claude_queue
+
+    has_codex_startup = any("Booting MCP server" in l or "Starting MCP servers" in l for l in last_lines)
+    has_codex_prompt = any(l.startswith("› ") or l == "›" for l in last_lines) and not has_codex_startup
+    if has_codex_prompt:
+        last_prompt_idx = max(
+            (i for i, line in enumerate(normalized) if line.startswith("› ") or line == "›"),
+            default=-1,
+        )
+        last_active_idx = max(
+            (i for i, line in enumerate(normalized) if _has_active_work(line)),
+            default=-1,
+        )
+        if last_active_idx > last_prompt_idx:
+            return False
+
+    has_cursor_ready = (
+        any("→ Add a follow-up" in l for l in last_lines)
+        or any("ctrl+c to stop" in l for l in last_lines)
+        or any("▶︎ Auto-run everything" in l for l in last_lines)
+    )
+    has_opencode_idle = (
+        any("ctrl+p commands" in l for l in last_lines)
+        or any("tab agents" in l for l in last_lines)
+    )
+    return has_claude_prompt or has_codex_prompt or has_cursor_ready or has_opencode_idle
 
 
 # ── Check functions ───────────────────────────────────────────────────────────
@@ -517,11 +641,8 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                         ["tmux", "-L", session, "capture-pane", "-pt", session], timeout=3
                     ).decode("utf-8", errors="replace")
                     lines = [l.strip() for l in pane.strip().split("\n")]
-                    is_idle = any(
-                        (l == "❯" or l == "❯\xa0" or l.startswith("❯ ") or l.startswith("❯\xa0"))
-                        and "Pasted text" not in l
-                        for l in lines[-6:]
-                    )
+                    runtime = detect_agent_runtime(session)
+                    is_idle = is_idle_prompt_state(lines)
                     now_mono = time.monotonic()
                     if is_idle:
                         _last_idle[session] = now_mono
@@ -541,7 +662,7 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                             if should_alert(key):
                                 mins = int(non_idle_secs // 60)
                                 alerts.append(
-                                    f"kiba:alert agent={session} stuck duration={mins}min"
+                                    f"kiba:alert agent={session} runtime={runtime} stuck duration={mins}min"
                                 )
 
                     # Detect token/context exhaustion (#111)
