@@ -98,4 +98,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['roles.strategy.load-balancing']).toBe('Load balancing');
     expect(translations.ru['roles.confirmDelete']).toContain('{id}');
   });
+
+  it('keeps connector management copy in the translation catalog', () => {
+    expect(translations.en['connectors.checkAll']).toBe('Check all');
+    expect(translations.ru['connectors.checkAll']).toBe('Проверить все');
+    expect(translations.en['connectors.adapter.default']).toBe('Integration adapter');
+    expect(translations.ru['connectors.adapter.default']).toBe('Адаптер интеграции');
+  });
 });

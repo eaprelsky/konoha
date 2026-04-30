@@ -28,6 +28,7 @@ const DEFAULT_GUARDED_FILES = [
   "frontend/src/pages/ByProcessView.tsx",
   "frontend/src/pages/BySourceView.tsx",
   "frontend/src/pages/Cases.tsx",
+  "frontend/src/pages/Connectors.tsx",
   "frontend/src/pages/Dashboard.tsx",
   "frontend/src/pages/Documents.tsx",
   "frontend/src/pages/EventCard.tsx",

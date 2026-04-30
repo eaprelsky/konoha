@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 
@@ -29,17 +30,11 @@ const styles = `
   .refresh-info { font-size: 12px; color: #999; margin-top: 16px; text-align: right; }
 `;
 
-const ADAPTER_DESCRIPTIONS: Record<string, string> = {
-  telegram: 'Telegram: отправка через бота или пользовательский аккаунт',
-  email: 'Email: доставка через SMTP/Mailcow',
-  bitrix24: 'Интеграция с Bitrix24 CRM',
-  redis: 'Redis: внутренняя шина сообщений',
-};
-
 interface ConnectorStatus { name: string; healthy: boolean | null; checking: boolean; }
 
 export function Connectors() {
   const token = useToken();
+  const { t } = useI18n();
   const [adapters, setAdapters] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<Record<string, ConnectorStatus>>({});
   const [loading, setLoading] = useState(true);
@@ -81,22 +76,26 @@ export function Connectors() {
     for (const name of adapters) { await checkHealth(name); }
   }
 
+  function adapterDescription(name: string) {
+    return t(`connectors.adapter.${name}`, t('connectors.adapter.default'));
+  }
+
   return (
     <>
       <style>{styles}</style>
       <div className="cn-body">
         <div className="container">
           <div className="page-header">
-            <h1>Информационные системы</h1>
-            <p>Интеграции и адаптеры, доступные движку процессов.</p>
+            <h1>{t('page.connectors.title')}</h1>
+            <p>{t('connectors.subtitle')}</p>
           </div>
           {error && <div className="error-banner">{error}</div>}
-          {loading && <div className="empty">Загрузка…</div>}
-          {!loading && adapters.length === 0 && <div className="empty">Адаптеры не зарегистрированы.</div>}
+          {loading && <div className="empty">{t('status.loading')}</div>}
+          {!loading && adapters.length === 0 && <div className="empty">{t('empty.connectors')}</div>}
           {adapters.length > 0 && (
             <>
               <div style={{ marginBottom: 16 }}>
-                <button className="check-btn" onClick={checkAll}>Проверить все</button>
+                <button className="check-btn" onClick={checkAll}>{t('connectors.checkAll')}</button>
               </div>
               <div className="cards">
                 {adapters.map(name => {
@@ -107,13 +106,13 @@ export function Connectors() {
                         <span className="card-name">{name}</span>
                         <div className={`health-dot ${st?.healthy === true ? 'health-ok' : st?.healthy === false ? 'health-err' : 'health-unknown'}`} />
                       </div>
-                      <div className="card-desc">{ADAPTER_DESCRIPTIONS[name] || 'Адаптер интеграции'}</div>
+                      <div className="card-desc">{adapterDescription(name)}</div>
                       <button className="check-btn" onClick={() => checkHealth(name)} disabled={st?.checking}>
-                        {st?.checking ? 'Проверка…' : 'Проверить'}
+                        {st?.checking ? t('connectors.checking') : t('connectors.check')}
                       </button>
                       {st?.healthy !== null && (
                         <div className={`status-text ${st.healthy ? 'status-ok' : 'status-err'}`}>
-                          {st.healthy ? '✓ Подключено' : '✗ Ошибка подключения'}
+                          {st.healthy ? `✓ ${t('connectors.connected')}` : `✗ ${t('connectors.connectionError')}`}
                         </div>
                       )}
                     </div>
@@ -122,7 +121,7 @@ export function Connectors() {
               </div>
             </>
           )}
-          <div className="refresh-info">Последнее обновление: {lastUpdate}</div>
+          <div className="refresh-info">{t('connectors.lastUpdate')}: {lastUpdate}</div>
         </div>
       </div>
     </>
