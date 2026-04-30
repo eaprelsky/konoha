@@ -3,6 +3,7 @@ import type React from 'react';
 import { api } from '../api/client';
 import { useToken } from '../context/TokenContext';
 import type { DashboardProfile, Person, Skill } from '../api/types';
+import { useI18n } from '../context/I18nContext';
 
 const styles = `
   .profile-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); z-index: 2000; display: flex; justify-content: center; align-items: center; }
@@ -57,6 +58,7 @@ const PROFILE_PERSON_KEY = 'konoha_profile_person_id';
 
 export function ProfileModal({ onClose }: Props) {
   const token = useToken();
+  const { t } = useI18n();
 
   const [phase, setPhase] = useState<'loading' | 'pick' | 'edit'>('loading');
   const [people, setPeople] = useState<Person[]>([]);
@@ -152,12 +154,12 @@ export function ProfileModal({ onClose }: Props) {
         });
         setAvatarUrl(res.avatar_url);
       } else if (avatarMode === 'img2img') {
-        if (!avatarFile) { setError('Выберите фото для генерации'); return; }
+        if (!avatarFile) { setError(t('profile.avatarChoosePhotoError', 'Choose a photo for generation')); return; }
         const res = await api.profile.generateAvatarImg2Img(avatarFile, avatarPrompt || `Portrait in ${avatarStyle} style`);
         setAvatarUrl(res.avatar_url);
       }
     } catch (e: any) {
-      setError(`Ошибка генерации: ${e.message}`);
+      setError(`${t('profile.avatarGenerateError', 'Generation error')}: ${e.message}`);
     } finally {
       setGeneratingAvatar(false);
     }
@@ -171,7 +173,7 @@ export function ProfileModal({ onClose }: Props) {
       const res = await api.profile.uploadAvatar(file);
       setAvatarUrl(res.avatar_url);
     } catch (e: any) {
-      setError(`Ошибка загрузки: ${e.message}`);
+      setError(`${t('profile.avatarUploadError', 'Upload error')}: ${e.message}`);
     } finally {
       setGeneratingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -179,7 +181,7 @@ export function ProfileModal({ onClose }: Props) {
   }
 
   async function save() {
-    if (!name.trim()) { setError('Имя обязательно'); return; }
+    if (!name.trim()) { setError(t('profile.nameRequired', 'Name is required')); return; }
     setSubmitting(true); setError(null);
     try {
       const saved = await api.profile.save({
@@ -204,11 +206,11 @@ export function ProfileModal({ onClose }: Props) {
     setError(null);
     setPasswordStatus(null);
     if (newPassword !== newPasswordRepeat) {
-      setError('Новый пароль и подтверждение не совпадают');
+      setError(t('profile.passwordMismatch', 'New password and confirmation do not match'));
       return;
     }
     if (newPassword.length < 12) {
-      setError('Новый пароль должен быть не короче 12 символов');
+      setError(t('profile.passwordTooShort', 'New password must be at least 12 characters'));
       return;
     }
     const res = await fetch('/api/auth/password', {
@@ -219,13 +221,13 @@ export function ProfileModal({ onClose }: Props) {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setError(body.error || `Ошибка смены пароля: HTTP ${res.status}`);
+      setError(body.error || `${t('profile.passwordChangeError', 'Password change failed')}: HTTP ${res.status}`);
       return;
     }
     setCurrentPassword('');
     setNewPassword('');
     setNewPasswordRepeat('');
-    setPasswordStatus('Пароль обновлён');
+    setPasswordStatus(t('profile.passwordUpdated', 'Password updated'));
   }
 
   const initials = name.charAt(0).toUpperCase() || '?';
@@ -240,13 +242,13 @@ export function ProfileModal({ onClose }: Props) {
     <div className="profile-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <style>{styles}</style>
       <div className="profile-modal">
-        {phase === 'loading' && <div style={{ color: '#64748b', textAlign: 'center', padding: 40 }}>Загрузка…</div>}
+        {phase === 'loading' && <div style={{ color: '#64748b', textAlign: 'center', padding: 40 }}>{t('status.loading', 'Loading...')}</div>}
 
         {phase === 'pick' && (
           <>
-            <h2>Мой профиль</h2>
+            <h2>{t('profile.title', 'My profile')}</h2>
             <div className="profile-picker">
-              <p>Выберите вашу учётную запись из списка:</p>
+              <p>{t('profile.pickPerson', 'Choose your account from the list:')}</p>
               {people.map(p => (
                 <div key={p.id} className="picker-item" onClick={() => pickPerson(p)}>
                   {p.avatar_url
@@ -262,25 +264,25 @@ export function ProfileModal({ onClose }: Props) {
               <div className="picker-item" onClick={() => loadProfile(profile || { username: 'admin', display_name: '' }, null)}>
                 <div className="picker-avatar-ph">?</div>
                 <div>
-                  <div className="picker-name">Создать отдельный профиль</div>
-                  <div className="picker-pos">Без привязки к справочнику людей</div>
+                  <div className="picker-name">{t('profile.createStandalone', 'Create standalone profile')}</div>
+                  <div className="picker-pos">{t('profile.createStandaloneHint', 'Without linking to the people directory')}</div>
                 </div>
               </div>
             </div>
             <div className="profile-actions">
-              <button className="btn-profile-cancel" onClick={onClose}>Отмена</button>
+              <button className="btn-profile-cancel" onClick={onClose}>{t('action.cancel', 'Cancel')}</button>
             </div>
           </>
         )}
 
         {phase === 'edit' && (
           <div>
-            <h2>Мой профиль</h2>
+            <h2>{t('profile.title', 'My profile')}</h2>
             {error && <div className="profile-error">{error}</div>}
             {passwordStatus && <div className="profile-success">{passwordStatus}</div>}
             {isFileBased && (
               <div className="profile-success">
-                Профиль связан с trusted users. Изменения ниже сохраняются в личный dashboard-профиль и не перезаписывают источник данных.
+                {t('profile.fileBasedNotice', 'Profile is linked to trusted users. Changes below are saved to your personal dashboard profile and do not overwrite the source data.')}
               </div>
             )}
 
@@ -290,7 +292,7 @@ export function ProfileModal({ onClose }: Props) {
                 : <div className="profile-avatar-placeholder">{initials}</div>
               }
               <div className="profile-avatar-actions">
-                <div className="profile-avatar-label">Аватар</div>
+                <div className="profile-avatar-label">{t('agent.settings.avatar', 'Avatar')}</div>
                 {/* Mode tabs */}
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   {(['upload', 'generate', 'img2img'] as const).map(m => (
@@ -307,7 +309,7 @@ export function ProfileModal({ onClose }: Props) {
                 {avatarMode === 'upload' && (
                   <div className="profile-avatar-btns">
                     <button type="button" className="btn-avatar-upload" onClick={() => fileInputRef.current?.click()} disabled={generatingAvatar}>
-                      {generatingAvatar ? '⏳ Загрузка…' : '📁 Загрузить файл'}
+                      {generatingAvatar ? t('agent.settings.avatarUploading', 'Uploading...') : t('profile.uploadFile', 'Upload file')}
                     </button>
                     <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={uploadAvatar} />
                   </div>
@@ -319,7 +321,7 @@ export function ProfileModal({ onClose }: Props) {
                       placeholder="professional photo, anime, pixel art…" />
                     <div className="profile-avatar-btns">
                       <button type="button" className="btn-avatar-gen" onClick={doAvatarAction} disabled={generatingAvatar}>
-                        {generatingAvatar ? '⏳ Генерация…' : '✨ Сгенерировать'}
+                        {generatingAvatar ? t('agent.settings.avatarGenerating', 'Generating...') : t('agent.settings.generateAvatar', 'Generate')}
                       </button>
                     </div>
                   </>
@@ -329,14 +331,14 @@ export function ProfileModal({ onClose }: Props) {
                     <input ref={img2ImgRef} type="file" accept="image/*" style={{ display: 'none' }}
                       onChange={e => setAvatarFile(e.target.files?.[0] || null)} />
                     <button type="button" className="btn-avatar-upload" onClick={() => img2ImgRef.current?.click()}>
-                      {avatarFile ? avatarFile.name : '📎 Выбрать фото'}
+                      {avatarFile ? avatarFile.name : t('agent.settings.choosePhoto', 'Choose photo')}
                     </button>
                     <input type="text" className="profile-avatar-style" value={avatarPrompt}
                       onChange={e => setAvatarPrompt(e.target.value)}
-                      placeholder="Описание изменений (стиль, детали…)" />
+                      placeholder={t('agent.settings.avatarPromptPlaceholder', 'Change description: style, details...')} />
                     <div className="profile-avatar-btns">
                       <button type="button" className="btn-avatar-gen" onClick={doAvatarAction} disabled={generatingAvatar || !avatarFile}>
-                        {generatingAvatar ? '⏳ Генерация…' : '✨ Из фото'}
+                        {generatingAvatar ? t('agent.settings.avatarGenerating', 'Generating...') : t('profile.generateFromPhotoShort', 'From photo')}
                       </button>
                     </div>
                   </>
@@ -344,14 +346,14 @@ export function ProfileModal({ onClose }: Props) {
               </div>
             </div>
 
-            <div className="profile-section">Основное</div>
+            <div className="profile-section">{t('profile.sectionBasic', 'Basic')}</div>
             <div className="profile-field">
-              <label>Имя *</label>
+              <label>{t('profile.name', 'Name *')}</label>
               <input value={name} onChange={e => setName(e.target.value)} required />
             </div>
             <div className="profile-field">
-              <label>Должность</label>
-              <input value={position} onChange={e => setPosition(e.target.value)} placeholder="Например: CTO" />
+              <label>{t('profile.position', 'Position')}</label>
+              <input value={position} onChange={e => setPosition(e.target.value)} placeholder={t('profile.positionPlaceholder', 'e.g. CTO')} />
             </div>
             <div className="profile-field">
               <label>Telegram</label>
@@ -360,7 +362,7 @@ export function ProfileModal({ onClose }: Props) {
 
             {skills.length > 0 && (
               <>
-                <div className="profile-section">Навыки</div>
+                <div className="profile-section">{t('agent.settings.capabilities', 'Skills / Capabilities')}</div>
                 <div className="profile-caps">
                   {skills.map(s => (
                     <span
@@ -375,17 +377,17 @@ export function ProfileModal({ onClose }: Props) {
               </>
             )}
 
-            <div className="profile-section">Безопасность</div>
+            <div className="profile-section">{t('profile.sectionSecurity', 'Security')}</div>
             <div className="profile-field">
-              <label>Текущий пароль</label>
+              <label>{t('profile.currentPassword', 'Current password')}</label>
               <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} autoComplete="current-password" />
             </div>
             <div className="profile-field">
-              <label>Новый пароль</label>
-              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} autoComplete="new-password" placeholder="Минимум 12 символов" />
+              <label>{t('profile.newPassword', 'New password')}</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} autoComplete="new-password" placeholder={t('profile.passwordPlaceholder', 'At least 12 characters')} />
             </div>
             <div className="profile-field">
-              <label>Повтор нового пароля</label>
+              <label>{t('profile.repeatNewPassword', 'Repeat new password')}</label>
               <input type="password" value={newPasswordRepeat} onChange={e => setNewPasswordRepeat(e.target.value)} autoComplete="new-password" />
             </div>
             <button
@@ -394,13 +396,13 @@ export function ProfileModal({ onClose }: Props) {
               onClick={changePassword}
               disabled={!currentPassword || !newPassword || !newPasswordRepeat}
             >
-              Сменить пароль
+              {t('profile.changePassword', 'Change password')}
             </button>
 
             <div className="profile-actions">
-              <button type="button" className="btn-profile-cancel" onClick={onClose}>Отмена</button>
+              <button type="button" className="btn-profile-cancel" onClick={onClose}>{t('action.cancel', 'Cancel')}</button>
               <button type="button" className="btn-profile-save" disabled={submitting} onClick={save}>
-                {submitting ? 'Сохранение…' : 'Сохранить'}
+                {submitting ? t('status.saving', 'Saving...') : t('action.save', 'Save')}
               </button>
             </div>
           </div>

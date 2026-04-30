@@ -56,4 +56,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['nav.overview']).toBe('Overview');
     expect(translations.ru['nav.overview']).toBe('Витрина');
   });
+
+  it('keeps profile and password copy in the translation catalog', () => {
+    expect(translations.en['profile.title']).toBe('My profile');
+    expect(translations.ru['profile.title']).toBe('Мой профиль');
+    expect(translations.en['profile.passwordTooShort']).toContain('12');
+    expect(translations.ru['profile.passwordTooShort']).toContain('12');
+  });
 });

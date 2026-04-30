@@ -23,6 +23,7 @@ const DEFAULT_GUARDED_FILES = [
   "frontend/src/components/agents/NewAgentModal.tsx",
   "frontend/src/components/agents/AgentSettingsTab.tsx",
   "frontend/src/components/Layout.tsx",
+  "frontend/src/components/ProfileModal.tsx",
   "frontend/src/pages/Agents.tsx",
   "frontend/src/pages/ByProcessView.tsx",
   "frontend/src/pages/BySourceView.tsx",
