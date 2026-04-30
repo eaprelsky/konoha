@@ -88,6 +88,13 @@ open queue as implicit work. Override labels with
 `AGENT_GITHUB_DELEGATION_LABELS` and `AGENT_GITHUB_SKIP_LABELS` only for a
 deliberate migration.
 
+For long unattended queues, keep `delegate:teamlead` only on a single batch
+issue and add `kakashi-batch`. Batch issues are re-delivered after
+`AGENT_GITHUB_REDISPATCH_INTERVAL_SEC` (default: 1800s) while they remain open
+and are not marked `delegate:done` or `blocked`. Child issues should use
+`delegate:done`/`blocked` for progress and must not receive `delegate:teamlead`,
+otherwise they become separate watchdog triggers.
+
 When an agent is intentionally parked, add its short id and any dedicated units to `/opt/shared/kiba/paused-services.txt` so Akamaru suppresses expected inactive-state alerts.
 
 ## Stop

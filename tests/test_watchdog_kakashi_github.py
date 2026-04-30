@@ -20,7 +20,7 @@ def load_watchdog_kakashi():
 
 
 def issue_with_labels(*labels: str) -> dict:
-    return {"labels": [{"name": label} for label in labels]}
+    return {"number": 649, "labels": [{"name": label} for label in labels]}
 
 
 class KakashiGitHubScannerTest(unittest.TestCase):
@@ -39,6 +39,20 @@ class KakashiGitHubScannerTest(unittest.TestCase):
         self.assertFalse(
             module.is_delegated_issue(issue_with_labels("delegate:teamlead", "delegate:done"))
         )
+
+    def test_regular_delegated_issue_dispatches_only_once(self):
+        module = load_watchdog_kakashi()
+        issue = issue_with_labels("delegate:teamlead")
+
+        self.assertTrue(module.should_dispatch_issue(issue, set(), {}, now=1000))
+        self.assertFalse(module.should_dispatch_issue(issue, {649}, {649: 1000}, now=999999))
+
+    def test_batch_issue_redispatches_after_cooldown(self):
+        module = load_watchdog_kakashi()
+        issue = issue_with_labels("delegate:teamlead", "kakashi-batch")
+
+        self.assertFalse(module.should_dispatch_issue(issue, {649}, {649: 1000}, now=1000 + module.REDISPATCH_INTERVAL_SEC - 1))
+        self.assertTrue(module.should_dispatch_issue(issue, {649}, {649: 1000}, now=1000 + module.REDISPATCH_INTERVAL_SEC))
 
 
 if __name__ == "__main__":

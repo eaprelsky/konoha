@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(__file__))
@@ -55,6 +56,12 @@ DISPATCH_STATE_PATH = Path(os.environ.get(
     "AGENT_GITHUB_DISPATCH_STATE",
     os.path.expanduser("~/.cache/konoha/kakashi-github-dispatched.json"),
 ))
+REDISPATCH_LABELS = {
+    label.strip()
+    for label in os.environ.get("AGENT_GITHUB_REDISPATCH_LABELS", "kakashi-batch").split(",")
+    if label.strip()
+}
+REDISPATCH_INTERVAL_SEC = int(os.environ.get("AGENT_GITHUB_REDISPATCH_INTERVAL_SEC", "1800"))
 
 
 def issue_label_names(issue: dict) -> set[str]:
@@ -70,26 +77,46 @@ def is_delegated_issue(issue: dict) -> bool:
     return bool(labels & DELEGATION_LABELS) and not bool(labels & SKIP_LABELS)
 
 
-def load_dispatched_issue_ids() -> set[int]:
+def is_redispatchable_issue(issue: dict) -> bool:
+    return bool(issue_label_names(issue) & REDISPATCH_LABELS)
+
+
+def load_dispatch_state() -> tuple[set[int], dict[int, float]]:
     try:
         if not DISPATCH_STATE_PATH.exists():
-            return set()
+            return set(), {}
         raw = json.loads(DISPATCH_STATE_PATH.read_text())
-        return {int(issue_id) for issue_id in raw.get("dispatched_issue_ids", [])}
+        dispatched_issue_ids = {int(issue_id) for issue_id in raw.get("dispatched_issue_ids", [])}
+        dispatch_times = {
+            int(issue_id): float(dispatched_at)
+            for issue_id, dispatched_at in raw.get("dispatch_times", {}).items()
+        }
+        return dispatched_issue_ids, dispatch_times
     except Exception as e:
         _b.log.warning(f"Could not load Kakashi GitHub dispatch state: {e!r}")
-        return set()
+        return set(), {}
 
 
-def save_dispatched_issue_ids(issue_ids: set[int]) -> None:
+def save_dispatch_state(issue_ids: set[int], dispatch_times: dict[int, float]) -> None:
     try:
         DISPATCH_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         DISPATCH_STATE_PATH.write_text(json.dumps({
             "dispatched_issue_ids": sorted(issue_ids),
+            "dispatch_times": {str(issue_id): dispatch_times[issue_id] for issue_id in sorted(dispatch_times)},
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }, ensure_ascii=False, indent=2))
     except Exception as e:
         _b.log.warning(f"Could not save Kakashi GitHub dispatch state: {e!r}")
+
+
+def should_dispatch_issue(issue: dict, dispatched_ids: set[int], dispatch_times: dict[int, float], now: float) -> bool:
+    issue_number = int(issue["number"])
+    if issue_number not in dispatched_ids:
+        return True
+    if not is_redispatchable_issue(issue):
+        return False
+    last_dispatched = dispatch_times.get(issue_number, 0)
+    return now - last_dispatched >= REDISPATCH_INTERVAL_SEC
 
 
 # ── GitHub Issues scanner (extra_watcher) ────────────────────────────────────
@@ -104,12 +131,14 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
         return
 
     env = {**os.environ, "GH_TOKEN": GH_TOKEN}
-    dispatched_ids = load_dispatched_issue_ids()
+    dispatched_ids, dispatch_times = load_dispatch_state()
     _b.log.info(
-        "Kakashi GitHub scanner enabled: repo=%s labels=%s skip_labels=%s dispatched=%d",
+        "Kakashi GitHub scanner enabled: repo=%s labels=%s skip_labels=%s redispatch_labels=%s redispatch_interval=%ss dispatched=%d",
         GH_REPO,
         ",".join(sorted(DELEGATION_LABELS)),
         ",".join(sorted(SKIP_LABELS)),
+        ",".join(sorted(REDISPATCH_LABELS)),
+        REDISPATCH_INTERVAL_SEC,
         len(dispatched_ids),
     )
 
@@ -127,17 +156,19 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
             issues = json.loads(stdout) if stdout else []
+            now = time.time()
 
             delegated_issues = [
                 issue for issue in issues
-                if is_delegated_issue(issue) and int(issue["number"]) not in dispatched_ids
+                if is_delegated_issue(issue) and should_dispatch_issue(issue, dispatched_ids, dispatch_times, now)
             ]
             if delegated_issues:
                 for issue in delegated_issues:
                     issue_number = int(issue["number"])
                     labels = ",".join(sorted(issue_label_names(issue)))
+                    redispatch_note = " redispatch" if issue_number in dispatched_ids else ""
                     _b.log.info(
-                        f"Delegated GitHub issue #{issue_number}: {issue['title']} labels={labels}"
+                        f"Delegated GitHub issue #{issue_number}{redispatch_note}: {issue['title']} labels={labels}"
                     )
                     await raw_queue.put({
                         "source": "github",
@@ -148,7 +179,8 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
                         }
                     })
                     dispatched_ids.add(issue_number)
-                save_dispatched_issue_ids(dispatched_ids)
+                    dispatch_times[issue_number] = now
+                save_dispatch_state(dispatched_ids, dispatch_times)
 
         except Exception as e:
             _b.log.warning(f"GitHub scan error: {e!r}")
