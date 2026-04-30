@@ -50,3 +50,20 @@ legacy behavior is preserved and all workflow triggers can match normally.
 This makes the migration compatibility-safe: the current sales process can keep
 matching `coMind Лиды` through its eEPC trigger filter, while dedicated chat
 bindings can progressively narrow events to specific workflows.
+
+## Deterministic Router
+
+Before workflow scoping, Konoha applies a small deterministic classifier to the
+normalized payload. It is intentionally cheap and non-LLM:
+
+| Derived field | Source |
+|---|---|
+| `message_type=command` | text starts with `/command` or `/command@bot` |
+| `message_type=text` | non-empty text without a command |
+| `message_type=reaction` | `event_kind=reaction` |
+| `message_type=photo` / `document` | matching `event_kind` |
+| `command` | lower-cased command without `/` or bot suffix |
+
+Routing rules can match `message_type` and `command` in addition to
+`endpoint_id`, `chat_id`, and `chat_type`. This gives us a stable pre-filter for
+busy chats before any optional LLM classifier is introduced.

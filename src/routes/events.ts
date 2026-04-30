@@ -4,7 +4,7 @@ import { requireAuth } from "../middleware/auth";
 import { publishEvent, type KonohaEvent } from "../redis";
 import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, handleEventFired, type Case, type HistoryEntry } from "../runtime";
 import { getWorkflow, type WorkflowElement } from "../workflow-loader";
-import { getMessengerConnectorCatalog, resolveMessengerWorkflowIds, type MessengerChatType } from "../messenger-connectors";
+import { getMessengerConnectorCatalog, resolveMessengerWorkflowIds, type MessengerChatType, type MessengerMessageType } from "../messenger-connectors";
 import { loadActiveWaitsForCase, resolveEventWaitForNode } from "../runtime/event-waits";
 import { emitEvent } from "../runtime/event-log";
 const log = createLogger("routes:events");
@@ -260,6 +260,10 @@ function resolveWorkflowScope(type: string, source: string, payload: Record<stri
     endpoint_id: endpointId,
     chat_ref: chatRef,
     chat_type: messengerChatType(payload.chat_type),
+    message_type: messengerMessageType(payload.message_type),
+    command: stringField(payload.command),
+    text: stringField(payload.text),
+    event_kind: stringField(payload.event_kind),
   });
 }
 
@@ -269,5 +273,10 @@ function stringField(value: unknown): string | undefined {
 
 function messengerChatType(value: unknown): MessengerChatType | undefined {
   if (value === "direct" || value === "group" || value === "channel" || value === "unknown") return value;
+  return undefined;
+}
+
+function messengerMessageType(value: unknown): MessengerMessageType | undefined {
+  if (value === "text" || value === "command" || value === "photo" || value === "document" || value === "reaction" || value === "unknown") return value;
   return undefined;
 }

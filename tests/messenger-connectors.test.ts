@@ -4,6 +4,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   CURRENT_TELEGRAM_CONNECTOR_CATALOG,
+  classifyMessengerRoutingInput,
+  extractCommand,
   getMessengerConnectorCatalog,
   loadMessengerConnectorCatalogFromFile,
   MESSENGER_CONNECTOR_CATALOG_PATH_ENV,
@@ -137,6 +139,83 @@ describe("messenger connector model", () => {
       { target_type: "workflow", target_id: "lead-intake" },
       { target_type: "agent", target_id: "triage-agent" },
     ]);
+  });
+
+  test("classifies commands deterministically before rule matching", () => {
+    expect(extractCommand("/lead Need proposal")).toBe("lead");
+    expect(extractCommand("/lead@SomeBot Need proposal")).toBe("lead");
+    expect(extractCommand("plain text")).toBeUndefined();
+
+    const classified = classifyMessengerRoutingInput({
+      endpoint_id: "bot-a",
+      chat_ref: "chat:123",
+      text: "/lead Need proposal",
+      event_kind: "message",
+    });
+
+    expect(classified).toMatchObject({
+      message_type: "command",
+      command: "lead",
+    });
+  });
+
+  test("uses deterministic message type and command rules to narrow workflow scope", () => {
+    const catalog: MessengerConnectorCatalog = {
+      schema_version: 1,
+      connectors: [{
+        connector_id: "telegram-router",
+        provider: "telegram",
+        label: "Router Telegram",
+        enabled: true,
+        endpoint_ids: ["router-bot"],
+      }],
+      endpoints: [{
+        endpoint_id: "router-bot",
+        connector_id: "telegram-router",
+        kind: "bot",
+        label: "Router bot",
+        account_ref: "env:ROUTER_BOT_TOKEN",
+        inbound_streams: [{ stream: "telegram:router:incoming", group: "router", direction: "inbound" }],
+      }],
+      routing_policies: [{
+        policy_id: "router-policy",
+        connector_id: "telegram-router",
+        strategy: "workflow_trigger",
+        default_targets: [{ target_type: "workflow", target_id: "general-intake" }],
+        enabled_workflow_ids: ["general-intake"],
+        rules: [{
+          rule_id: "lead-command",
+          description: "Route explicit lead commands to sales intake.",
+          match: { message_type: "command", command: "lead" },
+          targets: [{ target_type: "workflow", target_id: "lead-intake" }],
+          enabled_workflow_ids: ["lead-intake"],
+        }],
+      }],
+      chat_bindings: [{
+        binding_id: "router-default",
+        connector_id: "telegram-router",
+        endpoint_id: "router-bot",
+        chat_ref: "*",
+        chat_type: "unknown",
+        routing_policy_id: "router-policy",
+        enabled_workflow_ids: [],
+        enabled: true,
+      }],
+    };
+
+    expect(resolveMessengerWorkflowIds(catalog, {
+      endpoint_id: "router-bot",
+      chat_ref: "chat:any",
+      text: "/lead Need proposal",
+      event_kind: "message",
+    })).toEqual(["lead-intake"]);
+
+    expect(resolveMessengerWorkflowIds(catalog, {
+      endpoint_id: "router-bot",
+      chat_ref: "chat:any",
+      text: "hello",
+      event_kind: "message",
+    })).toEqual(["general-intake"]);
   });
 
   test("loads a validated runtime catalog override from JSON", () => {

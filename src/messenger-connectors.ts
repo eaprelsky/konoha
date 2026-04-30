@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 export type MessengerProvider = "telegram" | "whatsapp" | "email" | "custom";
 export type MessengerEndpointKind = "bot" | "user_account" | "business_account" | "webhook";
 export type MessengerChatType = "direct" | "group" | "channel" | "unknown";
+export type MessengerMessageType = "text" | "command" | "photo" | "document" | "reaction" | "unknown";
 export type MessengerRouteTargetType = "workflow" | "agent" | "role";
 export type MessengerRoutingStrategy = "workflow_trigger" | "agent_delegate" | "hybrid";
 
@@ -55,7 +56,7 @@ export interface MessengerRoutingRule {
     endpoint_id?: string;
     chat_id?: string;
     chat_type?: MessengerChatType;
-    message_type?: string;
+    message_type?: MessengerMessageType;
     command?: string;
   };
   targets: MessengerRouteTarget[];
@@ -88,6 +89,16 @@ export interface MessengerConnectorCatalog {
   endpoints: MessengerEndpoint[];
   routing_policies: MessengerRoutingPolicy[];
   chat_bindings: MessengerChatBinding[];
+}
+
+export interface MessengerRoutingInput {
+  endpoint_id: string;
+  chat_ref: string;
+  chat_type?: MessengerChatType;
+  message_type?: MessengerMessageType;
+  command?: string;
+  text?: string;
+  event_kind?: string;
 }
 
 export const MESSENGER_CONNECTOR_CATALOG_PATH_ENV = "MESSENGER_CONNECTOR_CATALOG_PATH";
@@ -291,21 +302,21 @@ export function validateMessengerConnectorCatalog(catalog: MessengerConnectorCat
 
 export function resolveMessengerTargets(
   catalog: MessengerConnectorCatalog,
-  input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
+  input: MessengerRoutingInput,
 ): MessengerRouteTarget[] {
   return resolveMessengerRouting(catalog, input)?.targets ?? [];
 }
 
 export function resolveMessengerWorkflowIds(
   catalog: MessengerConnectorCatalog,
-  input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
+  input: MessengerRoutingInput,
 ): string[] | null {
   return resolveMessengerRouting(catalog, input)?.workflow_ids ?? null;
 }
 
 export function resolveMessengerRouting(
   catalog: MessengerConnectorCatalog,
-  input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
+  input: MessengerRoutingInput,
 ): MessengerRoutingResolution | null {
   const binding = findChatBinding(catalog, input);
   if (!binding) return null;
@@ -313,7 +324,8 @@ export function resolveMessengerRouting(
   const policy = catalog.routing_policies.find(item => item.policy_id === binding.routing_policy_id);
   if (!policy) return null;
 
-  const rule = policy.rules.find(item => ruleMatches(item, input));
+  const classifiedInput = classifyMessengerRoutingInput(input);
+  const rule = policy.rules.find(item => ruleMatches(item, classifiedInput));
   const targets = rule?.targets.length ? rule.targets : policy.default_targets;
   return {
     targets,
@@ -326,7 +338,7 @@ export function resolveMessengerRouting(
 
 function findChatBinding(
   catalog: MessengerConnectorCatalog,
-  input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
+  input: MessengerRoutingInput,
 ): MessengerChatBinding | undefined {
   const candidates = catalog.chat_bindings.filter(item =>
     item.enabled
@@ -359,10 +371,42 @@ function explicitWorkflowIds(
 
 function ruleMatches(
   rule: MessengerRoutingRule,
-  input: { endpoint_id: string; chat_ref: string; chat_type?: MessengerChatType },
+  input: MessengerRoutingInput,
 ): boolean {
   if (rule.match.endpoint_id && rule.match.endpoint_id !== input.endpoint_id) return false;
   if (rule.match.chat_id && rule.match.chat_id !== input.chat_ref) return false;
   if (rule.match.chat_type && rule.match.chat_type !== input.chat_type) return false;
+  if (rule.match.message_type && rule.match.message_type !== input.message_type) return false;
+  if (rule.match.command && normalizeCommand(rule.match.command) !== normalizeCommand(input.command)) return false;
   return true;
+}
+
+export function classifyMessengerRoutingInput(input: MessengerRoutingInput): MessengerRoutingInput {
+  const command = input.command ?? extractCommand(input.text);
+  return {
+    ...input,
+    command,
+    message_type: input.message_type ?? inferMessageType(input.event_kind, input.text, command),
+  };
+}
+
+export function extractCommand(text: unknown): string | undefined {
+  if (typeof text !== "string") return undefined;
+  const trimmed = text.trim();
+  const match = trimmed.match(/^\/([A-Za-z0-9_]+)(?:@[A-Za-z0-9_]+)?(?:\s|$)/);
+  return match ? match[1].toLowerCase() : undefined;
+}
+
+function normalizeCommand(command: unknown): string | undefined {
+  if (typeof command !== "string") return undefined;
+  return command.trim().replace(/^\//, "").toLowerCase() || undefined;
+}
+
+function inferMessageType(eventKind: unknown, text: unknown, command: string | undefined): MessengerMessageType {
+  if (eventKind === "reaction") return "reaction";
+  if (eventKind === "photo") return "photo";
+  if (eventKind === "document") return "document";
+  if (command) return "command";
+  if (typeof text === "string" && text.trim()) return "text";
+  return "unknown";
 }
