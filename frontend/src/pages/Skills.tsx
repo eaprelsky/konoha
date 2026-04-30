@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type React from 'react';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { api } from '../api/client';
 import type { Skill, McpServerDef } from '../api/types';
 
@@ -50,6 +51,7 @@ interface SkillModalProps {
 }
 
 function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
+  const { t } = useI18n();
   const isNew = !skill;
   const [id, setId] = useState(skill?.id || '');
   const [name, setName] = useState(skill?.name || '');
@@ -74,7 +76,7 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) { setError('Название обязательно'); return; }
+    if (!name.trim()) { setError(t('skills.nameRequired')); return; }
     setSubmitting(true); setError(null); setMcpJsonError(null);
     const toolsList = tools.split(',').map(t => t.trim()).filter(Boolean);
     let mcpServers: McpServerDef[] | undefined;
@@ -82,9 +84,9 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
       try {
         const parsed = JSON.parse(mcpServersJson);
         mcpServers = Array.isArray(parsed) ? parsed : undefined;
-        if (!mcpServers) { setMcpJsonError('Должен быть массив объектов []'); setSubmitting(false); return; }
+        if (!mcpServers) { setMcpJsonError(t('skills.mcpArrayRequired')); setSubmitting(false); return; }
       } catch {
-        setMcpJsonError('Невалидный JSON'); setSubmitting(false); return;
+        setMcpJsonError(t('skills.invalidJson')); setSubmitting(false); return;
       }
     }
     try {
@@ -115,14 +117,14 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
-        <h2>{isNew ? 'Новый навык' : `Редактировать: ${skill!.name}`}</h2>
+        <h2>{isNew ? t('skills.newTitle') : t('skills.editTitle').replace('{name}', skill!.name)}</h2>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
           {isNew && (
             <div className="form-group">
-              <label>ID (необязательно)</label>
+              <label>{t('skills.idOptional')}</label>
               <input value={id} onChange={e => setId(e.target.value)} placeholder="auto-generated from name" />
-              <span className="form-hint">Уникальный идентификатор. Если не задан — генерируется из названия</span>
+              <span className="form-hint">{t('skills.idHint')}</span>
             </div>
           )}
           {!isNew && (
@@ -132,37 +134,37 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
             </div>
           )}
           <div className="form-group">
-            <label>Название *</label>
-            <input value={name} onChange={e => setName(e.target.value)} autoFocus required placeholder="Например: Анализ данных" />
+            <label>{t('skills.nameLabel')}</label>
+            <input value={name} onChange={e => setName(e.target.value)} autoFocus required placeholder={t('skills.namePlaceholder')} />
           </div>
           <div className="form-group">
-            <label>Название (EN)</label>
+            <label>{t('skills.nameEnLabel')}</label>
             <input value={nameEn} onChange={e => setNameEn(e.target.value)} placeholder="Data Analysis" />
           </div>
           <div className="form-group">
-            <label>Описание</label>
+            <label>{t('label.description')}</label>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
               rows={2}
-              placeholder="Краткое описание навыка"
+              placeholder={t('skills.descriptionPlaceholder')}
             />
           </div>
           <div className="form-group">
-            <label>Инструкция</label>
+            <label>{t('skills.instruction')}</label>
             <textarea
               value={promptSnippet}
               onChange={e => setPromptSnippet(e.target.value)}
               rows={5}
               style={{ fontFamily: 'monospace', fontSize: 13 }}
-              placeholder="Текст, который будет добавлен в AGENTS.md агентов с этим навыком"
+              placeholder={t('skills.instructionPlaceholder')}
             />
-            <span className="form-hint">Инжектируется в системный промпт агента при старте</span>
+            <span className="form-hint">{t('skills.instructionHint')}</span>
           </div>
           <div className="form-group">
-            <label>Инструменты (через запятую)</label>
+            <label>{t('skills.toolsLabel')}</label>
             <input value={tools} onChange={e => setTools(e.target.value)} placeholder="bash, read, write" />
-            <span className="form-hint">Список MCP-инструментов, используемых в этом навыке</span>
+            <span className="form-hint">{t('skills.toolsHint')}</span>
           </div>
           <div className="form-group">
             <label>MCP Servers (JSON)</label>
@@ -174,12 +176,12 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
               placeholder={'[\n  {\n    "name": "my-server",\n    "command": "node",\n    "args": ["/path/to/server.js"],\n    "env": {"KEY": "${VAR}"}\n  }\n]'}
             />
             {mcpJsonError && <span className="mcp-json-error">{mcpJsonError}</span>}
-            <span className="form-hint">Массив MCP-серверов для агентов с этим навыком. Поддерживается {"${VAR}"} из env агента или /opt/konoha/.env.global</span>
+            <span className="form-hint">{t('skills.mcpServersHint')}</span>
           </div>
           <div className="form-actions">
-            <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
+            <button type="button" className="btn-cancel-f" onClick={onClose}>{t('action.cancel')}</button>
             <button type="submit" className="btn-submit" disabled={submitting}>
-              {submitting ? 'Сохранение…' : 'Сохранить'}
+              {submitting ? t('status.saving') : t('action.save')}
             </button>
           </div>
         </form>
@@ -190,6 +192,7 @@ function SkillModal({ skill, onClose, onSaved }: SkillModalProps) {
 
 export function Skills() {
   const token = useToken();
+  const { t } = useI18n();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -211,7 +214,7 @@ export function Skills() {
 
   async function deleteSkill(e: React.MouseEvent, s: Skill) {
     e.stopPropagation();
-    if (!confirm(`Удалить навык "${s.name}"?`)) return;
+    if (!confirm(t('skills.confirmDelete').replace('{name}', s.name))) return;
     try {
       await api.skills.delete(s.id);
       load();
@@ -226,19 +229,19 @@ export function Skills() {
       <div className="skills-body">
         <div className="container">
           <div className="page-header">
-            <h1>Навыки</h1>
+            <h1>{t('nav.skills')}</h1>
             <input
               className="search-input"
-              placeholder="Поиск навыков…"
+              placeholder={t('skills.searchPlaceholder')}
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
-            <button className="btn-new" onClick={openNew}>+ Добавить навык</button>
+            <button className="btn-new" onClick={openNew}>+ {t('skills.addSkill')}</button>
           </div>
           {error && <div className="error-banner">{error}</div>}
-          {loading && <div className="empty">Загрузка…</div>}
+          {loading && <div className="empty">{t('status.loading')}</div>}
           {!loading && skills.length === 0 && (
-            <div className="empty">Навыки не созданы. Нажмите «+ Добавить навык».</div>
+            <div className="empty">{t('skills.empty')}</div>
           )}
           {!loading && skills.length > 0 && (
             <table className="table" style={{ tableLayout: 'fixed', width: '100%' }}>
@@ -254,10 +257,10 @@ export function Skills() {
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Название</th>
-                  <th>Описание</th>
-                  <th>Инструкция</th>
-                  <th>Инструменты</th>
+                  <th>{t('label.name')}</th>
+                  <th>{t('label.description')}</th>
+                  <th>{t('skills.instruction')}</th>
+                  <th>{t('skills.tools')}</th>
                   <th>MCP</th>
                   <th></th>
                 </tr>
@@ -293,7 +296,7 @@ export function Skills() {
                         : <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>}
                     </td>
                     <td style={{ width: 70, textAlign: 'right' }}>
-                      <button className="btn-delete" onClick={e => deleteSkill(e, s)}>Удалить</button>
+                      <button className="btn-delete" onClick={e => deleteSkill(e, s)}>{t('action.delete')}</button>
                     </td>
                   </tr>
                 ))}

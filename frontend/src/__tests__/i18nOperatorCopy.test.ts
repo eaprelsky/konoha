@@ -84,4 +84,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['documents.confirmDelete']).toContain('{name}');
     expect(translations.ru['documents.confirmDelete']).toContain('{name}');
   });
+
+  it('keeps skill management copy in the translation catalog', () => {
+    expect(translations.en['skills.newTitle']).toBe('New skill');
+    expect(translations.ru['skills.newTitle']).toBe('Новый навык');
+    expect(translations.en['skills.editTitle']).toContain('{name}');
+    expect(translations.ru['skills.confirmDelete']).toContain('{name}');
+  });
 });

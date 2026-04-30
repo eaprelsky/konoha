@@ -34,6 +34,7 @@ const DEFAULT_GUARDED_FILES = [
   "frontend/src/pages/EventMonitor.tsx",
   "frontend/src/pages/Monitor.tsx",
   "frontend/src/pages/People.tsx",
+  "frontend/src/pages/Skills.tsx",
   "frontend/src/pages/TimelineView.tsx",
   "frontend/src/pages/Whitelist.tsx",
   "frontend/src/pages/WorkItems.tsx",
