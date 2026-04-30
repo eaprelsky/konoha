@@ -14,7 +14,14 @@ may receive delegated work from that routing policy.
 | `routing_policy` | Rules that route inbound messages to workflows, agents, or roles. |
 
 The first code model is in `src/messenger-connectors.ts`. `GET
-/connectors/messenger` exposes a read-only skeleton for admins.
+/connectors/messenger` exposes the active catalog for admins.
+
+By default Konoha uses the built-in Telegram compatibility catalog. Deployments
+can override it with a JSON file referenced by
+`MESSENGER_CONNECTOR_CATALOG_PATH`. The file must match schema version `1` and
+passes the same reference validation as the built-in catalog. Secrets must stay
+out of the JSON: endpoint `account_ref` values point to env vars, profiles, or
+future secret-store keys.
 
 ## Telegram Compatibility
 
@@ -26,7 +33,9 @@ Current runtime ids stay unchanged:
 | `telegram-user-sasuke` | `sasuke` | `telegram:incoming` / group `sasuke`, `telegram:reaction_updates` / group `sasuke-reactions` |
 
 These records are compatibility records only. They do not rename systemd units,
-tmux sessions, Redis streams, or watchdogs.
+tmux sessions, Redis streams, or watchdogs. Runtime catalog overrides can add
+new connectors or bindings, but the compatibility records remain the rollback
+path unless the override intentionally replaces them.
 
 `telegram-event-bridge.py` now publishes connector-normalized workflow events
 while preserving the existing Redis streams. The compatibility defaults are:

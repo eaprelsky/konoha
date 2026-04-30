@@ -4,7 +4,7 @@ import { requireAuth } from "../middleware/auth";
 import { publishEvent, type KonohaEvent } from "../redis";
 import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, handleEventFired, type Case, type HistoryEntry } from "../runtime";
 import { getWorkflow, type WorkflowElement } from "../workflow-loader";
-import { CURRENT_TELEGRAM_CONNECTOR_CATALOG, resolveMessengerWorkflowIds, type MessengerChatType } from "../messenger-connectors";
+import { getMessengerConnectorCatalog, resolveMessengerWorkflowIds, type MessengerChatType } from "../messenger-connectors";
 import { loadActiveWaitsForCase, resolveEventWaitForNode } from "../runtime/event-waits";
 import { emitEvent } from "../runtime/event-log";
 const log = createLogger("routes:events");
@@ -256,7 +256,7 @@ function resolveWorkflowScope(type: string, source: string, payload: Record<stri
   const endpointId = stringField(payload.endpoint_id);
   const chatRef = stringField(payload.chat_ref ?? payload.chat_id);
   if (!endpointId || !chatRef) return null;
-  return resolveMessengerWorkflowIds(CURRENT_TELEGRAM_CONNECTOR_CATALOG, {
+  return resolveMessengerWorkflowIds(getMessengerConnectorCatalog(), {
     endpoint_id: endpointId,
     chat_ref: chatRef,
     chat_type: messengerChatType(payload.chat_type),

@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import {
   CURRENT_TELEGRAM_CONNECTOR_CATALOG,
+  getMessengerConnectorCatalog,
+  loadMessengerConnectorCatalogFromFile,
+  MESSENGER_CONNECTOR_CATALOG_PATH_ENV,
   resolveMessengerWorkflowIds,
   resolveMessengerTargets,
   validateMessengerConnectorCatalog,
@@ -131,5 +137,69 @@ describe("messenger connector model", () => {
       { target_type: "workflow", target_id: "lead-intake" },
       { target_type: "agent", target_id: "triage-agent" },
     ]);
+  });
+
+  test("loads a validated runtime catalog override from JSON", () => {
+    const dir = mkdtempSync(join(tmpdir(), "konoha-messenger-catalog-"));
+    const path = join(dir, "catalog.json");
+    const catalog: MessengerConnectorCatalog = {
+      schema_version: 1,
+      connectors: [{
+        connector_id: "telegram-override",
+        provider: "telegram",
+        label: "Runtime Telegram",
+        enabled: true,
+        endpoint_ids: ["runtime-bot"],
+      }],
+      endpoints: [{
+        endpoint_id: "runtime-bot",
+        connector_id: "telegram-override",
+        kind: "bot",
+        label: "Runtime bot",
+        account_ref: "env:RUNTIME_BOT_TOKEN",
+        inbound_streams: [{ stream: "telegram:runtime:incoming", group: "runtime-router", direction: "inbound" }],
+        outbound_adapter: "telegram",
+      }],
+      routing_policies: [{
+        policy_id: "runtime-routing",
+        connector_id: "telegram-override",
+        strategy: "workflow_trigger",
+        default_targets: [{ target_type: "workflow", target_id: "runtime-workflow" }],
+        enabled_workflow_ids: ["runtime-workflow"],
+        rules: [],
+      }],
+      chat_bindings: [{
+        binding_id: "runtime-chat",
+        connector_id: "telegram-override",
+        endpoint_id: "runtime-bot",
+        chat_ref: "chat:runtime",
+        chat_type: "direct",
+        routing_policy_id: "runtime-routing",
+        enabled_workflow_ids: ["runtime-workflow"],
+        enabled: true,
+      }],
+    };
+    writeFileSync(path, JSON.stringify(catalog));
+
+    expect(loadMessengerConnectorCatalogFromFile(path)).toMatchObject({
+      connectors: [{ connector_id: "telegram-override" }],
+    });
+    expect(getMessengerConnectorCatalog({ [MESSENGER_CONNECTOR_CATALOG_PATH_ENV]: path })).toMatchObject({
+      connectors: [{ connector_id: "telegram-override" }],
+    });
+  });
+
+  test("rejects invalid runtime catalog references", () => {
+    const dir = mkdtempSync(join(tmpdir(), "konoha-messenger-catalog-"));
+    const path = join(dir, "bad-catalog.json");
+    writeFileSync(path, JSON.stringify({
+      ...CURRENT_TELEGRAM_CONNECTOR_CATALOG,
+      chat_bindings: [{
+        ...CURRENT_TELEGRAM_CONNECTOR_CATALOG.chat_bindings[0],
+        routing_policy_id: "missing-policy",
+      }],
+    }));
+
+    expect(() => loadMessengerConnectorCatalogFromFile(path)).toThrow("missing policy");
   });
 });

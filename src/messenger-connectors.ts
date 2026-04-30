@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+
 export type MessengerProvider = "telegram" | "whatsapp" | "email" | "custom";
 export type MessengerEndpointKind = "bot" | "user_account" | "business_account" | "webhook";
 export type MessengerChatType = "direct" | "group" | "channel" | "unknown";
@@ -87,6 +89,8 @@ export interface MessengerConnectorCatalog {
   routing_policies: MessengerRoutingPolicy[];
   chat_bindings: MessengerChatBinding[];
 }
+
+export const MESSENGER_CONNECTOR_CATALOG_PATH_ENV = "MESSENGER_CONNECTOR_CATALOG_PATH";
 
 export const CURRENT_TELEGRAM_CONNECTOR_CATALOG: MessengerConnectorCatalog = {
   schema_version: 1,
@@ -213,8 +217,39 @@ export const CURRENT_TELEGRAM_CONNECTOR_CATALOG: MessengerConnectorCatalog = {
   ],
 };
 
+function assertCatalogShape(value: unknown): MessengerConnectorCatalog {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("messenger connector catalog must be an object");
+  }
+  const catalog = value as MessengerConnectorCatalog;
+  if (catalog.schema_version !== 1) {
+    throw new Error("messenger connector catalog schema_version must be 1");
+  }
+  for (const field of ["connectors", "endpoints", "routing_policies", "chat_bindings"] as const) {
+    if (!Array.isArray(catalog[field])) {
+      throw new Error(`messenger connector catalog field ${field} must be an array`);
+    }
+  }
+  const errors = validateMessengerConnectorCatalog(catalog);
+  if (errors.length > 0) {
+    throw new Error(`invalid messenger connector catalog: ${errors.join("; ")}`);
+  }
+  return catalog;
+}
+
+export function loadMessengerConnectorCatalogFromFile(path: string): MessengerConnectorCatalog {
+  const raw = readFileSync(path, "utf-8");
+  return assertCatalogShape(JSON.parse(raw));
+}
+
+export function getMessengerConnectorCatalog(env: NodeJS.ProcessEnv = process.env): MessengerConnectorCatalog {
+  const path = env[MESSENGER_CONNECTOR_CATALOG_PATH_ENV]?.trim();
+  if (!path) return CURRENT_TELEGRAM_CONNECTOR_CATALOG;
+  return loadMessengerConnectorCatalogFromFile(path);
+}
+
 export function listMessengerConnectorCatalogs(): MessengerConnectorCatalog[] {
-  return [CURRENT_TELEGRAM_CONNECTOR_CATALOG];
+  return [getMessengerConnectorCatalog()];
 }
 
 export function validateMessengerConnectorCatalog(catalog: MessengerConnectorCatalog): string[] {

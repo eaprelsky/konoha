@@ -1,6 +1,6 @@
 import { redis } from "./redis";
 import {
-  CURRENT_TELEGRAM_CONNECTOR_CATALOG,
+  getMessengerConnectorCatalog,
   type MessengerConnectorCatalog,
   type MessengerEndpoint,
 } from "./messenger-connectors";
@@ -68,7 +68,7 @@ export function buildTelegramOutgoingEntry(args: ConnectorSendMessageArgs): Reco
 
 export async function sendConnectorMessage(
   args: ConnectorSendMessageArgs,
-  catalog: MessengerConnectorCatalog = CURRENT_TELEGRAM_CONNECTOR_CATALOG,
+  catalog: MessengerConnectorCatalog = getMessengerConnectorCatalog(),
 ): Promise<ConnectorSendMessageResult> {
   if (!args.connector_id) throw new Error("connector_id is required");
   if (!args.endpoint_id) throw new Error("endpoint_id is required");
