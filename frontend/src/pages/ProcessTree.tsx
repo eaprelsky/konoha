@@ -5,6 +5,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { Workflow } from '../api/types';
 import type { WfNode } from './useProcessEditor';
+import { workflowDisplayName, workflowTitle } from './processSearch';
 
 interface CtxMenu {
   x: number;
@@ -75,6 +76,17 @@ export function ProcessTree({
     URL.revokeObjectURL(a.href);
   }
 
+  function renderWorkflowLabel(wf: Workflow) {
+    const label = workflowDisplayName(wf);
+    const showId = Boolean(wf.name && wf.name !== wf.id);
+    return (
+      <span className="proc-item-text">
+        <span className="proc-item-name">{label}</span>
+        {showId && <span className="proc-item-id">{wf.id}</span>}
+      </span>
+    );
+  }
+
   function renderNode(node: WfNode): React.ReactNode {
     const hasChildren = node.children.length > 0;
     const isCollapsed = collapsedTree.has(node.id);
@@ -85,7 +97,7 @@ export function ProcessTree({
           onClick={() => { if (renamingWfId !== node.id) onLoadWorkflow(node.id); }}
           onDoubleClick={e => { e.stopPropagation(); onStartRename(node); }}
           onContextMenu={e => openCtx(e, node)}
-          title={node.name || node.id}
+          title={workflowTitle(node)}
         >
           <span
             className="proc-item-toggle"
@@ -114,7 +126,7 @@ export function ProcessTree({
               onClick={e => e.stopPropagation()}
             />
           ) : (
-            <span className="proc-item-name">{node.name || node.id}</span>
+            renderWorkflowLabel(node)
           )}
           {renamingWfId !== node.id && (
             <div className="proc-row-acts">
@@ -180,7 +192,7 @@ export function ProcessTree({
       </div>
       <input
         className="proc-search"
-        placeholder="Поиск по названию…"
+        placeholder="Поиск по названию или ID…"
         value={sideSearch}
         onChange={e => onSideSearch(e.target.value)}
       />
@@ -233,7 +245,7 @@ export function ProcessTree({
               onClick={() => { if (renamingWfId !== w.id) onLoadWorkflow(w.id); }}
               onDoubleClick={e => { e.stopPropagation(); onStartRename(w); }}
               onContextMenu={e => openCtx(e, w)}
-              title={w.name || w.id}
+              title={workflowTitle(w)}
             >
               {renamingWfId === w.id ? (
                 <input
@@ -250,7 +262,7 @@ export function ProcessTree({
                   onClick={e => e.stopPropagation()}
                 />
               ) : (
-                <span className="proc-item-name">{w.name || w.id}</span>
+                renderWorkflowLabel(w)
               )}
               {renamingWfId !== w.id && (
                 <div className="proc-row-acts">

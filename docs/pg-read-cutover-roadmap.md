@@ -22,7 +22,8 @@ This document defines the phased plan for migrating read paths from Redis to Pos
 - [ ] `pg-verify.ts` passes non-strict sync with `onlyInRedis=0` for 7 consecutive days
 - [ ] Fix all onlyInRedis discrepancies through `--fix` or manual sync
 - [x] Add pg-verify to preflight gate (#588)
-- [ ] Define PG-only retention policy and a dry-run retention report before strict mode is required
+- [x] Add a dry-run PG-only retention report before strict mode is required (`bun run scripts/pg-only-retention-report.ts`)
+- [ ] Define and approve the PG-only retention policy/delete path from dry-run reports
 - [ ] Decide whether non-strict bloat should be warning-only or a release blocker
 
 **Exit criteria**: non-strict `bun run scripts/pg-verify.ts` has zero `onlyInRedis` daily for one week, and PG-only retention policy is documented. `--strict` remains a later hardening target after retention cleanup exists.
@@ -91,6 +92,7 @@ No data migration is needed for rollback because Redis remains the write-primary
 ## Guardrails
 
 - `pg-verify.ts` runs in production preflight. `onlyInRedis` blocks deployment. `onlyInPG` bloat currently exits non-zero in the script, but operationally requires a retention decision rather than Redis -> PG migration.
+- `pg-only-retention-report.ts` is the read-only next step for PG-only rows. It groups would-delete candidates by entity/status/process prefix/id prefix/age bucket and keeps `onlyInRedis` as a hard failure.
 - PG connection pool monitored; max 20 connections
 - All `pgWrite()` failures logged to `konoha:events:pg-errors` stream
 - Weekly audit of PG/Redis consistency during transition

@@ -11,6 +11,7 @@ import { Inspector } from '../components/Inspector';
 import { DEFAULT_LABELS } from './ElementShape';
 import { applyPatchToState } from './applyPatchHelper';
 import { filterOperatorWorkflows, useOperatorViewMode } from '../utils/operatorView';
+import { workflowMatchesSearch } from './processSearch';
 
 export type Mode = 'select' | 'connect';
 
@@ -757,7 +758,7 @@ export function useProcessEditor(readOnly = false) {
   const operatorWorkflows = filterOperatorWorkflows(workflows, { showHiddenArtifacts });
   const hiddenWorkflowCount = workflows.length - operatorWorkflows.length;
   const filteredWorkflows = sideSearch.trim()
-    ? operatorWorkflows.filter(w => (w.name || w.id).toLowerCase().includes(sideSearch.toLowerCase()))
+    ? operatorWorkflows.filter(w => workflowMatchesSearch(w, sideSearch))
     : operatorWorkflows;
   const isKnown = workflows.some(w => w.id === wfId.trim());
 

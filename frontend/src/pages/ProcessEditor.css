@@ -33,7 +33,9 @@
   .proc-item { display:flex; align-items:center; gap:4px; padding:5px 8px; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer; font-size:12px; }
   .proc-item:hover { background:#eff6ff; border-color:#bfdbfe; }
   .proc-item.active { background:#eff6ff; border-color:#6366f1; font-weight:600; }
-  .proc-item-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .proc-item-text { flex:1; min-width:0; display:flex; flex-direction:column; line-height:1.2; }
+  .proc-item-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .proc-item-id { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#64748b; font-family:monospace; font-size:10px; font-weight:400; }
   .proc-row-acts { display:none; gap:2px; }
   .proc-item:hover .proc-row-acts { display:flex; }
   .proc-row-acts button { padding:1px 4px; font-size:11px; border:1px solid #ddd; background:white; border-radius:3px; cursor:pointer; line-height:1.4; }
@@ -137,4 +139,3 @@
       max-height: 75vh; overflow-y: auto; padding: 0 0 env(safe-area-inset-bottom, 16px); }
     .mob-side-overlay { display: block; position: fixed; inset: 0; z-index: 299; background: rgba(0,0,0,.3); }
   }
-
