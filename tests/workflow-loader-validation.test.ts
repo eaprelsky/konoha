@@ -94,6 +94,7 @@ describe("workflow-loader e2e: lead-qualification", () => {
     expect(stages).toEqual([
       { id: "f1", label: "Разобрать входящий сигнал", role: "lead_triage_specialist", documents: ["sales.lead.triage"] },
       { id: "f2", label: "Проверить лид и выбрать следующий шаг", role: "sales_owner", documents: ["sales.lead.human-review"] },
+      { id: "f_notify_owner", label: "Уведомить владельца продаж о новом лиде", role: "sales_owner", documents: ["sales.lead.owner-notification"] },
       { id: "f3", label: "Подготовить содержательное предложение", role: "sales_owner", documents: ["sales.lead.content-proposal"] },
       { id: "f4", label: "Подготовить запрос оценки", role: "sales_owner", documents: ["sales.lead.estimate-request"] },
       { id: "f5", label: "Собрать КП и следующий follow-up", role: "sales_owner", documents: ["sales.lead.commercial-followup"] },
@@ -108,6 +109,7 @@ describe("workflow-loader e2e: lead-qualification", () => {
       "sales.lead.estimate-request",
       "sales.lead.followup-reminder",
       "sales.lead.human-review",
+      "sales.lead.owner-notification",
       "sales.lead.triage",
     ]);
     expect(def.elements.filter(el => el.type === "function").every(el => !el.intent)).toBe(true);
