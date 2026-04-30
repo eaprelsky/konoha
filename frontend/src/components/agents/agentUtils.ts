@@ -2,18 +2,6 @@ import type { Agent } from '../../api/types';
 
 export type AgentType = 'core' | 'connector' | 'optional' | 'deprecated' | 'external' | 'managed';
 
-export const BUS_STATUS_LABELS: Record<string, string> = {
-  online: 'онлайн',
-  offline: 'офлайн',
-};
-
-export const LIFECYCLE_STATUS_LABELS: Record<string, string> = {
-  running: 'работает',
-  starting: 'запускается',
-  stopped: 'остановлен',
-  error: 'ошибка',
-};
-
 export function lifecycleColor(lc?: { status: string }): string {
   const s = lc?.status || '';
   if (s === 'running') return 'dot-running';

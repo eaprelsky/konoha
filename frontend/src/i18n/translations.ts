@@ -40,6 +40,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'status.online':    'Online',
     'status.offline':   'Offline',
     'status.running':   'Running',
+    'status.starting':   'Starting',
     'status.stopped':   'Stopped',
     'status.error':     'Error',
     'status.pending':   'Pending',
@@ -65,6 +66,13 @@ export const translations: Record<Lang, Record<string, string>> = {
     'label.run':         'Run',
     'label.step':        'Current step',
     'label.sla':         'SLA',
+    // Agents
+    'agent.type.core':       'Core',
+    'agent.type.connector':  'Connector',
+    'agent.type.optional':   'Worker',
+    'agent.type.deprecated': 'Compatibility',
+    'agent.type.external':   'External',
+    'agent.type.managed':    'Managed',
     // Pages
     'page.myTasks.title':     'My Tasks',
     'page.monitor.title':     'Monitor',
@@ -353,6 +361,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'status.online':    'Онлайн',
     'status.offline':   'Офлайн',
     'status.running':   'Запущен',
+    'status.starting':   'Запускается',
     'status.stopped':   'Остановлен',
     'status.error':     'Ошибка',
     'status.pending':   'Ожидание',
@@ -378,6 +387,13 @@ export const translations: Record<Lang, Record<string, string>> = {
     'label.run':         'Прогон',
     'label.step':        'Текущий шаг',
     'label.sla':         'SLA',
+    // Agents
+    'agent.type.core':       'Ядро',
+    'agent.type.connector':  'Коннектор',
+    'agent.type.optional':   'Воркер',
+    'agent.type.deprecated': 'Совместимость',
+    'agent.type.external':   'Внешний',
+    'agent.type.managed':    'Управляемый',
     // Pages
     'page.myTasks.title':     'Мои задачи',
     'page.monitor.title':     'Монитор',

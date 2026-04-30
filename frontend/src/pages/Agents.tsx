@@ -9,11 +9,13 @@ import { EditAgentModal } from '../components/agents/EditAgentModal';
 import { useAgents } from '../hooks/useAgents';
 import { useAgentFilters } from '../hooks/useAgentFilters';
 import type { AgentLifecycleClassFilter } from '../hooks/useAgentFilters';
-import { busColor, lifecycleColor, formatUptime, getAgentType, BUS_STATUS_LABELS, LIFECYCLE_STATUS_LABELS } from '../components/agents/agentUtils';
+import { busColor, lifecycleColor, formatUptime, getAgentType } from '../components/agents/agentUtils';
 import { agentDisplayName } from '../utils/agentDisplay';
+import { useI18n } from '../context/I18nContext';
 
 export function Agents() {
   const { agents, loading, error: loadError, lastUpdate, load } = useAgents();
+  const { t } = useI18n();
   const { search, setSearch, filterBus, setFilterBus, filterLifecycle, setFilterLifecycle, filterClass, setFilterClass, filterModel, setFilterModel, sortBy, setSortBy, filteredAgents, allModels } = useAgentFilters(agents);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
@@ -131,13 +133,13 @@ export function Agents() {
                         </td>
                         <td>
                           <span className={`status-dot ${busColor(a.status)}`} />
-                          {BUS_STATUS_LABELS[a.status] ?? a.status}
+                          {t(`status.${a.status}`, a.status)}
                         </td>
                         <td>
                           {a.lifecycle ? (
                             <>
                               <span className={`status-dot ${lifecycleColor(a.lifecycle)}`} />
-                              {LIFECYCLE_STATUS_LABELS[a.lifecycle.status] ?? a.lifecycle.status}
+                              {t(`status.${a.lifecycle.status}`, a.lifecycle.status)}
                               {a.lifecycle.uptime_seconds ? (
                                 <div className="uptime">{formatUptime(a.lifecycle.uptime_seconds)}</div>
                               ) : null}

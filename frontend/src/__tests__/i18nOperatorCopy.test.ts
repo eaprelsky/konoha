@@ -20,4 +20,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['eventMonitor.hidden']).toBe('Hidden ({count})');
     expect(translations.ru['eventMonitor.hidden']).toBe('Служебные ({count})');
   });
+
+  it('keeps agent lifecycle labels in the translation catalog', () => {
+    expect(translations.en['agent.type.core']).toBe('Core');
+    expect(translations.ru['agent.type.core']).toBe('Ядро');
+    expect(translations.en['status.starting']).toBe('Starting');
+    expect(translations.ru['status.starting']).toBe('Запускается');
+  });
 });
