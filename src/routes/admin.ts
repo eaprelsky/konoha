@@ -5,6 +5,7 @@ import { createCase } from "../runtime";
 import { upsertAgentDef } from "../agent-lifecycle";
 import type { AgentDef } from "../agent-lifecycle";
 import { listAdapters, getAdapter } from "../adapters/index";
+import { listMessengerConnectorCatalogs } from "../messenger-connectors";
 const log = createLogger("routes:admin");
 
 const BOT_AGENT_PROMPT = `# Бот-агент
@@ -426,6 +427,13 @@ router.get("/adapters/:name/health", async (c) => {
   if (!adapter) return c.json({ error: "Adapter not found" }, 404);
   const healthy = await adapter.healthcheck().catch(() => false);
   return c.json({ adapter: name, healthy }, healthy ? 200 : 503);
+});
+
+// GET /connectors/messenger — read-only messenger connector model skeleton
+router.get("/connectors/messenger", requireAdmin, async (c) => {
+  return c.json({
+    catalogs: listMessengerConnectorCatalogs(),
+  });
 });
 
 export default router;
