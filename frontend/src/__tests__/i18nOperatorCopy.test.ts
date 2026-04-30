@@ -119,4 +119,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['statusBadge.escalated']).toBe('Escalated');
     expect(translations.ru['statusBadge.escalated']).toBe('Эскалация');
   });
+
+  it('keeps my tasks copy in the translation catalog', () => {
+    expect(translations.en['tasks.subtitle']).toBe('Tasks waiting for your action');
+    expect(translations.ru['tasks.subtitle']).toBe('Задачи, ожидающие вашего действия');
+    expect(translations.en['tasks.deadlineHours']).toContain('{hours}');
+    expect(translations.ru['tasks.deadlineDays']).toContain('{days}');
+  });
 });

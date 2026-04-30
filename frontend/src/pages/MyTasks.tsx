@@ -4,28 +4,28 @@
  */
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
+import type { Lang } from '../i18n/translations';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { WorkItem, Workflow } from '../api/types';
 import { filterOperatorWorkItems, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
 import './MyTasks.css';
 
-const lang = document.documentElement.lang || 'ru';
-
-function fmtTime(iso: string): string {
-  try { return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+function fmtTime(iso: string, lang: Lang): string {
+  try { return new Date(iso).toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
   catch { return iso; }
 }
 
-function fmtDeadline(iso?: string): string | null {
+function fmtDeadline(iso: string | undefined, lang: Lang, t: (key: string, fallback?: string) => string): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   const now = new Date();
   const diff = d.getTime() - now.getTime();
-  if (diff < 0) return lang === 'ru' ? 'Просрочено' : 'Overdue';
+  if (diff < 0) return t('tasks.overdue');
   const h = Math.floor(diff / 3_600_000);
-  if (h < 24) return lang === 'ru' ? `через ${h}ч` : `in ${h}h`;
-  return lang === 'ru' ? `через ${Math.floor(h / 24)}д` : `in ${Math.floor(h / 24)}d`;
+  if (h < 24) return t('tasks.deadlineHours').replace('{hours}', String(h));
+  return t('tasks.deadlineDays').replace('{days}', String(Math.floor(h / 24)));
 }
 
 type Urgency = 'overdue' | 'soon' | 'inProgress';
@@ -38,15 +38,16 @@ function urgencyOf(wi: WorkItem): Urgency {
   return 'inProgress';
 }
 
-const GROUP_META: Record<Urgency, { label: string; labelEn: string; color: string; bg: string }> = {
-  overdue:    { label: 'Просрочено',     labelEn: 'Overdue',     color: '#ef4444', bg: '#fef2f2' },
-  soon:       { label: 'Скоро дедлайн',  labelEn: 'Due soon',    color: '#f59e0b', bg: '#fffbeb' },
-  inProgress: { label: 'В работе',       labelEn: 'In progress', color: '#3b82f6', bg: '#eff6ff' },
+const GROUP_META: Record<Urgency, { labelKey: string; color: string; bg: string }> = {
+  overdue:    { labelKey: 'tasks.overdue',    color: '#ef4444', bg: '#fef2f2' },
+  soon:       { labelKey: 'tasks.soon',       color: '#f59e0b', bg: '#fffbeb' },
+  inProgress: { labelKey: 'tasks.inProgress', color: '#3b82f6', bg: '#eff6ff' },
 };
 
 
 export function MyTasks() {
   const token = useToken();
+  const { lang, t } = useI18n();
   const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [items, setItems] = useState<WorkItem[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -102,25 +103,25 @@ export function MyTasks() {
     <>
       <div className="mt-root">
         <div className="mt-header">
-          <h1>{lang === 'ru' ? 'Мои задачи' : 'My Tasks'}</h1>
-          <p>{lang === 'ru' ? 'Задачи, ожидающие вашего действия' : 'Tasks waiting for your action'}</p>
+          <h1>{t('page.myTasks.title')}</h1>
+          <p>{t('tasks.subtitle')}</p>
         </div>
 
         <div className="assignee-filter">
-          <label>{lang === 'ru' ? 'Исполнитель' : 'Assignee'}</label>
+          <label>{t('label.assignee')}</label>
           <input
-            placeholder={lang === 'ru' ? 'Имя роли или агента…' : 'Role or agent name…'}
+            placeholder={t('tasks.assigneePlaceholder')}
             value={assigneeFilter}
             onChange={e => setAssigneeFilter(e.target.value)}
           />
           {hiddenItemCount > 0 && (
-            <label className="hidden-toggle" title={lang === 'ru' ? 'Показать скрытые test/debug/generated задачи. То же доступно через ?view=debug.' : 'Show hidden test/debug/generated tasks. Also available with ?view=debug.'}>
+            <label className="hidden-toggle" title={t('tasks.hiddenToggleTitle')}>
               <input
                 type="checkbox"
                 checked={showHiddenArtifacts}
                 onChange={e => setShowHiddenArtifacts(e.target.checked)}
               />
-              {lang === 'ru' ? `Показать служебные (${hiddenItemCount})` : `Show service (${hiddenItemCount})`}
+              {t('operator.monitor.hidden').replace('{count}', String(hiddenItemCount))}
             </label>
           )}
         </div>
@@ -130,7 +131,7 @@ export function MyTasks() {
         {isEmpty && (
           <div className="mt-empty">
             <div className="icon">✓</div>
-            <div>{lang === 'ru' ? 'Нет ожидающих задач' : 'No pending tasks'}</div>
+            <div>{t('empty.myTasks')}</div>
           </div>
         )}
 
@@ -141,21 +142,21 @@ export function MyTasks() {
           return (
             <div key={g} className="mt-group">
               <div className="mt-group-title">
-                <h2 style={{ color: meta.color }}>{lang === 'ru' ? meta.label : meta.labelEn}</h2>
+                <h2 style={{ color: meta.color }}>{t(meta.labelKey)}</h2>
                 <span className="mt-group-count">{gItems.length}</span>
               </div>
               {gItems.map(wi => {
-                const dl = fmtDeadline(wi.deadline);
+                const dl = fmtDeadline(wi.deadline, lang, t);
                 return (
                   <div key={wi.work_item_id} className={`mt-item ${g}`}>
                     <div className="mt-item-body">
                       <div className="mt-item-label">{wi.label}</div>
                       <div className="mt-item-meta">
-                        <span>{lang === 'ru' ? 'Исполнитель: ' : 'Assignee: '}<b>{wi.assignee}</b></span>
+                        <span>{t('tasks.assigneePrefix')} <b>{wi.assignee}</b></span>
                         {wi.process_id && (
-                          <span>{lang === 'ru' ? 'Процесс: ' : 'Process: '}<b>{wi.process_id}</b></span>
+                          <span>{t('tasks.processPrefix')} <b>{wi.process_id}</b></span>
                         )}
-                        <span>{lang === 'ru' ? 'Создано: ' : 'Created: '}<b>{fmtTime(wi.created_at)}</b></span>
+                        <span>{t('tasks.createdPrefix')} <b>{fmtTime(wi.created_at, lang)}</b></span>
                       </div>
                     </div>
                     <div className="mt-item-actions">
@@ -166,8 +167,8 @@ export function MyTasks() {
                         onClick={() => complete(wi)}
                       >
                         {completing.has(wi.work_item_id)
-                          ? (lang === 'ru' ? 'Сохранение…' : 'Saving…')
-                          : (lang === 'ru' ? 'Выполнено' : 'Done')}
+                          ? t('status.saving')
+                          : t('status.done')}
                       </button>
                     </div>
                   </div>
