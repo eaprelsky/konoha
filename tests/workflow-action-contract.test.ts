@@ -191,13 +191,25 @@ describe("workflow action contract validation", () => {
 
   it("registers retention report as a read-only admin action", () => {
     expect(isValidAction("retention.report")).toBe(true);
+    expect(isValidAction("retention.cleanup_preview")).toBe(true);
 
     const valid = validateActionArgs("retention.report", { limit: 20 });
     expect(valid.valid).toBe(true);
 
+    const previewValid = validateActionArgs("retention.cleanup_preview", { limit: 20 });
+    expect(previewValid.valid).toBe(true);
+
     const surface = listActionSurface().find(action => action.id === "retention.report");
     expect(surface).toMatchObject({
       id: "retention.report",
+      category: "inspect",
+      implemented: true,
+      security: { actor: "admin" },
+    });
+
+    const previewSurface = listActionSurface().find(action => action.id === "retention.cleanup_preview");
+    expect(previewSurface).toMatchObject({
+      id: "retention.cleanup_preview",
       category: "inspect",
       implemented: true,
       security: { actor: "admin" },

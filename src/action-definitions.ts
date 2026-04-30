@@ -602,6 +602,17 @@ export const ACTIONS: ActionDef[] = [
     autonomy: "auto",
     audited: false,
   },
+  {
+    id: "retention.cleanup_preview",
+    description: "Preview exact safe retention cleanup candidates. Does not delete or update data.",
+    scope: "retention",
+    args: [
+      { name: "limit", type: "number", required: false, description: "Maximum number of candidate IDs to return. Omit for default." },
+    ],
+    implementation: { kind: "direct", note: "Read-only preview; destructive cleanup is intentionally not implemented yet." },
+    autonomy: "confirm",
+    audited: false,
+  },
 
   // ── Issue (GitHub) ────────────────────────────────────────────────────────
   {

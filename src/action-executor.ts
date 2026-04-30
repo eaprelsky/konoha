@@ -49,7 +49,11 @@ import {
 import { invokeAssistant } from "./assistant-invocation";
 import { sendConnectorMessage } from "./messenger-outbound";
 import { ServiceError } from "./errors";
-import { buildPgOnlyRetentionReport, retentionReportForAction } from "./retention/report";
+import {
+  buildPgOnlyRetentionCleanupPreview,
+  buildPgOnlyRetentionReport,
+  retentionReportForAction,
+} from "./retention/report";
 
 export interface ActionExecution {
   status: number;
@@ -707,6 +711,16 @@ async function executeRetentionAction(action: string, args: Record<string, unkno
         const limit = typeof args.limit === "number" ? args.limit : 120;
         const report = await buildPgOnlyRetentionReport();
         return { status: 200, data: retentionReportForAction(report, limit) };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    case "retention.cleanup_preview": {
+      const invalid = validationFailure("retention.cleanup_preview", args);
+      if (invalid) return invalid;
+      try {
+        const limit = typeof args.limit === "number" ? args.limit : 200;
+        return { status: 200, data: await buildPgOnlyRetentionCleanupPreview({ limit }) };
       } catch (e) {
         return serviceFailure(e);
       }

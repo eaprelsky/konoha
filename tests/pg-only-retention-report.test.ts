@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   ageBucket,
+  buildCleanupPreviewFromRows,
   classifyRetentionCandidate,
   groupRetentionRows,
   idPrefix,
@@ -103,5 +104,40 @@ describe("PG-only retention report classification", () => {
     expect(report.groups).toHaveLength(1);
     expect(report.omitted_groups).toBe(1);
     expect(report.mode).toBe("dry_run");
+  });
+
+  test("cleanup preview returns exact safe candidate IDs without review rows", () => {
+    const preview = buildCleanupPreviewFromRows([
+      row({ entity: "cases", id: "case-safe", status: "done", process: "act-wf-1", updated_at: "2026-04-01T00:00:00Z" }),
+      row({ entity: "cases", id: "case-business", status: "running", process: "sales-lead", updated_at: "2026-04-01T00:00:00Z" }),
+      row({ entity: "reminders", id: "reminder-safe", status: "sent", updated_at: "2026-03-01T00:00:00Z" }),
+    ], {
+      generatedAt: NOW.toISOString(),
+      hardFail: false,
+      limit: 10,
+      now: NOW,
+    });
+
+    expect(preview.mode).toBe("preview");
+    expect(preview.total_candidates).toBe(2);
+    expect(preview.omitted_candidates).toBe(0);
+    expect(preview.candidates.map(candidate => candidate.id).sort()).toEqual(["case-safe", "reminder-safe"]);
+    expect(preview.candidates.some(candidate => candidate.id === "case-business")).toBe(false);
+  });
+
+  test("cleanup preview is blocked when Redis-only mismatch exists", () => {
+    const preview = buildCleanupPreviewFromRows([
+      row({ entity: "cases", id: "case-safe", status: "done", process: "act-wf-1", updated_at: "2026-04-01T00:00:00Z" }),
+    ], {
+      generatedAt: NOW.toISOString(),
+      hardFail: true,
+      limit: 10,
+      now: NOW,
+    });
+
+    expect(preview.hard_fail).toBe(true);
+    expect(preview.blocked_reason).toContain("Redis-only rows");
+    expect(preview.total_candidates).toBe(1);
+    expect(preview.candidates).toEqual([]);
   });
 });

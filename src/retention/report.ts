@@ -44,6 +44,32 @@ export interface ActionRetentionReport extends PgOnlyRetentionReport {
   omitted_groups: number;
 }
 
+export interface RetentionCleanupCandidate {
+  entity: RetentionEntity;
+  id: string;
+  candidate: string;
+  status: string;
+  process: string | null;
+  age_bucket: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface RetentionCleanupPreview {
+  mode: "preview";
+  generated_at: string;
+  hard_fail: boolean;
+  blocked_reason?: string;
+  total_candidates: number;
+  omitted_candidates: number;
+  candidates: RetentionCleanupCandidate[];
+}
+
+interface RetentionDataset {
+  report: PgOnlyRetentionReport;
+  pgOnlyRows: PgOnlyRow[];
+}
+
 interface EntityConfig {
   entity: RetentionEntity;
   table: string;
@@ -112,6 +138,11 @@ function isOld(row: PgOnlyRow, now: Date, minAgeDays: number): boolean {
   const d = asDate(row.updated_at) ?? asDate(row.created_at);
   if (!d) return false;
   return now.getTime() - d.getTime() >= minAgeDays * 24 * 60 * 60 * 1000;
+}
+
+function isoOrNull(value: Date | string | null): string | null {
+  const d = asDate(value);
+  return d ? d.toISOString() : null;
 }
 
 export function classifyRetentionCandidate(row: PgOnlyRow, now = new Date()): string {
@@ -193,11 +224,11 @@ async function loadPgRows(sql: postgres.Sql, config: EntityConfig): Promise<PgOn
   return rows.map(row => ({ ...row, entity: config.entity }));
 }
 
-export async function collectPgOnlyRetentionReport(
+async function collectPgOnlyRetentionDataset(
   redis: Redis,
   sql: postgres.Sql,
   now = new Date(),
-): Promise<PgOnlyRetentionReport> {
+): Promise<RetentionDataset> {
   const allPgOnlyRows: PgOnlyRow[] = [];
   const entityCounts: RetentionEntityCount[] = [];
   let hardFail = false;
@@ -223,12 +254,23 @@ export async function collectPgOnlyRetentionReport(
   }
 
   return {
-    mode: "dry_run",
-    generated_at: now.toISOString(),
-    hard_fail: hardFail,
-    entityCounts,
-    groups: groupRetentionRows(allPgOnlyRows, now),
+    report: {
+      mode: "dry_run",
+      generated_at: now.toISOString(),
+      hard_fail: hardFail,
+      entityCounts,
+      groups: groupRetentionRows(allPgOnlyRows, now),
+    },
+    pgOnlyRows: allPgOnlyRows,
   };
+}
+
+export async function collectPgOnlyRetentionReport(
+  redis: Redis,
+  sql: postgres.Sql,
+  now = new Date(),
+): Promise<PgOnlyRetentionReport> {
+  return (await collectPgOnlyRetentionDataset(redis, sql, now)).report;
 }
 
 export async function buildPgOnlyRetentionReport(now = new Date()): Promise<PgOnlyRetentionReport> {
@@ -237,6 +279,67 @@ export async function buildPgOnlyRetentionReport(now = new Date()): Promise<PgOn
 
   try {
     return await collectPgOnlyRetentionReport(redis, sql, now);
+  } finally {
+    redis.disconnect();
+    await sql.end();
+  }
+}
+
+export function buildCleanupPreviewFromRows(
+  rows: PgOnlyRow[],
+  options: { generatedAt: string; hardFail: boolean; limit?: number | null; now?: Date },
+): RetentionCleanupPreview {
+  const limit = options.limit ?? 200;
+  const now = options.now ?? new Date(options.generatedAt);
+  const allCandidates = rows
+    .map(row => ({ row, candidate: classifyRetentionCandidate(row, now) }))
+    .filter(item => item.candidate.startsWith("safe_candidate:"))
+    .sort((a, b) =>
+      a.row.entity.localeCompare(b.row.entity)
+      || a.candidate.localeCompare(b.candidate)
+      || a.row.id.localeCompare(b.row.id)
+    );
+
+  const selected = limit === null ? allCandidates : allCandidates.slice(0, Math.max(0, Math.floor(limit)));
+  const blockedReason = options.hardFail
+    ? "Redis-only rows detected; cleanup preview is blocked until Redis/Postgres consistency is restored."
+    : undefined;
+
+  return {
+    mode: "preview",
+    generated_at: options.generatedAt,
+    hard_fail: options.hardFail,
+    ...(blockedReason ? { blocked_reason: blockedReason } : {}),
+    total_candidates: allCandidates.length,
+    omitted_candidates: allCandidates.length - selected.length,
+    candidates: options.hardFail ? [] : selected.map(({ row, candidate }) => ({
+      entity: row.entity,
+      id: row.id,
+      candidate,
+      status: row.status ?? "unknown",
+      process: row.process,
+      age_bucket: ageBucket(row.updated_at ?? row.created_at, now),
+      created_at: isoOrNull(row.created_at),
+      updated_at: isoOrNull(row.updated_at),
+    })),
+  };
+}
+
+export async function buildPgOnlyRetentionCleanupPreview(
+  options: { limit?: number | null; now?: Date } = {},
+): Promise<RetentionCleanupPreview> {
+  const redis = new Redis({ host: "127.0.0.1", port: 6379, db: 0, lazyConnect: false });
+  const sql = postgres(getDatabaseUrl(), { max: 3, idle_timeout: 10, connect_timeout: 5, onnotice: () => {} });
+  const now = options.now ?? new Date();
+
+  try {
+    const dataset = await collectPgOnlyRetentionDataset(redis, sql, now);
+    return buildCleanupPreviewFromRows(dataset.pgOnlyRows, {
+      generatedAt: dataset.report.generated_at,
+      hardFail: dataset.report.hard_fail,
+      limit: options.limit,
+      now,
+    });
   } finally {
     redis.disconnect();
     await sql.end();
