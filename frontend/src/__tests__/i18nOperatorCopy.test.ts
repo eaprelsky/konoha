@@ -42,5 +42,7 @@ describe('operator i18n terminology', () => {
     expect(translations.ru['agent.settings.genderNeutral']).toBe('Средний (они)');
     expect(translations.en['agent.edit.title']).toBe('Edit agent');
     expect(translations.ru['agent.edit.title']).toBe('Изменить агента');
+    expect(translations.en['agent.new.title']).toBe('New agent');
+    expect(translations.ru['agent.new.title']).toBe('Новый агент');
   });
 });
