@@ -91,7 +91,7 @@ interface LayoutProps {
 }
 
 export function Layout({ children }: LayoutProps) {
-  const { lang, setLang } = useI18n();
+  const { lang, setLang, t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const subtitle = useSubtitle();
@@ -102,8 +102,8 @@ export function Layout({ children }: LayoutProps) {
   // Keep activeGroup in sync with navigation
   const activeGroupResolved = detectGroup(location.pathname);
 
-  function label(item: { keyRu: string; keyEn: string }) {
-    return lang === 'ru' ? item.keyRu : item.keyEn;
+  function label(item: { labelKey: string; fallback: string }) {
+    return t(item.labelKey, item.fallback);
   }
 
   const group = NAV_GROUPS.find(g => g.id === activeGroupResolved)!;
@@ -133,7 +133,7 @@ export function Layout({ children }: LayoutProps) {
                 }
               }}
             >
-              {lang === 'ru' ? g.keyRu : g.keyEn}
+              {label(g)}
             </button>
           ))}
         </div>
@@ -144,7 +144,7 @@ export function Layout({ children }: LayoutProps) {
           </div>
           <button className="profile-btn" onClick={() => setShowProfile(true)}>👤</button>
           <button className="logout-btn" onClick={() => logout(navigate)}>
-            {lang === 'ru' ? 'Выйти' : 'Logout'}
+            {t('action.logout', 'Logout')}
           </button>
         </div>
       </header>
@@ -158,7 +158,7 @@ export function Layout({ children }: LayoutProps) {
             <button className="kw-drawer-close" onClick={() => setShowDrawer(false)}>✕</button>
             {NAV_GROUPS.map(g => (
               <div key={g.id} className="kw-drawer-section">
-                <div className="kw-drawer-group">{lang === 'ru' ? g.keyRu : g.keyEn}</div>
+                <div className="kw-drawer-group">{label(g)}</div>
                 {g.pages.map(p => {
                   const item = NAV_ITEMS[p];
                   if (!item) return null;
@@ -169,7 +169,7 @@ export function Layout({ children }: LayoutProps) {
                       className={`kw-drawer-link${location.pathname === item.to ? ' active' : ''}`}
                       onClick={() => setShowDrawer(false)}
                     >
-                      {lang === 'ru' ? item.keyRu : item.keyEn}
+                      {label(item)}
                     </Link>
                   );
                 })}
@@ -181,10 +181,10 @@ export function Layout({ children }: LayoutProps) {
                 <button className={`kw-drawer-btn${lang === 'ru' ? ' active' : ''}`} onClick={() => setLang('ru')}>RU</button>
               </div>
               <button className="kw-drawer-action" onClick={() => { setShowDrawer(false); setShowProfile(true); }}>
-                👤 {lang === 'ru' ? 'Профиль' : 'Profile'}
+                👤 {t('nav.profile', 'Profile')}
               </button>
               <button className="kw-drawer-action" onClick={() => logout(navigate)}>
-                {lang === 'ru' ? 'Выйти' : 'Logout'}
+                {t('action.logout', 'Logout')}
               </button>
             </div>
           </div>

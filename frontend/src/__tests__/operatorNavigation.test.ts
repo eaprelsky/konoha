@@ -24,8 +24,12 @@ describe('operator navigation model', () => {
 
   it('has labels for every routed navigation page', () => {
     for (const group of NAV_GROUPS) {
+      expect(group.labelKey).toMatch(/^nav\./);
+      expect(group.fallback.length).toBeGreaterThan(0);
       for (const page of group.pages) {
         expect(NAV_ITEMS[page]).toBeDefined();
+        expect(NAV_ITEMS[page].labelKey).toMatch(/^nav\./);
+        expect(NAV_ITEMS[page].fallback.length).toBeGreaterThan(0);
       }
     }
   });

@@ -8,8 +8,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     'group.processes':  'Processes',
     'group.system':     'System',
     // Nav items
+    'nav.group.operator': 'Operator',
+    'nav.group.builder':  'Builder',
+    'nav.group.admin':    'Admin',
     'nav.myTasks':      'My Tasks',
+    'nav.overview':     'Overview',
+    'nav.cases':        'Cases',
     'nav.calendar':     'Calendar',
+    'nav.myCalendar':   'My Calendar',
+    'nav.reminders':    'Reminders',
+    'nav.workItems':    'Work Items',
     'nav.monitor':      'Monitor',
     'nav.roles':        'Roles',
     'nav.documents':    'Documents',
@@ -24,6 +32,11 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.people':       'People',
     'nav.skills':       'Skills',
     'nav.system':       'System',
+    'nav.eventMonitor': 'Monitor',
+    'nav.workspace':    'Workspace',
+    'nav.access':       'Access',
+    'nav.parameters':   'Parameters',
+    'nav.profile':      'Profile',
     // Common actions
     'action.new':       'New',
     'action.edit':      'Edit',
@@ -40,6 +53,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'action.close':     'Close',
     'action.saveIcon':  'Save',
     'action.editIcon':  'Edit',
+    'action.logout':    'Logout',
     // Filters
     'filter.all':       'All',
     // Status
@@ -402,8 +416,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     'group.processes':  'Процессы',
     'group.system':     'Система',
     // Nav items
+    'nav.group.operator': 'Оператор',
+    'nav.group.builder':  'Конструктор',
+    'nav.group.admin':    'Администрирование',
     'nav.myTasks':      'Мои задачи',
+    'nav.overview':     'Витрина',
+    'nav.cases':        'Прогоны',
     'nav.calendar':     'Календарь',
+    'nav.myCalendar':   'Мой календарь',
+    'nav.reminders':    'Напоминания',
+    'nav.workItems':    'Все задачи',
     'nav.monitor':      'Монитор',
     'nav.roles':        'Роли',
     'nav.documents':    'Документы',
@@ -418,6 +440,11 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.people':       'Люди',
     'nav.skills':       'Навыки',
     'nav.system':       'Система',
+    'nav.eventMonitor': 'Мониторинг',
+    'nav.workspace':    'Workspace',
+    'nav.access':       'Доступ',
+    'nav.parameters':   'Параметры',
+    'nav.profile':      'Профиль',
     // Common actions
     'action.new':       'Создать',
     'action.edit':      'Изменить',
@@ -434,6 +461,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'action.close':     'Закрыть',
     'action.saveIcon':  'Сохранить',
     'action.editIcon':  'Редактировать',
+    'action.logout':    'Выйти',
     // Filters
     'filter.all':       'Все',
     // Status

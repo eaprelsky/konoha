@@ -1,62 +1,62 @@
 export type NavGroup = 'operator' | 'builder' | 'admin';
 
 export type NavItem = {
-  keyRu: string;
-  keyEn: string;
+  labelKey: string;
+  fallback: string;
   to: string;
 };
 
 export type NavGroupDef = {
   id: NavGroup;
-  keyRu: string;
-  keyEn: string;
+  labelKey: string;
+  fallback: string;
   pages: string[];
 };
 
 export const NAV_GROUPS: NavGroupDef[] = [
   {
     id: 'operator',
-    keyRu: 'Оператор',
-    keyEn: 'Operator',
+    labelKey: 'nav.group.operator',
+    fallback: 'Operator',
     pages: ['/my-tasks', '/monitor', '/cases', '/people', '/roles', '/documents'],
   },
   {
     id: 'builder',
-    keyRu: 'Конструктор',
-    keyEn: 'Builder',
+    labelKey: 'nav.group.builder',
+    fallback: 'Builder',
     pages: ['/editor', '/workitems', '/calendar', '/my-calendar', '/reminders', '/kb'],
   },
   {
     id: 'admin',
-    keyRu: 'Администрирование',
-    keyEn: 'Admin',
+    labelKey: 'nav.group.admin',
+    fallback: 'Admin',
     pages: ['/health', '/connectors', '/agents', '/messages', '/eventlog', '/event-monitor', '/workspace', '/whitelist', '/settings', '/skills'],
   },
 ];
 
 export const NAV_ITEMS: Record<string, NavItem> = {
-  '/my-tasks':      { keyRu: 'Мои задачи',     keyEn: 'My Tasks',   to: '/my-tasks' },
-  '/monitor':       { keyRu: 'Витрина',        keyEn: 'Overview',   to: '/monitor' },
-  '/cases':         { keyRu: 'Прогоны',        keyEn: 'Cases',      to: '/cases' },
-  '/people':        { keyRu: 'Люди',           keyEn: 'People',     to: '/people' },
-  '/roles':         { keyRu: 'Роли',           keyEn: 'Roles',      to: '/roles' },
-  '/documents':     { keyRu: 'Документы',      keyEn: 'Documents',  to: '/documents' },
-  '/editor':        { keyRu: 'Редактор',       keyEn: 'Editor',     to: '/editor' },
-  '/workitems':     { keyRu: 'Все задачи',     keyEn: 'Work Items', to: '/workitems' },
-  '/calendar':      { keyRu: 'Календарь',      keyEn: 'Calendar',   to: '/calendar' },
-  '/my-calendar':   { keyRu: 'Мой календарь',  keyEn: 'My Calendar', to: '/my-calendar' },
-  '/reminders':     { keyRu: 'Напоминания',    keyEn: 'Reminders',  to: '/reminders' },
-  '/kb':            { keyRu: 'База знаний',    keyEn: 'KB',         to: '/kb' },
-  '/health':        { keyRu: 'Состояние',      keyEn: 'Health',     to: '/health' },
-  '/connectors':    { keyRu: 'ИС',             keyEn: 'IS',         to: '/connectors' },
-  '/agents':        { keyRu: 'Агенты',         keyEn: 'Agents',     to: '/agents' },
-  '/messages':      { keyRu: 'Сообщения',      keyEn: 'Messages',   to: '/messages' },
-  '/eventlog':      { keyRu: 'Лог событий',    keyEn: 'Event Log',  to: '/eventlog' },
-  '/event-monitor': { keyRu: 'Мониторинг',     keyEn: 'Monitor',    to: '/event-monitor' },
-  '/workspace':     { keyRu: 'Workspace',      keyEn: 'Workspace',  to: '/workspace' },
-  '/whitelist':     { keyRu: 'Доступ',         keyEn: 'Access',     to: '/whitelist' },
-  '/settings':      { keyRu: 'Параметры',      keyEn: 'Parameters', to: '/settings' },
-  '/skills':        { keyRu: 'Навыки',         keyEn: 'Skills',     to: '/skills' },
+  '/my-tasks':      { labelKey: 'nav.myTasks',      fallback: 'My Tasks',   to: '/my-tasks' },
+  '/monitor':       { labelKey: 'nav.overview',     fallback: 'Overview',   to: '/monitor' },
+  '/cases':         { labelKey: 'nav.cases',        fallback: 'Cases',      to: '/cases' },
+  '/people':        { labelKey: 'nav.people',       fallback: 'People',     to: '/people' },
+  '/roles':         { labelKey: 'nav.roles',        fallback: 'Roles',      to: '/roles' },
+  '/documents':     { labelKey: 'nav.documents',    fallback: 'Documents',  to: '/documents' },
+  '/editor':        { labelKey: 'nav.editor',       fallback: 'Editor',     to: '/editor' },
+  '/workitems':     { labelKey: 'nav.workItems',    fallback: 'Work Items', to: '/workitems' },
+  '/calendar':      { labelKey: 'nav.calendar',     fallback: 'Calendar',   to: '/calendar' },
+  '/my-calendar':   { labelKey: 'nav.myCalendar',   fallback: 'My Calendar', to: '/my-calendar' },
+  '/reminders':     { labelKey: 'nav.reminders',    fallback: 'Reminders',  to: '/reminders' },
+  '/kb':            { labelKey: 'nav.kb',           fallback: 'KB',         to: '/kb' },
+  '/health':        { labelKey: 'nav.health',       fallback: 'Health',     to: '/health' },
+  '/connectors':    { labelKey: 'nav.connectors',   fallback: 'IS',         to: '/connectors' },
+  '/agents':        { labelKey: 'nav.agents',       fallback: 'Agents',     to: '/agents' },
+  '/messages':      { labelKey: 'nav.messages',     fallback: 'Messages',   to: '/messages' },
+  '/eventlog':      { labelKey: 'nav.eventlog',     fallback: 'Event Log',  to: '/eventlog' },
+  '/event-monitor': { labelKey: 'nav.eventMonitor', fallback: 'Monitor',    to: '/event-monitor' },
+  '/workspace':     { labelKey: 'nav.workspace',    fallback: 'Workspace',  to: '/workspace' },
+  '/whitelist':     { labelKey: 'nav.access',       fallback: 'Access',     to: '/whitelist' },
+  '/settings':      { labelKey: 'nav.parameters',   fallback: 'Parameters', to: '/settings' },
+  '/skills':        { labelKey: 'nav.skills',       fallback: 'Skills',     to: '/skills' },
 };
 
 export function detectGroup(pathname: string): NavGroup {
@@ -67,4 +67,3 @@ export function detectGroup(pathname: string): NavGroup {
   }
   return 'operator';
 }
-

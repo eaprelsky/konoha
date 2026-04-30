@@ -49,4 +49,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['agent.page.confirmDelete']).toContain('{id}');
     expect(translations.ru['agent.page.confirmDelete']).toContain('{id}');
   });
+
+  it('keeps navigation labels in the translation catalog', () => {
+    expect(translations.en['nav.group.operator']).toBe('Operator');
+    expect(translations.ru['nav.group.operator']).toBe('Оператор');
+    expect(translations.en['nav.overview']).toBe('Overview');
+    expect(translations.ru['nav.overview']).toBe('Витрина');
+  });
 });

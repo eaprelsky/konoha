@@ -22,6 +22,7 @@ const DEFAULT_GUARDED_FILES = [
   "frontend/src/components/agents/AgentMemoryTab.tsx",
   "frontend/src/components/agents/NewAgentModal.tsx",
   "frontend/src/components/agents/AgentSettingsTab.tsx",
+  "frontend/src/components/Layout.tsx",
   "frontend/src/pages/Agents.tsx",
   "frontend/src/pages/ByProcessView.tsx",
   "frontend/src/pages/BySourceView.tsx",
@@ -33,6 +34,7 @@ const DEFAULT_GUARDED_FILES = [
   "frontend/src/pages/TimelineView.tsx",
   "frontend/src/pages/WorkItems.tsx",
   "frontend/src/pages/eventMonitorUtils.ts",
+  "frontend/src/utils/operatorNavigation.ts",
 ] as const;
 const CYRILLIC_RE = /[А-Яа-яЁё]/;
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
