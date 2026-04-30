@@ -1,0 +1,63 @@
+{
+  "id": "knowledge-source-classification",
+  "version": "1.0.0",
+  "name": "Knowledge: source classification",
+  "description": "Minimal workflow for classifying candidate knowledge sources before extraction. Classification policy is carried as workflow documents attached to executable functions.",
+  "documents": [
+    {
+      "doc_id": "knowledge.source.classification.policy",
+      "name": "Knowledge source classification policy",
+      "type": "instruction",
+      "content": "Classify each source before extraction. Return source_type, intake_decision, sensitivity, confidence, summary_required, escalation_reason, and extraction_scope. source_type must be one of: meeting_transcript, chat_thread, proposal, adr, external_article, unknown. intake_decision must be one of: ingest, summarize_only, ignore, escalate. Meeting transcript: ingest when it contains durable decisions, owners, deadlines, requirements, or risks; summarize_only when it is status chatter; escalate when consent, customer confidentiality, or unclear ownership is present. Chat thread: ingest decisions, incidents, agreements, and reusable context; ignore greetings, duplicate notifications, transient coordination, and pure bot noise; escalate private data or unresolved conflict. Proposal: ingest approved scope, assumptions, terms, risks, and client commitments; summarize_only drafts; escalate pricing or legal ambiguity. ADR: ingest accepted or superseded decisions with context, alternatives, consequences, and owner; escalate contradictory or missing status. External article: summarize_only unless explicitly curated for the KB; ignore thin marketing pages and duplicates; escalate licensing, paywall, or trust concerns. Never invent missing facts."
+    },
+    {
+      "doc_id": "knowledge.source.classification.output",
+      "name": "Knowledge source classification output schema",
+      "type": "instruction",
+      "content": "Output JSON fields: source_type:string, intake_decision:string, sensitivity:string, confidence:number, summary_required:boolean, extraction_scope:string[], evidence:string[], escalation_reason:string|null, ignored_reason:string|null. evidence must cite source-local facts. extraction_scope should name the durable parts to extract, such as decisions, assumptions, owners, deadlines, risks, API contracts, product requirements, or operational runbook steps."
+    }
+  ],
+  "elements": [
+    { "id": "e_source_received", "type": "event", "label": "Candidate source received" },
+    {
+      "id": "f_classify_source",
+      "type": "function",
+      "label": "Classify source for knowledge intake",
+      "role": "knowledge_curator",
+      "documents": [
+        "knowledge.source.classification.policy",
+        "knowledge.source.classification.output"
+      ]
+    },
+    { "id": "e_source_classified", "type": "event", "label": "Source classified" },
+    {
+      "id": "g_intake_decision",
+      "type": "gateway",
+      "label": "Select intake path",
+      "operator": "XOR"
+    },
+    { "id": "e_ready_for_extraction", "type": "event", "label": "Source ready for extraction" },
+    { "id": "e_ready_for_summary", "type": "event", "label": "Source ready for summary" },
+    { "id": "e_needs_review", "type": "event", "label": "Source needs intake lead review" },
+    {
+      "id": "f_review_escalation",
+      "type": "function",
+      "label": "Review escalated knowledge source",
+      "role": "knowledge_intake_lead",
+      "documents": ["knowledge.source.classification.policy"]
+    },
+    { "id": "e_escalation_reviewed", "type": "event", "label": "Escalation reviewed" },
+    { "id": "e_source_ignored", "type": "event", "label": "Source ignored" }
+  ],
+  "flow": [
+    ["e_source_received", "f_classify_source"],
+    ["f_classify_source", "e_source_classified"],
+    ["e_source_classified", "g_intake_decision"],
+    ["g_intake_decision", "e_ready_for_extraction", "payload.intake_decision === 'ingest'"],
+    ["g_intake_decision", "e_ready_for_summary", "payload.intake_decision === 'summarize_only'"],
+    ["g_intake_decision", "e_source_ignored", "payload.intake_decision === 'ignore'"],
+    ["g_intake_decision", "e_needs_review", "payload.intake_decision === 'escalate'"],
+    ["e_needs_review", "f_review_escalation"],
+    ["f_review_escalation", "e_escalation_reviewed"]
+  ]
+}

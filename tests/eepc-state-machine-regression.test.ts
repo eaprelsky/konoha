@@ -222,6 +222,42 @@ describe("eEPC state-machine regression suite", () => {
     expect(waits[0].trigger_kind).toBe("delay_after");
   });
 
+  test("knowledge classification workflow exposes source rules to the work item step", async () => {
+    const id = wfId("knowledge-source-classification");
+    const raw = readFileSync(join(import.meta.dir, "..", "workflows", "knowledge", "source-classification.json"), "utf-8");
+    const def: WorkflowDefinition = { ...JSON.parse(raw), id };
+    await registerWorkflow(def);
+
+    const kase = await createCase(id, "ADR-42 source intake", {
+      source_kind: "adr",
+      source_title: "ADR-42: Queue-based dispatch",
+      source_text: "Accepted decision to route work items through the bus.",
+    });
+
+    const classify = await pendingWorkItemForCase(kase.case_id, "f_classify_source");
+    expect(classify.assignee).toBe("knowledge_curator");
+    expect(classify.input.source_kind).toBe("adr");
+
+    const classifyElement = def.elements.find(el => el.id === "f_classify_source");
+    expect(classifyElement?.documents).toEqual([
+      "knowledge.source.classification.policy",
+      "knowledge.source.classification.output",
+    ]);
+
+    const instruction = await loadInstructionText(classifyElement?.documents ?? []);
+    expect(instruction).toContain("Knowledge source classification policy");
+    expect(instruction).toContain("ADR");
+    expect(instruction).toContain("intake_decision");
+
+    const completed = await completeWorkItem(classify.work_item_id, {
+      source_type: "adr",
+      intake_decision: "ingest",
+      extraction_scope: ["decision", "consequences"],
+    });
+    expect(completed.case?.status).toBe("done");
+    expect(completed.case?.position).toBe("e_ready_for_extraction");
+  });
+
   test("Telegram message event starts sales workflow only when eEPC trigger filter matches", async () => {
     const id = wfId("sales-telegram-event");
     const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");

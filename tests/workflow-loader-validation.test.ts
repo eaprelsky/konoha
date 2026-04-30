@@ -215,3 +215,42 @@ describe("workflow-loader e2e: knowledge-intake", () => {
     ]);
   });
 });
+
+describe("workflow-loader e2e: knowledge source classification", () => {
+  const workflowPath = join(import.meta.dir, "..", "workflows", "knowledge", "source-classification.json");
+  let def: WorkflowDefinition;
+
+  test("loads and validates classification workflow from disk", () => {
+    const raw = readFileSync(workflowPath, "utf-8");
+    def = JSON.parse(raw);
+    expect(def.id).toBe("knowledge-source-classification");
+    expect(validateWorkflow(def)).toEqual([]);
+  });
+
+  test("keeps classification rules visible as workflow documents", () => {
+    const docs = new Map(def.documents?.map(doc => [doc.doc_id, doc]));
+    const policy = docs.get("knowledge.source.classification.policy");
+    const output = docs.get("knowledge.source.classification.output");
+
+    expect(policy?.type).toBe("instruction");
+    expect(output?.type).toBe("instruction");
+    expect(policy?.content).toContain("Meeting transcript");
+    expect(policy?.content).toContain("Chat thread");
+    expect(policy?.content).toContain("Proposal");
+    expect(policy?.content).toContain("ADR");
+    expect(policy?.content).toContain("External article");
+    expect(output?.content).toContain("intake_decision");
+    expect(output?.content).toContain("extraction_scope");
+  });
+
+  test("attaches classification documents to functions that need them", () => {
+    const classify = def.elements.find(el => el.id === "f_classify_source");
+    const review = def.elements.find(el => el.id === "f_review_escalation");
+
+    expect(classify?.documents).toEqual([
+      "knowledge.source.classification.policy",
+      "knowledge.source.classification.output",
+    ]);
+    expect(review?.documents).toEqual(["knowledge.source.classification.policy"]);
+  });
+});
