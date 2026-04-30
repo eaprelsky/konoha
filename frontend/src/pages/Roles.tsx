@@ -2,25 +2,14 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type React from 'react';
 import { useToken } from '../context/TokenContext';
+import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { RoleDef, AssignmentStrategy, Agent, Person, Skill } from '../api/types';
 import { agentActorLabel, buildAgentLabelMap, roleAssigneeLabel } from '../utils/agentDisplay';
 import { filterOperatorRoles, useOperatorViewMode } from '../utils/operatorView';
 
-const STRATEGIES: { value: AssignmentStrategy; label: string }[] = [
-  { value: 'manual',          label: 'Вручную' },
-  { value: 'round-robin',     label: 'По кругу' },
-  { value: 'load-balancing',  label: 'Баланс нагрузки' },
-  { value: 'broadcast',       label: 'Широковещательно' },
-];
-
-const STRATEGY_LABELS: Record<AssignmentStrategy, string> = {
-  manual:           'Вручную',
-  'round-robin':    'По кругу',
-  'load-balancing': 'Баланс нагрузки',
-  broadcast:        'Широковещательно',
-};
+const STRATEGIES: AssignmentStrategy[] = ['manual', 'round-robin', 'load-balancing', 'broadcast'];
 
 const styles = `
   .rl-body { padding: 20px; }
@@ -73,7 +62,8 @@ const styles = `
 `;
 
 // ── Multiselect component ─────────────────────────────────────────────────────
-interface AssigneeOption { id: string; label: string; group: string }
+type AssigneeGroup = 'agents' | 'people';
+interface AssigneeOption { id: string; label: string; group: AssigneeGroup }
 interface MultiselectProps {
   options: AssigneeOption[];
   value: string[];
@@ -81,7 +71,8 @@ interface MultiselectProps {
   placeholder?: string;
 }
 
-function Multiselect({ options, value, onChange, placeholder = 'Выберите…' }: MultiselectProps) {
+function Multiselect({ options, value, onChange, placeholder }: MultiselectProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
@@ -111,7 +102,7 @@ function Multiselect({ options, value, onChange, placeholder = 'Выберите
     o.id.toLowerCase().includes(search.toLowerCase())
   );
 
-  const groups = ['Агенты', 'Люди'];
+  const groups: AssigneeGroup[] = ['agents', 'people'];
   const grouped = groups.map(g => ({ group: g, items: filtered.filter(o => o.group === g) }));
 
   function toggle(id: string) {
@@ -126,18 +117,18 @@ function Multiselect({ options, value, onChange, placeholder = 'Выберите
     >
       <input
         className="ms-search"
-        placeholder="Поиск…"
+        placeholder={t('roles.searchPlaceholder')}
         value={search}
         onChange={e => setSearch(e.target.value)}
         onClick={e => e.stopPropagation()}
         autoFocus
       />
       {grouped.every(g => g.items.length === 0) && (
-        <div className="ms-empty">Ничего не найдено</div>
+        <div className="ms-empty">{t('roles.emptySearch')}</div>
       )}
       {grouped.map(({ group, items }) => items.length === 0 ? null : (
         <div key={group}>
-          <div className="ms-group-label">{group}</div>
+          <div className="ms-group-label">{t(`roles.group.${group}`)}</div>
           {items.map(opt => (
             <div
               key={opt.id}
@@ -157,7 +148,7 @@ function Multiselect({ options, value, onChange, placeholder = 'Выберите
   return (
     <div className="ms-wrapper" ref={ref}>
       <div className="ms-trigger" onClick={handleTriggerClick}>
-        {value.length === 0 && <span className="ms-placeholder">{placeholder}</span>}
+        {value.length === 0 && <span className="ms-placeholder">{placeholder || t('roles.selectPlaceholder')}</span>}
         {value.map(v => {
           const opt = options.find(o => o.id === v);
           return (
@@ -188,6 +179,7 @@ interface RoleModalProps {
 }
 
 function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModalProps) {
+  const { t } = useI18n();
   const [name, setName] = useState(role?.name || '');
   const [description, setDescription] = useState(role?.description || '');
   const [showDesc, setShowDesc] = useState(!!role?.description);
@@ -209,13 +201,13 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
   }
 
   const assigneeOptions: AssigneeOption[] = [
-    ...agents.map(a => ({ id: a.id, label: agentActorLabel(a), group: 'Агенты' })),
-    ...people.map(p => ({ id: p.id, label: `${p.name}${p.position ? ` (${p.position})` : ''}`, group: 'Люди' })),
+    ...agents.map(a => ({ id: a.id, label: agentActorLabel(a), group: 'agents' as const })),
+    ...people.map(p => ({ id: p.id, label: `${p.name}${p.position ? ` (${p.position})` : ''}`, group: 'people' as const })),
   ];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) { setError('Название обязательно'); return; }
+    if (!name.trim()) { setError(t('roles.nameRequired')); return; }
     setSubmitting(true); setError(null);
     try {
       if (role) {
@@ -231,15 +223,15 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
-        <h2>{role ? 'Редактировать роль' : 'Новая роль'}</h2>
+        <h2>{role ? t('roles.editTitle') : t('roles.newTitle')}</h2>
         {error && <div className="error-banner">{error}</div>}
         <form onSubmit={submit}>
 
           <div className="form-group">
-            <label>Название *</label>
+            <label>{t('roles.nameLabel')}</label>
             <input
               type="text"
-              placeholder="Например: Менеджер по продажам"
+              placeholder={t('roles.namePlaceholder')}
               value={name}
               onChange={e => setName(e.target.value)}
               autoFocus
@@ -252,14 +244,14 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
             className="desc-toggle"
             onClick={() => setShowDesc(v => !v)}
           >
-            {showDesc ? '▲ Скрыть описание' : '▼ Добавить описание'}
+            {showDesc ? `▲ ${t('roles.hideDescription')}` : `▼ ${t('roles.addDescription')}`}
           </button>
 
           {showDesc && (
             <div className="form-group">
-              <label>Описание</label>
+              <label>{t('label.description')}</label>
               <textarea
-                placeholder="Опционально…"
+                placeholder={t('roles.optionalPlaceholder')}
                 value={description}
                 onChange={e => setDescription(e.target.value)}
               />
@@ -267,28 +259,28 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
           )}
 
           <div className="form-group">
-            <label>Исполнители</label>
+            <label>{t('roles.assignees')}</label>
             <Multiselect
               options={assigneeOptions}
               value={assignees}
               onChange={setAssignees}
-              placeholder="Выберите агентов или людей…"
+              placeholder={t('roles.assigneePlaceholder')}
             />
           </div>
 
           <div className="form-group">
-            <label>Стратегия назначения</label>
+            <label>{t('roles.assignmentStrategy')}</label>
             <select value={strategy} onChange={e => setStrategy(e.target.value as AssignmentStrategy)}>
-              {STRATEGIES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              {STRATEGIES.map(s => <option key={s} value={s}>{t(`roles.strategy.${s}`)}</option>)}
             </select>
           </div>
 
           {skills.length > 0 && (
             <div className="form-group">
-              <label>Требуемые навыки</label>
+              <label>{t('roles.requiredSkills')}</label>
               <input
                 type="text"
-                placeholder="Поиск навыков…"
+                placeholder={t('skills.searchPlaceholder')}
                 value={skillSearch}
                 onChange={e => setSkillSearch(e.target.value)}
                 style={{ padding: '6px 10px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13, marginBottom: 8, width: '100%' }}
@@ -305,14 +297,14 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
                   </label>
                 ))}
               </div>
-              <span style={{ fontSize: 11, color: '#94a3b8' }}>Навыки, которые должен иметь исполнитель этой роли</span>
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>{t('roles.requiredSkillsHint')}</span>
             </div>
           )}
 
           <div className="form-actions">
-            <button type="button" className="btn-cancel-f" onClick={onClose}>Отмена</button>
+            <button type="button" className="btn-cancel-f" onClick={onClose}>{t('action.cancel')}</button>
             <button type="submit" className="btn-submit" disabled={submitting}>
-              {submitting ? 'Сохранение…' : 'Сохранить'}
+              {submitting ? t('status.saving') : t('action.save')}
             </button>
           </div>
         </form>
@@ -324,6 +316,7 @@ function RoleModal({ role, agents, people, skills, onClose, onSaved }: RoleModal
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function Roles() {
   const token = useToken();
+  const { t } = useI18n();
   const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [roles,   setRoles]   = useState<RoleDef[]>([]);
   const [agents,  setAgents]  = useState<Agent[]>([]);
@@ -354,7 +347,7 @@ export function Roles() {
   }, [token]);
 
   async function deleteRole(id: string) {
-    if (!confirm(`Удалить роль "${id}"?`)) return;
+    if (!confirm(t('roles.confirmDelete').replace('{id}', id))) return;
     try { await api.roles.delete(id); load(); } catch (e: any) { setError(e.message); }
   }
 
@@ -368,35 +361,35 @@ export function Roles() {
       <div className="rl-body" style={{ flex: 1, overflowY: 'auto' }}>
         <div className="container">
           <div className="page-header">
-            <h1>Роли</h1>
+            <h1>{t('nav.roles')}</h1>
             <div style={{ display: 'flex', gap: 8 }}>
               {hiddenRoleCount > 0 && (
                 <label
                   style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }}
-                  title="Показать скрытые test/debug/deprecated роли. То же можно открыть через ?view=debug."
+                  title={t('roles.hiddenToggleTitle')}
                 >
                   <input
                     type="checkbox"
                     checked={showHiddenArtifacts}
                     onChange={e => setShowHiddenArtifacts(e.target.checked)}
                   />
-                  Служебные ({hiddenRoleCount})
+                  {t('operator.monitor.hidden').replace('{count}', String(hiddenRoleCount))}
                 </label>
               )}
-              <button className="btn-new" onClick={openNew}>+ Новая роль</button>
+              <button className="btn-new" onClick={openNew}>{t('page.roles.new')}</button>
             </div>
           </div>
           {error && <div className="error-banner">{error}</div>}
-          {loading && <div className="empty">Загрузка…</div>}
-          {!loading && visibleRoles.length === 0 && <div className="empty">Роли ещё не определены.</div>}
+          {loading && <div className="empty">{t('status.loading')}</div>}
+          {!loading && visibleRoles.length === 0 && <div className="empty">{t('empty.roles')}</div>}
           {visibleRoles.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Название</th>
-                  <th>Стратегия</th>
-                  <th>Исполнители</th>
-                  <th>Действия</th>
+                  <th>{t('label.name')}</th>
+                  <th>{t('roles.strategy')}</th>
+                  <th>{t('roles.assignees')}</th>
+                  <th>{t('label.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -409,7 +402,7 @@ export function Roles() {
                         <div style={{ color: '#666', fontSize: 12, marginTop: 2 }}>{r.description}</div>
                       )}
                     </td>
-                    <td><span className="strategy-badge">{STRATEGY_LABELS[r.strategy] ?? r.strategy}</span></td>
+                    <td><span className="strategy-badge">{t(`roles.strategy.${r.strategy}`, r.strategy)}</span></td>
                     <td>
                       {r.assignees.map(a => <span key={a} className="tag" title={a}>{agentLabels[a] || a}</span>)}
                       {r.assignees.length === 0 && <span style={{ color: '#999' }}>—</span>}
@@ -421,8 +414,8 @@ export function Roles() {
                     </td>
                     <td>
                       <div className="actions">
-                        <button className="edit" onClick={() => openEdit(r)}>Изменить</button>
-                        <button className="del"  onClick={() => deleteRole(r.role_id)}>Удалить</button>
+                        <button className="edit" onClick={() => openEdit(r)}>{t('action.edit')}</button>
+                        <button className="del"  onClick={() => deleteRole(r.role_id)}>{t('action.delete')}</button>
                       </div>
                     </td>
                   </tr>
