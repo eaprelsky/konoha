@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse, DashboardProfile } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse, DashboardProfile, TelegramStreamHealthSummary } from './types';
 export type { KibaAction, HighlightAction };
 
 export interface AttachmentRef { path: string; name: string; mime?: string; }
@@ -303,6 +303,10 @@ export const api = {
   adapters: {
     list: () => apiFetch<{ adapters: string[] }>(`${BASE}/adapters`),
     health: (name: string) => apiFetch<{ adapter: string; healthy: boolean }>(`${BASE}/adapters/${name}/health`),
+  },
+
+  connectors: {
+    telegramStreamHealth: () => apiFetch<TelegramStreamHealthSummary>(`${BASE}/connectors/telegram/streams/health`),
   },
 
   reminders: {

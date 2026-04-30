@@ -321,6 +321,42 @@ export interface AdapterHealth {
   healthy: boolean;
 }
 
+export type TelegramStreamStatus = 'ok' | 'warn' | 'fail';
+
+export interface TelegramConsumerGroupHealth {
+  group: string;
+  consumers: number;
+  pending: number;
+  lag: number;
+  status: TelegramStreamStatus;
+  detail: string;
+}
+
+export interface TelegramStreamHealth {
+  stream: string;
+  length: number;
+  groups: TelegramConsumerGroupHealth[];
+  status: TelegramStreamStatus;
+}
+
+export interface TelegramDeadLetterHealth {
+  stream: string;
+  length: number;
+  status: TelegramStreamStatus;
+}
+
+export interface TelegramStreamHealthSummary {
+  thresholds: {
+    warn_lag: number;
+    warn_pending: number;
+    fail_pending: number;
+  };
+  streams: TelegramStreamHealth[];
+  dead_letters: TelegramDeadLetterHealth[];
+  status: TelegramStreamStatus;
+  checked_at: string;
+}
+
 export type ReminderStatus = 'pending' | 'sent' | 'acknowledged' | 'overdue';
 export type ReminderChannel = 'gui' | 'telegram' | 'email';
 export type ReminderType = 'standalone' | 'process-bound';

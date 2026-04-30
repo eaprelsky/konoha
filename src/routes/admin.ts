@@ -6,6 +6,7 @@ import { upsertAgentDef } from "../agent-lifecycle";
 import type { AgentDef } from "../agent-lifecycle";
 import { listAdapters, getAdapter } from "../adapters/index";
 import { listMessengerConnectorCatalogs } from "../messenger-connectors";
+import { getTelegramStreamHealth } from "../telegram-stream-health";
 const log = createLogger("routes:admin");
 
 const BOT_AGENT_PROMPT = `# Бот-агент
@@ -434,6 +435,10 @@ router.get("/connectors/messenger", requireAdmin, async (c) => {
   return c.json({
     catalogs: listMessengerConnectorCatalogs(),
   });
+});
+
+router.get("/connectors/telegram/streams/health", requireAdmin, async (c) => {
+  return c.json(await getTelegramStreamHealth());
 });
 
 export default router;

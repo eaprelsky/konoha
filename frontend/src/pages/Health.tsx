@@ -8,7 +8,7 @@ import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { useI18n } from '../context/I18nContext';
 import { api } from '../api/client';
-import type { Agent } from '../api/types';
+import type { Agent, TelegramStreamHealthSummary, TelegramStreamStatus } from '../api/types';
 
 const LIFECYCLE_LABELS: Record<string, string> = {
   running: 'запущен', starting: 'запускается', stopped: 'остановлен', error: 'ошибка',
@@ -47,6 +47,14 @@ const styles = `
   .agent-meta { text-align: right; font-size: 11px; color: #64748b; }
   .adapter-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
   .adapter-row:last-child { border-bottom: none; }
+  .stream-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .stream-table th { color: #64748b; text-align: left; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-transform: uppercase; }
+  .stream-table td { padding: 7px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  .stream-code { font-family: monospace; color: #334155; }
+  .status-pill { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .pill-ok { background: #dcfce7; color: #166534; }
+  .pill-warn { background: #fef3c7; color: #92400e; }
+  .pill-fail { background: #fee2e2; color: #991b1b; }
   .check-btn { padding: 4px 10px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
   .check-btn:hover { background: #f8fafc; }
   .action-btn { padding: 9px 14px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 13px; text-align: left; width: 100%; margin-bottom: 8px; }
@@ -62,6 +70,12 @@ function DotStatus({ status }: { status: string }) {
   return <span className={`status-dot ${cls}`} style={{ width: 8, height: 8, marginRight: 4 }} />;
 }
 
+function streamStatusClass(status: TelegramStreamStatus): string {
+  if (status === 'fail') return 'pill-fail';
+  if (status === 'warn') return 'pill-warn';
+  return 'pill-ok';
+}
+
 export function Health() {
   const token = useToken();
   const { lang } = useI18n();
@@ -69,6 +83,7 @@ export function Health() {
   const [adapters, setAdapters] = useState<string[]>([]);
   const [adapterHealth, setAdapterHealth] = useState<Record<string, boolean | null>>({});
   const [apiHealth, setApiHealth] = useState<{ status: string; ts: string } | null>(null);
+  const [telegramStreams, setTelegramStreams] = useState<TelegramStreamHealthSummary | null>(null);
   const [busStatus, setBusStatus] = useState<{ status: string; ts: string } | null>(null);
   const [busError, setBusError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,11 +96,13 @@ export function Health() {
       api.adapters.list().catch(() => ({ adapters: [] })),
       fetch('/api/health').then(r => r.json()).catch(() => null),
       api.health.bus().catch((e: Error) => { setBusError(e.message); return null; }),
-    ]).then(([ags, adps, hlth, bus]) => {
+      api.connectors.telegramStreamHealth().catch(() => null),
+    ]).then(([ags, adps, hlth, bus, streams]) => {
       setAgents(ags);
       setAdapters(Array.isArray(adps) ? adps : (adps?.adapters ?? []));
       if (hlth) setApiHealth(hlth);
       if (bus) { setBusStatus(bus); setBusError(null); }
+      setTelegramStreams(streams);
       setLastUpdate(new Date().toLocaleTimeString());
       setError(null);
     }).catch(e => setError(e.message));
@@ -227,6 +244,47 @@ export function Health() {
                   </div>
                 );
               })}
+            </div>
+
+            <div className="panel">
+              <h2>{t('Telegram streams', 'Telegram streams')}</h2>
+              {!telegramStreams && <div className="empty">{t('Нет данных', 'No data')}</div>}
+              {telegramStreams && (
+                <>
+                  <div className="kv">
+                    <span className="kv-key">{t('Итоговый статус', 'Overall status')}</span>
+                    <span className={`status-pill ${streamStatusClass(telegramStreams.status)}`}>{telegramStreams.status}</span>
+                  </div>
+                  <table className="stream-table">
+                    <thead>
+                      <tr>
+                        <th>{t('Поток', 'Stream')}</th>
+                        <th>{t('Группа', 'Group')}</th>
+                        <th>{t('Lag', 'Lag')}</th>
+                        <th>{t('Pending', 'Pending')}</th>
+                        <th>{t('Статус', 'Status')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {telegramStreams.streams.flatMap(stream => stream.groups.map(group => (
+                        <tr key={`${stream.stream}:${group.group}`}>
+                          <td className="stream-code">{stream.stream}<div style={{ color: '#94a3b8' }}>len={stream.length}</div></td>
+                          <td className="stream-code">{group.group}<div style={{ color: '#94a3b8' }}>consumers={group.consumers}</div></td>
+                          <td>{group.lag}</td>
+                          <td>{group.pending}</td>
+                          <td><span className={`status-pill ${streamStatusClass(group.status)}`}>{group.status}</span></td>
+                        </tr>
+                      )))}
+                    </tbody>
+                  </table>
+                  <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>
+                    {t('Dead letters:', 'Dead letters:')} {telegramStreams.dead_letters.map(item => `${item.stream}=${item.length}`).join(', ')}
+                  </div>
+                  <div className="refresh-info">
+                    warn lag &gt; {telegramStreams.thresholds.warn_lag}, warn pending &gt; {telegramStreams.thresholds.warn_pending}, fail pending ≥ {telegramStreams.thresholds.fail_pending}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="panel">
