@@ -80,7 +80,7 @@ export function ProcessEditorSidebar({ s }: { s: ProcessEditorState }) {
         </div>
       )}
 
-      {s.showMining && s.miningData && (
+      {s.showHiddenArtifacts && s.showMining && s.miningData && (
         <div>
           <h3>⛏ Майнинг — {s.miningData.case_count} прогон(ов)</h3>
           {s.miningData.bottleneck_element_id && (

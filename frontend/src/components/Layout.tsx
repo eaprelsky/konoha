@@ -4,6 +4,7 @@ import { useI18n } from '../context/I18nContext';
 import { useSubtitle } from '../context/SubtitleContext';
 import { useBranding } from '../context/BrandingContext';
 import { ProfileModal } from './ProfileModal';
+import { NAV_GROUPS, NAV_ITEMS, detectGroup } from '../utils/operatorNavigation';
 
 export function isLoggedIn(): boolean {
   return localStorage.getItem('konoha_dash_auth') === '1';
@@ -14,59 +15,6 @@ async function logout(navigate: ReturnType<typeof useNavigate>) {
   localStorage.removeItem('konoha_dash_auth');
   localStorage.removeItem('konoha_dash_user');
   navigate('/login');
-}
-
-// ── Group-based navigation (3-layer redesign, closes #295) ───────────────────
-
-type NavGroup = 'processes' | 'team' | 'settings';
-
-const NAV_GROUPS: { id: NavGroup; keyRu: string; keyEn: string; pages: string[] }[] = [
-  {
-    id: 'processes',
-    keyRu: 'Процессы',
-    keyEn: 'Processes',
-    pages: ['/editor', '/monitor', '/documents', '/cases', '/workitems', '/my-tasks', '/my-calendar', '/calendar', '/reminders'],
-  },
-  {
-    id: 'team',
-    keyRu: 'Команда',
-    keyEn: 'Team',
-    pages: ['/roles', '/agents', '/people', '/skills'],
-  },
-  {
-    id: 'settings',
-    keyRu: 'Настройки',
-    keyEn: 'Settings',
-    pages: ['/settings', '/health', '/connectors', '/messages', '/eventlog', '/kb', '/workspace', '/whitelist', '/event-monitor'],
-  },
-];
-
-const NAV_ITEMS: Record<string, { keyRu: string; keyEn: string; to: string }> = {
-  '/editor':       { keyRu: 'Редактор',       keyEn: 'Editor',     to: '/editor' },
-  '/cases':        { keyRu: 'Прогоны',        keyEn: 'Cases',      to: '/cases' },
-  '/workitems':    { keyRu: 'Задачи',         keyEn: 'Work Items', to: '/workitems' },
-  '/calendar':     { keyRu: 'Календарь',      keyEn: 'Calendar',   to: '/calendar' },
-  '/documents':    { keyRu: 'Документы',      keyEn: 'Documents',  to: '/documents' },
-  '/roles':        { keyRu: 'Роли',           keyEn: 'Roles',      to: '/roles' },
-  '/agents':       { keyRu: 'Агенты',         keyEn: 'Agents',     to: '/agents' },
-  '/people':       { keyRu: 'Люди',           keyEn: 'People',     to: '/people' },
-  '/skills':       { keyRu: 'Навыки',         keyEn: 'Skills',     to: '/skills' },
-  '/settings':     { keyRu: 'Параметры',      keyEn: 'Parameters', to: '/settings' },
-  '/health':       { keyRu: 'Состояние',      keyEn: 'Health',     to: '/health' },
-  '/connectors':   { keyRu: 'ИС',             keyEn: 'IS',         to: '/connectors' },
-  '/messages':     { keyRu: 'Сообщения',      keyEn: 'Messages',   to: '/messages' },
-  '/eventlog':     { keyRu: 'Лог событий',    keyEn: 'Event Log',  to: '/eventlog' },
-  '/event-monitor':{ keyRu: 'Мониторинг',     keyEn: 'Monitor',    to: '/event-monitor' },
-  '/kb':           { keyRu: 'База знаний',    keyEn: 'KB',         to: '/kb' },
-  '/workspace':    { keyRu: 'Workspace',      keyEn: 'Workspace',  to: '/workspace' },
-  '/whitelist':    { keyRu: 'Доступ',         keyEn: 'Access',     to: '/whitelist' },
-};
-
-function detectGroup(pathname: string): NavGroup {
-  for (const g of NAV_GROUPS) {
-    if (g.pages.some(p => pathname === p || pathname.startsWith(p + '/'))) return g.id;
-  }
-  return 'settings';
 }
 
 const styles = `
@@ -150,11 +98,9 @@ export function Layout({ children }: LayoutProps) {
   const branding = useBranding();
   const [showProfile, setShowProfile] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
-  const [activeGroup, setActiveGroup] = useState<NavGroup>(() => detectGroup(location.pathname));
 
   // Keep activeGroup in sync with navigation
-  const currentGroup = detectGroup(location.pathname);
-  const activeGroupResolved = currentGroup !== 'settings' || NAV_GROUPS.find(g => g.id === activeGroup) ? currentGroup : activeGroup;
+  const activeGroupResolved = detectGroup(location.pathname);
 
   function label(item: { keyRu: string; keyEn: string }) {
     return lang === 'ru' ? item.keyRu : item.keyEn;
@@ -184,8 +130,6 @@ export function Layout({ children }: LayoutProps) {
                 const firstItem = NAV_ITEMS[firstPage];
                 if (firstItem) {
                   navigate(firstItem.to);
-                } else {
-                  setActiveGroup(g.id);
                 }
               }}
             >

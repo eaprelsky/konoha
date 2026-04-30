@@ -4,6 +4,7 @@ import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { KonohaMessage, Agent } from '../api/types';
+import { buildAgentMessageOptions } from '../utils/agentDisplay';
 
 const styles = `
   .msg-body { padding: 20px; }
@@ -48,7 +49,7 @@ function formatTs(ts: string | undefined): string {
 export function Messages() {
   const token = useToken();
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState('naruto');
+  const [selectedAgent, setSelectedAgent] = useState('');
   const [history, setHistory] = useState<KonohaMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -63,9 +64,16 @@ export function Messages() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendOk, setSendOk] = useState<string | null>(null);
 
+  const agentOptions = buildAgentMessageOptions(agents);
+
   useEffect(() => {
     if (!token) return;
-    api.agents.list().then(setAgents).catch(() => {});
+    api.agents.list()
+      .then(list => {
+        setAgents(list);
+        setSelectedAgent(current => current || list[0]?.id || '');
+      })
+      .catch(() => {});
   }, [token]);
 
   const loadHistory = useCallback(() => {
@@ -120,12 +128,12 @@ export function Messages() {
                   <input
                     value={to}
                     onChange={e => setTo(e.target.value)}
-                    placeholder="naruto"
+                    placeholder={agentOptions[0]?.value || 'agent-id'}
                     list="agent-list"
                     required
                   />
                   <datalist id="agent-list">
-                    {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    {agentOptions.map(agent => <option key={agent.value} value={agent.value}>{agent.label}</option>)}
                   </datalist>
                 </div>
                 <div className="form-group">
@@ -159,15 +167,14 @@ export function Messages() {
               </button>
             </div>
             <div className="agent-tabs">
-              {['naruto', 'sasuke', 'kakashi', 'mirai', 'shino', 'hinata', 'kiba', 'guy', ...agents.map(a => a.id)
-                  .filter(id => !['naruto','sasuke','kakashi','mirai','shino','hinata','kiba','guy'].includes(id))]
-                .map(id => (
+              {agentOptions.length === 0 && <div className="empty">Нет зарегистрированных агентов</div>}
+              {agentOptions.map(agent => (
                   <button
-                    key={id}
-                    className={`agent-tab${selectedAgent === id ? ' active' : ''}`}
-                    onClick={() => setSelectedAgent(id)}
+                    key={agent.value}
+                    className={`agent-tab${selectedAgent === agent.value ? ' active' : ''}`}
+                    onClick={() => setSelectedAgent(agent.value)}
                   >
-                    {id}
+                    {agent.label}
                   </button>
                 ))
               }

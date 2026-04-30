@@ -72,7 +72,7 @@ export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Pro
         onClick={() => setReadOnly(r => !r)}
       >{readOnly ? '✏' : '👁'}</button>
 
-      {s.wfId.trim() && (
+      {s.showHiddenArtifacts && s.wfId.trim() && (
         <button
           className={s.showMining ? 'active' : ''}
           onClick={s.toggleMining}

@@ -3,6 +3,7 @@ import {
   agentActorLabel,
   agentDisplayName,
   buildAgentLabelMap,
+  buildAgentMessageOptions,
   formatAssignee,
   roleAssigneeLabel,
 } from '../utils/agentDisplay';
@@ -62,6 +63,29 @@ describe('agent display helpers', () => {
 
     expect(agentDisplayName(agent)).toBe('Тимлид SDD');
     expect(agentActorLabel(agent)).toBe('Тимлид SDD (alias: Какаши)');
+  });
+
+  it('builds message tabs from registered agents only', () => {
+    const options = buildAgentMessageOptions([
+      sasuke,
+      {
+        id: 'teamlead',
+        name: 'SDD lead',
+        status: 'offline',
+        display: {
+          name: 'Тимлид SDD',
+          alias: 'Какаши',
+          locale: 'ru',
+          source: { name: 'locale_catalog' as const, alias: 'locale_catalog' as const },
+        },
+      },
+      sasuke,
+    ]);
+
+    expect(options).toEqual([
+      { value: 'sasuke', label: 'Юзер-агент (alias: Саске)' },
+      { value: 'teamlead', label: 'Тимлид SDD (alias: Какаши)' },
+    ]);
   });
 
   it('classifies lifecycle modes without hardcoded runtime ids', () => {

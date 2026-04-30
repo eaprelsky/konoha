@@ -22,6 +22,17 @@ export function buildAgentLabelMap(agents: Agent[]): Record<string, string> {
   return Object.fromEntries(agents.map(agent => [agent.id, agentActorLabel(agent)]));
 }
 
+export function buildAgentMessageOptions(agents: Agent[]): AssigneeOption[] {
+  const seen = new Set<string>();
+  return agents
+    .filter(agent => {
+      if (!agent.id || seen.has(agent.id)) return false;
+      seen.add(agent.id);
+      return true;
+    })
+    .map(agent => ({ value: agent.id, label: agentActorLabel(agent) }));
+}
+
 export function buildRoleLabelMap(roles: RoleDef[]): Record<string, string> {
   const entries = roles.flatMap(role => [
     [role.role_id, role.name],
