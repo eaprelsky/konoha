@@ -1,6 +1,6 @@
 # PG_READ Persistence Cutover Roadmap
 
-Date: 2026-04-29
+Date: 2026-04-30
 
 This document defines the phased plan for migrating read paths from Redis to PostgreSQL, using the `PG_READ=true` feature flag.
 
@@ -9,7 +9,8 @@ This document defines the phased plan for migrating read paths from Redis to Pos
 - **Redis is primary**: All reads and writes go through Redis.
 - **PG is shadow**: Writes are dual-written via `pgWrite()` wrapper; failures are silently caught.
 - **PG_READ flag exists**: Individual read paths check `PG_READ=true` to switch to PG.
-- **pg-verify.ts**: Compares Redis ↔ PG for 8 entities; reports onlyInRedis (data loss risk) and onlyInPG (bloat).
+- **pg-verify.ts**: Compares Redis ↔ PG for 8 entities; reports `onlyInRedis` (data loss risk) and `onlyInPG` (historical retention / bloat).
+- **Current production finding (2026-04-30)**: after `main@9739ac5`, `onlyInRedis=0`, but `pg-verify.ts` exits `2` because PG historical rows exceed the default bloat threshold. This is retention debt, not a deploy regression.
 
 ## Phased Rollout
 
@@ -18,11 +19,13 @@ This document defines the phased plan for migrating read paths from Redis to Pos
 **Goal**: Zero onlyInRedis records in production. PG shadow is consistently complete.
 
 - [x] `pg-verify.ts` with `--strict` mode
-- [ ] `pg-verify.ts` passes `--strict` for 7 consecutive days
+- [ ] `pg-verify.ts` passes non-strict sync with `onlyInRedis=0` for 7 consecutive days
 - [ ] Fix all onlyInRedis discrepancies through `--fix` or manual sync
-- [ ] Add pg-verify to preflight gate (#588)
+- [x] Add pg-verify to preflight gate (#588)
+- [ ] Define PG-only retention policy and a dry-run retention report before strict mode is required
+- [ ] Decide whether non-strict bloat should be warning-only or a release blocker
 
-**Exit criteria**: `bun run scripts/pg-verify.ts --strict` exits 0 daily for one week.
+**Exit criteria**: non-strict `bun run scripts/pg-verify.ts` has zero `onlyInRedis` daily for one week, and PG-only retention policy is documented. `--strict` remains a later hardening target after retention cleanup exists.
 
 ### Phase 2: Read-path profiling (2026-05-15 → 2026-06-01)
 
@@ -49,8 +52,9 @@ This document defines the phased plan for migrating read paths from Redis to Pos
 
 Each shift:
 - Deploy flag for specific entity subset
-- Monitor pg-verify for 24h
-- Roll back if onlyInRedis appears or latency spikes
+- Monitor pg-verify for 24h.
+- Roll back if `onlyInRedis` appears or latency spikes.
+- Treat `onlyInPG` bloat as a retention signal until cleanup policy is implemented; do not enable `PG_READ=true` for entities whose historical rows are not filtered.
 
 **Exit criteria**: All read paths on PG with zero regressions.
 
@@ -86,7 +90,7 @@ No data migration is needed for rollback because Redis remains the write-primary
 
 ## Guardrails
 
-- `pg-verify.ts` runs in preflight; onlyInRedis blocks deployment
+- `pg-verify.ts` runs in production preflight. `onlyInRedis` blocks deployment. `onlyInPG` bloat currently exits non-zero in the script, but operationally requires a retention decision rather than Redis -> PG migration.
 - PG connection pool monitored; max 20 connections
 - All `pgWrite()` failures logged to `konoha:events:pg-errors` stream
 - Weekly audit of PG/Redis consistency during transition

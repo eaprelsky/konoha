@@ -1,6 +1,6 @@
 # Persistence Source-of-Truth Rules
 
-Date: 2026-04-29
+Date: 2026-04-30
 
 This document defines which store is canonical for each entity in the Konoha system. Workflow/runtime entities are Redis-primary today; Konoha bus presence is PostgreSQL-primary with a legacy Redis compatibility hash. The default migration direction for workflow data is Redis -> PG until `PG_READ=true` cutover criteria are met.
 
@@ -26,8 +26,10 @@ This document defines which store is canonical for each entity in the Konoha sys
 3. **PG shadow for workflow data is async.** `pgWrite()` / `pgStoreMessage()` fire after Redis write succeeds. PG failures are logged but never block the Redis write path.
 4. **PG_READ feature flag** (`PG_READ=true`) switches workflow reads to PG for gradual cutover testing. When enabled, read paths query PG tables instead of Redis keys.
 5. **Verification** runs via `bun run scripts/pg-verify.ts`:
-   - `--strict`: onlyInPG > threshold is also an error
-   - `--fix`: sync onlyInRedis records to PG
+   - `onlyInRedis > 0` is a data-loss risk and blocks PG cutover work.
+   - `onlyInPG` is historical/shadow retention by default, but the script currently exits `2` when it exceeds the configured bloat threshold.
+   - `PG_BLOAT_THRESHOLD=<number>` changes the non-strict bloat threshold for diagnostics.
+   - `--strict` treats any Redis/PG mismatch as a failure and is not expected to pass on production until retention policy is implemented.
 
 ## Recovery Procedures
 
@@ -38,9 +40,11 @@ Records exist in Redis but not in PG.
 
 ### PG → Redis divergence (onlyInPG)
 Records exist in PG but not in Redis.
-- **Risk**: stale data if PG_READ is enabled; otherwise benign (archived records)
-- **Threshold**: warn when onlyInPG > 100% of redisCount (bloat)
-- **Fix**: investigate with `bun run scripts/migrate-redis-to-pg.ts --dry-run`
+- **Risk**: stale data if `PG_READ=true` is enabled without retention filtering; otherwise mostly archived/historical rows.
+- **Current production status (2026-04-30)**: `onlyInRedis=0`, but PG has historical bloat in cases, work items, workflows, and documents. This is not a `9739ac5` deploy regression.
+- **Threshold**: non-strict `pg-verify.ts` exits `2` when `onlyInPG` exceeds 100% of `redisCount` unless `PG_BLOAT_THRESHOLD` is raised for diagnostics.
+- **Fix**: define retention policy first. Do not run destructive cleanup from `pg-verify` output alone. `migrate-redis-to-pg.ts --dry-run` is useful for `onlyInRedis`, but it does not classify or remove `onlyInPG` rows.
+- **Safe next step**: add a dry-run retention report grouping PG-only rows by entity, status, process/id prefix, age, and would-delete count before any delete mode exists.
 
 ### Dual-write failures
 If `pgWrite()` fails, the Redis write succeeded but PG is missing the record. The next `pg-verify.ts` run will catch it.

@@ -113,7 +113,7 @@ Workflow Engine entities are still Redis-primary unless a contract explicitly sa
 - `PG_READ=false`: current production default.
 - `PG_READ=true`: future cutover mode, gated by `docs/workflow-engine.md` and the persistence roadmap.
 
-`scripts/pg-verify.ts` is the current safety check: every active Redis entity must exist in PostgreSQL; extra PostgreSQL rows are treated as archived/historical unless they exceed bloat thresholds.
+`scripts/pg-verify.ts` is the current safety check: every active Redis entity must exist in PostgreSQL. `onlyInRedis` is a release/cutover blocker. Extra PostgreSQL rows are treated as archived/historical retention debt; as of 2026-04-30 production has `onlyInRedis=0` and known `onlyInPG` bloat, so `PG_READ=true` must stay gated until retention filtering/cleanup is designed.
 
 ### MCP Surface
 
@@ -240,7 +240,7 @@ Production hardening is enforced by `scripts/preflight.sh`:
 - Telegram smoke
 - PostgreSQL shadow verification
 
-Current rule before larger Workflow Engine changes: `preflight OK` is the production release gate. CI runs the portable companion gate (`scripts/preflight-portable.sh`): the same typechecks/regression suites plus frontend tests/build, without production-only systemd, Telegram smoke, or live credential dependencies.
+Current rule before larger Workflow Engine changes: run production preflight and review all non-zero checks before release. Known exception as of 2026-04-30: PostgreSQL shadow verification can return bloat-only exit code `2` even when sync is complete (`onlyInRedis=0`); treat that as retention debt, not a code regression, until the retention policy is implemented. CI runs the portable companion gate (`scripts/preflight-portable.sh`): the same typechecks/regression suites plus frontend tests/build, without production-only systemd, Telegram smoke, or live credential dependencies.
 
 ## Key Design Rules
 

@@ -16,6 +16,8 @@ scripts/preflight.sh
 
 This is the release gate on `agent.eaprelsky.ru`. It includes the portable checks plus production-only system health, lifecycle/watchdog validation, Telegram smoke, and PostgreSQL shadow verification. Run this before large Workflow Engine changes or after changing lifecycle/runtime/watchdog/storage code.
 
+As of 2026-04-30, PostgreSQL shadow verification can fail with bloat-only exit code `2` while still reporting `onlyInRedis=0`. That means Redis -> PG sync is complete, but PG-only historical retention is not yet governed. Treat `onlyInRedis` as a release blocker; treat bloat-only failures as data-retention debt until the retention report/cleanup policy is implemented.
+
 ### Unit tests
 ```bash
 bun test
