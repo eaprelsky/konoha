@@ -69,6 +69,8 @@ def _has_active_work_after_prompt(content: str, text: str) -> bool:
 def _has_idle_prompt(content: str) -> bool:
     lines = [l.strip() for l in content.strip().split("\n") if l.strip()]
     last_lines = lines[-12:]
+    if any(_has_active_work(l) for l in last_lines):
+        return False
     # Codex shows a prompt while a task is running and asks Tab to queue a
     # follow-up. Enter does not submit in that state, so treat it as busy.
     if any(CODEX_QUEUE_HINT in l.lower() for l in last_lines):

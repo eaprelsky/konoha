@@ -19,7 +19,7 @@ def test_codex_working_marker_overrides_visible_previous_prompt():
     assert watchdog_tmux._has_idle_prompt(pane) is False
 
 
-def test_old_working_marker_before_current_prompt_does_not_confirm_submission():
+def test_visible_working_marker_before_prompt_is_not_idle():
     import watchdog_tmux
 
     pane = """
@@ -29,7 +29,7 @@ def test_old_working_marker_before_current_prompt_does_not_confirm_submission():
 """
 
     assert watchdog_tmux._has_active_work_after_prompt(pane, "deliver this prompt") is False
-    assert watchdog_tmux._has_idle_prompt(pane) is True
+    assert watchdog_tmux._has_idle_prompt(pane) is False
 
 
 def test_codex_queue_hint_is_not_idle():
