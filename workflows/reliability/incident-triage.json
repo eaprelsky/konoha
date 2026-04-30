@@ -1,0 +1,157 @@
+{
+  "id": "reliability-incident-triage",
+  "version": "1.0.0",
+  "name": "Reliability: incident triage",
+  "description": "Workflow-visible handling for reliability signals. Deterministic probes remain infrastructure; diagnosis, approval, recovery, suppression review, and post-incident learning are modeled as business functions.",
+  "triggers": [
+    { "event_type": "reliability.signal", "start_node": "e_signal_received" }
+  ],
+  "documents": [
+    {
+      "doc_id": "reliability.signal.triage",
+      "name": "Reliability signal triage instruction",
+      "type": "instruction",
+      "content": "Normalize an infrastructure signal into incident fields: source, severity, affected_connector, affected_runtime, symptom, evidence, suspected_scope, safe_auto_recovery_allowed:boolean, suppression_review_required:boolean, and recommended_path. Use runtime ids only as evidence, not as workflow roles."
+    },
+    {
+      "doc_id": "reliability.diagnosis",
+      "name": "Reliability diagnosis instruction",
+      "type": "instruction",
+      "content": "Diagnose the incident using healthcheck output, stream lag, dead-letter counts, service state, and recent workflow impact. Return root_cause_hypothesis, blast_radius, user_impact, recommended_recovery, and escalation_needed:boolean."
+    },
+    {
+      "doc_id": "reliability.recovery-plan",
+      "name": "Reliability recovery plan instruction",
+      "type": "instruction",
+      "content": "Prepare a bounded recovery plan. Include exact action, expected effect, rollback plan, verification command, owner, and whether human approval is required. Do not execute non-allowlisted restarts without approval."
+    },
+    {
+      "doc_id": "reliability.operator-approval",
+      "name": "Reliability operator approval instruction",
+      "type": "instruction",
+      "content": "Review the recovery plan and decide approved:boolean. If not approved, return required_changes and escalation_target. If approved, record approval_reason and verification_requirements."
+    },
+    {
+      "doc_id": "reliability.suppression-review",
+      "name": "Reliability suppression review instruction",
+      "type": "instruction",
+      "content": "Review whether a paused or suppressed service is intentionally parked. Return suppression_valid:boolean, expiry_required:boolean, expiry_at, owner, and follow_up_action."
+    },
+    {
+      "doc_id": "reliability.post-incident",
+      "name": "Reliability post-incident summary instruction",
+      "type": "instruction",
+      "content": "Summarize the incident after recovery or escalation. Include timeline, root cause, user impact, recovery action, verification evidence, owner, and follow-up issues."
+    }
+  ],
+  "elements": [
+    {
+      "id": "e_signal_received",
+      "type": "event",
+      "label": "Reliability signal received",
+      "trigger": {
+        "kind": "system",
+        "event_name": "reliability.signal"
+      }
+    },
+    {
+      "id": "f_triage_signal",
+      "type": "function",
+      "label": "Triage reliability signal",
+      "role": "reliability_operator",
+      "documents": ["reliability.signal.triage"],
+      "systems": [
+        { "connector": "healthcheck", "operation": "signal.read" }
+      ]
+    },
+    { "id": "e_signal_triaged", "type": "event", "label": "Reliability signal triaged" },
+    {
+      "id": "g_triage_path",
+      "type": "gateway",
+      "label": "Select reliability handling path",
+      "operator": "XOR"
+    },
+    { "id": "e_diagnosis_required", "type": "event", "label": "Manual diagnosis required" },
+    {
+      "id": "f_diagnose_incident",
+      "type": "function",
+      "label": "Diagnose reliability incident",
+      "role": "incident_owner",
+      "documents": ["reliability.diagnosis"],
+      "systems": [
+        { "connector": "healthcheck", "operation": "run" },
+        { "connector": "redis", "operation": "stream.inspect" }
+      ]
+    },
+    { "id": "e_diagnosis_completed", "type": "event", "label": "Reliability diagnosis completed" },
+    {
+      "id": "f_escalate_incident",
+      "type": "function",
+      "label": "Escalate reliability incident",
+      "role": "incident_owner",
+      "documents": ["reliability.post-incident"]
+    },
+    { "id": "e_incident_escalated", "type": "event", "label": "Reliability incident escalated" },
+    { "id": "e_recovery_candidate", "type": "event", "label": "Recovery candidate identified" },
+    {
+      "id": "f_prepare_recovery",
+      "type": "function",
+      "label": "Prepare recovery plan",
+      "role": "connector_owner",
+      "documents": ["reliability.recovery-plan"],
+      "systems": [
+        { "connector": "healthcheck", "operation": "verify_before_recovery" }
+      ]
+    },
+    { "id": "e_recovery_plan_ready", "type": "event", "label": "Recovery plan ready" },
+    {
+      "id": "f_approve_recovery",
+      "type": "function",
+      "label": "Approve reliability recovery",
+      "role": "incident_owner",
+      "documents": ["reliability.operator-approval"]
+    },
+    { "id": "e_recovery_approved", "type": "event", "label": "Reliability recovery approved" },
+    {
+      "id": "f_execute_recovery",
+      "type": "function",
+      "label": "Execute approved recovery",
+      "role": "connector_owner",
+      "documents": ["reliability.recovery-plan"],
+      "systems": [
+        { "connector": "system_lifecycle", "operation": "approved_recovery" },
+        { "connector": "healthcheck", "operation": "verify_after_recovery" }
+      ]
+    },
+    { "id": "e_recovery_verified", "type": "event", "label": "Reliability recovery verified" },
+    { "id": "e_suppression_review_required", "type": "event", "label": "Suppression review required" },
+    {
+      "id": "f_review_suppression",
+      "type": "function",
+      "label": "Review reliability suppression",
+      "role": "reliability_operator",
+      "documents": ["reliability.suppression-review"]
+    },
+    { "id": "e_suppression_documented", "type": "event", "label": "Suppression decision documented" }
+  ],
+  "flow": [
+    ["e_signal_received", "f_triage_signal"],
+    ["f_triage_signal", "e_signal_triaged"],
+    ["e_signal_triaged", "g_triage_path"],
+    ["g_triage_path", "e_recovery_candidate", "payload.safe_auto_recovery_allowed === true"],
+    ["e_recovery_candidate", "f_prepare_recovery"],
+    ["f_prepare_recovery", "e_recovery_plan_ready"],
+    ["e_recovery_plan_ready", "f_approve_recovery"],
+    ["f_approve_recovery", "e_recovery_approved"],
+    ["e_recovery_approved", "f_execute_recovery"],
+    ["f_execute_recovery", "e_recovery_verified"],
+    ["g_triage_path", "e_suppression_review_required", "payload.suppression_review_required === true"],
+    ["e_suppression_review_required", "f_review_suppression"],
+    ["f_review_suppression", "e_suppression_documented"],
+    ["g_triage_path", "e_diagnosis_required", "payload.safe_auto_recovery_allowed !== true && payload.suppression_review_required !== true"],
+    ["e_diagnosis_required", "f_diagnose_incident"],
+    ["f_diagnose_incident", "e_diagnosis_completed"],
+    ["e_diagnosis_completed", "f_escalate_incident"],
+    ["f_escalate_incident", "e_incident_escalated"]
+  ]
+}

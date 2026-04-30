@@ -28,6 +28,11 @@ These belong in explicit workflows, roles, documents, or case events:
 
 Workflow-visible reliability should use business roles such as `reliability_operator`, `incident_owner`, `deployment_reviewer`, and `connector_owner`, not runtime ids like `kiba` or `akamaru`.
 
+The first workflow-visible scenario is `workflows/reliability/incident-triage.json`.
+It starts from a `reliability.signal` system event and makes diagnosis, recovery
+approval, suppression review, and post-incident summary visible as eEPC
+functions with business roles and instruction documents.
+
 ## Boundary Table
 
 | Signal or action | Stays infra monitor | Becomes workflow-visible |
@@ -41,8 +46,8 @@ Workflow-visible reliability should use business roles such as `reliability_oper
 
 ## Follow-Up Issues
 
-1. Add a `reliability-incident-triage` workflow skeleton for healthcheck failures and dead-letter streams.
-2. Emit structured `reliability.signal` events from Akamaru/healthcheck without changing current alert delivery.
+1. Emit structured `reliability.signal` events from Akamaru/healthcheck without changing current alert delivery.
+2. Bind healthcheck failures and dead-letter streams to `reliability-incident-triage` cases.
 3. Add an operator inbox view for reliability cases separate from tmux/runtime debug logs.
 4. Replace long-lived paused-service entries with expiring suppressions and review tasks.
 5. Move service restart decisions beyond the safe allowlist into workflow approval.
