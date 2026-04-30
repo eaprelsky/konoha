@@ -2,11 +2,12 @@
  * MyTasks — personal inbox of the current user/agent.
  * Work items grouped by urgency: overdue / due soon / in progress.
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { WorkItem } from '../api/types';
+import type { WorkItem, Workflow } from '../api/types';
+import { filterOperatorWorkItems, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
 import './MyTasks.css';
 
 const lang = document.documentElement.lang || 'ru';
@@ -46,11 +47,20 @@ const GROUP_META: Record<Urgency, { label: string; labelEn: string; color: strin
 
 export function MyTasks() {
   const token = useToken();
+  const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [items, setItems] = useState<WorkItem[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const [completing, setCompleting] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!token) return;
+    api.workflows.list()
+      .then(data => setWorkflows(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, [token]);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -78,9 +88,15 @@ export function MyTasks() {
 
   // Group by urgency
   const groups: Record<Urgency, WorkItem[]> = { overdue: [], soon: [], inProgress: [] };
-  items.forEach(wi => groups[urgencyOf(wi)].push(wi));
+  const hiddenProcessIds = useMemo(
+    () => new Set(workflows.filter(isWorkflowHiddenFromOperator).map(wf => wf.id)),
+    [workflows],
+  );
+  const visibleItems = filterOperatorWorkItems(items, hiddenProcessIds, { showHiddenArtifacts });
+  const hiddenItemCount = items.length - filterOperatorWorkItems(items, hiddenProcessIds).length;
+  visibleItems.forEach(wi => groups[urgencyOf(wi)].push(wi));
 
-  const isEmpty = items.length === 0 && !loading;
+  const isEmpty = visibleItems.length === 0 && !loading;
 
   return (
     <>
@@ -97,6 +113,16 @@ export function MyTasks() {
             value={assigneeFilter}
             onChange={e => setAssigneeFilter(e.target.value)}
           />
+          {hiddenItemCount > 0 && (
+            <label className="hidden-toggle" title={lang === 'ru' ? 'Показать скрытые test/debug/generated задачи. То же доступно через ?view=debug.' : 'Show hidden test/debug/generated tasks. Also available with ?view=debug.'}>
+              <input
+                type="checkbox"
+                checked={showHiddenArtifacts}
+                onChange={e => setShowHiddenArtifacts(e.target.checked)}
+              />
+              {lang === 'ru' ? `Показать служебные (${hiddenItemCount})` : `Show service (${hiddenItemCount})`}
+            </label>
+          )}
         </div>
 
         {error && <div className="mt-error">{error}</div>}

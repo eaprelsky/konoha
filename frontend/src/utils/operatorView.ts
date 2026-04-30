@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Case, OperatorArtifactMetadata, RoleDef, Run, RuntimeEvent, Workflow } from '../api/types';
+import type { Case, EventWait, OperatorArtifactMetadata, RoleDef, Run, RuntimeEvent, WorkItem, Workflow } from '../api/types';
 
 const STORAGE_KEY = 'konoha.operatorView.showHiddenArtifacts';
 
@@ -122,6 +122,29 @@ export function filterOperatorEvents(
     const type = normalize(event.type);
     return !(type.startsWith('test.') || type.startsWith('e2e.'));
   });
+}
+
+function isHiddenProcessScoped(item: { process_id?: string | null } & MetadataCarrier, hiddenProcessIds: Set<string>): boolean {
+  if (isHiddenByMetadata(item)) return true;
+  return !!item.process_id && hiddenProcessIds.has(item.process_id);
+}
+
+export function filterOperatorWorkItems(
+  items: WorkItem[],
+  hiddenProcessIds: Set<string>,
+  options: OperatorViewOptions = {},
+): WorkItem[] {
+  if (options.showHiddenArtifacts) return items;
+  return items.filter(item => !isHiddenProcessScoped(item, hiddenProcessIds));
+}
+
+export function filterOperatorWaits(
+  waits: EventWait[],
+  hiddenProcessIds: Set<string>,
+  options: OperatorViewOptions = {},
+): EventWait[] {
+  if (options.showHiddenArtifacts) return waits;
+  return waits.filter(wait => !isHiddenProcessScoped(wait, hiddenProcessIds));
 }
 
 function urlForcesDebug(): boolean | null {

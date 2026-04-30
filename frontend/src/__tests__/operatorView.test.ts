@@ -5,6 +5,8 @@ import {
   filterOperatorEvents,
   filterOperatorRoles,
   filterOperatorRuns,
+  filterOperatorWaits,
+  filterOperatorWorkItems,
   filterOperatorWorkflows,
   readShowHiddenArtifacts,
 } from '../utils/operatorView';
@@ -106,6 +108,21 @@ describe('operatorView filtering', () => {
     ];
 
     expect(filterOperatorEvents(events, new Set(['e2e-flow'])).map(event => event.type)).toEqual(['case.created']);
+  });
+
+  test('filters operator task queues by hidden workflow ids', () => {
+    const hiddenProcesses = new Set(['process-mnnaqaey-copy']);
+    const workItems = [
+      { work_item_id: 'wi-1', case_id: 'case-1', process_id: 'sales-lead', element_id: 'fn-1', label: 'Visible task', assignee: 'operator', status: 'pending', input: {}, created_at: '', updated_at: '' },
+      { work_item_id: 'wi-2', case_id: 'case-2', process_id: 'process-mnnaqaey-copy', element_id: 'fn-1', label: 'Hidden task', assignee: 'operator', status: 'pending', input: {}, created_at: '', updated_at: '' },
+    ];
+    const waits = [
+      { wait_id: 'wait-1', case_id: 'case-1', process_id: 'sales-lead', element_id: 'wait', trigger_kind: 'manual', status: 'active', created_at: '' },
+      { wait_id: 'wait-2', case_id: 'case-2', process_id: 'process-mnnaqaey-copy', element_id: 'wait', trigger_kind: 'manual', status: 'active', created_at: '' },
+    ];
+
+    expect(filterOperatorWorkItems(workItems as any, hiddenProcesses).map(item => item.work_item_id)).toEqual(['wi-1']);
+    expect(filterOperatorWaits(waits as any, hiddenProcesses).map(wait => wait.wait_id)).toEqual(['wait-1']);
   });
 
   test('supports debug view from url or local storage', () => {
