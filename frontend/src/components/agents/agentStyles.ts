@@ -31,6 +31,9 @@ export const agentStyles = `
   .badge-system { display: inline-block; padding: 1px 7px; background: #ede9fe; color: #5b21b6; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
   .badge-external { display: inline-block; padding: 1px 7px; background: #fff7ed; color: #92400e; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
   .badge-managed { display: inline-block; padding: 1px 7px; background: #f0fdf4; color: #166534; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
+  .badge-deprecated { display: inline-block; padding: 1px 7px; background: #f1f5f9; color: #64748b; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
+  .agent-row-deprecated td { color: #64748b; background: #fafafa; }
+  .agent-row-deprecated img, .agent-row-deprecated td:first-child > div > div:first-child { opacity: .68; }
   .empty { text-align: center; padding: 40px; color: #999; }
   .error-banner { background: #fee; color: #c33; padding: 12px; border-radius: 4px; margin-bottom: 16px; border-left: 4px solid #c33; }
   .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; justify-content: center; align-items: center; }
@@ -55,6 +58,7 @@ export const agentStyles = `
   .ag-filter-select { padding: 5px 10px; border: 1px solid #e2e8f0; border-radius: 5px; font-size: 13px; background: white; cursor: pointer; }
   .ag-filter-select:focus { outline: none; border-color: #6366f1; }
   .ag-filter-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+  .ag-filter-help { flex-basis: 100%; font-size: 12px; color: #64748b; line-height: 1.35; }
   /* Mobile card view (#358) */
   @media (max-width: 767px) {
     .table thead { display: none; }

@@ -8,12 +8,13 @@ import { TmuxModal } from '../components/agents/TmuxModal';
 import { EditAgentModal } from '../components/agents/EditAgentModal';
 import { useAgents } from '../hooks/useAgents';
 import { useAgentFilters } from '../hooks/useAgentFilters';
+import type { AgentLifecycleClassFilter } from '../hooks/useAgentFilters';
 import { busColor, lifecycleColor, formatUptime, getAgentType, BUS_STATUS_LABELS, LIFECYCLE_STATUS_LABELS } from '../components/agents/agentUtils';
 import { agentDisplayName } from '../utils/agentDisplay';
 
 export function Agents() {
   const { agents, loading, error: loadError, lastUpdate, load } = useAgents();
-  const { search, setSearch, filterBus, setFilterBus, filterLifecycle, setFilterLifecycle, filterModel, setFilterModel, sortBy, setSortBy, filteredAgents, allModels } = useAgentFilters(agents);
+  const { search, setSearch, filterBus, setFilterBus, filterLifecycle, setFilterLifecycle, filterClass, setFilterClass, filterModel, setFilterModel, sortBy, setSortBy, filteredAgents, allModels } = useAgentFilters(agents);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [tmuxAgent, setTmuxAgent] = useState<string | null>(null);
@@ -54,6 +55,16 @@ export function Agents() {
                   <option value="online">Онлайн</option>
                   <option value="offline">Офлайн</option>
                 </select>
+                <span className="ag-filter-label">Класс:</span>
+                <select className="ag-filter-select" value={filterClass} onChange={e => setFilterClass(e.target.value as AgentLifecycleClassFilter)}>
+                  <option value="all">Все</option>
+                  <option value="core">Ядро</option>
+                  <option value="connector">Коннекторы</option>
+                  <option value="optional">Опциональные воркеры</option>
+                  <option value="deprecated">Совместимость</option>
+                  <option value="external">Внешние</option>
+                  <option value="managed">Управляемые</option>
+                </select>
                 <span className="ag-filter-label">Процесс:</span>
                 <select className="ag-filter-select" value={filterLifecycle} onChange={e => setFilterLifecycle(e.target.value)}>
                   <option value="all">Все</option>
@@ -78,6 +89,7 @@ export function Agents() {
                 {filteredAgents.length !== agents.length && (
                   <span style={{ fontSize: 12, color: '#6366f1', marginLeft: 4 }}>{filteredAgents.length} из {agents.length}</span>
                 )}
+                <div className="ag-filter-help">Опциональные воркеры запускаются назначением или политикой; deprecated-акторы оставлены только для совместимости.</div>
               </div>
             )}
             {!loading && agents.length === 0 && <div className="empty">Агенты не зарегистрированы.</div>}
@@ -99,7 +111,7 @@ export function Agents() {
                     const canEdit = atype === 'managed' || isProtected;
                     const displayName = agentDisplayName(a);
                     return (
-                      <tr key={a.id}>
+                      <tr key={a.id} className={atype === 'deprecated' ? 'agent-row-deprecated' : undefined}>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             {(a as any).avatar_url
