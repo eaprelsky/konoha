@@ -41,6 +41,8 @@ describe("agent view boundaries", () => {
       tool_profile: "telegram-userbot",
       sandbox_profile: "tmux",
       tags: ["system"],
+      seed_classification: undefined,
+      lifecycle_mode: undefined,
       capabilities: ["telegram"],
       memory: undefined,
       avatar_url: undefined,

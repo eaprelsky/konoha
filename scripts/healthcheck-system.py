@@ -21,22 +21,38 @@ ENV_FILES = [Path("/home/ubuntu/.agent-env"), Path("/opt/shared/.shared-credenti
 CORE_SERVICES = [
     "konoha",
     "akamaru",
-    "telegram-bot",
-    "telegram-bus",
     "telegram-context-packer",
     "telegram-event-bridge",
     "telegram-vision-packer",
     "agent-watchdog-lifecycle",
+]
+CONNECTOR_OWNED_SERVICES = [
+    "telegram-bot",
+    "telegram-bus",
     "agent-naruto",
     "agent-sasuke",
-    "agent-kiba",
     "agent-watchdog-naruto",
     "agent-watchdog-sasuke",
+]
+OPTIONAL_WORKER_SERVICES = [
+    "agent-kiba",
     "agent-watchdog-kiba",
 ]
 PROXY_SERVICES = ["sing-box", "privoxy"]
-PERMANENT_AGENTS = ["naruto", "sasuke", "kiba"]
-PERMANENT_AGENT_SERVICES = {agent: f"agent-{agent}.service" for agent in PERMANENT_AGENTS}
+AGENT_HEALTH_TARGETS = {
+    "naruto": {"classification": "connector_owned", "service": "agent-naruto.service"},
+    "sasuke": {"classification": "connector_owned", "service": "agent-sasuke.service"},
+    "kiba": {"classification": "optional_worker", "service": "agent-kiba.service"},
+    "kakashi": {"classification": "optional_worker", "service": "agent-kakashi.service"},
+    "shino": {"classification": "optional_worker"},
+    "hinata": {"classification": "optional_worker"},
+    "guy": {"classification": "optional_worker"},
+}
+PERMANENT_AGENT_SERVICES = {
+    agent: str(meta["service"])
+    for agent, meta in AGENT_HEALTH_TARGETS.items()
+    if meta.get("service") and agent != "kakashi"
+}
 WATCHDOG_ENTRYPOINTS = {
     "agent-watchdog-naruto.service": "scripts/watchdog-naruto.py",
     "agent-watchdog-sasuke.service": "scripts/watchdog-sasuke.py",
@@ -156,13 +172,25 @@ def check_systemd() -> list[Check]:
     else:
         checks.append(Check("FAIL", "systemd.failed", failed_output[:240], "Run: systemctl --failed --no-pager"))
 
-    rc, stdout, stderr = run(["systemctl", "is-active", *CORE_SERVICES], timeout=15)
-    states = stdout.splitlines()
-    for service, state in zip(CORE_SERVICES, states):
-        if state == "active":
-            checks.append(Check("OK", f"service.{service}", "active"))
-        else:
-            checks.append(Check("FAIL", f"service.{service}", state or stderr[:120], f"Run: sudo systemctl restart {service}"))
+    service_groups = [
+        ("required_core", CORE_SERVICES, "FAIL"),
+        ("connector_owned", CONNECTOR_OWNED_SERVICES, "WARN"),
+        ("optional_worker", OPTIONAL_WORKER_SERVICES, "OK"),
+    ]
+    for group, services, inactive_level in service_groups:
+        rc, stdout, stderr = run(["systemctl", "is-active", *services], timeout=15)
+        states = stdout.splitlines()
+        for service, state in zip(services, states):
+            if state == "active":
+                checks.append(Check("OK", f"service.{service}", f"active classification={group}"))
+                continue
+            detail = f"{state or stderr[:120]} classification={group}"
+            if inactive_level == "OK":
+                checks.append(Check("OK", f"service.{service}", f"{detail} optional"))
+            elif inactive_level == "WARN":
+                checks.append(Check("WARN", f"service.{service}", detail, f"Enable/start connector service only if this deployment uses {service}"))
+            else:
+                checks.append(Check("FAIL", f"service.{service}", detail, f"Run: sudo systemctl restart {service}"))
     return checks
 
 
@@ -244,21 +272,27 @@ def check_agents() -> list[Check]:
     except Exception:
         pass
 
-    for agent in PERMANENT_AGENTS:
+    for agent, meta in AGENT_HEALTH_TARGETS.items():
+        classification = str(meta["classification"])
         profile = agent_profiles.get(agent, "unknown")
         rc, _, _ = run(["tmux", "-L", agent, "has-session", "-t", agent], timeout=5)
         if rc != 0:
-            checks.append(Check("FAIL", f"agent.{agent}.tmux", f"missing profile={profile}", f"Run: sudo systemctl restart agent-{agent}.service"))
+            if classification == "core":
+                checks.append(Check("FAIL", f"agent.{agent}.tmux", f"missing classification={classification} profile={profile}", f"Run: sudo systemctl restart agent-{agent}.service"))
+            elif classification == "connector_owned":
+                checks.append(Check("WARN", f"agent.{agent}.tmux", f"missing classification={classification} profile={profile}", "Start connector-owned runtime only when the connector is enabled"))
+            else:
+                checks.append(Check("OK", f"agent.{agent}.tmux", f"not running classification={classification} optional"))
             continue
         rc, pane, stderr = run(["tmux", "-L", agent, "capture-pane", "-pt", agent, "-S", "-80"], timeout=5)
         if rc != 0:
-            checks.append(Check("WARN", f"agent.{agent}.pane", f"{stderr[:160]} profile={profile}", f"Run: tmux -L {agent} capture-pane -pt {agent}"))
+            checks.append(Check("WARN", f"agent.{agent}.pane", f"{stderr[:160]} classification={classification} profile={profile}", f"Run: tmux -L {agent} capture-pane -pt {agent}"))
             continue
         signal = pane_stuck_signal(pane)
         if signal:
-            checks.append(Check("WARN", f"agent.{agent}.signal", f"{signal} profile={profile}", f"Inspect pane; if persistent restart agent-{agent}.service"))
+            checks.append(Check("WARN", f"agent.{agent}.signal", f"{signal} classification={classification} profile={profile}", f"Inspect pane; if persistent restart agent-{agent}.service"))
         else:
-            checks.append(Check("OK", f"agent.{agent}.tmux", f"alive idle={str(pane_is_idle(pane)).lower()} profile={profile}"))
+            checks.append(Check("OK", f"agent.{agent}.tmux", f"alive idle={str(pane_is_idle(pane)).lower()} classification={classification} profile={profile}"))
     return checks
 
 
@@ -272,16 +306,19 @@ def systemd_exec_start(service: str) -> str:
 def check_lifecycle_control_plane() -> list[Check]:
     checks: list[Check] = []
     for agent, service in PERMANENT_AGENT_SERVICES.items():
+        classification = str(AGENT_HEALTH_TARGETS.get(agent, {}).get("classification", "core"))
         try:
             exec_start = systemd_exec_start(service)
         except Exception as exc:
-            checks.append(Check("FAIL", f"control_plane.agent_service.{agent}", str(exc), f"Inspect: systemctl cat {service}"))
+            level = "FAIL" if classification == "core" else "WARN"
+            checks.append(Check(level, f"control_plane.agent_service.{agent}", f"{exc} classification={classification}", f"Inspect: systemctl cat {service}"))
             continue
         expected = f"scripts/agent-api-service.sh {agent}"
         if expected in exec_start:
-            checks.append(Check("OK", f"control_plane.agent_service.{agent}", "uses lifecycle API wrapper"))
+            checks.append(Check("OK", f"control_plane.agent_service.{agent}", f"uses lifecycle API wrapper classification={classification}"))
         else:
-            checks.append(Check("FAIL", f"control_plane.agent_service.{agent}", exec_start[:180], f"ExecStart must use {expected}"))
+            level = "FAIL" if classification == "core" else "WARN"
+            checks.append(Check(level, f"control_plane.agent_service.{agent}", f"{exec_start[:180]} classification={classification}", f"ExecStart should use {expected} when this runtime is enabled"))
 
     legacy_watchdog_users: list[str] = []
     for service, expected_script in WATCHDOG_ENTRYPOINTS.items():

@@ -7,9 +7,14 @@ product-facing names. Use `docs/agent-naming.md` when deciding whether a string
 belongs in lifecycle/service tooling (`id`), customer UI (`name`), or local
 persona copy (`display_alias`).
 
-## Permanent Agents
+## Required Core And Optional Runtimes
 
-Permanent agents are supervised by systemd wrappers:
+ADR-004 makes `Советник` the required product core. Connector-owned runtimes
+(`naruto`, `sasuke`) and optional workers (`kiba`, `kakashi`, `shino`, `hinata`,
+`guy`, etc.) are compatibility/runtime actors, not mandatory product agents.
+
+Deployments that enable connector-owned or optional runtimes supervise them with
+systemd wrappers:
 
 ```bash
 sudo systemctl status agent-naruto.service agent-sasuke.service agent-kiba.service
@@ -42,9 +47,15 @@ The shared watchdog core is `scripts/watchdog_base.py`. The legacy universal `sc
 
 `python3 scripts/healthcheck-system.py` enforces this policy by checking permanent agent service entrypoints, known watchdog entrypoints, and source files over 1000 lines.
 
-## On-Demand Agents
+## On-Demand Workers
 
-On-demand agents are normally inactive and must not carry the `autostart` tag. Current on-demand workers include Kakashi and the generic specialist pool (`mirai`, `jiraiya`, `shino`, `hinata`, `ibiki`, `ino`, `inojin`, `guy`, `shikadai`).
+On-demand workers are normally inactive and must not carry the `autostart` tag
+unless a deployment policy explicitly enables them. Current SDD workers are
+Kakashi, Shino, Hinata, and Guy; they should be assigned through workflow roles
+instead of being treated as a hardcoded default fleet.
+
+Mirai is connector-owned and Jiraiya/Ino/Inojin/Shikadai are deprecated
+compatibility aliases; they are not required seeded system agents.
 
 Start an on-demand agent through the Konoha lifecycle API:
 
@@ -81,7 +92,7 @@ When an agent is intentionally parked, add its short id and any dedicated units 
 
 ## Stop
 
-Permanent agents are stopped through systemd:
+Enabled connector-owned or optional runtimes supervised by systemd are stopped through systemd:
 
 ```bash
 sudo systemctl stop agent-<id>.service

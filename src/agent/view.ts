@@ -13,6 +13,8 @@ export function templateFromAgentDef(def: AgentDef): AgentTemplate {
     tool_profile: def.tool_profile,
     sandbox_profile: def.sandbox_profile,
     tags: def.tags,
+    seed_classification: def.seed_classification,
+    lifecycle_mode: def.lifecycle_mode,
     capabilities: def.capabilities,
     memory: def.memory,
     avatar_url: def.avatar_url,

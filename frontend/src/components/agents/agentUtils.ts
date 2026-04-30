@@ -1,7 +1,6 @@
 import type { Agent } from '../../api/types';
 
-export const SYSTEM_IDS = new Set(['naruto', 'sasuke', 'kakashi']);
-export type AgentType = 'system' | 'external' | 'managed';
+export type AgentType = 'core' | 'connector' | 'optional' | 'deprecated' | 'external' | 'managed';
 
 export const BUS_STATUS_LABELS: Record<string, string> = {
   online: 'онлайн',
@@ -37,7 +36,10 @@ export function formatUptime(sec?: number): string {
 }
 
 export function getAgentType(a: Agent): AgentType {
-  if (SYSTEM_IDS.has(a.id)) return 'system';
+  if (a.lifecycle_mode === 'core' || a.seed_classification === 'core') return 'core';
+  if (a.lifecycle_mode === 'connector_owned' || a.seed_classification === 'connector_owned') return 'connector';
+  if (a.lifecycle_mode === 'optional_on_demand' || a.seed_classification === 'optional_worker') return 'optional';
+  if (a.lifecycle_mode === 'deprecated' || a.seed_classification === 'deprecated_compat') return 'deprecated';
   if (a.village_id && a.village_id !== 'comind.konoha') return 'external';
   return 'managed';
 }

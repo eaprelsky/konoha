@@ -47,6 +47,17 @@ interface AgentDef {
   system_prompt?: string;             // user-editable instructions (appended after system template)
   env?: Record<string, string>;       // custom env vars for this agent's process
   tags?: string[];                    // labels (e.g. ["system"])
+  seed_classification?:               // ADR-004 seed/runtime classification
+    | "core"
+    | "optional_worker"
+    | "connector_owned"
+    | "deprecated_compat"
+    | "out_of_scope";
+  lifecycle_mode?:                    // product-facing lifecycle mode
+    | "core"
+    | "optional_on_demand"
+    | "connector_owned"
+    | "deprecated";
   capabilities?: string[];            // skill IDs assigned to this agent
   memory?: string;                    // path to agent memory file
   avatar_url?: string;
@@ -322,17 +333,27 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3200/agents/kakashi/syst
 
 ---
 
-## System agents
+## Seeded compatibility definitions
 
-The following agents are seeded automatically on server start and are marked `protected: true` (cannot be deleted via API):
+`seedSystemAgents()` still writes protected definitions for compatibility, but
+ADR-004 narrows the required product core to `tsunade` / `Советник` and optional
+`kiba` / `Системный монитор`. The seed metadata now makes the lifecycle mode
+explicit:
 
-| ID | Canonical name | Default alias | Model | tmux override |
-|----|----------------|---------------|-------|---------------|
-| naruto | Бот-агент | Наруто | claude-sonnet-4-6 | naruto |
-| sasuke | Юзер-агент | Саске | claude-sonnet-4-6 | sasuke |
-| kakashi | Тимлид | Какаши | claude-opus via DeepSeek profile | kakashi |
-| mirai | Исследователь | Мирай | claude-haiku-4-5-20251001 | mirai |
+| Runtime id | Product-facing role | `seed_classification` | `lifecycle_mode` | Autostart expectation |
+|------------|---------------------|------------------------|------------------|----------------------|
+| `naruto` | Telegram bot connector | `connector_owned` | `connector_owned` | connector deployment only |
+| `sasuke` | Telegram user-account connector | `connector_owned` | `connector_owned` | connector deployment only |
+| `kiba` | Системный монитор | `optional_worker` | `optional_on_demand` | optional, enabled on deployments that need active monitoring |
+| `kakashi`, `guy`, `shino`, `hinata` | SDD workflow workers | `optional_worker` | `optional_on_demand` | no; started by assignment/policy |
+| `mirai` | External-source connector compatibility actor | `connector_owned` | `connector_owned` | no default autostart |
+| `jiraiya`, `ino`, `inojin`, `shikadai` | legacy specialist aliases | `deprecated_compat` | `deprecated` | no |
+| `ibiki` | optional security worker | `optional_worker` | `optional_on_demand` | no |
 
-Seed is idempotent — existing definitions are not overwritten. Can be re-run via `POST /admin/seed-system-agents`.
+Seed is idempotent and can be re-run via `POST /admin/seed-system-agents`.
+Existing runtime ids, tmux sessions, and systemd unit names remain stable until
+#620.
 
-Kakashi is seeded as a protected system agent but must not autostart. Keep `agent-kakashi.service` and `agent-watchdog-kakashi.service` disabled unless an operator explicitly starts him for a task.
+Kakashi is seeded as a protected optional worker but must not autostart. Keep
+`agent-kakashi.service` and `agent-watchdog-kakashi.service` disabled unless an
+operator explicitly starts him for a delegated task.

@@ -6,6 +6,7 @@ import {
   formatAssignee,
   roleAssigneeLabel,
 } from '../utils/agentDisplay';
+import { getAgentType as getLifecycleAgentType } from '../components/agents/agentUtils';
 import type { Agent, RoleDef } from '../api/types';
 
 const sasuke = {
@@ -21,6 +22,8 @@ const intakeRole = {
   description: 'Квалификация и маршрутизация входящих лидов.',
   assignees: ['sasuke'],
   strategy: 'manual',
+  created_at: '2026-04-30T00:00:00.000Z',
+  updated_at: '2026-04-30T00:00:00.000Z',
 } satisfies RoleDef;
 
 describe('agent display helpers', () => {
@@ -30,8 +33,8 @@ describe('agent display helpers', () => {
   });
 
   it('omits alias suffix when alias is absent or equal to name', () => {
-    expect(agentActorLabel({ id: 'advisor', name: 'Советник', status: 'online' })).toBe('Советник');
-    expect(agentActorLabel({ id: 'advisor', name: 'Советник', display_alias: 'Советник', status: 'online' })).toBe('Советник');
+    expect(agentActorLabel({ id: 'advisor', name: 'Советник' })).toBe('Советник');
+    expect(agentActorLabel({ id: 'advisor', name: 'Советник', display_alias: 'Советник' })).toBe('Советник');
   });
 
   it('formats role to actor assignments without leaking runtime id as the label', () => {
@@ -41,5 +44,16 @@ describe('agent display helpers', () => {
     expect(roleAssigneeLabel(intakeRole, agentLabels)).toBe('Юзер-агент (alias: Саске)');
     expect(formatAssignee('sasuke', agentLabels, roleLabels, intakeRole.role_id))
       .toBe('Разбор входящих лидов -> Юзер-агент (alias: Саске)');
+  });
+
+  it('classifies lifecycle modes without hardcoded runtime ids', () => {
+    expect(getLifecycleAgentType({ id: 'any-core', name: 'Советник', status: 'online', lifecycle_mode: 'core' }))
+      .toBe('core');
+    expect(getLifecycleAgentType({ id: 'naruto', name: 'Telegram bot connector', status: 'online', seed_classification: 'connector_owned' }))
+      .toBe('connector');
+    expect(getLifecycleAgentType({ id: 'kakashi', name: 'SDD тимлид', status: 'offline', seed_classification: 'optional_worker' }))
+      .toBe('optional');
+    expect(getLifecycleAgentType({ id: 'jiraiya', name: 'Куратор знаний', status: 'offline', lifecycle_mode: 'deprecated' }))
+      .toBe('deprecated');
   });
 });

@@ -5,6 +5,17 @@
 
 export type AgentProvider = "claude" | "codex" | "cursor" | "glm";
 export type LaunchStrategy = "persistent_interactive" | "headless_task";
+export type AgentSeedClassification =
+  | "core"
+  | "optional_worker"
+  | "connector_owned"
+  | "deprecated_compat"
+  | "out_of_scope";
+export type AgentLifecycleMode =
+  | "core"
+  | "optional_on_demand"
+  | "connector_owned"
+  | "deprecated";
 
 export type LifecycleStatus = "stopped" | "starting" | "running" | "stopping" | "error";
 
@@ -54,6 +65,10 @@ export interface AgentDef {
   reasoning_effort?: string;   // e.g. "high", "medium", "low" — provider-specific
   env?: Record<string, string>;
   tags?: string[];
+  /** ADR-004 seed classification for compatibility/runtime actors. */
+  seed_classification?: AgentSeedClassification;
+  /** Product-facing lifecycle mode, separate from runtime launch strategy. */
+  lifecycle_mode?: AgentLifecycleMode;
   capabilities?: string[];  // skill IDs assigned to this agent
   tool_profile?: string;        // ToolProfile id (#571)
   sandbox_profile?: string;     // SandboxProfile id (#572), defaults to "tmux"
@@ -81,6 +96,8 @@ export interface AgentTemplate {
   tool_profile?: string;        // ToolProfile id (#571)
   sandbox_profile?: string;     // SandboxProfile id (#572), defaults to "tmux"
   tags?: string[];
+  seed_classification?: AgentSeedClassification;
+  lifecycle_mode?: AgentLifecycleMode;
   capabilities?: string[];
   memory?: string;
   avatar_url?: string;

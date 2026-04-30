@@ -108,10 +108,7 @@ export function Agents() {
                             <div>
                               <div style={{ fontWeight: 600 }}>
                                 {displayName}
-                                {isProtected
-                                  ? <span className="badge-system">system</span>
-                                  : <AgentTypeBadge type={atype} />
-                                }
+                                <AgentTypeBadge type={atype} />
                               </div>
                               <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>
                                 {a.display_alias ? `${a.display_alias} · ` : ''}{a.id}

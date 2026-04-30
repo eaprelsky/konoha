@@ -303,6 +303,8 @@ export interface Agent {
   avatar_url?: string;
   gender?: 'male' | 'female' | 'neutral';
   protected?: boolean;
+  seed_classification?: 'core' | 'optional_worker' | 'connector_owned' | 'deprecated_compat' | 'out_of_scope';
+  lifecycle_mode?: 'core' | 'optional_on_demand' | 'connector_owned' | 'deprecated';
 }
 
 export interface AdapterHealth {
