@@ -291,6 +291,86 @@ describe("eEPC state-machine regression suite", () => {
     });
   });
 
+  test("SDD harness happy path reaches merge gate through business roles", async () => {
+    const id = wfId("sdd-happy-path");
+    const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sdd", "harness-factory.json"), "utf-8");
+    const def: WorkflowDefinition = { ...JSON.parse(raw), id };
+    await registerWorkflow(def);
+
+    const kase = await createCase(id, "SDD issue #637", { issue_number: 637 });
+    expect(kase.status).toBe("running");
+    expect(kase.position).toBe("f_intake");
+
+    const intake = await pendingWorkItemForCase(kase.case_id, "f_intake");
+    expect(intake.assignee).toBe("engineering_lead");
+    expect(await loadInstructionText(["sdd.issue-intake"])).toContain("bounded delivery slice");
+    await completeWorkItem(intake.work_item_id, {
+      issue_summary: "Model SDD harness workflow skeleton.",
+      acceptance_criteria: ["workflow validates", "state-machine tests pass"],
+    });
+
+    const design = await pendingWorkItemForCase(kase.case_id, "f_design");
+    expect(design.assignee).toBe("developer");
+    await completeWorkItem(design.work_item_id, { target_files: ["workflows/sdd/harness-factory.json"] });
+
+    const implementation = await pendingWorkItemForCase(kase.case_id, "f_implement");
+    expect(implementation.assignee).toBe("developer");
+    await completeWorkItem(implementation.work_item_id, { changed_files: ["workflows/sdd/harness-factory.json"] });
+
+    const testRun = await pendingWorkItemForCase(kase.case_id, "f_test");
+    expect(testRun.assignee).toBe("test_executor");
+    const afterTests = await completeWorkItem(testRun.work_item_id, {
+      tests_passed: true,
+      checks: ["workflow-loader-validation", "eepc-state-machine-regression"],
+    });
+    expect(afterTests.case?.position).toBe("f_review");
+
+    const review = await pendingWorkItemForCase(kase.case_id, "f_review");
+    expect(review.assignee).toBe("test_lead");
+    await completeWorkItem(review.work_item_id, { approved: true, findings: [] });
+
+    const mergeGate = await pendingWorkItemForCase(kase.case_id, "f_merge_gate");
+    expect(mergeGate.assignee).toBe("engineering_lead");
+    const done = await completeWorkItem(mergeGate.work_item_id, { merge_ready: true });
+    expect(done.case?.status).toBe("done");
+    expect(done.case?.position).toBe("e_merge_gate_ready");
+  });
+
+  test("SDD harness routes failed tests through rework before review", async () => {
+    const id = wfId("sdd-rework");
+    const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sdd", "harness-factory.json"), "utf-8");
+    const def: WorkflowDefinition = { ...JSON.parse(raw), id };
+    await registerWorkflow(def);
+
+    const kase = await createCase(id, "SDD issue with failing tests", { issue_number: 638 });
+    await completeWorkItem((await pendingWorkItemForCase(kase.case_id, "f_intake")).work_item_id, { scope_locked: true });
+    await completeWorkItem((await pendingWorkItemForCase(kase.case_id, "f_design")).work_item_id, { tests_to_add: ["rework branch"] });
+    await completeWorkItem((await pendingWorkItemForCase(kase.case_id, "f_implement")).work_item_id, { commit_summary: "Initial slice" });
+
+    const firstTestRun = await pendingWorkItemForCase(kase.case_id, "f_test");
+    const afterFailedTests = await completeWorkItem(firstTestRun.work_item_id, {
+      tests_passed: false,
+      failed_checks: ["sdd rework branch"],
+      failure_summary: "Expected rework branch did not route correctly.",
+    });
+    expect(afterFailedTests.case?.position).toBe("f_rework");
+
+    const rework = await pendingWorkItemForCase(kase.case_id, "f_rework");
+    expect(rework.assignee).toBe("developer");
+    const afterRework = await completeWorkItem(rework.work_item_id, {
+      tests_passed: true,
+      fix_summary: "Adjusted gateway conditions and rerun plan.",
+    });
+    expect(afterRework.case?.position).toBe("f_test");
+
+    const secondTestRun = await pendingWorkItemForCase(kase.case_id, "f_test");
+    const afterPassingRerun = await completeWorkItem(secondTestRun.work_item_id, {
+      tests_passed: true,
+      checks: ["rerun"],
+    });
+    expect(afterPassingRerun.case?.position).toBe("f_review");
+  });
+
   test("XOR gateway selects the first matching conditional branch", async () => {
     const id = wfId("xor");
     await registerWorkflow({

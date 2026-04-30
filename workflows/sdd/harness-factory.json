@@ -1,0 +1,148 @@
+{
+  "id": "sdd-harness-factory",
+  "version": "1.0.0",
+  "name": "SDD harness: issue delivery",
+  "description": "Business workflow skeleton for a specification-driven development harness: issue intake, bounded design slice, implementation, tests, review, and merge gate. Roles are business roles and connector systems are metadata only; the workflow does not mutate GitHub or merge code.",
+  "documents": [
+    {
+      "doc_id": "sdd.issue-intake",
+      "name": "SDD issue intake instruction",
+      "type": "instruction",
+      "content": "Read the issue and define a bounded delivery slice. Return issue_summary, acceptance_criteria, out_of_scope, risk_notes, and next_action. Do not assign named agents; use business roles."
+    },
+    {
+      "doc_id": "sdd.design-slice",
+      "name": "SDD design slice instruction",
+      "type": "instruction",
+      "content": "Turn the bounded issue slice into an implementation design. Return target_files, behavior_contract, tests_to_add, rollback_notes, and open_questions."
+    },
+    {
+      "doc_id": "sdd.implementation",
+      "name": "SDD implementation instruction",
+      "type": "instruction",
+      "content": "Implement only the approved slice. Return changed_files, commit_summary, assumptions, and remaining_risks."
+    },
+    {
+      "doc_id": "sdd.test-plan",
+      "name": "SDD test execution instruction",
+      "type": "instruction",
+      "content": "Run the relevant checks for the implementation slice. Return tests_passed:boolean, checks:string[], failed_checks:string[], failure_summary:string|null, and evidence."
+    },
+    {
+      "doc_id": "sdd.review",
+      "name": "SDD review instruction",
+      "type": "instruction",
+      "content": "Review the slice for correctness, scope discipline, test evidence, and production risk. Return approved:boolean, findings, required_changes, and review_summary."
+    },
+    {
+      "doc_id": "sdd.merge-gate",
+      "name": "SDD merge gate instruction",
+      "type": "instruction",
+      "content": "Verify branch, commit, checks, review status, and remaining risks. Return merge_ready:boolean, required_operator_action, and final_report."
+    },
+    {
+      "doc_id": "sdd.rework",
+      "name": "SDD rework instruction",
+      "type": "instruction",
+      "content": "Address failing checks or required review changes without expanding scope. Return fix_summary, changed_files, tests_to_rerun, and unresolved_risks."
+    }
+  ],
+  "elements": [
+    {
+      "id": "e_issue_received",
+      "type": "event",
+      "label": "Issue ready for SDD intake",
+      "trigger": {
+        "kind": "manual",
+        "action": "start_sdd_harness",
+        "role": "engineering_lead"
+      }
+    },
+    {
+      "id": "f_intake",
+      "type": "function",
+      "label": "Scope issue delivery slice",
+      "role": "engineering_lead",
+      "documents": ["sdd.issue-intake"],
+      "systems": [
+        { "connector": "github", "operation": "issue.read" }
+      ]
+    },
+    { "id": "e_scope_ready", "type": "event", "label": "Delivery slice scoped" },
+    {
+      "id": "f_design",
+      "type": "function",
+      "label": "Design bounded implementation slice",
+      "role": "developer",
+      "documents": ["sdd.design-slice"]
+    },
+    { "id": "e_design_ready", "type": "event", "label": "Implementation design ready" },
+    {
+      "id": "f_implement",
+      "type": "function",
+      "label": "Implement approved slice",
+      "role": "developer",
+      "documents": ["sdd.implementation"]
+    },
+    { "id": "e_implementation_ready", "type": "event", "label": "Implementation ready for tests" },
+    {
+      "id": "f_test",
+      "type": "function",
+      "label": "Run test plan",
+      "role": "test_executor",
+      "documents": ["sdd.test-plan"]
+    },
+    { "id": "e_tests_reported", "type": "event", "label": "Test results reported" },
+    {
+      "id": "g_tests",
+      "type": "gateway",
+      "label": "Did tests pass?",
+      "operator": "XOR"
+    },
+    {
+      "id": "f_review",
+      "type": "function",
+      "label": "Review implementation slice",
+      "role": "test_lead",
+      "documents": ["sdd.review"]
+    },
+    { "id": "e_review_complete", "type": "event", "label": "Review completed" },
+    {
+      "id": "f_merge_gate",
+      "type": "function",
+      "label": "Evaluate merge gate",
+      "role": "engineering_lead",
+      "documents": ["sdd.merge-gate"],
+      "systems": [
+        { "connector": "github", "operation": "pull_request.review_status" }
+      ]
+    },
+    { "id": "e_merge_gate_ready", "type": "event", "label": "Merge gate ready for operator decision" },
+    {
+      "id": "f_rework",
+      "type": "function",
+      "label": "Rework failing slice",
+      "role": "developer",
+      "documents": ["sdd.rework"]
+    },
+    { "id": "e_rework_ready", "type": "event", "label": "Rework ready for test rerun" }
+  ],
+  "flow": [
+    ["e_issue_received", "f_intake"],
+    ["f_intake", "e_scope_ready"],
+    ["e_scope_ready", "f_design"],
+    ["f_design", "e_design_ready"],
+    ["e_design_ready", "f_implement"],
+    ["f_implement", "e_implementation_ready"],
+    ["e_implementation_ready", "f_test"],
+    ["f_test", "e_tests_reported"],
+    ["e_tests_reported", "g_tests"],
+    ["g_tests", "f_review", "payload.tests_passed === true"],
+    ["f_review", "e_review_complete"],
+    ["e_review_complete", "f_merge_gate"],
+    ["f_merge_gate", "e_merge_gate_ready"],
+    ["g_tests", "f_rework", "payload.tests_passed === false"],
+    ["f_rework", "e_rework_ready"],
+    ["e_rework_ready", "f_test"]
+  ]
+}

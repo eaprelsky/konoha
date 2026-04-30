@@ -137,3 +137,45 @@ describe("workflow-loader e2e: lead-qualification", () => {
     }
   });
 });
+
+describe("workflow-loader e2e: sdd-harness-factory", () => {
+  const workflowPath = join(import.meta.dir, "..", "workflows", "sdd", "harness-factory.json");
+  let def: WorkflowDefinition;
+
+  test("loads and validates SDD harness workflow from disk", () => {
+    const raw = readFileSync(workflowPath, "utf-8");
+    def = JSON.parse(raw);
+    expect(def.id).toBe("sdd-harness-factory");
+    expect(def.elements.length).toBeGreaterThanOrEqual(10);
+    expect(validateWorkflow(def)).toEqual([]);
+  });
+
+  test("uses business roles and instruction documents", () => {
+    const functions = def.elements.filter(el => el.type === "function");
+    expect(functions.map(el => el.role)).toEqual([
+      "engineering_lead",
+      "developer",
+      "developer",
+      "test_executor",
+      "test_lead",
+      "engineering_lead",
+      "developer",
+    ]);
+    expect(functions.every(el => Array.isArray(el.documents) && el.documents.length === 1)).toBe(true);
+    expect(def.documents?.map(doc => doc.doc_id).sort()).toEqual([
+      "sdd.design-slice",
+      "sdd.implementation",
+      "sdd.issue-intake",
+      "sdd.merge-gate",
+      "sdd.review",
+      "sdd.rework",
+      "sdd.test-plan",
+    ]);
+  });
+
+  test("models failed tests as an explicit rework loop", () => {
+    expect(def.flow).toContainEqual(["g_tests", "f_review", "payload.tests_passed === true"]);
+    expect(def.flow).toContainEqual(["g_tests", "f_rework", "payload.tests_passed === false"]);
+    expect(def.flow).toContainEqual(["e_rework_ready", "f_test"]);
+  });
+});
