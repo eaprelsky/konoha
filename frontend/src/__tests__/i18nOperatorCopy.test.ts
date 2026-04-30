@@ -34,4 +34,11 @@ describe('operator i18n terminology', () => {
     expect(translations.en['agent.memory.confirmDelete']).toContain('{filename}');
     expect(translations.ru['agent.memory.confirmDelete']).toContain('{filename}');
   });
+
+  it('keeps agent settings copy in the translation catalog', () => {
+    expect(translations.en['agent.settings.corporateName']).toBe('Corporate name *');
+    expect(translations.ru['agent.settings.corporateName']).toBe('Корпоративное имя *');
+    expect(translations.en['agent.settings.genderNeutral']).toBe('Neutral (they)');
+    expect(translations.ru['agent.settings.genderNeutral']).toBe('Средний (они)');
+  });
 });
