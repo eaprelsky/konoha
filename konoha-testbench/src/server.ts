@@ -13,6 +13,13 @@ import {
   DIFF_THRESHOLD,
 } from "./visual";
 import { runActionScenario, type ActionScenario } from "./action-harness";
+import {
+  getActionScenario,
+  listActionScenarios,
+  replayActionScenario,
+  saveActionScenario,
+  type SaveActionScenarioInput,
+} from "./scenario-catalog";
 
 const PORT = parseInt(process.env.TESTBENCH_PORT || "3201");
 const TOKEN = process.env.KONOHA_TOKEN || "";
@@ -555,6 +562,53 @@ app.post("/testbench/run-actions", async (c) => {
     return c.json(result, 200);
   } catch (e: any) {
     return c.json({ ok: false, error: e.message }, 400);
+  }
+});
+
+// ── Action scenario catalog ──────────────────────────────────────────────────
+// Durable saved Action Spine scenarios. Replay still calls `/act`; the catalog
+// stores only envelopes, assertions, and replay receipts/results.
+
+app.get("/testbench/action-scenarios", (c) => {
+  return c.json({ ok: true, scenarios: listActionScenarios() });
+});
+
+app.post("/testbench/action-scenarios", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    const scenario = saveActionScenario(body as SaveActionScenarioInput);
+    return c.json({ ok: true, scenario }, 201);
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 400);
+  }
+});
+
+app.get("/testbench/action-scenarios/:id", (c) => {
+  try {
+    const scenario = getActionScenario(c.req.param("id"));
+    if (!scenario) return c.json({ ok: false, error: "scenario not found" }, 404);
+    return c.json({ ok: true, scenario });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 400);
+  }
+});
+
+app.post("/testbench/action-scenarios/:id/replay", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const {
+    base_url = process.env.KONOHA_URL || "http://127.0.0.1:3200",
+    token = TOKEN,
+  } = body as {
+    base_url?: string;
+    token?: string;
+  };
+
+  try {
+    const run = await replayActionScenario({ id: c.req.param("id"), base_url, token });
+    return c.json({ ok: run.result.ok, run }, 200);
+  } catch (e: any) {
+    const status = e.message?.includes("scenario not found") ? 404 : 400;
+    return c.json({ ok: false, error: e.message }, status);
   }
 });
 
