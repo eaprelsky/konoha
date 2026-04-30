@@ -158,6 +158,7 @@ export async function listWorkItems(filters: {
   assignee?: string;
   status?: WorkItemStatus;
   process_id?: string;
+  case_id?: string;
   deadline_before?: string;
 }): Promise<WorkItem[]> {
   if (PG_READ) {
@@ -190,6 +191,10 @@ export async function listWorkItems(filters: {
 
   const items = await Promise.all([...candidateIds].map(id => loadWorkItem(id)));
   let result = items.filter((wi): wi is WorkItem => wi !== null);
+
+  if (filters.case_id) {
+    result = result.filter(wi => wi.case_id === filters.case_id);
+  }
 
   if (filters.deadline_before) {
     const cutoff = new Date(filters.deadline_before).getTime();

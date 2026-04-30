@@ -14,6 +14,7 @@
 import { executeAction } from "./act-envelope";
 import { auditLog, checkAutonomy } from "./assistant-actions";
 import type { AutonomyLevel } from "./assistant-actions";
+import { listWorkItems } from "./runtime/work-items";
 import {
   buildWorkflowObservableResult,
   type WorkflowActionReceipt as ActionReceipt,
@@ -366,6 +367,7 @@ async function executeCaseStart(
         subject: data.subject as string,
         status: data.status as string,
         position: data.position as string,
+        next_work_item: await findNextPendingWorkItem(data.case_id),
       },
     };
   } catch (e: any) {
@@ -452,6 +454,9 @@ function buildCaseStartReceipt(
     : typeof action.params.process_id === "string"
     ? action.params.process_id
     : undefined;
+  const nextWorkItem = action.result?.next_work_item && typeof action.result.next_work_item === "object"
+    ? action.result.next_work_item as Record<string, unknown>
+    : null;
 
   const changedResources: ActionReceiptResource[] = [
     {
@@ -468,6 +473,18 @@ function buildCaseStartReceipt(
       change: "opened",
     });
   }
+  if (nextWorkItem && typeof nextWorkItem.work_item_id === "string") {
+    changedResources.push({
+      kind: "work_item",
+      id: nextWorkItem.work_item_id,
+      ...(typeof nextWorkItem.label === "string" ? { label: nextWorkItem.label } : {}),
+      change: "pending",
+    });
+  }
+
+  const nextTaskSummary = nextWorkItem && typeof nextWorkItem.label === "string"
+    ? ` Следующая задача: ${nextWorkItem.label}${typeof nextWorkItem.assignee === "string" ? ` -> ${nextWorkItem.assignee}` : ""}.`
+    : "";
 
   return {
     id: randomUUID(),
@@ -475,7 +492,7 @@ function buildCaseStartReceipt(
     status,
     summary:
       status === "succeeded"
-        ? `Запущен прогон${subject ? ` "${subject}"` : ""}.`
+        ? `Запущен прогон${subject ? ` "${subject}"` : ""}.${nextTaskSummary}`
         : status === "pending_confirmation"
         ? `Запуск процесса${subject ? ` "${subject}"` : ""} ожидает подтверждения.`
         : `Запуск процесса${subject ? ` "${subject}"` : ""} завершился ошибкой.`,
@@ -485,6 +502,21 @@ function buildCaseStartReceipt(
       session_id: opts.session_id ?? opts.chat_id,
       action_type: "case.start",
     },
+  };
+}
+
+async function findNextPendingWorkItem(caseId: unknown): Promise<Record<string, unknown> | null> {
+  if (typeof caseId !== "string" || !caseId) return null;
+  const [next] = await listWorkItems({ case_id: caseId, status: "pending" });
+  if (!next) return null;
+  return {
+    work_item_id: next.work_item_id,
+    label: next.label,
+    assignee: next.assignee,
+    status: next.status,
+    element_id: next.element_id,
+    process_id: next.process_id,
+    case_id: next.case_id,
   };
 }
 

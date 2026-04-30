@@ -372,6 +372,7 @@ async function executeWorkItemAction(action: string, args: Record<string, unknow
       if (args.assignee) filters.assignee = args.assignee;
       if (args.status) filters.status = args.status;
       if (args.process_id) filters.process_id = args.process_id;
+      if (args.case_id) filters.case_id = args.case_id;
       if (args.deadline_before) filters.deadline_before = args.deadline_before;
       return { status: 200, data: await listWorkItems(filters as any) };
     }

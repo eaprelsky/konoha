@@ -187,6 +187,8 @@ describe("normalizeAssistantResponse", () => {
       status: "succeeded",
     });
     expect(resp.action_receipts[0].changed_resources.some(resource => resource.kind === "case" && resource.change === "started")).toBe(true);
+    expect(resp.action_receipts[0].changed_resources.some(resource => resource.kind === "work_item" && resource.change === "pending")).toBe(true);
+    expect(resp.action_receipts[0].summary).toContain("Следующая задача: Review -> reviewer");
     expect(resp.ui_actions[0]).toMatchObject({ type: "navigate" });
     expect(String(resp.ui_actions[0].path)).toContain("/monitor?case_id=");
     expect(resp.observable_result.status).toBe("succeeded");

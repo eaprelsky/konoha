@@ -85,6 +85,10 @@ describe("workflow action contract validation", () => {
     const numberResult = validateActionArgs("case.list", { limit: "50" });
     expect(numberResult.valid).toBe(false);
     expect(numberResult.errors).toContain('Expected number for "limit", got string');
+
+    const workItemResult = validateActionArgs("workitem.list", { case_id: 123 });
+    expect(workItemResult.valid).toBe(false);
+    expect(workItemResult.errors).toContain('Expected string for "case_id", got number');
   });
 
   it("case.start requires process_id and subject", () => {

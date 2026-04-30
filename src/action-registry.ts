@@ -359,6 +359,7 @@ const ACTIONS: ActionDef[] = [
       { name: "assignee",       type: "string", required: false, description: "Filter by assignee." },
       { name: "status",         type: "string", required: false, description: "Filter by status." },
       { name: "process_id",     type: "string", required: false, description: "Filter by workflow ID." },
+      { name: "case_id",        type: "string", required: false, description: "Filter by case/run ID." },
       { name: "deadline_before", type: "string", required: false, description: "Only items due before this date." },
     ],
     currentEndpoint: "GET /workitems",

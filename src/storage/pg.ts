@@ -372,16 +372,18 @@ export async function pgListWorkItems(filters: {
   assignee?: string;
   status?: string;
   process_id?: string;
+  case_id?: string;
   deadline_before?: string;
 }): Promise<Record<string, unknown>[]> {
   return (await pgRead(async () => {
     const sql = getSql();
-    const { assignee, status, process_id, deadline_before } = filters;
+    const { assignee, status, process_id, case_id, deadline_before } = filters;
     const rows = await sql`
       SELECT * FROM work_items
       WHERE ${assignee        ? sql`assignee   = ${assignee}`                        : sql`TRUE`}
         AND ${status          ? sql`status     = ${status}`                          : sql`TRUE`}
         AND ${process_id      ? sql`process_id = ${process_id}`                      : sql`TRUE`}
+        AND ${case_id         ? sql`case_id    = ${case_id}`                         : sql`TRUE`}
         AND ${deadline_before ? sql`deadline  <= ${new Date(deadline_before)}`       : sql`TRUE`}
       ORDER BY created_at ASC
     `;
