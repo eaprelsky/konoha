@@ -9,6 +9,7 @@
 import { describe, it, expect } from "bun:test";
 import { normalizeAssistantResponse, buildSseParsedEvent } from "../src/assistant-response";
 import { buildWorkflowObservableResult } from "../src/workflow-action-contract";
+import { createWorkflow } from "../src/workflow-loader";
 
 describe("normalizeAssistantResponse", () => {
   const baseOpts = { chat_id: "test-chat-1" };
@@ -154,6 +155,40 @@ describe("normalizeAssistantResponse", () => {
       status: "succeeded",
       changed_resources: [{ kind: "workflow", id: "wf-open", label: "Открываемый процесс", change: "opened" }],
     });
+    expect(resp.observable_result.status).toBe("succeeded");
+  });
+
+  it("executes case.start and returns observable run navigation", async () => {
+    const processId = `assistant-start-${Date.now()}`;
+    await createWorkflow({
+      id: processId,
+      version: "1.0",
+      name: "Assistant Start Test",
+      elements: [
+        { id: "e1", type: "event", label: "Start" },
+        { id: "f1", type: "function", label: "Review", role: "reviewer" },
+        { id: "e2", type: "event", label: "Done" },
+      ],
+      flow: [["e1", "f1"], ["f1", "e2"]],
+    }, { draft: true });
+
+    const resp = await normalizeAssistantResponse(JSON.stringify({
+      reply: "Запускаю процесс.",
+      start_case: {
+        process_id: processId,
+        subject: "Demo run",
+        payload: { source: "assistant-test" },
+      },
+    }), { ...baseOpts, execute_actions: true, agent_id: "tsunade", session_id: "test-session" });
+
+    expect(resp.actions_taken[0]).toMatchObject({ action: "case.start", status: "executed" });
+    expect(resp.action_receipts[0]).toMatchObject({
+      action: "case.start",
+      status: "succeeded",
+    });
+    expect(resp.action_receipts[0].changed_resources.some(resource => resource.kind === "case" && resource.change === "started")).toBe(true);
+    expect(resp.ui_actions[0]).toMatchObject({ type: "navigate" });
+    expect(String(resp.ui_actions[0].path)).toContain("/monitor?case_id=");
     expect(resp.observable_result.status).toBe("succeeded");
   });
 });

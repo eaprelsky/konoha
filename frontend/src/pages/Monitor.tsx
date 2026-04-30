@@ -5,6 +5,7 @@
  * Right panel: EPC diagram with highlighted current step + history timeline.
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { EpcRenderer } from '../components/EpcRenderer';
 import { useToken } from '../context/TokenContext';
 import { useI18n } from '../context/I18nContext';
@@ -53,6 +54,7 @@ function statusLabel(s: string, lang: string): string {
 export function Monitor() {
   const token = useToken();
   const { lang } = useI18n();
+  const location = useLocation();
 
   const [runs, setRuns] = useState<Run[]>([]);
   const [total, setTotal] = useState(0);
@@ -70,6 +72,7 @@ export function Monitor() {
   const [search, setSearch] = useState('');
   const [expandedPayload, setExpandedPayload] = useState<string | null>(null); // tl-row key
   const [closingRun, setClosingRun] = useState(false);
+  const targetCaseId = new URLSearchParams(location.search).get('case_id');
 
   // Load workflow names for group headings
   useEffect(() => {
@@ -101,6 +104,19 @@ export function Monitor() {
 
   useEffect(() => { load(); }, [load]);
   useInterval(load, 8000);
+
+  useEffect(() => {
+    if (!targetCaseId || selectedRun?.case_id === targetCaseId) return;
+    const target = runs.find(run => run.case_id === targetCaseId);
+    if (!target) return;
+    setSelectedRun(target);
+    setProcessFilter(target.process_id);
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      next.delete(target.process_id);
+      return next;
+    });
+  }, [runs, selectedRun?.case_id, targetCaseId]);
 
   // When a run is selected, load its workflow for diagram
   useEffect(() => {

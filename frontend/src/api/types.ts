@@ -139,11 +139,11 @@ export interface WorkItemFilters {
 }
 
 export type WorkflowActionStatus = 'executed' | 'needs_confirm' | 'failed' | 'skipped';
-export type WorkflowActionType = 'workflow.create' | 'workflow.update' | 'workflow.open' | 'workflow.save' | 'workflow.confirm';
+export type WorkflowActionType = 'workflow.create' | 'workflow.update' | 'workflow.open' | 'workflow.save' | 'workflow.confirm' | 'case.start';
 export type WorkflowReceiptStatus = 'succeeded' | 'pending_confirmation' | 'failed' | 'partial';
 export type WorkflowObservableStatus = WorkflowReceiptStatus | 'no_effect';
-export type WorkflowResourceKind = 'workflow' | 'element' | 'flow' | 'confirmation';
-export type WorkflowResourceChange = 'created' | 'updated' | 'opened' | 'pending' | 'failed';
+export type WorkflowResourceKind = 'workflow' | 'element' | 'flow' | 'confirmation' | 'case' | 'work_item';
+export type WorkflowResourceChange = 'created' | 'updated' | 'opened' | 'started' | 'pending' | 'failed';
 
 export interface WorkflowAssistantAction {
   action: WorkflowActionType | string;

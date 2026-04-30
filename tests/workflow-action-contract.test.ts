@@ -127,7 +127,7 @@ describe("workflow action contract validation", () => {
   });
 
   it("dumpRegistry version matches ACTION_VERSION", () => {
-    expect(dump.version).toBe(2);
+    expect(dump.version).toBe(3);
     expect(dump.actions.length).toBeGreaterThan(30);
     expect(dump.surface.length).toBe(dump.actions.length);
   });

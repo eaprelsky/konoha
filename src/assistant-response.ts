@@ -147,6 +147,36 @@ export async function normalizeAssistantResponse(
         reply = reply + `\n\n⚠️ Ошибка создания процесса: ${action.error}`;
       }
     }
+
+    const caseStart = extractCaseStart(parsed.start_case ?? parsed.case_start ?? parsed["case.start"]);
+    if (caseStart && executeActions) {
+      const action = await executeCaseStart(caseStart, opts);
+      actionsTaken.push(action);
+      if (action.status === "executed") {
+        actionReceipts.push(buildCaseStartReceipt(action, opts, "succeeded"));
+        const caseId = typeof action.result?.case_id === "string" ? action.result.case_id : undefined;
+        const processId = typeof action.result?.process_id === "string"
+          ? action.result.process_id
+          : typeof action.params.process_id === "string"
+          ? action.params.process_id
+          : undefined;
+        uiActions.push({
+          type: "navigate",
+          target: caseId ? `/monitor?case_id=${caseId}` : "/monitor",
+          path: caseId ? `/monitor?case_id=${caseId}` : "/monitor",
+          ...(caseId ? { case_id: caseId } : {}),
+          ...(processId ? { workflow_id: processId, process_id: processId } : {}),
+          message: "Открыть мониторинг прогона",
+        });
+      } else if (action.status === "needs_confirm") {
+        pendingConfirmations.push(buildPendingConfirmation("case.start", action.params));
+        actionReceipts.push(buildCaseStartReceipt(action, opts, "pending_confirmation"));
+        reply = reply + `\n\nТребуется подтверждение перед выполнением действия: case.start.`;
+      } else if (action.status === "failed") {
+        actionReceipts.push(buildCaseStartReceipt(action, opts, "failed"));
+        reply = reply + `\n\n⚠️ Ошибка запуска процесса: ${action.error}`;
+      }
+    }
   }
 
   // If reply still looks like JSON, sanitize it
@@ -278,6 +308,77 @@ async function executeWorkflowCreation(
   }
 }
 
+async function executeCaseStart(
+  params: Record<string, unknown>,
+  opts: NormalizeOptions,
+): Promise<AssistantAction> {
+  const processId = String(params.process_id);
+  const actionArgs = {
+    process_id: processId,
+    subject: typeof params.subject === "string" && params.subject.trim()
+      ? params.subject.trim()
+      : `Запуск процесса ${processId}`,
+    payload: params.payload && typeof params.payload === "object" ? params.payload : {},
+    ...(typeof params.start_node === "string" && params.start_node.trim() ? { start_node: params.start_node.trim() } : {}),
+  };
+
+  try {
+    const result = await executeAction({
+      action: "case.start",
+      category: "act",
+      args: actionArgs,
+      meta: {
+        session_id: opts.session_id ?? opts.chat_id,
+        agent_chain: opts.agent_id ?? "tsunade",
+      },
+    }, {
+      session_id: opts.session_id ?? opts.chat_id,
+      agent_chain: opts.agent_id ?? "tsunade",
+    });
+
+    if (result.requires_confirm) {
+      return {
+        action: "case.start",
+        params: actionArgs,
+        status: "needs_confirm",
+        description: "Start workflow case requires confirmation",
+      };
+    }
+
+    if (!result.ok || !result.data || typeof result.data !== "object") {
+      return {
+        action: "case.start",
+        params: actionArgs,
+        status: "failed",
+        description: "Start workflow case",
+        error: result.error ?? "Unknown action execution error",
+      };
+    }
+    const data = result.data as Record<string, unknown>;
+    return {
+      action: "case.start",
+      params: actionArgs,
+      status: "executed",
+      description: `Started workflow case "${String(data.subject ?? actionArgs.subject)}"`,
+      result: {
+        case_id: data.case_id as string,
+        process_id: data.process_id as string,
+        subject: data.subject as string,
+        status: data.status as string,
+        position: data.position as string,
+      },
+    };
+  } catch (e: any) {
+    return {
+      action: "case.start",
+      params: actionArgs,
+      status: "failed",
+      description: "Start workflow case",
+      error: e.message,
+    };
+  }
+}
+
 function buildPendingConfirmation(action: string, params: Record<string, unknown>): PendingConfirmation {
   return {
     id: randomUUID(),
@@ -331,6 +432,58 @@ function buildWorkflowCreateReceipt(
     audit: {
       session_id: opts.session_id ?? opts.chat_id,
       action_type: "workflow.create",
+    },
+  };
+}
+
+function buildCaseStartReceipt(
+  action: AssistantAction,
+  opts: NormalizeOptions,
+  status: ActionReceipt["status"],
+): ActionReceipt {
+  const caseId = typeof action.result?.case_id === "string" ? action.result.case_id : "case.start";
+  const subject = typeof action.result?.subject === "string"
+    ? action.result.subject
+    : typeof action.params.subject === "string"
+    ? action.params.subject
+    : undefined;
+  const processId = typeof action.result?.process_id === "string"
+    ? action.result.process_id
+    : typeof action.params.process_id === "string"
+    ? action.params.process_id
+    : undefined;
+
+  const changedResources: ActionReceiptResource[] = [
+    {
+      kind: "case",
+      id: caseId,
+      ...(subject ? { label: subject } : {}),
+      change: status === "succeeded" ? "started" : status === "pending_confirmation" ? "pending" : "failed",
+    },
+  ];
+  if (processId) {
+    changedResources.push({
+      kind: "workflow",
+      id: processId,
+      change: "opened",
+    });
+  }
+
+  return {
+    id: randomUUID(),
+    action: "case.start",
+    status,
+    summary:
+      status === "succeeded"
+        ? `Запущен прогон${subject ? ` "${subject}"` : ""}.`
+        : status === "pending_confirmation"
+        ? `Запуск процесса${subject ? ` "${subject}"` : ""} ожидает подтверждения.`
+        : `Запуск процесса${subject ? ` "${subject}"` : ""} завершился ошибкой.`,
+    ...(action.error ? { details: action.error } : {}),
+    changed_resources: changedResources,
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: "case.start",
     },
   };
 }
@@ -433,6 +586,25 @@ function extractOpenWorkflow(raw: unknown): { id: string; name?: string } | null
   };
 }
 
+function extractCaseStart(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const processId = typeof obj.process_id === "string"
+    ? obj.process_id
+    : typeof obj.workflow_id === "string"
+    ? obj.workflow_id
+    : typeof obj.id === "string"
+    ? obj.id
+    : null;
+  if (!processId?.trim()) return null;
+  return {
+    process_id: processId.trim(),
+    ...(typeof obj.subject === "string" ? { subject: obj.subject } : {}),
+    ...(obj.payload && typeof obj.payload === "object" ? { payload: obj.payload } : {}),
+    ...(typeof obj.start_node === "string" ? { start_node: obj.start_node } : {}),
+  };
+}
+
 function buildWorkflowOpenAction(workflow: { id: string; name?: string }): AssistantAction {
   return {
     action: "workflow.open",
@@ -517,6 +689,9 @@ function extractReply(parsed: Record<string, unknown>, fallback: string): string
   }
   if (parsed.schema_patch) {
     return "Схема обновлена.";
+  }
+  if (parsed.start_case || parsed.case_start || parsed["case.start"]) {
+    return "Запускаю процесс.";
   }
   return fallback;
 }

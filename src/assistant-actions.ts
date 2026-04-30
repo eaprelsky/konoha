@@ -114,6 +114,7 @@ export function canonicalActionType(actionType: string): string {
 const AUTONOMY_DEFAULTS: Record<string, AutonomyLevel> = {
   "issue.create":    "auto",
   "issue.label":     "auto",
+  "case.start":      "auto",
   "workflow.create": "confirm",
   "workflow.delete": "confirm",
   "data.delete":     "confirm",  // HARDCODED — never overridable
