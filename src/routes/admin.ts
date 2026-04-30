@@ -123,7 +123,7 @@ type SeededSystemAgent = Omit<AgentDef, "created_at" | "updated_at">;
 export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   {
     id: "naruto",
-    name: "Telegram bot connector",
+    name: "Коннектор Telegram-бота",
     display_alias: "Наруто",
     seed_classification: "connector_owned",
     lifecycle_mode: "connector_owned",
@@ -146,7 +146,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "sasuke",
-    name: "Telegram user-account connector",
+    name: "Коннектор Telegram-аккаунта",
     display_alias: "Саске",
     seed_classification: "connector_owned",
     lifecycle_mode: "connector_owned",
@@ -212,7 +212,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
   },
   {
     id: "mirai",
-    name: "External source connector",
+    name: "Коннектор внешних источников",
     display_alias: "Мирай",
     seed_classification: "connector_owned",
     lifecycle_mode: "connector_owned",

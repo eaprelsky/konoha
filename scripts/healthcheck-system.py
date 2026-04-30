@@ -20,21 +20,21 @@ ENV_FILES = [Path("/home/ubuntu/.agent-env"), Path("/opt/shared/.shared-credenti
 
 CORE_SERVICES = [
     "konoha",
-    "akamaru",
-    "telegram-context-packer",
-    "telegram-event-bridge",
-    "telegram-vision-packer",
     "agent-watchdog-lifecycle",
 ]
 CONNECTOR_OWNED_SERVICES = [
     "telegram-bot",
     "telegram-bus",
+    "telegram-context-packer",
+    "telegram-event-bridge",
+    "telegram-vision-packer",
     "agent-naruto",
     "agent-sasuke",
     "agent-watchdog-naruto",
     "agent-watchdog-sasuke",
 ]
 OPTIONAL_WORKER_SERVICES = [
+    "akamaru",
     "agent-kiba",
     "agent-watchdog-kiba",
 ]

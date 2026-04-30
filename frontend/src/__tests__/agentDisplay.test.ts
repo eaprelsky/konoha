@@ -49,7 +49,7 @@ describe('agent display helpers', () => {
   it('classifies lifecycle modes without hardcoded runtime ids', () => {
     expect(getLifecycleAgentType({ id: 'any-core', name: 'Советник', status: 'online', lifecycle_mode: 'core' }))
       .toBe('core');
-    expect(getLifecycleAgentType({ id: 'naruto', name: 'Telegram bot connector', status: 'online', seed_classification: 'connector_owned' }))
+    expect(getLifecycleAgentType({ id: 'naruto', name: 'Коннектор Telegram-бота', status: 'online', seed_classification: 'connector_owned' }))
       .toBe('connector');
     expect(getLifecycleAgentType({ id: 'kakashi', name: 'SDD тимлид', status: 'offline', seed_classification: 'optional_worker' }))
       .toBe('optional');
