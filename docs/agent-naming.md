@@ -57,12 +57,12 @@ connectors, or workflow-defined roles over time.
 | Runtime id | Canonical `name` | Default `display_alias` | Classification | Lifecycle mode |
 |------------|------------------|--------------------------|----------------|----------------|
 | `tsunade` | `Советник` | `Цунаде` | `core` | `core` |
-| `naruto` | `Коннектор Telegram-бота` | `Наруто` | `connector_owned` | `connector_owned` |
-| `sasuke` | `Коннектор Telegram-аккаунта` | `Саске` | `connector_owned` | `connector_owned` |
+| `naruto` | `Telegram bot connector` | `Наруто` | `connector_owned` | `connector_owned` |
+| `sasuke` | `Telegram user-account connector` | `Саске` | `connector_owned` | `connector_owned` |
 | `kiba` | `Системный монитор` | `Киба` | `optional_worker` | `optional_on_demand` |
 | `kakashi` | `SDD тимлид` | `Какаши` | `optional_worker` | `optional_on_demand` |
 | `shino` | `SDD тестлид` | `Шино` | `optional_worker` | `optional_on_demand` |
 | `hinata` | `SDD тестовый исполнитель` | `Хината` | `optional_worker` | `optional_on_demand` |
 | `guy` | `SDD разработчик` | `Гай` | `optional_worker` | `optional_on_demand` |
-| `mirai` | `Коннектор внешних источников` | `Мирай` | `connector_owned` | `connector_owned` |
+| `mirai` | `External source connector` | `Мирай` | `connector_owned` | `connector_owned` |
 | `jiraiya`, `ino`, `inojin`, `shikadai` | legacy specialist aliases | varies | `deprecated_compat` | `deprecated` |

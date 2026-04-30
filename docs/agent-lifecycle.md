@@ -342,11 +342,11 @@ explicit:
 
 | Runtime id | Product-facing role | `seed_classification` | `lifecycle_mode` | Autostart expectation |
 |------------|---------------------|------------------------|------------------|----------------------|
-| `naruto` | Коннектор Telegram-бота | `connector_owned` | `connector_owned` | connector deployment only |
-| `sasuke` | Коннектор Telegram-аккаунта | `connector_owned` | `connector_owned` | connector deployment only |
+| `naruto` | Telegram bot connector | `connector_owned` | `connector_owned` | connector deployment only |
+| `sasuke` | Telegram user-account connector | `connector_owned` | `connector_owned` | connector deployment only |
 | `kiba` | Системный монитор | `optional_worker` | `optional_on_demand` | optional, enabled on deployments that need active monitoring |
 | `kakashi`, `guy`, `shino`, `hinata` | SDD workflow workers | `optional_worker` | `optional_on_demand` | no; started by assignment/policy |
-| `mirai` | Коннектор внешних источников | `connector_owned` | `connector_owned` | no default autostart |
+| `mirai` | External-source connector compatibility actor | `connector_owned` | `connector_owned` | no default autostart |
 | `jiraiya`, `ino`, `inojin`, `shikadai` | legacy specialist aliases | `deprecated_compat` | `deprecated` | no |
 | `ibiki` | optional security worker | `optional_worker` | `optional_on_demand` | no |
 
