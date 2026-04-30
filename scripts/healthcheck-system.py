@@ -86,6 +86,7 @@ REGISTRY_WARN_EPHEMERAL = 10
 STREAM_GROUPS = {
     "telegram:incoming": ["sasuke"],
     "telegram:bot:incoming": ["naruto"],
+    "telegram:reaction_updates": ["sasuke-reactions"],
     "telegram:needs_context": ["context-packer"],
     "telegram:log": ["event-bridge"],
     "telegram:vision_requests": ["vision-packer"],
@@ -368,6 +369,45 @@ def check_redis_streams(policy: HealthcheckPolicy | None = None) -> list[Check]:
         else:
             checks.append(Check("OK", f"redis.dead_letter.{stream}", "empty"))
     return checks
+
+
+def check_messenger_connector_health(policy: HealthcheckPolicy | None = None) -> list[Check]:
+    policy = policy or load_healthcheck_policy()
+    if "telegram" not in policy.enabled_connectors:
+        return [Check("OK", "connector_health.telegram", "disabled by policy; connector health checks skipped")]
+    try:
+        health = api_get("/connectors/messenger/health")
+    except Exception as exc:
+        return [Check("WARN", "connector_health.api", str(exc), "Inspect /connectors/messenger/health and konoha.service logs")]
+
+    checks: list[Check] = []
+    for connector in health.get("connectors") or []:
+        connector_id = str(connector.get("connector_id") or "unknown")
+        provider = str(connector.get("provider") or "unknown")
+        status = str(connector.get("status") or "warn").upper()
+        checks.append(Check(
+            "OK" if status == "OK" else "WARN" if status == "WARN" else "FAIL",
+            f"connector.{connector_id}",
+            f"provider={provider} status={status.lower()}",
+        ))
+        for endpoint in connector.get("endpoints") or []:
+            endpoint_id = str(endpoint.get("endpoint_id") or "unknown")
+            endpoint_status = str(endpoint.get("status") or "warn").upper()
+            checks.append(Check(
+                "OK" if endpoint_status == "OK" else "WARN" if endpoint_status == "WARN" else "FAIL",
+                f"connector.{connector_id}.endpoint.{endpoint_id}",
+                f"status={endpoint_status.lower()}",
+            ))
+            for stream in endpoint.get("streams") or []:
+                stream_status = str(stream.get("status") or "warn").upper()
+                stream_name = str(stream.get("stream") or "unknown")
+                group = str(stream.get("group") or "unknown")
+                checks.append(Check(
+                    "OK" if stream_status == "OK" else "WARN" if stream_status == "WARN" else "FAIL",
+                    f"connector.{connector_id}.endpoint.{endpoint_id}.stream.{stream_name}.{group}",
+                    str(stream.get("detail") or f"status={stream_status.lower()}"),
+                ))
+    return checks or [Check("WARN", "connector_health.catalog", "no enabled connectors reported")]
 
 
 def check_agents(policy: HealthcheckPolicy | None = None) -> list[Check]:
@@ -865,6 +905,7 @@ def main() -> int:
     checks.extend(check_systemd(policy))
     checks.extend(check_api())
     checks.extend(check_redis_streams(policy))
+    checks.extend(check_messenger_connector_health(policy))
     checks.extend(check_agents(policy))
     checks.extend(check_lifecycle_control_plane(policy))
     for fn in (check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_role_registry_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):

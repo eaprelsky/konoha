@@ -39,6 +39,7 @@ export interface TelegramStreamHealthSummary {
 export const TELEGRAM_STREAM_GROUPS: Record<string, string[]> = {
   "telegram:incoming": ["sasuke"],
   "telegram:bot:incoming": ["naruto"],
+  "telegram:reaction_updates": ["sasuke-reactions"],
   "telegram:needs_context": ["context-packer"],
   "telegram:log": ["event-bridge"],
   "telegram:vision_requests": ["vision-packer"],

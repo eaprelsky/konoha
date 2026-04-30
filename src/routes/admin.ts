@@ -6,6 +6,7 @@ import { upsertAgentDef } from "../agent-lifecycle";
 import type { AgentDef } from "../agent-lifecycle";
 import { listAdapters, getAdapter } from "../adapters/index";
 import { listMessengerConnectorCatalogs } from "../messenger-connectors";
+import { getMessengerConnectorHealth } from "../messenger-connector-health";
 import { getTelegramStreamHealth } from "../telegram-stream-health";
 const log = createLogger("routes:admin");
 
@@ -438,6 +439,10 @@ router.get("/connectors/messenger", requireAdmin, async (c) => {
   return c.json({
     catalogs: listMessengerConnectorCatalogs(),
   });
+});
+
+router.get("/connectors/messenger/health", requireAdmin, async (c) => {
+  return c.json(await getMessengerConnectorHealth());
 });
 
 router.get("/connectors/telegram/streams/health", requireAdmin, async (c) => {

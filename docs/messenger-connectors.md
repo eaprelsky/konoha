@@ -75,6 +75,21 @@ against `telegram-main` and publishes connector-normalized entries to
 Redis. This is the preferred mode for agents and tests before an actual external
 send is confirmed.
 
+## Health
+
+`GET /connectors/messenger/health` projects transport stream health onto the
+connector model. Operators can inspect status by `connector_id`, `endpoint_id`,
+stream, and consumer group without reasoning from raw Telegram stream names
+first. The production healthcheck reports both layers:
+
+| Layer | Example check |
+|---|---|
+| Raw transport | `redis.stream.telegram:incoming.sasuke` |
+| Connector endpoint | `connector.telegram-main.endpoint.telegram-user-sasuke` |
+
+The raw Redis checks remain for low-level diagnostics; connector health is the
+product-facing operational surface.
+
 ## Future Routing
 
 One connector can own multiple endpoints, and each endpoint can bind chats to
