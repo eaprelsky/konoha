@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { RunOverlay } from '../components/RunOverlay';
 import { useToken } from '../context/TokenContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { Case, Workflow } from '../api/types';
+import { filterOperatorCases, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
 
 type ViewMode = 'flat' | 'grouped';
 
@@ -27,6 +28,7 @@ const styles = `
   .view-toggle { display: flex; gap: 4px; margin-left: auto; }
   .view-toggle button { padding: 6px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px; color: #555; }
   .view-toggle button.active { background: #0f172a; color: white; border-color: #0f172a; }
+  .hidden-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
   /* Group rows */
   .group-row td { background: #f8fafc; font-weight: 600; cursor: pointer; }
   .group-row:hover td { background: #f1f5f9; }
@@ -82,6 +84,7 @@ const GROUP_LIMIT = 500;
 
 export function Cases() {
   const token = useToken();
+  const { showHiddenArtifacts, setShowHiddenArtifacts } = useOperatorViewMode();
   const [cases, setCases] = useState<Case[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -93,6 +96,7 @@ export function Cases() {
   const [appliedFilters, setAppliedFilters] = useState({ status: '', process_id: '' });
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [runCaseId, setRunCaseId] = useState<string | null>(null);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [wfNameMap, setWfNameMap] = useState<Record<string, string>>({});
   const [wfElementMap, setWfElementMap] = useState<Record<string, Record<string, string>>>({});
   const [viewMode, setViewMode] = useState<ViewMode>('grouped');
@@ -101,6 +105,7 @@ export function Cases() {
   useEffect(() => {
     if (!token) return;
     api.workflows.list().then(wfs => {
+      setWorkflows(wfs);
       const m: Record<string, string> = {};
       const em: Record<string, Record<string, string>> = {};
       wfs.forEach((wf: Workflow) => {
@@ -189,6 +194,12 @@ export function Cases() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+  const hiddenProcessIds = useMemo(
+    () => new Set(workflows.filter(isWorkflowHiddenFromOperator).map(wf => wf.id)),
+    [workflows],
+  );
+  const visibleCases = filterOperatorCases(cases, hiddenProcessIds, { showHiddenArtifacts });
+  const hiddenCaseCount = cases.length - filterOperatorCases(cases, hiddenProcessIds).length;
 
   return (
     <>
@@ -210,6 +221,16 @@ export function Cases() {
               onKeyDown={e => e.key === 'Enter' && applyFilters()} />
             <button onClick={applyFilters}>Применить</button>
             <button className="reset" onClick={resetFilters}>Сбросить</button>
+            {hiddenCaseCount > 0 && (
+              <label className="hidden-toggle" title="Показать скрытые test/debug/generated прогоны. То же доступно через ?view=debug.">
+                <input
+                  type="checkbox"
+                  checked={showHiddenArtifacts}
+                  onChange={e => setShowHiddenArtifacts(e.target.checked)}
+                />
+                Показать служебные ({hiddenCaseCount})
+              </label>
+            )}
             <div className="view-toggle">
               <button className={viewMode === 'grouped' ? 'active' : ''} onClick={() => setViewMode('grouped')}>Группировка</button>
               <button className={viewMode === 'flat' ? 'active' : ''} onClick={() => setViewMode('flat')}>Список</button>
@@ -217,9 +238,9 @@ export function Cases() {
           </div>
 
           {loading && <div className="empty">Загрузка…</div>}
-          {!loading && cases.length === 0 && <div className="empty">Кейсы не найдены.</div>}
+          {!loading && visibleCases.length === 0 && <div className="empty">Кейсы не найдены.</div>}
 
-          {cases.length > 0 && (
+          {visibleCases.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
@@ -233,7 +254,7 @@ export function Cases() {
               </thead>
               <tbody>
                 {viewMode === 'grouped'
-                  ? buildGroups(cases).map(group => (
+                  ? buildGroups(visibleCases).map(group => (
                     <>
                       <tr key={group.process_id} className="group-row" onClick={() => toggleGroup(group.process_id)}>
                         <td colSpan={6}>
@@ -261,7 +282,7 @@ export function Cases() {
                       ))}
                     </>
                   ))
-                  : cases.map(c => (
+                  : visibleCases.map(c => (
                     <tr key={c.case_id} onClick={() => openDetail(c)}>
                       <td><span className="link">{c.subject || '(без темы)'}</span></td>
                       <td>{wfNameMap[c.process_id] || c.process_id}</td>

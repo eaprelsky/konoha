@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { OperatorArtifactMetadata, RoleDef, Run, RuntimeEvent, Workflow } from '../api/types';
+import type { Case, OperatorArtifactMetadata, RoleDef, Run, RuntimeEvent, Workflow } from '../api/types';
 
 const STORAGE_KEY = 'konoha.operatorView.showHiddenArtifacts';
 
@@ -100,6 +100,14 @@ export function filterOperatorRuns(
 ): Run[] {
   if (options.showHiddenArtifacts) return runs;
   return runs.filter(run => !isHiddenByMetadata(run) && !isLegacyTestRun(run, hiddenProcessIds));
+}
+
+export function filterOperatorCases(
+  cases: Case[],
+  hiddenProcessIds: Set<string>,
+  options: OperatorViewOptions = {},
+): Case[] {
+  return filterOperatorRuns(cases, hiddenProcessIds, options);
 }
 
 export function filterOperatorEvents(

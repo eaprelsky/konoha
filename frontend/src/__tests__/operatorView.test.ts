@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach } from 'vitest';
 import type { RoleDef, Run, RuntimeEvent, Workflow } from '../api/types';
 import {
+  filterOperatorCases,
   filterOperatorEvents,
   filterOperatorRoles,
   filterOperatorRuns,
@@ -74,6 +75,17 @@ describe('operatorView filtering', () => {
     ];
 
     expect(filterOperatorRuns(runs, hiddenProcesses).map(run => run.case_id)).toEqual(['case-1']);
+  });
+
+  test('filters legacy cases with the same operator rules as runs', () => {
+    const hiddenProcesses = new Set(['process-mnnaqaey-copy']);
+    const cases: Run[] = [
+      baseRun,
+      { ...baseRun, case_id: 'case-2', process_id: 'process-mnnaqaey-copy' },
+      { ...baseRun, case_id: 'case-3', payload: { metadata: { visibility: 'test' } } },
+    ];
+
+    expect(filterOperatorCases(cases, hiddenProcesses).map(kase => kase.case_id)).toEqual(['case-1']);
   });
 
   test('filters test roles while preserving business roles', () => {
