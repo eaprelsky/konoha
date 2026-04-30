@@ -32,6 +32,20 @@ def test_old_working_marker_before_current_prompt_does_not_confirm_submission():
     assert watchdog_tmux._has_idle_prompt(pane) is True
 
 
+def test_codex_queue_hint_is_not_idle():
+    import watchdog_tmux
+
+    pane = """
+◦ Working (57s • esc to interrupt)
+
+› next task
+
+tab to queue message
+"""
+
+    assert watchdog_tmux._has_idle_prompt(pane) is False
+
+
 def test_working_marker_after_current_prompt_confirms_submission():
     import watchdog_tmux
 
@@ -61,7 +75,11 @@ def test_tmux_send_retries_when_pane_changes_but_agent_stays_idle(monkeypatch):
             return True, "› deliver this prompt "
         return True, "› deliver this prompt"
 
+    cleared = {"value": False}
+
     async def fake_tmux_run(*args, timeout=10.0):
+        if args[-1] == "C-u":
+            cleared["value"] = True
         if args[-1] == "Enter":
             enter_count["value"] += 1
         return True
@@ -78,6 +96,7 @@ def test_tmux_send_retries_when_pane_changes_but_agent_stays_idle(monkeypatch):
     delivered = asyncio.run(watchdog_tmux.tmux_send("kakashi", "deliver this prompt"))
 
     assert delivered is True
+    assert cleared["value"] is True
     assert enter_count["value"] == 2
 
 

@@ -12,6 +12,7 @@ import time
 
 log = logging.getLogger(__name__)
 ACTIVE_WORK_MARKERS = ("◦ Working", "• Working", "esc to interrupt")
+CODEX_QUEUE_HINT = "tab to queue message"
 
 # ── Idle detection ───────────────────────────────────────────────────────────
 
@@ -67,6 +68,10 @@ def _has_active_work_after_prompt(content: str, text: str) -> bool:
 def _has_idle_prompt(content: str) -> bool:
     lines = [l.strip() for l in content.strip().split("\n") if l.strip()]
     last_lines = lines[-12:]
+    # Codex shows a prompt while a task is running and asks Tab to queue a
+    # follow-up. Enter does not submit in that state, so treat it as busy.
+    if any(CODEX_QUEUE_HINT in l.lower() for l in last_lines):
+        return False
     has_claude_queue = any("queued messages" in l.lower() for l in last_lines)
     has_claude_prompt = any(
         (l == "❯" or l == "❯ " or l.startswith("❯ ") or l.startswith("❯ "))
@@ -190,6 +195,8 @@ async def tmux_send(session: str, text: str) -> bool:
             await asyncio.sleep(0.4)
         return False
 
+    await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "C-u", timeout=5.0)
+    await asyncio.sleep(0.15)
     ok = await tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
     if not ok:
         log.error(f"send-keys timed out for {session} — skipping delivery")
