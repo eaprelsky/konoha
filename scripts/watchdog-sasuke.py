@@ -211,12 +211,43 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
     Sends mark_read to Redis after delivery and tracks health state.
     """
     pending: list[dict] = []
+    seen_msg_keys: set[tuple] = set()
+    SEEN_MAX_SIZE = 1000
     rd = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+
+    def _msg_key(ev: dict) -> tuple | None:
+        d = ev.get("data", {})
+        # Telegram dedup: (chat_id, msg_id)
+        chat_id = d.get("chat_id", "")
+        msg_id = d.get("msg_id", "")
+        if chat_id and msg_id:
+            return ("tg", str(chat_id), str(msg_id))
+        # Konoha SSE replay dedup: message id from bus event
+        konoha_id = d.get("id", "")
+        if konoha_id:
+            return ("konoha", str(konoha_id))
+        return None
+
+    def _dedup_batch(batch: list[dict]) -> list[dict]:
+        fresh: list[dict] = []
+        for ev in batch:
+            key = _msg_key(ev)
+            if key and key in seen_msg_keys:
+                _b.log.info(f"Dedup: skipping duplicate {key}")
+                continue
+            fresh.append(ev)
+        return fresh
 
     while True:
         if pending and any(ev.get("_delivered_to_agent") for ev in pending):
             finalized = await _finalize_delivered_events(pending, rd)
             if finalized:
+                for ev in pending:
+                    key = _msg_key(ev)
+                    if key:
+                        seen_msg_keys.add(key)
+                if len(seen_msg_keys) > SEEN_MAX_SIZE:
+                    seen_msg_keys = set(list(seen_msg_keys)[-SEEN_MAX_SIZE // 2:])
                 pending.clear()
             else:
                 await asyncio.sleep(1.0)
@@ -225,7 +256,9 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
         try:
             timeout = 1.0 if pending else None
             batch = await asyncio.wait_for(batched_queue.get(), timeout=timeout)
-            pending.extend(batch)
+            batch = _dedup_batch(batch)
+            if batch:
+                pending.extend(batch)
         except asyncio.TimeoutError:
             pass
 
