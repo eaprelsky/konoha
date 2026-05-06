@@ -55,7 +55,7 @@ describe("assistant invocation action", () => {
       reply: "The start button is highlighted.",
     });
     expect((result?.data as any).normalized_response.ui_actions).toEqual([
-      { type: "highlight", selector: "#btn-start", message: "Start button" },
+      { type: "highlight", target: "#btn-start", message: "Start button" },
     ]);
   });
 

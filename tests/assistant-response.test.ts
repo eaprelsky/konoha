@@ -98,7 +98,7 @@ describe("normalizeAssistantResponse", () => {
     const resp = await normalizeAssistantResponse(raw, baseOpts);
     expect(resp.ui_actions).toHaveLength(1);
     expect(resp.ui_actions[0].type).toBe("highlight");
-    expect(resp.ui_actions[0].selector).toBe("#btn-start");
+    expect((resp.ui_actions[0] as any).target).toBe("#btn-start");
   });
 
   it("workflow creation requires confirmation by default", async () => {
