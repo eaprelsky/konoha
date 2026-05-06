@@ -375,3 +375,33 @@ export async function recoverStuckWorkItems(
 
   return { scanned: candidateIds.size, recovered: recovered.length, agentsOffline };
 }
+
+/** Delete all work items for a given process_id or case_ids. Returns count deleted. */
+export async function deleteWorkItemsByProcess(processId: string): Promise<number> {
+  const ids = await redis.smembers(WORKITEMS_IDX_PROCESS + processId);
+  if (ids.length === 0) return 0;
+  const BATCH = 200;
+  let deleted = 0;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const batch = ids.slice(i, i + BATCH);
+    const raws = await Promise.all(batch.map(id => redis.get(WORKITEM_KEY_PREFIX + id)));
+    const pipe = redis.pipeline();
+    for (let j = 0; j < batch.length; j++) {
+      const wid = batch[j];
+      const raw = raws[j];
+      if (raw) {
+        try {
+          const wi = JSON.parse(raw as string);
+          if (wi.status) pipe.srem(WORKITEMS_IDX_STATUS + wi.status, wid);
+          if (wi.assignee) pipe.srem(WORKITEMS_IDX_ASSIGNEE + wi.assignee, wid);
+        } catch {}
+      }
+      pipe.del(WORKITEM_KEY_PREFIX + wid);
+      pipe.srem(WORKITEMS_IDX_PROCESS + processId, wid);
+      pipe.zrem(WORKITEMS_IDX_ALL, wid);
+    }
+    await pipe.exec();
+    deleted += batch.length;
+  }
+  return deleted;
+}

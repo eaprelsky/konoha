@@ -18,6 +18,7 @@ import {
   updateWorkItem,
   completeWorkItem,
   listWorkItems,
+  deleteWorkItemsByProcess,
 } from "./runtime/work-items";
 import { createRole, deleteRole, listRoles, updateRole, type AssignmentStrategy } from "./runtime/roles";
 import {
@@ -252,10 +253,35 @@ async function executeWorkflowDelete(args: Record<string, unknown>): Promise<Act
   if (invalid) return invalid;
 
   const id = String(args.id);
+  const mode = String(args.mode ?? "archive_with_runtime_cleanup");
+
   const archived = await archiveWorkflow(id);
   if (!archived) return { status: 404, data: { error: "Workflow not found" } };
-  const deletedCases = await deleteCasesByProcess(id).catch(() => 0);
-  return { status: 200, data: { ok: true, archived: id, deleted_cases: deletedCases } };
+
+  let deletedCases = 0;
+  let deletedWorkItems = 0;
+  let cancelledSubscriptions = 0;
+  const warnings: string[] = [];
+
+  if (mode === "archive_with_runtime_cleanup" || mode === "purge_generated") {
+    deletedCases = await deleteCasesByProcess(id).catch(() => { warnings.push("case cleanup failed"); return 0; });
+    deletedWorkItems = await deleteWorkItemsByProcess(id).catch(() => { warnings.push("work item cleanup failed"); return 0; });
+    cancelledSubscriptions = await cancelSubscriptionsByProcessAndInstance(id, "new").catch(() => { warnings.push("subscription cleanup failed"); return 0; });
+  }
+
+  return {
+    status: 200,
+    data: {
+      ok: true,
+      workflow_id: id,
+      mode,
+      archived: true,
+      deleted_cases: deletedCases,
+      deleted_work_items: deletedWorkItems,
+      cancelled_subscriptions: cancelledSubscriptions,
+      warnings: warnings.length > 0 ? warnings : undefined,
+    },
+  };
 }
 
 async function executeWorkflowBatchDelete(args: Record<string, unknown>): Promise<ActionExecution> {
@@ -266,24 +292,28 @@ async function executeWorkflowBatchDelete(args: Record<string, unknown>): Promis
   if (ids.length === 0) return { status: 400, data: { ok: false, error: "ids array required" } };
   if (ids.length > 50) return { status: 400, data: { ok: false, error: "Batch limit: 50 workflows per request" } };
 
-  const results: { id: string; ok: boolean; deleted_cases: number; error?: string }[] = [];
+  const results: { id: string; ok: boolean; deleted_cases: number; deleted_work_items: number; cancelled_subscriptions: number; error?: string }[] = [];
   for (const id of ids) {
     try {
       const archived = await archiveWorkflow(id);
       if (!archived) {
-        results.push({ id, ok: false, deleted_cases: 0, error: "Not found" });
+        results.push({ id, ok: false, deleted_cases: 0, deleted_work_items: 0, cancelled_subscriptions: 0, error: "Not found" });
         continue;
       }
       const deletedCases = await deleteCasesByProcess(id).catch(() => 0);
-      results.push({ id, ok: true, deleted_cases: deletedCases });
+      const deletedWorkItems = await deleteWorkItemsByProcess(id).catch(() => 0);
+      const cancelledSubscriptions = await cancelSubscriptionsByProcessAndInstance(id, "new").catch(() => 0);
+      results.push({ id, ok: true, deleted_cases: deletedCases, deleted_work_items: deletedWorkItems, cancelled_subscriptions: cancelledSubscriptions });
     } catch (e: any) {
-      results.push({ id, ok: false, deleted_cases: 0, error: e.message });
+      results.push({ id, ok: false, deleted_cases: 0, deleted_work_items: 0, cancelled_subscriptions: 0, error: e.message });
     }
   }
 
   const deleted = results.filter(r => r.ok).length;
   const skipped = results.filter(r => !r.ok).length;
   const totalCases = results.reduce((sum, r) => sum + r.deleted_cases, 0);
+  const totalWorkItems = results.reduce((sum, r) => sum + r.deleted_work_items, 0);
+  const totalCancelledSubs = results.reduce((sum, r) => sum + r.cancelled_subscriptions, 0);
 
   return {
     status: 200,
@@ -292,8 +322,10 @@ async function executeWorkflowBatchDelete(args: Record<string, unknown>): Promis
       deleted_count: deleted,
       skipped_count: skipped,
       total_deleted_cases: totalCases,
+      total_deleted_work_items: totalWorkItems,
+      total_cancelled_subscriptions: totalCancelledSubs,
       results,
-      summary: `Удалено процессов: ${deleted}, пропущено: ${skipped}, удалено прогонов: ${totalCases}`,
+      summary: `Удалено процессов: ${deleted}, пропущено: ${skipped}, удалено прогонов: ${totalCases}, задач: ${totalWorkItems}, подписок: ${totalCancelledSubs}`,
     },
   };
 }
