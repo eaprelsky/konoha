@@ -23,6 +23,7 @@ import {
   type WorkflowObservableResult as ObservableResult,
   type WorkflowPendingConfirmation as PendingConfirmation,
 } from "./workflow-action-contract";
+import { createConfirmation } from "./confirmation-store";
 import { randomUUID } from "crypto";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -140,7 +141,7 @@ export async function normalizeAssistantResponse(
         createdWorkflow = { id: action.result.id as string, name: action.result.name as string, ...action.result };
         actionReceipts.push(buildWorkflowCreateReceipt(action, opts, "succeeded"));
       } else if (action.status === "needs_confirm") {
-        pendingConfirmations.push(buildPendingConfirmation("workflow.create", action.params));
+        pendingConfirmations.push(await buildPendingConfirmation("workflow.create", action.params, opts));
         actionReceipts.push(buildWorkflowCreateReceipt(action, opts, "pending_confirmation"));
         reply = reply + `\n\nТребуется подтверждение перед выполнением действия: workflow.create.`;
       } else if (action.status === "failed") {
@@ -170,7 +171,7 @@ export async function normalizeAssistantResponse(
           message: "Открыть мониторинг прогона",
         });
       } else if (action.status === "needs_confirm") {
-        pendingConfirmations.push(buildPendingConfirmation("case.start", action.params));
+        pendingConfirmations.push(await buildPendingConfirmation("case.start", action.params, opts));
         actionReceipts.push(buildCaseStartReceipt(action, opts, "pending_confirmation"));
         reply = reply + `\n\nТребуется подтверждение перед выполнением действия: case.start.`;
       } else if (action.status === "failed") {
@@ -381,19 +382,34 @@ async function executeCaseStart(
   }
 }
 
-function buildPendingConfirmation(action: string, params: Record<string, unknown>): PendingConfirmation {
-  return {
-    id: randomUUID(),
+async function buildPendingConfirmation(
+  action: string,
+  params: Record<string, unknown>,
+  opts: NormalizeOptions,
+): Promise<PendingConfirmation> {
+  const record = await createConfirmation({
     action,
     title: `Confirmation required: ${action}`,
     summary: `Assistant requested ${action} and this action is configured as confirm-required.`,
+    params,
+    chat_id: opts.chat_id,
+    session_id: opts.session_id,
+  });
+  return {
+    id: record.id,
+    action,
+    title: record.title,
+    summary: record.summary,
     status: "required",
     permission: {
       actor_scope: "assistant_on_behalf_of_user",
       autonomy: "confirm",
       confirmation_required: true,
     },
-    params,
+    params: record.params,
+    created_at: record.created_at,
+    expires_at: record.expires_at,
+    chat_id: record.chat_id,
   };
 }
 

@@ -9,10 +9,21 @@ import { useHighlight } from '../components/HighlightOverlay';
 
 const CHAT_KEY = 'konoha_aw_chat_id';
 
+export interface PendingConfirmation {
+  id: string;
+  action: string;
+  title: string;
+  summary: string;
+  status: 'required' | 'confirmed' | 'cancelled' | 'expired';
+  created_at?: string;
+  expires_at?: string;
+}
+
 export interface Msg {
   role: 'user' | 'assistant' | 'system';
   text: string;
   images?: string[];
+  pending_confirmations?: PendingConfirmation[];
 }
 
 export interface AttachmentImg {
@@ -59,6 +70,9 @@ export interface UseAssistantChatResult {
   setAttachments: (fn: (prev: AttachmentImg[]) => AttachmentImg[]) => void;
   send: () => Promise<void>;
   abort: () => void;
+  pendingConfirmations: PendingConfirmation[];
+  confirmAction: (id: string) => Promise<void>;
+  cancelAction: (id: string) => Promise<void>;
 }
 
 /** Optional overrides for router dependencies — inject in tests to avoid Router wrapper. */
@@ -82,9 +96,57 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
     try { return sessionStorage.getItem(CHAT_KEY); } catch { return null; }
   });
   const [attachments, setAttachments] = useState<AttachmentImg[]>([]);
+  const [pendingConfirmations, setPendingConfirmations] = useState<PendingConfirmation[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   function abort() { abortRef.current?.abort(); }
+
+  async function confirmAction(id: string) {
+    setPendingConfirmations(prev =>
+      prev.map(c => c.id === id ? { ...c, status: 'confirmed' as const } : c)
+    );
+    try {
+      const res = await fetch(`/api/ai/confirm/${id}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setPendingConfirmations(prev => prev.filter(c => c.id !== id));
+        setMsgs(prev => [...prev, { role: 'system', text: `Действие выполнено: ${data.action ?? id}` }]);
+      } else {
+        setMsgs(prev => [...prev, { role: 'system', text: `Ошибка подтверждения: ${data.error ?? 'неизвестная ошибка'}` }]);
+        setPendingConfirmations(prev =>
+          prev.map(c => c.id === id ? { ...c, status: 'required' as const } : c)
+        );
+      }
+    } catch (e: any) {
+      setMsgs(prev => [...prev, { role: 'system', text: `Ошибка: ${e.message}` }]);
+      setPendingConfirmations(prev =>
+        prev.map(c => c.id === id ? { ...c, status: 'required' as const } : c)
+      );
+    }
+  }
+
+  async function cancelAction(id: string) {
+    setPendingConfirmations(prev =>
+      prev.map(c => c.id === id ? { ...c, status: 'cancelled' as const } : c)
+    );
+    try {
+      const res = await fetch(`/api/ai/cancel/${id}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setPendingConfirmations(prev => prev.filter(c => c.id !== id));
+        setMsgs(prev => [...prev, { role: 'system', text: `Действие отменено: ${data.action ?? id}` }]);
+      } else {
+        setPendingConfirmations(prev =>
+          prev.map(c => c.id === id ? { ...c, status: 'required' as const } : c)
+        );
+      }
+    } catch (e: any) {
+      setMsgs(prev => [...prev, { role: 'system', text: `Ошибка: ${e.message}` }]);
+      setPendingConfirmations(prev =>
+        prev.map(c => c.id === id ? { ...c, status: 'required' as const } : c)
+      );
+    }
+  }
 
   async function send() {
     const msg = input.trim();
@@ -172,10 +234,25 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
                   updated.push({ role: 'system' as const, text: 'Схема обновлена. Нажмите 💾 для сохранения.' });
                 }
                 if (Array.isArray(ev.pending_confirmations) && ev.pending_confirmations.length > 0) {
+                  const newConfs: PendingConfirmation[] = ev.pending_confirmations.map((item: any) => ({
+                    id: item.id ?? '',
+                    action: item.action ?? 'unknown',
+                    title: item.title ?? '',
+                    summary: item.summary ?? '',
+                    status: item.status ?? 'required',
+                    created_at: item.created_at,
+                    expires_at: item.expires_at,
+                  }));
+                  setPendingConfirmations(prev => [...prev, ...newConfs]);
                   const labels = ev.pending_confirmations
                     .map((item: any) => typeof item?.action === 'string' ? item.action : 'unknown')
                     .join(', ');
-                  updated.push({ role: 'system' as const, text: `Требуется подтверждение: ${labels}` });
+                  const confirmMsg: Msg = {
+                    role: 'system' as const,
+                    text: `Требуется подтверждение: ${labels}`,
+                    pending_confirmations: newConfs,
+                  };
+                  updated.push(confirmMsg);
                 }
                 if (Array.isArray(ev.action_receipts) && ev.action_receipts.length > 0) {
                   for (const receipt of ev.action_receipts) {
@@ -226,5 +303,5 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
     }
   }
 
-  return { msgs, input, setInput, busy, attachments, setAttachments, send, abort };
+  return { msgs, input, setInput, busy, attachments, setAttachments, send, abort, pendingConfirmations, confirmAction, cancelAction };
 }

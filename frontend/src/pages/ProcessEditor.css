@@ -65,6 +65,25 @@
   .tsunade-send { background:#6366f1; border:none; color:white; border-radius:6px; padding:7px 12px; cursor:pointer; font-size:13px; font-weight:600; flex-shrink:0; }
   .tsunade-send:hover { background:#4f46e5; }
   .tsunade-send:disabled { opacity:.5; cursor:not-allowed; }
+  .tsunade-confirmations {
+    padding: 8px 12px;
+    background: #fef3c7;
+    border-top: 1px solid #f59e0b;
+    border-bottom: 1px solid #f59e0b;
+  }
+  .tsunade-confirmation-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 0;
+  }
+  .tsunade-confirmation-label { font-size: 12px; color: #92400e; font-weight: 500; }
+  .tsunade-confirmation-buttons { display: flex; gap: 6px; flex-shrink: 0; }
+  .tsunade-confirm-btn { background: #16a34a; color: white; border: none; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+  .tsunade-confirm-btn:hover { background: #15803d; }
+  .tsunade-cancel-btn { background: #dc2626; color: white; border: none; border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+  .tsunade-cancel-btn:hover { background: #b91c1c; }
   .btn-tsunade { background:#4f46e5 !important; border-color:#6366f1 !important; }
   .btn-tsunade:hover { background:#6366f1 !important; }
   .picker-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:200; display:flex; align-items:center; justify-content:center; }

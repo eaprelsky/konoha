@@ -29,7 +29,7 @@ export interface TsunadeChatPanelProps {
   onApplyPatch: (patch: SchemaPatch) => void;
 }
 
-type ChatMsg = { role: 'user' | 'assistant' | 'system' | 'error'; text: string };
+type ChatMsg = { role: 'user' | 'assistant' | 'system' | 'error'; text: string; pending_confirmations?: { id: string; action: string; status: string }[] };
 
 export function TsunadeChatPanel({
   show, onClose, wfId, wfName, elements, flow, positions,
@@ -41,8 +41,42 @@ export function TsunadeChatPanel({
   const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
+  const [pendingConfs, setPendingConfs] = useState<{ id: string; action: string; status: string }[]>([]);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const { showHighlight } = useHighlight();
+
+  async function confirmAction(id: string) {
+    setPendingConfs(prev => prev.map(c => c.id === id ? { ...c, status: 'confirmed' } : c));
+    try {
+      const res = await fetch(`/api/ai/confirm/${id}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setPendingConfs(prev => prev.filter(c => c.id !== id));
+        setChatMsgs(prev => [...prev, { role: 'system', text: `Действие выполнено: ${data.action ?? id}` }]);
+      } else {
+        setChatMsgs(prev => [...prev, { role: 'system', text: `Ошибка: ${data.error ?? 'неизвестная ошибка'}` }]);
+        setPendingConfs(prev => prev.map(c => c.id === id ? { ...c, status: 'required' } : c));
+      }
+    } catch (e: any) {
+      setChatMsgs(prev => [...prev, { role: 'system', text: `Ошибка: ${e.message}` }]);
+      setPendingConfs(prev => prev.map(c => c.id === id ? { ...c, status: 'required' } : c));
+    }
+  }
+
+  async function cancelAction(id: string) {
+    setPendingConfs(prev => prev.map(c => c.id === id ? { ...c, status: 'cancelled' } : c));
+    try {
+      const res = await fetch(`/api/ai/cancel/${id}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setPendingConfs(prev => prev.filter(c => c.id !== id));
+        setChatMsgs(prev => [...prev, { role: 'system', text: `Действие отменено: ${data.action ?? id}` }]);
+      }
+    } catch (e: any) {
+      setChatMsgs(prev => [...prev, { role: 'system', text: `Ошибка: ${e.message}` }]);
+      setPendingConfs(prev => prev.map(c => c.id === id ? { ...c, status: 'required' } : c));
+    }
+  }
 
   useEffect(() => {
     api.agents.get('tsunade')
@@ -88,8 +122,14 @@ export function TsunadeChatPanel({
         }
       }
       if (Array.isArray(res.pending_confirmations) && res.pending_confirmations.length > 0) {
-        const labels = res.pending_confirmations.map(item => item.action).join(', ');
-        setChatMsgs(prev => [...prev, { role: 'system', text: `Требуется подтверждение: ${labels}` }]);
+        const newConfs = res.pending_confirmations.map((item: any) => ({
+          id: item.id ?? '',
+          action: item.action ?? 'unknown',
+          status: item.status ?? 'required',
+        }));
+        setPendingConfs(prev => [...prev, ...newConfs]);
+        const labels = res.pending_confirmations.map((item: any) => item.action).join(', ');
+        setChatMsgs(prev => [...prev, { role: 'system', text: `Требуется подтверждение: ${labels}`, pending_confirmations: newConfs }]);
       }
       const actionReceipts = res.action_receipts ?? [];
       if (actionReceipts.length > 0) {
@@ -142,6 +182,24 @@ export function TsunadeChatPanel({
         )}
         <div ref={chatBottomRef} />
       </div>
+      {pendingConfs.filter(c => c.status === 'required').length > 0 && (
+        <div className="tsunade-confirmations">
+          {pendingConfs.filter(c => c.status === 'required').map(c => (
+            <div key={c.id} className="tsunade-confirmation-item">
+              <span className="tsunade-confirmation-label">
+                {c.action === 'workflow.delete' ? 'Удаление процесса' :
+                 c.action === 'workflow.create' ? 'Создание процесса' :
+                 c.action === 'case.start' ? 'Запуск процесса' :
+                 c.action}
+              </span>
+              <div className="tsunade-confirmation-buttons">
+                <button className="tsunade-confirm-btn" onClick={() => confirmAction(c.id)}>✓ Подтвердить</button>
+                <button className="tsunade-cancel-btn" onClick={() => cancelAction(c.id)}>✕ Отмена</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="tsunade-input-row">
         <textarea
           className="tsunade-input"

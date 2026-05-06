@@ -28,18 +28,23 @@ export interface WorkflowAssistantAction {
   error?: string;
 }
 
+export type ConfirmationStatus = "required" | "confirmed" | "cancelled" | "expired";
+
 export interface WorkflowPendingConfirmation {
   id: string;
   action: WorkflowActionType | string;
   title: string;
   summary: string;
-  status: "required";
+  status: ConfirmationStatus;
   permission: {
     actor_scope: "assistant_on_behalf_of_user";
     autonomy: "confirm";
     confirmation_required: true;
   };
   params: Record<string, unknown>;
+  created_at?: string;
+  expires_at?: string;
+  chat_id?: string;
 }
 
 export interface WorkflowActionReceiptResource {

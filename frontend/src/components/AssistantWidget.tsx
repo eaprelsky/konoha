@@ -51,7 +51,7 @@ function renderMarkdown(text: string): string {
 export function AssistantWidget() {
   const branding = useBranding();
   const [widgetState, setWidgetState] = useState<WidgetState>('collapsed');
-  const { msgs, input, setInput, busy, attachments, setAttachments, send, abort } = useAssistantChat();
+  const { msgs, input, setInput, busy, attachments, setAttachments, send, abort, pendingConfirmations, confirmAction, cancelAction } = useAssistantChat();
   const { pos, size, isMobile, mobileHeight, panelRef, onDragStart, onHandleTouchStart, onHandleTouchMove, onHandleTouchEnd } = useWidgetPosition(widgetState === 'fullscreen');
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -173,6 +173,37 @@ export function AssistantWidget() {
           })}
           <div ref={bottomRef} />
         </div>
+
+        {pendingConfirmations.filter(c => c.status === 'required').length > 0 && (
+          <div className="aw-confirmations">
+            {pendingConfirmations.filter(c => c.status === 'required').map(c => (
+              <div key={c.id} className="aw-confirmation-item">
+                <span className="aw-confirmation-label">
+                  {c.action === 'workflow.delete' ? 'Удаление процесса' :
+                   c.action === 'workflow.create' ? 'Создание процесса' :
+                   c.action === 'case.start' ? 'Запуск процесса' :
+                   c.action}
+                </span>
+                <div className="aw-confirmation-buttons">
+                  <button
+                    className="aw-confirm-btn"
+                    onClick={() => confirmAction(c.id)}
+                    title="Подтвердить"
+                  >
+                    ✓ Подтвердить
+                  </button>
+                  <button
+                    className="aw-cancel-btn"
+                    onClick={() => cancelAction(c.id)}
+                    title="Отменить"
+                  >
+                    ✕ Отмена
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {attachments.length > 0 && (
           <div className="aw-attachments">

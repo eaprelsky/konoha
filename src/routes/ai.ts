@@ -10,6 +10,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createWorkflow, listWorkflows } from "../workflow-loader";
 import { getAgentDef, listAgentDefs } from "../agent-lifecycle";
 import { buildOperatorStatePromptBlock, getOperatorStateLabel } from "../operator-state";
+import { executeAction } from "../act-envelope";
+import { getConfirmation, confirmConfirmation, cancelConfirmation } from "../confirmation-store";
 import type { AssistantResponse } from "../assistant-response";
 const log = createLogger("routes:ai");
 
@@ -559,6 +561,77 @@ router.post("/ai/chat", async (c) => {
     log.error("non-streaming ai chat failed", { error: e.message, mode, chat_id: chatId });
     return c.json({ error: e.message }, 500);
   }
+});
+
+// --- Confirmation endpoints — confirm / cancel pending Assistant destructive actions ---
+
+router.post("/ai/confirm/:confirmation_id", requireAuth, async (c) => {
+  const id = c.req.param("confirmation_id");
+  if (!id) return c.json({ ok: false, error: "confirmation_id required" }, 400);
+  const record = await getConfirmation(id);
+  if (!record) return c.json({ ok: false, error: "Confirmation not found" }, 404);
+  if (record.status === "expired") return c.json({ ok: false, error: "Confirmation expired" }, 410);
+  if (record.status === "cancelled") return c.json({ ok: false, error: "Confirmation was cancelled" }, 409);
+  if (record.status === "confirmed") return c.json({ ok: false, error: "Already confirmed", already_executed: true }, 409);
+
+  // Execute the action with skipAutonomy to bypass the confirm requirement
+  try {
+    const result = await executeAction({
+      action: record.action,
+      category: "act",
+      args: record.params,
+      meta: {
+        session_id: record.session_id,
+        agent_chain: "tsunade",
+      },
+    }, {
+      skipAutonomy: true,
+      session_id: record.session_id,
+      agent_chain: "tsunade",
+    });
+
+    await confirmConfirmation(id, { ok: result.ok, data: result.data, error: result.error });
+
+    if (!result.ok) {
+      return c.json({
+        ok: false,
+        confirmation_id: id,
+        status: "confirmed",
+        action: record.action,
+        error: result.error ?? "Action execution failed",
+      }, 500);
+    }
+
+    return c.json({
+      ok: true,
+      confirmation_id: id,
+      status: "confirmed",
+      action: record.action,
+      result: result.data,
+    });
+  } catch (e: any) {
+    await confirmConfirmation(id, { ok: false, error: e.message }).catch(silentCatch("confirm audit"));
+    return c.json({
+      ok: false,
+      confirmation_id: id,
+      status: "confirmed",
+      error: e.message,
+    }, 500);
+  }
+});
+
+router.post("/ai/cancel/:confirmation_id", requireAuth, async (c) => {
+  const id = c.req.param("confirmation_id");
+  if (!id) return c.json({ ok: false, error: "confirmation_id required" }, 400);
+  const record = await cancelConfirmation(id);
+  if (!record) return c.json({ ok: false, error: "Confirmation not found" }, 404);
+
+  return c.json({
+    ok: true,
+    confirmation_id: id,
+    status: "cancelled",
+    action: record.action,
+  });
 });
 
 router.delete("/ai/chat/:chat_id", requireAuth, async (c) => {
