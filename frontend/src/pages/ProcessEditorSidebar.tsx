@@ -80,28 +80,90 @@ export function ProcessEditorSidebar({ s }: { s: ProcessEditorState }) {
         </div>
       )}
 
-      {s.showHiddenArtifacts && s.showMining && s.miningData && (
+      {s.showHiddenArtifacts && s.wfId.trim() && (
         <div>
-          <h3>⛏ Майнинг — {s.miningData.case_count} прогон(ов)</h3>
-          {s.miningData.bottleneck_element_id && (
-            <div style={{ fontSize: 11, color: '#fca5a5', background: '#450a0a', padding: '4px 8px', borderRadius: 4, marginBottom: 6 }}>
-              🔥 Узкое место: {s.miningData.elements[s.miningData.bottleneck_element_id]?.label || s.miningData.bottleneck_element_id}
-              {s.miningData.elements[s.miningData.bottleneck_element_id]?.avg_duration_ms != null && (
-                <span> — {formatDuration(s.miningData.elements[s.miningData.bottleneck_element_id]!.avg_duration_ms!)}</span>
+          <h3>📊 Аналитика прогонов</h3>
+
+          {/* Loading */}
+          {s.miningLoading && (
+            <div style={{ fontSize: 12, color: '#60a5fa', padding: '8px 0', textAlign: 'center' }}>
+              ⏳ Загрузка аналитики…
+            </div>
+          )}
+
+          {/* No data loaded yet — show description + CTA */}
+          {!s.miningData && !s.miningLoading && !s.showMining && (
+            <>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>
+                Сравнение спроектированной схемы с фактическими выполнениями: посещаемость, длительность, узкие места и отклонения.
+              </div>
+              <button
+                onClick={s.toggleMining}
+                style={{
+                  width: '100%', padding: '6px 10px', fontSize: 12, fontWeight: 600,
+                  background: '#1e3a5f', color: '#93c5fd', border: '1px solid #3b82f6',
+                  borderRadius: 5, cursor: 'pointer',
+                }}
+              >
+                🔍 Загрузить аналитику
+              </button>
+            </>
+          )}
+
+          {/* Error — fetch failed */}
+          {s.showMining && !s.miningData && !s.miningLoading && (
+            <div style={{ fontSize: 12, color: '#fca5a5', padding: '8px', background: '#450a0a', borderRadius: 4 }}>
+              ⚠ Не удалось загрузить аналитику. Попробуйте позже.
+            </div>
+          )}
+
+          {/* Empty — loaded but no runs */}
+          {s.miningData && s.miningData.case_count === 0 && (
+            <div style={{ fontSize: 12, color: '#94a3b8', padding: '8px', background: '#1e293b', borderRadius: 4, textAlign: 'center' }}>
+              📭 Нет данных о выполнении — запустите процесс, чтобы увидеть аналитику.
+            </div>
+          )}
+
+          {/* Data — analytics summary (visible regardless of overlay toggle) */}
+          {s.miningData && s.miningData.case_count > 0 && (
+            <>
+              <div style={{ fontSize: 11, color: '#22d3ee', marginBottom: 6 }}>
+                Проанализировано прогонов: <strong>{s.miningData.case_count}</strong>
+              </div>
+              {s.miningData.bottleneck_element_id && (
+                <div style={{ fontSize: 11, color: '#fca5a5', background: '#450a0a', padding: '4px 8px', borderRadius: 4, marginBottom: 6 }}>
+                  🔥 Узкое место: {s.miningData.elements[s.miningData.bottleneck_element_id]?.label || s.miningData.bottleneck_element_id}
+                  {s.miningData.elements[s.miningData.bottleneck_element_id]?.avg_duration_ms != null && (
+                    <span> — {formatDuration(s.miningData.elements[s.miningData.bottleneck_element_id]!.avg_duration_ms!)}</span>
+                  )}
+                </div>
               )}
-            </div>
+              {s.miningData.skipped_elements.length > 0 && (
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
+                  ⬜ Пропущено: {s.miningData.skipped_elements.map(id => s.miningData!.elements[id]?.label || id).join(', ')}
+                </div>
+              )}
+              {s.miningData.deviation_elements.length > 0 && (
+                <div style={{ fontSize: 11, color: '#fbbf24', marginBottom: 4 }}>
+                  ⚠ Отклонения: {s.miningData.deviation_elements.map(id => s.miningData!.elements[id]?.label || id).join(', ')}
+                </div>
+              )}
+              {s.miningData.skipped_elements.length === 0 && s.miningData.deviation_elements.length === 0 && !s.miningData.bottleneck_element_id && (
+                <div style={{ fontSize: 11, color: '#4ade80', marginBottom: 6 }}>✅ Все элементы посещены, отклонений не найдено.</div>
+              )}
+              <div style={{ fontSize: 10, color: '#475569', marginBottom: 8 }}>Наведите на элемент на схеме для детальной статистики</div>
+              <button
+                onClick={s.toggleMining}
+                style={{
+                  width: '100%', padding: '4px 8px', fontSize: 11,
+                  background: '#1e293b', color: '#94a3b8', border: '1px solid #334155',
+                  borderRadius: 4, cursor: 'pointer',
+                }}
+              >
+                {s.showMining ? '✕ Скрыть наложение' : '◯ Показать наложение'}
+              </button>
+            </>
           )}
-          {s.miningData.skipped_elements.length > 0 && (
-            <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>
-              ⬜ Пропущено: {s.miningData.skipped_elements.map(id => s.miningData!.elements[id]?.label || id).join(', ')}
-            </div>
-          )}
-          {s.miningData.deviation_elements.length > 0 && (
-            <div style={{ fontSize: 11, color: '#fbbf24', marginBottom: 4 }}>
-              ⚠ Отклонения: {s.miningData.deviation_elements.map(id => s.miningData!.elements[id]?.label || id).join(', ')}
-            </div>
-          )}
-          <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>Наведите на элемент на схеме для статистики</div>
         </div>
       )}
     </>

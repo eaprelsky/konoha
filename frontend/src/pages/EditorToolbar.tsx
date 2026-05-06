@@ -72,17 +72,6 @@ export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Pro
         onClick={() => setReadOnly(r => !r)}
       >{readOnly ? '✏' : '👁'}</button>
 
-      {s.showHiddenArtifacts && s.wfId.trim() && (
-        <button
-          className={s.showMining ? 'active' : ''}
-          onClick={s.toggleMining}
-          title="Process Mining — наложить статистику реальных прогонов на схему"
-          style={{ background: s.showMining ? '#065f46' : '#1e3a2f', borderColor: '#10b981' }}
-        >
-          {s.miningLoading ? '⏳' : '⛏'} Майнинг
-        </button>
-      )}
-
       <VersionSelector
         versions={s.versions}
         viewingVersion={s.viewingVersion}
