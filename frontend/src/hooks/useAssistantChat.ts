@@ -128,7 +128,13 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
       const data = await res.json();
       if (data.ok) {
         setPendingConfirmations(prev => prev.filter(c => c.id !== id));
-        setMsgs(prev => [...prev, { role: 'system', text: `Действие выполнено: ${data.action ?? id}` }]);
+        if (data.operation_id) {
+          setMsgs(prev => [...prev, { role: 'system', text: `🔄 ${data.message ?? 'Фоновая операция запущена.'} (ID: ${data.operation_id.slice(0, 8)})` }]);
+          // Poll for completion
+          pollOperation(data.operation_id);
+        } else {
+          setMsgs(prev => [...prev, { role: 'system', text: `Действие выполнено: ${data.action ?? id}` }]);
+        }
       } else {
         setMsgs(prev => [...prev, { role: 'system', text: `Ошибка подтверждения: ${data.error ?? 'неизвестная ошибка'}` }]);
         setPendingConfirmations(prev =>
@@ -140,6 +146,42 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
       setPendingConfirmations(prev =>
         prev.map(c => c.id === id ? { ...c, status: 'required' as const } : c)
       );
+    }
+  }
+
+  async function pollOperation(opId: string) {
+    const maxPolls = 60;
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const res = await fetch(`/api/ai/operations/${opId}`);
+        if (!res.ok) break;
+        const op = await res.json();
+        if (op.status === 'done' || op.status === 'error') {
+          setMsgs(prev => {
+            const last = prev[prev.length - 1];
+            if (last?.text?.startsWith('🔄')) {
+              return [...prev.slice(0, -1), {
+                role: 'system' as const,
+                text: op.status === 'done'
+                  ? `✅ ${op.progress ?? 'Операция завершена.'}${op.result?.summary ? ' ' + op.result.summary : ''}`
+                  : `❌ Ошибка операции: ${op.error ?? 'неизвестная ошибка'}`,
+              }];
+            }
+            return prev;
+          });
+          break;
+        }
+        if (i % 5 === 0) {
+          setMsgs(prev => {
+            const last = prev[prev.length - 1];
+            if (last?.text?.startsWith('🔄')) {
+              return [...prev.slice(0, -1), { role: 'system' as const, text: `🔄 Выполняется...${op.progress ? ' ' + op.progress : ''}` }];
+            }
+            return prev;
+          });
+        }
+      } catch { break; }
     }
   }
 

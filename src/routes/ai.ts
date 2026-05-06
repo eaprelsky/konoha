@@ -12,6 +12,7 @@ import { getAgentDef, listAgentDefs } from "../agent-lifecycle";
 import { buildOperatorStatePromptBlock, getOperatorStateLabel } from "../operator-state";
 import { executeAction } from "../act-envelope";
 import { getConfirmation, confirmConfirmation, cancelConfirmation } from "../confirmation-store";
+import { createOperation, getOperation, updateOperation, appendOperationCompletion } from "../operation-store";
 import type { AssistantResponse } from "../assistant-response";
 const log = createLogger("routes:ai");
 
@@ -592,6 +593,16 @@ router.get("/ai/chat/:chat_id", requireAuth, async (c) => {
   return c.json({ chat_id: chatId, messages });
 });
 
+// --- Operation status endpoint — poll long-running action progress ---
+
+router.get("/ai/operations/:operation_id", requireAuth, async (c) => {
+  const id = c.req.param("operation_id");
+  if (!id) return c.json({ error: "operation_id required" }, 400);
+  const op = await getOperation(id);
+  if (!op) return c.json({ error: "Operation not found" }, 404);
+  return c.json(op);
+});
+
 // --- Confirmation endpoints — confirm / cancel pending Assistant destructive actions ---
 
 router.post("/ai/confirm/:confirmation_id", requireAuth, async (c) => {
@@ -602,6 +613,42 @@ router.post("/ai/confirm/:confirmation_id", requireAuth, async (c) => {
   if (record.status === "expired") return c.json({ ok: false, error: "Confirmation expired" }, 410);
   if (record.status === "cancelled") return c.json({ ok: false, error: "Confirmation was cancelled" }, 409);
   if (record.status === "confirmed") return c.json({ ok: false, error: "Already confirmed", already_executed: true }, 409);
+
+  // For batch deletes, execute asynchronously and return operation_id
+  if (record.action === "workflow.batch_delete" && Array.isArray(record.params.ids) && record.params.ids.length > 5) {
+    const op = await createOperation({ action: record.action, chat_id: record.chat_id });
+    await confirmConfirmation(id, { operation_id: op.operation_id });
+    // Fire-and-forget async execution
+    executeAction({
+      action: record.action,
+      category: "act",
+      args: record.params,
+      meta: { session_id: record.session_id, agent_chain: "tsunade" },
+    }, { skipAutonomy: true, session_id: record.session_id, agent_chain: "tsunade" })
+      .then(async result => {
+        await updateOperation(op.operation_id, {
+          status: result.ok ? "done" : "error",
+          progress: result.ok ? `Удалено процессов в фоне` : undefined,
+          result: result.data as Record<string, unknown> | undefined,
+          error: result.error,
+        });
+        await appendOperationCompletion({
+          ...(await getOperation(op.operation_id))!,
+        });
+      })
+      .catch(async e => {
+        await updateOperation(op.operation_id, { status: "error", error: e.message });
+        await appendOperationCompletion({ ...(await getOperation(op.operation_id))! } as any);
+      });
+    return c.json({
+      ok: true,
+      confirmation_id: id,
+      status: "confirmed",
+      action: record.action,
+      operation_id: op.operation_id,
+      message: `Запущена фоновая операция удаления ${record.params.ids.length} процессов.`,
+    });
+  }
 
   // Execute the action with skipAutonomy to bypass the confirm requirement
   try {
