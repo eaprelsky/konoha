@@ -133,6 +133,42 @@ export async function normalizeAssistantResponse(
       }
     }
 
+    // Execute workflow deletion (single)
+    if (parsed.delete_workflow && typeof parsed.delete_workflow === "object" && executeActions) {
+      const delDef = parsed.delete_workflow as Record<string, unknown>;
+      const delAction = await executeWorkflowDeletion(delDef, opts);
+      actionsTaken.push(delAction);
+      if (delAction.status === "executed" && delAction.result) {
+        actionReceipts.push(buildWorkflowDeleteReceipt(delAction, opts, "succeeded"));
+        reply = reply + `\n\nПроцесс "${String(delAction.result.id)}" удалён.`;
+      } else if (delAction.status === "needs_confirm") {
+        pendingConfirmations.push(await buildPendingConfirmation("workflow.delete", delAction.params, opts));
+        actionReceipts.push(buildWorkflowDeleteReceipt(delAction, opts, "pending_confirmation"));
+        reply = reply + `\n\nТребуется подтверждение для удаления процесса.`;
+      } else if (delAction.status === "failed") {
+        actionReceipts.push(buildWorkflowDeleteReceipt(delAction, opts, "failed"));
+        reply = reply + `\n\n⚠️ Ошибка удаления процесса: ${delAction.error}`;
+      }
+    }
+
+    // Execute workflow batch deletion
+    if (parsed.delete_workflows && typeof parsed.delete_workflows === "object" && executeActions) {
+      const batchDef = parsed.delete_workflows as Record<string, unknown>;
+      const batchAction = await executeWorkflowBatchDeletion(batchDef, opts);
+      actionsTaken.push(batchAction);
+      if (batchAction.status === "executed" && batchAction.result) {
+        actionReceipts.push(buildWorkflowBatchDeleteReceipt(batchAction, opts, "succeeded"));
+        reply = reply + `\n\n${batchAction.result.summary || 'Пакетное удаление выполнено.'}`;
+      } else if (batchAction.status === "needs_confirm") {
+        pendingConfirmations.push(await buildPendingConfirmation("workflow.batch_delete", batchAction.params, opts));
+        actionReceipts.push(buildWorkflowBatchDeleteReceipt(batchAction, opts, "pending_confirmation"));
+        reply = reply + `\n\nТребуется подтверждение для пакетного удаления процессов.`;
+      } else if (batchAction.status === "failed") {
+        actionReceipts.push(buildWorkflowBatchDeleteReceipt(batchAction, opts, "failed"));
+        reply = reply + `\n\n⚠️ Ошибка пакетного удаления: ${batchAction.error}`;
+      }
+    }
+
     // Execute workflow creation
     if (parsed.create_workflow && typeof parsed.create_workflow === "object" && executeActions) {
       const action = await executeWorkflowCreation(parsed.create_workflow, opts);
@@ -305,6 +341,126 @@ async function executeWorkflowCreation(
       params: params as Record<string, unknown>,
       status: "failed",
       description: "Create draft workflow",
+      error: e.message,
+    };
+  }
+}
+
+async function executeWorkflowDeletion(
+  def: unknown,
+  opts: NormalizeOptions,
+): Promise<AssistantAction> {
+  const params = def as Record<string, unknown>;
+  const id = String(params.id ?? "");
+  if (!id) {
+    return { action: "workflow.delete", params, status: "failed", description: "Delete workflow", error: "id required" };
+  }
+
+  try {
+    const result = await executeAction({
+      action: "workflow.delete",
+      category: "act",
+      args: { id },
+      meta: {
+        session_id: opts.session_id ?? opts.chat_id,
+        agent_chain: opts.agent_id ?? "tsunade",
+      },
+    }, {
+      session_id: opts.session_id ?? opts.chat_id,
+      agent_chain: opts.agent_id ?? "tsunade",
+    });
+
+    if (result.requires_confirm) {
+      return {
+        action: "workflow.delete",
+        params: { id },
+        status: "needs_confirm",
+        description: "Delete workflow requires confirmation",
+      };
+    }
+
+    if (!result.ok) {
+      return {
+        action: "workflow.delete",
+        params: { id },
+        status: "failed",
+        description: "Delete workflow",
+        error: result.error ?? "Unknown error",
+      };
+    }
+
+    return {
+      action: "workflow.delete",
+      params: { id },
+      status: "executed",
+      description: `Archived workflow "${id}"`,
+      result: { id, ...(result.data as Record<string, unknown> ?? {}) },
+    };
+  } catch (e: any) {
+    return {
+      action: "workflow.delete",
+      params: { id },
+      status: "failed",
+      description: "Delete workflow",
+      error: e.message,
+    };
+  }
+}
+
+async function executeWorkflowBatchDeletion(
+  def: unknown,
+  opts: NormalizeOptions,
+): Promise<AssistantAction> {
+  const params = def as Record<string, unknown>;
+  const ids = Array.isArray(params.ids) ? params.ids.map(String) : [];
+
+  if (ids.length === 0) {
+    return { action: "workflow.batch_delete", params, status: "failed", description: "Batch delete workflows", error: "ids array required" };
+  }
+
+  try {
+    const result = await executeAction({
+      action: "workflow.batch_delete",
+      category: "act",
+      args: { ids },
+      meta: {
+        session_id: opts.session_id ?? opts.chat_id,
+        agent_chain: opts.agent_id ?? "tsunade",
+      },
+    }, {
+      session_id: opts.session_id ?? opts.chat_id,
+      agent_chain: opts.agent_id ?? "tsunade",
+    });
+
+    if (result.requires_confirm) {
+      return {
+        action: "workflow.batch_delete",
+        params: { ids },
+        status: "needs_confirm",
+        description: "Batch delete workflows requires confirmation",
+      };
+    }
+
+    const data = (result.data as Record<string, unknown>) ?? {};
+    return {
+      action: "workflow.batch_delete",
+      params: { ids },
+      status: "executed",
+      description: `Batch deleted ${ids.length} workflow(s)`,
+      result: {
+        ids,
+        deleted_count: data.deleted_count ?? 0,
+        skipped_count: data.skipped_count ?? 0,
+        total_deleted_cases: data.total_deleted_cases ?? 0,
+        summary: data.summary ?? `Удалено процессов: ${data.deleted_count ?? 0}`,
+      },
+    };
+  } catch (e: any) {
+    return {
+      action: "workflow.batch_delete",
+      params: { ids },
+      status: "failed",
+      description: "Batch delete workflows",
       error: e.message,
     };
   }
@@ -521,6 +677,68 @@ function buildCaseStartReceipt(
   };
 }
 
+function buildWorkflowDeleteReceipt(
+  action: AssistantAction,
+  opts: NormalizeOptions,
+  status: ActionReceipt["status"],
+): ActionReceipt {
+  const workflowId = typeof action.params.id === "string" ? action.params.id : "workflow.delete";
+  return {
+    id: randomUUID(),
+    action: "workflow.delete",
+    status,
+    summary:
+      status === "succeeded"
+        ? `Процесс удалён.`
+        : status === "pending_confirmation"
+        ? `Удаление процесса ожидает подтверждения.`
+        : `Удаление процесса завершилось ошибкой.`,
+    ...(action.error ? { details: action.error } : {}),
+    changed_resources: [
+      {
+        kind: "workflow",
+        id: workflowId,
+        change: status === "succeeded" ? "updated" : status === "pending_confirmation" ? "pending" : "failed",
+      },
+    ],
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: "workflow.delete",
+    },
+  };
+}
+
+function buildWorkflowBatchDeleteReceipt(
+  action: AssistantAction,
+  opts: NormalizeOptions,
+  status: ActionReceipt["status"],
+): ActionReceipt {
+  const ids = Array.isArray(action.params.ids) ? action.params.ids as string[] : [];
+  const deletedCount = typeof action.result?.deleted_count === "number" ? action.result.deleted_count : 0;
+  const skippedCount = typeof action.result?.skipped_count === "number" ? action.result.skipped_count : 0;
+  return {
+    id: randomUUID(),
+    action: "workflow.batch_delete",
+    status,
+    summary:
+      status === "succeeded"
+        ? `Пакетное удаление: ${deletedCount} удалено, ${skippedCount} пропущено.`
+        : status === "pending_confirmation"
+        ? `Пакетное удаление ${ids.length} процессов ожидает подтверждения.`
+        : `Пакетное удаление завершилось ошибкой.`,
+    ...(action.error ? { details: action.error } : {}),
+    changed_resources: ids.map(id => ({
+      kind: "workflow" as const,
+      id,
+      change: status === "succeeded" ? "updated" as const : status === "pending_confirmation" ? "pending" as const : "failed" as const,
+    })),
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: "workflow.batch_delete",
+    },
+  };
+}
+
 async function findNextPendingWorkItem(caseId: unknown): Promise<Record<string, unknown> | null> {
   if (typeof caseId !== "string" || !caseId) return null;
   const [next] = await listWorkItems({ case_id: caseId, status: "pending" });
@@ -731,6 +949,15 @@ function extractReply(parsed: Record<string, unknown>, fallback: string): string
   if (typeof parsed.text === "string" && parsed.text.trim()) return parsed.text;
   if (typeof parsed.message === "string" && parsed.message.trim()) return parsed.message;
   // If JSON was parsed but no text field found, generate a summary
+  if (parsed.delete_workflow) {
+    const id = (parsed.delete_workflow as Record<string, unknown>)?.id;
+    return `Запрашиваю подтверждение на удаление процесса${id ? ` "${id}"` : ""}.`;
+  }
+  if (parsed.delete_workflows) {
+    const ids = (parsed.delete_workflows as Record<string, unknown>)?.ids;
+    const count = Array.isArray(ids) ? ids.length : 0;
+    return `Запрашиваю подтверждение на удаление ${count} процессов.`;
+  }
   if (parsed.create_workflow) {
     const name = (parsed.create_workflow as Record<string, unknown>)?.name;
     return `Процесс${name ? ` "${name}"` : ""} создан.`;

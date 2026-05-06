@@ -258,6 +258,46 @@ async function executeWorkflowDelete(args: Record<string, unknown>): Promise<Act
   return { status: 200, data: { ok: true, archived: id, deleted_cases: deletedCases } };
 }
 
+async function executeWorkflowBatchDelete(args: Record<string, unknown>): Promise<ActionExecution> {
+  const invalid = validationFailure("workflow.batch_delete", args);
+  if (invalid) return invalid;
+
+  const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
+  if (ids.length === 0) return { status: 400, data: { ok: false, error: "ids array required" } };
+  if (ids.length > 50) return { status: 400, data: { ok: false, error: "Batch limit: 50 workflows per request" } };
+
+  const results: { id: string; ok: boolean; deleted_cases: number; error?: string }[] = [];
+  for (const id of ids) {
+    try {
+      const archived = await archiveWorkflow(id);
+      if (!archived) {
+        results.push({ id, ok: false, deleted_cases: 0, error: "Not found" });
+        continue;
+      }
+      const deletedCases = await deleteCasesByProcess(id).catch(() => 0);
+      results.push({ id, ok: true, deleted_cases: deletedCases });
+    } catch (e: any) {
+      results.push({ id, ok: false, deleted_cases: 0, error: e.message });
+    }
+  }
+
+  const deleted = results.filter(r => r.ok).length;
+  const skipped = results.filter(r => !r.ok).length;
+  const totalCases = results.reduce((sum, r) => sum + r.deleted_cases, 0);
+
+  return {
+    status: 200,
+    data: {
+      ok: true,
+      deleted_count: deleted,
+      skipped_count: skipped,
+      total_deleted_cases: totalCases,
+      results,
+      summary: `Удалено процессов: ${deleted}, пропущено: ${skipped}, удалено прогонов: ${totalCases}`,
+    },
+  };
+}
+
 export async function executeWorkflowAction(
   action: string,
   args: Record<string, unknown>,
@@ -270,6 +310,8 @@ export async function executeWorkflowAction(
       return executeWorkflowUpdate(args);
     case "workflow.delete":
       return executeWorkflowDelete(args);
+    case "workflow.batch_delete":
+      return executeWorkflowBatchDelete(args);
     case "workflow.list":
       return { status: 200, data: await listWorkflows() };
     case "workflow.get": {

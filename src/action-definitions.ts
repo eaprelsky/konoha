@@ -52,6 +52,18 @@ export const ACTIONS: ActionDef[] = [
     audited: true,
   },
   {
+    id: "workflow.batch_delete",
+    description: "Archive multiple workflows and cascade-delete their cases.",
+    scope: "workflow",
+    args: [
+      { name: "ids", type: "array", required: true, description: "Workflow IDs to archive." },
+      { name: "confirmed", type: "boolean", required: false, description: "Confirmation flag (must be true)." },
+    ],
+    currentEndpoint: "POST /workflows/batch-delete",
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
     id: "workflow.list",
     description: "List all workflow definitions.",
     scope: "workflow",
