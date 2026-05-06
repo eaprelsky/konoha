@@ -84,6 +84,22 @@ export function TsunadeChatPanel({
       .catch(() => setAssistantName('Советник'));
   }, []);
 
+  // Restore chat history if chat_id exists
+  useEffect(() => {
+    if (!chatId) return;
+    fetch(`/api/ai/chat/${chatId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.messages && Array.isArray(data.messages)) {
+          setChatMsgs(data.messages.map((m: any) => ({
+            role: (m.role === 'user' || m.role === 'assistant' || m.role === 'system') ? m.role : 'system',
+            text: m.content ?? m.text ?? '',
+          })));
+        }
+      })
+      .catch(() => {});
+  }, [chatId]);
+
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMsgs]);

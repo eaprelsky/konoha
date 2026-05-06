@@ -579,6 +579,19 @@ router.post("/ai/chat", async (c) => {
   }
 });
 
+// --- Chat history endpoint — restore messages after reload ---
+
+router.get("/ai/chat/:chat_id", requireAuth, async (c) => {
+  const chatId = c.req.param("chat_id");
+  if (!chatId) return c.json({ error: "chat_id required" }, 400);
+  const key = TSUNADE_CHAT_PREFIX + chatId;
+  const rawHistory = await redis.lrange(key, 0, -1).catch(() => [] as string[]);
+  const messages = rawHistory
+    .map(r => { try { return JSON.parse(r); } catch { return null; } })
+    .filter(Boolean);
+  return c.json({ chat_id: chatId, messages });
+});
+
 // --- Confirmation endpoints — confirm / cancel pending Assistant destructive actions ---
 
 router.post("/ai/confirm/:confirmation_id", requireAuth, async (c) => {

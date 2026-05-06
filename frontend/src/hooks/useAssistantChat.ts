@@ -2,7 +2,7 @@
  * Chat state and SSE streaming logic for AssistantWidget.
  * Extracted from AssistantWidget.tsx (issue #448).
  */
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Inspector } from '../components/Inspector';
 import { useHighlight } from '../components/HighlightOverlay';
@@ -97,7 +97,25 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
   });
   const [attachments, setAttachments] = useState<AttachmentImg[]>([]);
   const [pendingConfirmations, setPendingConfirmations] = useState<PendingConfirmation[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Load chat history on mount if chat_id exists
+  useEffect(() => {
+    if (!chatId || historyLoaded) return;
+    fetch(`/api/ai/chat/${chatId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.messages && Array.isArray(data.messages)) {
+          setMsgs(data.messages.map((m: any) => ({
+            role: (m.role === 'user' || m.role === 'assistant' || m.role === 'system') ? m.role : 'system',
+            text: m.content ?? m.text ?? '',
+          })));
+        }
+        setHistoryLoaded(true);
+      })
+      .catch(() => setHistoryLoaded(true));
+  }, [chatId, historyLoaded]);
 
   function abort() { abortRef.current?.abort(); }
 
