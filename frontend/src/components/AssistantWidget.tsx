@@ -51,7 +51,8 @@ function renderMarkdown(text: string): string {
 export function AssistantWidget() {
   const branding = useBranding();
   const [widgetState, setWidgetState] = useState<WidgetState>('collapsed');
-  const { msgs, input, setInput, busy, attachments, setAttachments, send, abort, pendingConfirmations, confirmAction, cancelAction } = useAssistantChat();
+  const { msgs, input, setInput, busy, attachments, setAttachments, send, abort, pendingConfirmations, confirmAction, cancelAction, sessions, currentSession, sessionsLoading, newSession, switchSession, archiveSession: archiveSessionAction, deleteSession: deleteSessionAction } = useAssistantChat();
+  const [showSessions, setShowSessions] = useState(false);
   const { pos, size, isMobile, mobileHeight, panelRef, onDragStart, onHandleTouchStart, onHandleTouchMove, onHandleTouchEnd } = useWidgetPosition(widgetState === 'fullscreen');
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -151,6 +152,62 @@ export function AssistantWidget() {
           <button className="aw-hbtn" onClick={() => setWidgetState('collapsed')} title="Скрыть чат" aria-label="Скрыть чат">
             <ChevronDown size={14} />
           </button>
+        </div>
+
+        {/* Session bar */}
+        <div className="aw-session-bar">
+          <button
+            className="aw-session-current"
+            onClick={() => setShowSessions(s => !s)}
+            title="Темы / сессии"
+          >
+            <span className="aw-session-icon">💬</span>
+            <span className="aw-session-title">
+              {currentSession?.title ?? 'Новая тема'}
+            </span>
+            <span className="aw-session-chevron">{showSessions ? '▴' : '▾'}</span>
+          </button>
+          {!currentSession && (
+            <button className="aw-session-new-btn" onClick={newSession} title="Новая тема">+</button>
+          )}
+          {showSessions && (
+            <div className="aw-session-dropdown">
+              <button className="aw-session-item aw-session-new" onClick={() => { newSession(); setShowSessions(false); }}>
+                <span>➕ Новая тема</span>
+              </button>
+              {sessionsLoading && <div className="aw-session-item" style={{ color: '#64748b', fontSize: 11 }}>Загрузка…</div>}
+              {!sessionsLoading && sessions.length === 0 && (
+                <div className="aw-session-item" style={{ color: '#64748b', fontSize: 11 }}>Нет активных тем</div>
+              )}
+              {sessions.map(s => (
+                <div key={s.chat_id} className={`aw-session-item${s.chat_id === (currentSession?.chat_id ?? '') ? ' active' : ''}`}>
+                  <button
+                    className="aw-session-item-btn"
+                    onClick={() => { switchSession(s.chat_id); setShowSessions(false); }}
+                  >
+                    <span className="aw-session-item-title">{s.title}</span>
+                    {s.last_message && (
+                      <span className="aw-session-item-last">{s.last_message}</span>
+                    )}
+                  </button>
+                  <button
+                    className="aw-session-item-archive"
+                    onClick={(e) => { e.stopPropagation(); archiveSessionAction(s.chat_id); }}
+                    title="Архивировать"
+                  >
+                    📦
+                  </button>
+                  <button
+                    className="aw-session-item-delete"
+                    onClick={(e) => { e.stopPropagation(); deleteSessionAction(s.chat_id); }}
+                    title="Удалить"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="aw-messages">

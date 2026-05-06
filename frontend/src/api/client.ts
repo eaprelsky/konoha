@@ -385,6 +385,31 @@ export const api = {
       }),
     clearChat: (chat_id: string) =>
       apiFetch<{ ok: boolean }>(`${BASE}/ai/chat/${encodeURIComponent(chat_id)}`, { method: 'DELETE' }),
+    sessions: {
+      list: (params?: { status?: string; limit?: number; offset?: number }) => {
+        const q = new URLSearchParams();
+        if (params?.status) q.set('status', params.status);
+        if (params?.limit) q.set('limit', String(params.limit));
+        if (params?.offset) q.set('offset', String(params.offset));
+        return apiFetch<import('./types').SessionListResult>(`${BASE}/ai/sessions?${q.toString()}`);
+      },
+      create: (params?: { title?: string; context?: import('./types').SessionContext; chat_id?: string }) =>
+        apiFetch<import('./types').SessionRecord>(`${BASE}/ai/sessions`, {
+          method: 'POST',
+          body: JSON.stringify(params ?? {}),
+        }),
+      get: (chatId: string) =>
+        apiFetch<import('./types').SessionRecord>(`${BASE}/ai/sessions/${encodeURIComponent(chatId)}`),
+      update: (chatId: string, patch: { title?: string; context?: import('./types').SessionContext }) =>
+        apiFetch<import('./types').SessionRecord>(`${BASE}/ai/sessions/${encodeURIComponent(chatId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        }),
+      archive: (chatId: string) =>
+        apiFetch<import('./types').SessionRecord>(`${BASE}/ai/sessions/${encodeURIComponent(chatId)}/archive`, { method: 'POST' }),
+      delete: (chatId: string) =>
+        apiFetch<{ ok: boolean }>(`${BASE}/ai/sessions/${encodeURIComponent(chatId)}`, { method: 'DELETE' }),
+    },
   },
 
   tsunade: {

@@ -214,3 +214,131 @@
     white-space: nowrap;
   }
   .aw-cancel-btn:hover { background: #b91c1c; }
+
+  /* Session bar — topic-scoped work sessions */
+  .aw-session-bar {
+    position: relative;
+    background: #f1f5f9;
+    border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+  .aw-session-current {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    color: #334155;
+    text-align: left;
+    min-width: 0;
+  }
+  .aw-session-current:hover { background: rgba(0,0,0,.04); }
+  .aw-session-icon { flex-shrink: 0; font-size: 12px; }
+  .aw-session-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .aw-session-chevron { flex-shrink: 0; font-size: 8px; color: #94a3b8; }
+  .aw-session-new-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    background: none;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 4px;
+  }
+  .aw-session-new-btn:hover { background: rgba(0,0,0,.06); color: #334155; }
+
+  .aw-session-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.12);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  .aw-session-item {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .aw-session-item:last-child { border-bottom: none; }
+  .aw-session-item.active { background: #eff6ff; }
+  .aw-session-item-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    min-width: 0;
+    font-size: 11px;
+  }
+  .aw-session-item-btn:hover { background: rgba(0,0,0,.03); }
+  .aw-session-item-title {
+    font-weight: 500;
+    color: #1e293b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .aw-session-item-last {
+    font-size: 10px;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .aw-session-new { padding: 0; }
+  .aw-session-new span {
+    display: block;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #6366f1;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+  .aw-session-new:hover { background: #eff6ff; }
+  .aw-session-item-archive,
+  .aw-session-item-delete {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 10px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    opacity: .5;
+    transition: opacity .1s;
+  }
+  .aw-session-item-archive:hover,
+  .aw-session-item-delete:hover { opacity: 1; }
+  .aw-session-item-delete:hover { color: #dc2626; }

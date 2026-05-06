@@ -491,3 +491,31 @@ export interface NavigateAction {
 }
 
 export type AssistantUiAction = HighlightAction | NavigateAction;
+
+// ── Assistant work sessions ────────────────────────────────────────────────
+
+export type SessionStatus = 'active' | 'archived';
+
+export interface SessionContext {
+  page?: string;
+  workflow_id?: string;
+  case_id?: string;
+  operation_id?: string;
+  assistant_id?: string;
+}
+
+export interface SessionRecord {
+  chat_id: string;
+  title: string;
+  status: SessionStatus;
+  context: SessionContext;
+  last_message?: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionListResult {
+  sessions: SessionRecord[];
+  total: number;
+}

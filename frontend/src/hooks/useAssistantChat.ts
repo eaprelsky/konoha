@@ -2,10 +2,11 @@
  * Chat state and SSE streaming logic for AssistantWidget.
  * Extracted from AssistantWidget.tsx (issue #448).
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Inspector } from '../components/Inspector';
 import { useHighlight } from '../components/HighlightOverlay';
+import type { SessionRecord, SessionListResult } from '../api/types';
 
 const CHAT_KEY = 'konoha_aw_chat_id';
 
@@ -73,6 +74,13 @@ export interface UseAssistantChatResult {
   pendingConfirmations: PendingConfirmation[];
   confirmAction: (id: string) => Promise<void>;
   cancelAction: (id: string) => Promise<void>;
+  sessions: SessionRecord[];
+  currentSession: SessionRecord | null;
+  sessionsLoading: boolean;
+  newSession: () => void;
+  switchSession: (chatId: string) => Promise<void>;
+  archiveSession: (chatId: string) => Promise<void>;
+  deleteSession: (chatId: string) => Promise<void>;
 }
 
 /** Optional overrides for router dependencies — inject in tests to avoid Router wrapper. */
@@ -98,7 +106,75 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
   const [attachments, setAttachments] = useState<AttachmentImg[]>([]);
   const [pendingConfirmations, setPendingConfirmations] = useState<PendingConfirmation[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [currentSession, setCurrentSession] = useState<SessionRecord | null>(null);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  const loadSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    try {
+      const res = await fetch('/api/ai/sessions?status=active&limit=20');
+      if (res.ok) {
+        const data: SessionListResult = await res.json();
+        setSessions(data.sessions);
+      }
+    } catch { /* sessions unavailable — degrade gracefully */ }
+    finally { setSessionsLoading(false); }
+  }, []);
+
+  const switchSession = useCallback(async (chatId: string) => {
+    // Save current chat_id before switching
+    setChatId(chatId);
+    try { sessionStorage.setItem(CHAT_KEY, chatId); } catch {}
+    // Reset messages and load history for the new chat
+    setMsgs([]);
+    setHistoryLoaded(false);
+    setCurrentSession(sessions.find(s => s.chat_id === chatId) ?? null);
+  }, [sessions]);
+
+  const newSession = useCallback(() => {
+    setChatId(null);
+    try { sessionStorage.removeItem(CHAT_KEY); } catch {}
+    setMsgs([]);
+    setHistoryLoaded(true); // no history to load for a new session
+    setCurrentSession(null);
+  }, []);
+
+  const archiveSessionAction = useCallback(async (chatId: string) => {
+    await fetch(`/api/ai/sessions/${encodeURIComponent(chatId)}/archive`, { method: 'POST' });
+    setSessions(prev => prev.filter(s => s.chat_id !== chatId));
+    if (currentSession?.chat_id === chatId) {
+      newSession();
+    }
+  }, [currentSession, newSession]);
+
+  const deleteSessionAction = useCallback(async (chatId: string) => {
+    await fetch(`/api/ai/sessions/${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+    setSessions(prev => prev.filter(s => s.chat_id !== chatId));
+    if (currentSession?.chat_id === chatId) {
+      newSession();
+    }
+  }, [currentSession, newSession]);
+
+  // Load sessions on mount
+  useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  // Keep currentSession in sync with chatId and sessions
+  useEffect(() => {
+    if (!chatId) { setCurrentSession(null); return; }
+    const match = sessions.find(s => s.chat_id === chatId);
+    if (match) { setCurrentSession(match); return; }
+    // If chatId exists but not in session list, fetch its metadata
+    fetch(`/api/ai/sessions/${encodeURIComponent(chatId)}`)
+      .then(res => res.ok ? res.json() : null)
+      .then((rec: SessionRecord | null) => {
+        if (rec) {
+          setCurrentSession(rec);
+          setSessions(prev => prev.some(s => s.chat_id === rec.chat_id) ? prev : [rec, ...prev]);
+        }
+      }).catch(() => {});
+  }, [chatId, sessions]);
 
   // Load chat history on mount if chat_id exists
   useEffect(() => {
@@ -259,6 +335,7 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
       if (headerChatId && !chatId) {
         setChatId(headerChatId);
         try { sessionStorage.setItem(CHAT_KEY, headerChatId); } catch {}
+        loadSessions(); // refresh session list with new session
       }
 
       const reader = res.body?.getReader();
@@ -347,6 +424,7 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
             } else if (ev.type === 'chat_id') {
               setChatId(ev.chat_id);
               try { sessionStorage.setItem(CHAT_KEY, ev.chat_id); } catch {}
+              loadSessions(); // refresh session list with new session
             }
           } catch {}
         }
@@ -363,5 +441,5 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
     }
   }
 
-  return { msgs, input, setInput, busy, attachments, setAttachments, send, abort, pendingConfirmations, confirmAction, cancelAction };
+  return { msgs, input, setInput, busy, attachments, setAttachments, send, abort, pendingConfirmations, confirmAction, cancelAction, sessions, currentSession, sessionsLoading, newSession, switchSession, archiveSession: archiveSessionAction, deleteSession: deleteSessionAction };
 }

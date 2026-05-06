@@ -13,6 +13,7 @@ import { buildOperatorStatePromptBlock, getOperatorStateLabel } from "../operato
 import { executeAction } from "../act-envelope";
 import { getConfirmation, confirmConfirmation, cancelConfirmation } from "../confirmation-store";
 import { createOperation, getOperation, updateOperation, appendOperationCompletion } from "../operation-store";
+import { ensureSession, createSession, listSessions, getSession, updateSession, archiveSession, deleteSession } from "../session-store";
 import type { AssistantResponse } from "../assistant-response";
 const log = createLogger("routes:ai");
 
@@ -52,6 +53,25 @@ function guessMime(path: string): string {
     js: "text/plain", json: "application/json",
   };
   return map[ext] || "application/octet-stream";
+}
+
+/** Extract session context binding from the chat request body. */
+function extractSessionContext(body: any): { page?: string; workflow_id?: string; case_id?: string } {
+  const ctx: { page?: string; workflow_id?: string; case_id?: string } = {};
+  if (typeof body.context === "string") {
+    try {
+      const parsed = JSON.parse(body.context);
+      if (parsed?.page) ctx.page = parsed.page;
+      if (parsed?.workflowId) ctx.workflow_id = parsed.workflowId;
+      if (parsed?.caseId) ctx.case_id = parsed.caseId;
+    } catch {
+      // context is plain text — use first line as page hint
+      const firstLine = body.context.split("\n")[0]?.trim();
+      if (firstLine) ctx.page = firstLine.slice(0, 120);
+    }
+  }
+  if (body.schema?.id) ctx.workflow_id = body.schema.id;
+  return ctx;
 }
 
 interface AttachmentRef { path: string; name: string; mime?: string; }
@@ -517,6 +537,14 @@ router.post("/ai/chat", async (c) => {
           await redis.ltrim(histKey, -maxHistory * 2, -1);
           await redis.expire(histKey, 7 * 24 * 3600);
 
+          // Maintain session metadata (non-blocking)
+          ensureSession({
+            chat_id: chatId,
+            message: body.message,
+            context: extractSessionContext(body),
+            isNewChat,
+          }).catch(silentCatch("ensure session"));
+
           // Emit inspector event to Konoha bus (separate channel, non-blocking)
           redis.xadd("inspector", "*",
             "page", getOperatorStateLabel(body.operator_state) || body.context?.split('\n')[0] || "",
@@ -560,6 +588,12 @@ router.post("/ai/chat", async (c) => {
       await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));
       await redis.ltrim(histKey, -maxHistory * 2, -1);
       await redis.expire(histKey, 7 * 24 * 3600);
+      ensureSession({
+        chat_id: chatId,
+        message: body.message,
+        context: extractSessionContext(body),
+        isNewChat,
+      }).catch(silentCatch("ensure session"));
       return c.json(toAssistantWorkflowResponse(normalized));
     }
 
@@ -573,6 +607,12 @@ router.post("/ai/chat", async (c) => {
     await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: finalReply }));
     await redis.ltrim(histKey, -maxHistory * 2, -1);
     await redis.expire(histKey, 7 * 24 * 3600);
+    ensureSession({
+      chat_id: chatId,
+      message: body.message,
+      context: extractSessionContext(body),
+      isNewChat,
+    }).catch(silentCatch("ensure session"));
     return c.json({ reply: finalReply, chat_id: chatId });
   } catch (e: any) {
     log.error("non-streaming ai chat failed", { error: e.message, mode, chat_id: chatId });
@@ -591,6 +631,61 @@ router.get("/ai/chat/:chat_id", requireAuth, async (c) => {
     .map(r => { try { return JSON.parse(r); } catch { return null; } })
     .filter(Boolean);
   return c.json({ chat_id: chatId, messages });
+});
+
+// --- Session CRUD — work session metadata for topic-scoped chats ---
+
+router.get("/ai/sessions", requireAuth, async (c) => {
+  const status = c.req.query("status") as "active" | "archived" | undefined;
+  const limit = parseInt(c.req.query("limit") || "20", 10);
+  const offset = parseInt(c.req.query("offset") || "0", 10);
+  const result = await listSessions({ status: status || "active", limit, offset });
+  return c.json(result);
+});
+
+router.post("/ai/sessions", requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const record = await createSession({
+    title: body.title,
+    context: body.context,
+    chat_id: body.chat_id,
+  });
+  return c.json(record, 201);
+});
+
+router.get("/ai/sessions/:chat_id", requireAuth, async (c) => {
+  const chatId = c.req.param("chat_id");
+  if (!chatId) return c.json({ error: "chat_id required" }, 400);
+  const record = await getSession(chatId);
+  if (!record) return c.json({ error: "Session not found" }, 404);
+  return c.json(record);
+});
+
+router.patch("/ai/sessions/:chat_id", requireAuth, async (c) => {
+  const chatId = c.req.param("chat_id");
+  if (!chatId) return c.json({ error: "chat_id required" }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const record = await updateSession(chatId, {
+    title: body.title,
+    context: body.context,
+  });
+  if (!record) return c.json({ error: "Session not found" }, 404);
+  return c.json(record);
+});
+
+router.post("/ai/sessions/:chat_id/archive", requireAuth, async (c) => {
+  const chatId = c.req.param("chat_id");
+  if (!chatId) return c.json({ error: "chat_id required" }, 400);
+  const record = await archiveSession(chatId);
+  if (!record) return c.json({ error: "Session not found" }, 404);
+  return c.json(record);
+});
+
+router.delete("/ai/sessions/:chat_id", requireAuth, async (c) => {
+  const chatId = c.req.param("chat_id");
+  if (!chatId) return c.json({ error: "chat_id required" }, 400);
+  await deleteSession(chatId);
+  return c.json({ ok: true });
 });
 
 // --- Operation status endpoint — poll long-running action progress ---
@@ -712,10 +807,13 @@ router.post("/ai/cancel/:confirmation_id", requireAuth, async (c) => {
 
 router.delete("/ai/chat/:chat_id", requireAuth, async (c) => {
   const id = c.req.param("chat_id");
-  // Try both prefixes (mode unknown at delete time)
+  if (!id) return c.json({ error: "chat_id required" }, 400);
+  // Try both prefixes (mode unknown at delete time), plus session metadata
   await Promise.all([
     redis.del(TSUNADE_CHAT_PREFIX + id).catch(silentCatch("clear chat history")),
     redis.del(KIBA_CHAT_PREFIX + id).catch(silentCatch("clear admin chat history")),
+    redis.del("konoha:session:meta:" + id).catch(silentCatch("clear session meta")),
+    redis.zrem("konoha:sessions:all", id).catch(silentCatch("clear session index")),
   ]);
   return c.json({ ok: true });
 });
