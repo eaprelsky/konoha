@@ -277,8 +277,8 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
               }
               if (Array.isArray(ev.actions) && ev.actions.length > 0) {
                 const act = ev.actions[0];
-                if (act.type === 'highlight' && act.target) {
-                  showHighlight({ selector: act.target, style: act.style ?? 'spotlight', message: act.message });
+                if (act.type === 'highlight' && (act.target || act.selector)) {
+                  showHighlight({ selector: act.target ?? act.selector, style: act.style ?? 'spotlight', message: act.message });
                 } else if (act.type === 'navigate') {
                   const target = typeof act.path === 'string' ? act.path : typeof act.target === 'string' ? act.target : null;
                   if (target) navigate(target);

@@ -128,7 +128,10 @@ export async function normalizeAssistantResponse(
     if (Array.isArray(parsed.actions)) {
       for (const act of parsed.actions) {
         if (act && typeof act === "object" && act.type === "highlight") {
-          uiActions.push(act as UiAction);
+          const a = act as Record<string, unknown>;
+          // Normalize: accept both `target` and `selector`, emit only `target`
+          if (a.selector && !a.target) a.target = a.selector;
+          uiActions.push(a as unknown as UiAction);
         }
       }
     }

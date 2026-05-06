@@ -210,11 +210,11 @@ function processAssistantSystem(agentName: string): string {
 {
   "reply": "Вот эта кнопка отвечает за запуск:",
   "actions": [
-    { "type": "highlight", "selector": "#btn-start", "message": "Кнопка запуска процесса", "style": "spotlight" }
+    { "type": "highlight", "target": "#btn-start", "message": "Кнопка запуска процесса", "style": "spotlight" }
   ]
 }
 
-Selectors: используй CSS-селекторы (#id, .class, [data-attr], button[title="..."] и т.п.).
+Target: используй CSS-селекторы (#id, .class, [data-attr], button[title="..."] и т.п.).
 Style: "spotlight" — затемнение фона; "pointer" — пульсирующий кружок; "outline" — контур без затемнения.
 
 БЕЗОПАСНОСТЬ (Prompt Injection):
