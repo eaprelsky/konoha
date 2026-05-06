@@ -139,6 +139,15 @@ export interface WorkItemFilters {
   process_id?: string;
   status?: WorkItemStatus | '';
   deadline_before?: string;
+  offset?: number;
+  limit?: number;
+}
+
+export interface PaginatedWorkItems {
+  items: WorkItem[];
+  total: number;
+  offset: number;
+  limit: number;
 }
 
 export type WorkflowActionStatus = 'executed' | 'needs_confirm' | 'failed' | 'skipped';

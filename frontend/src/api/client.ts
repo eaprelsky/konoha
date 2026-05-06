@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse, DashboardProfile, TelegramStreamHealthSummary } from './types';
+import type { Workflow, WorkItem, WorkItemFilters, PaginatedWorkItems, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse, DashboardProfile, TelegramStreamHealthSummary } from './types';
 export type { KibaAction, HighlightAction };
 
 export interface AttachmentRef { path: string; name: string; mime?: string; }
@@ -161,8 +161,10 @@ export const api = {
       if (filters?.process_id)     p.set('process_id', filters.process_id);
       if (filters?.status)         p.set('status', filters.status);
       if (filters?.deadline_before) p.set('deadline_before', filters.deadline_before);
+      if (filters?.offset != null) p.set('offset', String(filters.offset));
+      if (filters?.limit != null)  p.set('limit', String(filters.limit));
       const qs = p.toString();
-      return apiFetch<WorkItem[]>(`${BASE}/workitems${qs ? '?' + qs : ''}`);
+      return apiFetch<PaginatedWorkItems>(`${BASE}/workitems${qs ? '?' + qs : ''}`);
     },
     complete: (id: string, output?: Record<string, unknown>) =>
       actMutation<WorkItem>('workitem.complete', { id, output: output || {} }, [`${BASE}/workitems`, `${BASE}/cases`]),

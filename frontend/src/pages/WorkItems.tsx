@@ -5,7 +5,7 @@ import { useToken } from '../context/TokenContext';
 import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { WorkItem, WorkItemFilters, Case, Workflow, EventWait, EventWaitStatus, Agent, RoleDef } from '../api/types';
+import type { WorkItem, WorkItemFilters, PaginatedWorkItems, Case, Workflow, EventWait, EventWaitStatus, Agent, RoleDef } from '../api/types';
 import { buildAgentLabelMap, buildRoleLabelMap, formatAssignee, type AssigneeOption } from '../utils/agentDisplay';
 import { filterOperatorWaits, filterOperatorWorkItems, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
 
@@ -220,6 +220,9 @@ export function WorkItems() {
   const [agentLabels, setAgentLabels] = useState<Record<string, string>>({});
   const [roleLabels, setRoleLabels] = useState<Record<string, string>>({});
   const [caseCache, setCaseCache] = useState<Record<string, Case>>({});
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
 
   // Load workflow names + agents + roles once
   useEffect(() => {
@@ -253,31 +256,40 @@ export function WorkItems() {
 
   const loadItems = useCallback(() => {
     if (!token) return;
+    const paginatedFilters = { ...filters, offset: page * PAGE_SIZE, limit: PAGE_SIZE };
     Promise.all([
-      api.workitems.list(filters),
+      api.workitems.list(paginatedFilters),
       api.waits.list({
         assignee: filters.assignee,
         process_id: filters.process_id,
         status: waitStatusFilter || undefined,
       }),
     ]).then(([workItemsData, waitsData]) => {
-        setItems(workItemsData);
+        const paged = workItemsData as PaginatedWorkItems;
+        setItems(paged.items);
+        setTotal(paged.total);
         setWaits(waitsData.waits);
         setLastUpdate(new Date().toLocaleTimeString());
         setError(null);
         setLoading(false);
-        const allCaseIds = [
-          ...workItemsData.filter((i: WorkItem) => i.case_id && !caseCache[i.case_id!]).map((i: WorkItem) => i.case_id!),
-          ...waitsData.waits.filter((wait: EventWait) => wait.case_id && !caseCache[wait.case_id]).map((wait: EventWait) => wait.case_id),
-        ];
-        [...new Set(allCaseIds)].forEach((caseId: string) => {
+        // Bound case enrichment — only for current page, max 20
+        const unresolvedIds = new Set<string>();
+        for (const i of paged.items) {
+          if (i.case_id && !caseCache[i.case_id]) unresolvedIds.add(i.case_id);
+          if (unresolvedIds.size >= 20) break;
+        }
+        for (const wait of waitsData.waits) {
+          if (wait.case_id && !caseCache[wait.case_id]) unresolvedIds.add(wait.case_id);
+          if (unresolvedIds.size >= 30) break;
+        }
+        unresolvedIds.forEach((caseId: string) => {
           api.cases.get(caseId).then(kase => {
             setCaseCache(prev => ({ ...prev, [caseId]: kase }));
           }).catch(() => {});
         });
       })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [token, filters, waitStatusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [token, filters, waitStatusFilter, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadItems(); }, [loadItems]);
   useInterval(loadItems, 10000);
@@ -347,7 +359,7 @@ export function WorkItems() {
               <label htmlFor="filterAssignee">{t('operator.workitems.assignee')}</label>
               <select id="filterAssignee"
                 value={filters.assignee || ''}
-                onChange={e => setFilters(f => ({ ...f, assignee: e.target.value || undefined }))}>
+                onChange={e => { setFilters(f => ({ ...f, assignee: e.target.value || undefined })); setPage(0); }}>
                 <option value="">{t('operator.workitems.allAssignees')}</option>
                 {assigneeOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
               </select>
@@ -356,7 +368,7 @@ export function WorkItems() {
               <label htmlFor="filterProcess">{t('operator.runs.process')}</label>
               <select id="filterProcess"
                 value={filters.process_id || ''}
-                onChange={e => setFilters(f => ({ ...f, process_id: e.target.value || undefined }))}>
+                onChange={e => { setFilters(f => ({ ...f, process_id: e.target.value || undefined })); setPage(0); }}>
                 <option value="">{t('operator.workitems.allProcesses')}</option>
                 {workflows.map(wf => (
                   <option key={wf.id} value={wf.id}>{wf.name || wf.id}</option>
@@ -366,7 +378,7 @@ export function WorkItems() {
             <div className="filter-group">
               <label htmlFor="filterStatus">{t('operator.runs.status')}</label>
               <select id="filterStatus" value={filters.status || ''}
-                onChange={e => setFilters(f => ({ ...f, status: (e.target.value || undefined) as any }))}>
+                onChange={e => { setFilters(f => ({ ...f, status: (e.target.value || undefined) as any })); setPage(0); }}>
                 <option value="">{t('operator.workitems.allStatuses')}</option>
                 <option value="pending">{t('operator.workitems.waiting')}</option>
                 <option value="assigned">{t('operator.workitems.statusAssigned')}</option>
@@ -379,10 +391,10 @@ export function WorkItems() {
               <label htmlFor="filterDeadline">{t('operator.workitems.deadlineBefore')}</label>
               <input id="filterDeadline" type="date"
                 value={filters.deadline_before || ''}
-                onChange={e => setFilters(f => ({ ...f, deadline_before: e.target.value || undefined }))} />
+                onChange={e => { setFilters(f => ({ ...f, deadline_before: e.target.value || undefined })); setPage(0); }} />
             </div>
             <div className="button-group">
-              <button className="reset" onClick={() => setFilters({})}>{t('action.reset')}</button>
+              <button className="reset" onClick={() => { setFilters({}); setPage(0); }}>{t('action.reset')}</button>
             </div>
             {hiddenQueueCount > 0 && (
               <label className="hidden-toggle" title={t('operator.workitems.showHiddenTitle')}>
@@ -451,6 +463,26 @@ export function WorkItems() {
             </table>
           )}
 
+          {total > PAGE_SIZE && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, fontSize: 13, color: '#64748b' }}>
+              <span>{t('operator.workitems.showing')}: {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} {t('operator.workitems.of')} {total}</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  className="reset"
+                  style={{ padding: '4px 10px', fontSize: 12, background: '#e5e7eb', border: '1px solid #d1d5db', borderRadius: 4, cursor: page > 0 ? 'pointer' : 'default', opacity: page > 0 ? 1 : 0.5 }}
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page <= 0}
+                >{t('action.prev')}</button>
+                <span style={{ padding: '4px 6px', fontWeight: 500 }}>{page + 1} / {Math.ceil(total / PAGE_SIZE)}</span>
+                <button
+                  className="reset"
+                  style={{ padding: '4px 10px', fontSize: 12, background: '#e5e7eb', border: '1px solid #d1d5db', borderRadius: 4, cursor: (page + 1) * PAGE_SIZE < total ? 'pointer' : 'default', opacity: (page + 1) * PAGE_SIZE < total ? 1 : 0.5 }}
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={(page + 1) * PAGE_SIZE >= total}
+                >{t('action.next')}</button>
+              </div>
+            </div>
+          )}
           <div className="refresh-info">
             {t('operator.workitems.refresh').replace('{time}', lastUpdate)}
           </div>

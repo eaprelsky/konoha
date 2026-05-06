@@ -154,16 +154,31 @@ export async function completeWorkItem(
   return { workItem: wi, case: updatedCase };
 }
 
+export interface ListWorkItemsResult {
+  items: WorkItem[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 export async function listWorkItems(filters: {
   assignee?: string;
   status?: WorkItemStatus;
   process_id?: string;
   case_id?: string;
   deadline_before?: string;
-}): Promise<WorkItem[]> {
+  offset?: number;
+  limit?: number;
+}): Promise<ListWorkItemsResult> {
+  const offset = filters.offset ?? 0;
+  const limit = filters.limit ?? 50;
   if (PG_READ) {
     const rows = await pgListWorkItems(filters);
-    return rows.map(pgRowToWorkItem);
+    const all = rows.map(pgRowToWorkItem);
+    all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const total = all.length;
+    const items = all.slice(offset, offset + limit);
+    return { items, total, offset, limit };
   }
 
   let candidateIds: Set<string> | null = null;
@@ -201,7 +216,11 @@ export async function listWorkItems(filters: {
     result = result.filter(wi => wi.deadline && new Date(wi.deadline).getTime() <= cutoff);
   }
 
-  return result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  // Sort by created_at descending (most recent first)
+  result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const total = result.length;
+  const paged = result.slice(offset, offset + limit);
+  return { items: paged, total, offset, limit };
 }
 
 async function scanKeys(pattern: string): Promise<string[]> {

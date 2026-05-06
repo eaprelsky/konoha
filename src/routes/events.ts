@@ -83,7 +83,7 @@ miningRouter.get("/process/:id", async (c) => {
   }
 
   // Load work items for duration analysis
-  const workItems = await listWorkItems({ process_id });
+  const { items: workItems } = await listWorkItems({ process_id, limit: 2000 });
   const durationsByElement: Record<string, number[]> = {};
   for (const wi of workItems) {
     if (!wi.element_id || wi.status !== "done") continue;

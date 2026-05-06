@@ -741,7 +741,8 @@ function buildWorkflowBatchDeleteReceipt(
 
 async function findNextPendingWorkItem(caseId: unknown): Promise<Record<string, unknown> | null> {
   if (typeof caseId !== "string" || !caseId) return null;
-  const [next] = await listWorkItems({ case_id: caseId, status: "pending" });
+  const { items } = await listWorkItems({ case_id: caseId, status: "pending", limit: 1 });
+  const next = items[0] ?? null;
   if (!next) return null;
   return {
     work_item_id: next.work_item_id,
