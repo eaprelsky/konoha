@@ -30,9 +30,19 @@ function tmuxSession(id: string): string {
   return id;
 }
 
-/** tmux socket name — isolates each agent on its own tmux server */
+/** Agents that use the default tmux socket instead of isolated per-agent sockets */
+const DEFAULT_SOCKET_AGENTS = new Set(["sasuke", "kiba"]);
+
+/** tmux socket name — isolates each agent on its own tmux server.
+ *  Returns empty string for agents that should use the default tmux socket. */
 function tmuxSocket(id: string): string {
-  return id;
+  return DEFAULT_SOCKET_AGENTS.has(id) ? "" : id;
+}
+
+/** Build tmux args, conditionally including -L <socket> */
+function tmuxArgs(id: string, ...args: string[]): string[] {
+  const socket = tmuxSocket(id);
+  return socket ? ["-L", socket, ...args] : args;
 }
 
 async function sh(cmd: string, args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
@@ -45,12 +55,12 @@ async function sh(cmd: string, args: string[]): Promise<{ ok: boolean; stdout: s
 }
 
 export async function isTmuxRunning(id: string): Promise<boolean> {
-  const r = await sh("tmux", ["-L", tmuxSocket(id), "has-session", "-t", tmuxSession(id)]);
+  const r = await sh("tmux", tmuxArgs(id, "has-session", "-t", tmuxSession(id)));
   return r.ok;
 }
 
 async function getTmuxPid(id: string): Promise<number | null> {
-  const r = await sh("tmux", ["-L", tmuxSocket(id), "list-panes", "-t", tmuxSession(id), "-F", "#{pane_pid}"]);
+  const r = await sh("tmux", tmuxArgs(id, "list-panes", "-t", tmuxSession(id), "-F", "#{pane_pid}"));
   if (!r.ok || !r.stdout) return null;
   const pid = parseInt(r.stdout.split("\n")[0], 10);
   return isNaN(pid) ? null : pid;
@@ -82,7 +92,7 @@ function paneIsIdle(content: string): boolean {
 }
 
 async function getTmuxPaneContent(id: string, lines = 80): Promise<string> {
-  const r = await sh("tmux", ["-L", tmuxSocket(id), "capture-pane", "-p", "-t", tmuxSession(id), "-S", `-${lines}`]);
+  const r = await sh("tmux", tmuxArgs(id, "capture-pane", "-p", "-t", tmuxSession(id), "-S", `-${lines}`));
   return r.ok ? r.stdout : "";
 }
 

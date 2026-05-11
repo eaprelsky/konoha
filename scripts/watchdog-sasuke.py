@@ -85,6 +85,9 @@ def format_batch(events: list[dict]) -> str:
                 meta += f" msg_id={msg_id}"
             attachment_path = d.get("attachment_path", "")
             attachment_kind = d.get("attachment_kind", "")
+            reply_to_text = d.get("reply_to_text", "")
+            if reply_to_text:
+                lines.append(f"  [Re: {reply_to_text[:300]}]")
             lines.append(f"\n[{ts}] {sender} ({meta}): {text}")
             if attachment_path:
                 lines.append(f"  [Вложение: {attachment_kind} — {attachment_path}]")
@@ -206,13 +209,25 @@ def _is_stale_pending_id(redis_id: str, *, now_ms: int | None = None) -> bool:
     return (current_ms - created_ms) > STALE_PENDING_MAX_AGE_SEC * 1000
 
 
+DEDUP_REDIS_TTL = 86400  # 24h — dedup keys survive watchdog restarts
+DEDUP_REDIS_PREFIX = "sasuke:dedup:"
+
+
+def _dedup_redis_key(ev_key: tuple) -> str:
+    """Convert (source, ...) tuple to Redis key."""
+    source = ev_key[0]
+    if source == "tg":
+        return f"{DEDUP_REDIS_PREFIX}tg:{ev_key[1]}:{ev_key[2]}"
+    return f"{DEDUP_REDIS_PREFIX}konoha:{ev_key[1]}"
+
+
 async def send_loop(batched_queue: asyncio.Queue) -> None:
     """Wait for idle, then flush the pending batch.
     Sends mark_read to Redis after delivery and tracks health state.
     """
     pending: list[dict] = []
-    seen_msg_keys: set[tuple] = set()
-    SEEN_MAX_SIZE = 1000
+    seen_msg_keys: set[tuple] = set()  # L1 cache, backed by Redis for persistence
+    SEEN_MAX_SIZE = 2000
     rd = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
     def _msg_key(ev: dict) -> tuple | None:
@@ -228,13 +243,39 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             return ("konoha", str(konoha_id))
         return None
 
-    def _dedup_batch(batch: list[dict]) -> list[dict]:
+    async def _redis_dedup_check(key: tuple) -> bool:
+        """Check Redis for persistent dedup key. Returns True if already seen."""
+        try:
+            return await rd.exists(_dedup_redis_key(key)) > 0
+        except Exception:
+            return False
+
+    async def _redis_dedup_mark(key: tuple) -> None:
+        """Persist dedup key in Redis with TTL."""
+        try:
+            await rd.setex(_dedup_redis_key(key), DEDUP_REDIS_TTL, "1")
+        except Exception as e:
+            _b.log.warning(f"Failed to persist dedup key {key}: {e}")
+
+    async def _dedup_batch(batch: list[dict]) -> list[dict]:
         fresh: list[dict] = []
+        fresh_keys: set[tuple] = set()
         for ev in batch:
             key = _msg_key(ev)
-            if key and key in seen_msg_keys:
-                _b.log.info(f"Dedup: skipping duplicate {key}")
+            if not key:
+                fresh.append(ev)
                 continue
+            if key in seen_msg_keys:
+                _b.log.info(f"Dedup (L1): skipping duplicate {key}")
+                continue
+            if key in fresh_keys:
+                _b.log.info(f"Dedup (intra-batch): skipping duplicate {key}")
+                continue
+            if await _redis_dedup_check(key):
+                _b.log.info(f"Dedup (Redis): skipping duplicate {key}")
+                seen_msg_keys.add(key)  # promote to L1
+                continue
+            fresh_keys.add(key)
             fresh.append(ev)
         return fresh
 
@@ -246,6 +287,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                     key = _msg_key(ev)
                     if key:
                         seen_msg_keys.add(key)
+                        await _redis_dedup_mark(key)
                 if len(seen_msg_keys) > SEEN_MAX_SIZE:
                     seen_msg_keys = set(list(seen_msg_keys)[-SEEN_MAX_SIZE // 2:])
                 pending.clear()
@@ -256,9 +298,12 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
         try:
             timeout = 1.0 if pending else None
             batch = await asyncio.wait_for(batched_queue.get(), timeout=timeout)
-            batch = _dedup_batch(batch)
+            batch = await _dedup_batch(batch)
             if batch:
-                pending.extend(batch)
+                pending_keys = {_msg_key(ev) for ev in pending if _msg_key(ev)}
+                batch = [ev for ev in batch if _msg_key(ev) not in pending_keys]
+                if batch:
+                    pending.extend(batch)
         except asyncio.TimeoutError:
             pass
 

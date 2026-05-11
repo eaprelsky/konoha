@@ -421,6 +421,14 @@ async def on_message(event):
 
     sender_id = getattr(sender, 'id', 0)
     reply_to_msg_id = str(event.reply_to.reply_to_msg_id) if event.reply_to else ''
+    reply_to_text = ''
+    if event.reply_to:
+        try:
+            reply_msg = await event.get_reply_message()
+            if reply_msg and reply_msg.text:
+                reply_to_text = reply_msg.text
+        except Exception:
+            pass
 
     data = {
         'chat_id': str(event.chat_id),
@@ -432,6 +440,7 @@ async def on_message(event):
         'sender_username': getattr(sender, 'username', '') or '',
         'text': msg_text,
         'reply_to': reply_to_msg_id,
+        'reply_to_text': reply_to_text,
         'timestamp': event.date.isoformat(),
     }
     if attachment_path:

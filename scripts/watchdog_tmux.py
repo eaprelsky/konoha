@@ -221,7 +221,7 @@ async def tmux_send(session: str, text: str) -> bool:
 
         await tmux_run("tmux", "-L", session, "send-keys", "-t", session, "Enter", timeout=5.0)
         log.info(f"Sent prompt to {session} ({len(text)} chars), submit attempt {attempt + 1}")
-        if await wait_for_submit(4.0 if attempt == 0 else 3.0):
+        if await wait_for_submit(10.0 if attempt == 0 else 6.0):
             return True
 
     log.error(f"Delivery failed: agent {session} stayed idle after submit retries")
