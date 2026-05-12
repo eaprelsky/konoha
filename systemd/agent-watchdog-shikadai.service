@@ -1,5 +1,5 @@
 [Unit]
-Description=Konoha GitHub Architecture Delegation Watchdog Shikadai
+Description=Konoha GitHub Reviewer Delegation Watchdog Shikadai
 After=network.target redis.service konoha.service
 Wants=konoha.service
 
@@ -8,6 +8,7 @@ Type=simple
 User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
 Environment=PYTHONUNBUFFERED=1
+# #794 bootstrap: delegate:architect routes review/decomposition to Shikadai.
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-shikadai.py
 Restart=always
 RestartSec=5

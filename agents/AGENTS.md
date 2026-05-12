@@ -197,6 +197,17 @@ Agents receive messages via systemd watchdog services — no /loop polling neede
 - Do not create or resurrect legacy per-agent shell loops.
 
 ## Callsigns (Internal)
-- Naruto — Agent #1, this session, bot-based, orchestrator
-- Sasuke — Agent #2, tmux session, Telegram user account monitor
+- Naruto — Agent #1, bot-based, orchestrator (exceptions/mobile intake, not ordinary dispatch)
+- Sasuke — Agent #2, Telegram user account monitor, mobile quick-fix intake
+- Kakashi — Agent #8, Developer (implements fixes, submits to Shikadai for review)
+- Shikadai — Agent #9, Reviewer (architecture review, approves before closure)
+- Shino — Agent #5, Optional QA specialist (only on explicit reviewer request)
+- Hinata — Agent #6, Optional QA executor (only via Shino on reviewer request)
+- Guy — Agent #10, Optional mechanical helper (only on explicit Kakashi request)
 External-facing: both respond as "Claude"
+
+## Bootstrap Delegation (#794) — effective 2026-05-12
+- `delegate:teamlead` → Kakashi (Developer) via `github_delegation_watchdog.py`
+- `delegate:architect` → Shikadai (Reviewer) via `github_delegation_watchdog.py`
+- Developer→Reviewer→Closure pipeline: Kakashi implements → Shikadai reviews → close only after acceptance
+- `kakashi-batch` decommissioned; mandatory post-fix QA gate decommissioned

@@ -1,5 +1,5 @@
 [Unit]
-Description=QA Watcher — polls GitHub for awaiting-test issues → pings Hinata
+Description=QA Watcher — legacy explicit QA adapter → pings Shino
 After=network.target konoha.service
 
 [Service]

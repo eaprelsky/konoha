@@ -23,9 +23,9 @@ The TypeScript contract is in `src/github-issue-events.ts`.
 
 Current behavior:
 
-1. An operator adds `delegate:teamlead` to an implementation batch issue or `delegate:architect` to an architecture-decomposition issue.
-2. The watchdog sees the label and injects the task into Kakashi.
-3. Child issues report progress with `delegate:done` or `blocked`.
+1. An operator adds `delegate:teamlead` to exactly one ready implementation issue or `delegate:architect` to a review/decomposition issue.
+2. The watchdog sees the compatibility label and injects the task into Kakashi or Shikadai.
+3. Kakashi pushes the implementation and hands off to Shikadai; closure happens only after reviewer acceptance.
 
 Future workflow trigger:
 
@@ -51,3 +51,4 @@ The normalized event payload includes `repo`, `issue_number`, `issue_title`,
 - The adapter is additive: it dispatches normalized events to Event Manager
   listeners, while keeping the existing Redis stream and watchdog path.
 - This slice does not implement auto-merge or replace the watchdog scanner.
+- `kakashi-batch` is not part of the #794 bootstrap flow.

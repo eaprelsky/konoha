@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-QA Watcher — monitors GitHub Issues for bugs closed with 'awaiting-test' label,
-then pings Shino via Konoha to write a test plan. Shino is the HARD GATE: he
-decides when to trigger Hinata. qa-watcher never contacts Hinata directly (#107).
+QA Watcher — legacy/explicit QA adapter for GitHub Issues closed with
+'awaiting-test'. It pings Shino via Konoha to write a test plan; Shino decides
+whether to trigger Hinata. This is not the universal post-fix gate for ordinary
+#794 Developer -> Reviewer delivery.
 
 Polls every 60 seconds. Tracks already-notified issues in a state file to avoid
 duplicate pings.
@@ -59,7 +60,7 @@ def gh(args: list[str]) -> list[dict]:
 
 
 def send_to_shino(issue_number: int, issue_title: str) -> None:
-    """Route test trigger to Shino (HARD GATE) instead of Hinata directly (#107)."""
+    """Route explicit QA trigger to Shino instead of Hinata directly (#107)."""
     payload = json.dumps({
         "from": "qa-watcher",
         "to": "shino",

@@ -10,6 +10,7 @@ EnvironmentFile=/home/ubuntu/.agent-env
 Environment=HOME=/home/ubuntu
 Environment=KONOHA_AGENT_ID=%i
 Environment=PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin
+# Managed agents read repo AGENTS.md plus runtime memory on startup.
 ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh %i
 Restart=always
 RestartSec=10

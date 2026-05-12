@@ -84,28 +84,42 @@ sudo systemctl start agent-kakashi.service
 sudo systemctl stop agent-kakashi.service agent-watchdog-kakashi.service
 ```
 
-GitHub is Kakashi's canonical task intake for delegated code work. Add the
-`delegate:teamlead` label to an issue to make the dedicated watchdog deliver it.
-This label names the delegated role, not the Naruto-style worker alias. GitHub
-assignee is not used as the routing signal. The scanner skips issues
+GitHub is Kakashi's canonical task intake for delegated code work during #794
+bootstrap. Add `delegate:teamlead` to exactly one ready issue to make the
+dedicated watchdog deliver it. This label means Developer/Kakashi under the
+old compatibility watchdog; it is not a signal to scan the whole open queue.
+GitHub assignee is not used as the routing signal. The scanner skips issues
 with `delegate:done` or `blocked`, persists dispatched issue numbers in
 `~/.cache/konoha/kakashi-github-dispatched.json`, and never scans the whole
-open queue as implicit work. Override labels with
-`AGENT_GITHUB_DELEGATION_LABELS` and `AGENT_GITHUB_SKIP_LABELS` only for a
-deliberate migration.
+open queue as implicit work.
 
-For long unattended queues, keep `delegate:teamlead` only on a single batch
-issue and add `kakashi-batch`. Batch issues are re-delivered after
-`AGENT_GITHUB_REDISPATCH_INTERVAL_SEC` (default: 1800s) while they remain open
-and are not marked `delegate:done` or `blocked`. Child issues should use
-`delegate:done`/`blocked` for progress and must not receive `delegate:teamlead`,
-otherwise they become separate watchdog triggers.
+`kakashi-batch` is decommissioned for architecture/lean backlog execution.
+Do not use it as the normal path. Each issue moves through:
+`delegate:teamlead` -> Kakashi implements -> ready-for-review comment/Konoha
+handoff -> `delegate:architect` or manual Shikadai review -> accept, request
+changes, or block -> close only after reviewer acceptance.
 
 GitHub is also Shikadai's compatibility intake for architecture decomposition.
 Add `delegate:architect` to an issue when the expected output is an architecture
 breakdown, sequencing recommendation, acceptance criteria, or risk review. Do
 not use it for implementation tasks; those should go to Kakashi through
 `delegate:teamlead` after the architecture slice is approved.
+
+Start the Shikadai reviewer path with:
+
+```bash
+source /home/ubuntu/.agent-env
+curl -fsS -X POST \
+  -H "Authorization: Bearer $KONOHA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "http://127.0.0.1:3200/agents/shikadai/start"
+sudo systemctl start agent-watchdog-shikadai.service
+```
+
+If lifecycle is unavailable, manually start a Codex session in the Shikadai
+workdir, read `agents/shikadai/AGENTS.md`, review the pushed commit, and report
+the decision through Konoha.
 
 When an agent is intentionally parked, add its short id and any dedicated units to `/opt/shared/kiba/paused-services.txt` so Akamaru suppresses expected inactive-state alerts.
 

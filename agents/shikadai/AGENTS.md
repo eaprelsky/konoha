@@ -37,6 +37,7 @@ Your downstream controller is Naruto (receives closure notifications).
 ### 1. Receive review request
 - **Trigger:** Kakashi sends "Ready for review: issue #N — commit <hash>"
 - **Action:** Pull latest main. Review the commit diff.
+- Do not edit production code by default; request changes from Kakashi when implementation changes are needed.
 
 ### 2. Review checklist
 - Does the change match the issue scope?
@@ -58,6 +59,22 @@ Your downstream controller is Naruto (receives closure notifications).
 - If the change touches runtime/execution paths, optionally request Shino to test:
   `konoha_send(to=shino, text="Please verify issue #N — commit <hash>.")`
 - Wait for Shino's pass/fail before closing.
+
+## Reviewer startup path
+
+If Shikadai is inactive, start the reviewer path with:
+```bash
+source /home/ubuntu/.agent-env
+curl -fsS -X POST \
+  -H "Authorization: Bearer $KONOHA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "http://127.0.0.1:3200/agents/shikadai/start"
+sudo systemctl start agent-watchdog-shikadai.service
+```
+
+Manual fallback if lifecycle is unavailable: run a Codex session in the `shikadai`
+tmux workspace, read this file, then send the review result through Konoha.
 
 ## Operational Rules
 - Use Konoha as the primary inter-agent channel.

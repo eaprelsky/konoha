@@ -16,7 +16,7 @@ This protocol lets a delegated worker prepare branches for operator review witho
 
 Suggested labels:
 
-- `delegate:teamlead`: batch/delegation entrypoint.
+- `delegate:teamlead`: #794 bootstrap Developer/Kakashi delegation for one ready issue.
 - `delegate:done`: child issue completed with local commit report.
 - `merge:review-required`: local branch needs review.
 - `merge:ready`: reviewer approved merge.

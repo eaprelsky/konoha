@@ -14,9 +14,9 @@ receive tasks through watchdog services, and operate autonomously.
 | 5 | [Shino](shino/AGENTS.md) | Sonnet | QA Lead — test plans, testing coordination | `shino` | On-demand |
 | 6 | [Hinata](hinata/AGENTS.md) | Haiku | QA Runner — runs tests, writes reports | `hinata` | On-demand |
 | 7 | [Kiba](kiba/AGENTS.md) | Sonnet | System guardian — monitoring, alerts | `kiba` | Permanent |
-| 8 | [Kakashi](kakashi/AGENTS.md) | Sonnet | Bug fixer — reads GitHub Issues, fixes code | `kakashi` | Permanent |
-| 10 | [Guy](guy/AGENTS.md) | Haiku | Kakashi's sub-agent — fast mechanical tasks (translate, scaffold, replace) | `guy` | Permanent |
-| 9 | [Shikadai](shikadai/AGENTS.md) | Sonnet | Strategic advisor — architecture analysis, process design | `shikadai` | On-demand |
+| 8 | [Kakashi](kakashi/AGENTS.md) | Opus | Developer — implements fixes, submits to Reviewer | `kakashi` | Permanent |
+| 10 | [Guy](guy/AGENTS.md) | Haiku | Optional helper — docs/mechanical only, on explicit request | `guy` | On-demand |
+| 9 | [Shikadai](shikadai/AGENTS.md) | gpt-5.5 | Reviewer — reviews architecture, approves before closure | `shikadai` | On-demand |
 | 11 | [Ibiki](ibiki/AGENTS.md) | Sonnet | Security pentester — audits Konoha infrastructure | `ibiki` | On-demand |
 | 12 | [Ino](ino/AGENTS.md) | Sonnet | Nocturna marketing strategist — content, SEO/AIO, copywriting | `ino` | On-demand |
 | 13 | [Inojin](inojin/AGENTS.md) | Haiku | Ino's assistant — API calls, bulk generation, formatting | `inojin` | On-demand |

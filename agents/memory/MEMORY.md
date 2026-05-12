@@ -8,7 +8,7 @@
 
 ## Feedback
 - [feedback_bitrix24_verify_changes.md](feedback_bitrix24_verify_changes.md) — После изменений в воронке — проверять Bitrix24 и подтверждать фактом, не словами
-- [feedback_kakashi_fixed_flow.md](feedback_kakashi_fixed_flow.md) — After closing issue: kakashi:fixed → Shino FIRST, then Naruto. Shino triggers Hinata (HARD GATE).
+- [feedback_kakashi_fixed_flow.md](feedback_kakashi_fixed_flow.md) — Legacy/decommissioned: no mandatory kakashi:fixed → Shino/Hinata gate for ordinary fixes.
 - [feedback_autonomy.md](feedback_autonomy.md) — Work autonomously, ask only at real decision forks (not routine progress)
 - [feedback_autonomous_decisions.md](feedback_autonomous_decisions.md) — Действовать автономно, не переспрашивать Егора по каждому поводу
 - [feedback_chat_style.md](feedback_chat_style.md) — Chat style preferences
@@ -18,7 +18,7 @@
 - [feedback_identity_correction.md](feedback_identity_correction.md) — Always correct Yegor if he misidentifies which agent he's talking to
 - [feedback_mcp_config_update.md](feedback_mcp_config_update.md) — MCP config update requires terminal Enter — Naruto can send Enter to Sasuke via tmux
 - [feedback_parallel_tasks.md](feedback_parallel_tasks.md) — Run long tasks in background by default, keep chat responsive
-- [feedback_read_all_memory_on_startup.md](feedback_read_all_memory_on_startup.md) — При старте читать ВСЕ файлы памяти, искать незавершённые задачи
+- [feedback_read_all_memory_on_startup.md](feedback_read_all_memory_on_startup.md) — Legacy note superseded by Startup Core policy: do not bulk-load all memory at startup
 - [feedback_report_task_completion.md](feedback_report_task_completion.md) — Репортить о завершении задач, не замалчивать результаты
 - [feedback_restart_via_sasuke.md](feedback_restart_via_sasuke.md) — Рестарт просить через Саске (Konoha bus), не дергать Егора
 - [feedback_save_memory_before_restart.md](feedback_save_memory_before_restart.md) — Всегда сохранять память перед запросом на перезагрузку сессии
@@ -33,7 +33,7 @@
 - [feedback_group_fyi_messages.md](feedback_group_fyi_messages.md) — FYI-сообщения в группах (переписки, хэштеги) — не требуют действий от Клода
 - [feedback_notify_on_context_limit.md](feedback_notify_on_context_limit.md) — Уведомлять Егора через бот при приближении к лимиту контекста
 - [feedback_session_cleanup_silent.md](feedback_session_cleanup_silent.md) — Session cleanup полностью автономен, Егора не беспокоить
-- [feedback_guy_delegation_chain.md](feedback_guy_delegation_chain.md) — Гай получает задачи только от Какаши, не от Егора/Наруто напрямую
+- [feedback_guy_delegation_chain.md](feedback_guy_delegation_chain.md) — Гай опциональный helper: только явная механическая задача от Какаши
 - [feedback_show_to_descendants.md](feedback_show_to_descendants.md) — Линию AI-native operator framework делать на уровне, который не стыдно показать потомкам
 - [feedback_target_ebeyshaya_tema.md](feedback_target_ebeyshaya_tema.md) — Целеполагание по линии Tsunade/Konoha: дотянуть систему до по-настоящему выдающегося уровня
 

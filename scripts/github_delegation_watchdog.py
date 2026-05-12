@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Generic GitHub issue delegation watchdog for explicit label-based work."""
+"""Generic GitHub issue delegation watchdog for explicit label-based work.
+
+#794 bootstrap compatibility:
+- delegate:teamlead routes one issue to Kakashi/Developer.
+- delegate:architect routes review/decomposition to Shikadai/Reviewer.
+- Batch redispatch labels are opt-in only; kakashi-batch is not a default path.
+"""
 
 import asyncio
 import json
@@ -46,7 +52,7 @@ DISPATCH_STATE_PATH = Path(os.environ.get(
     "AGENT_GITHUB_DISPATCH_STATE",
     os.path.expanduser(f"~/.cache/konoha/{AGENT_ID}-github-dispatched.json"),
 ))
-REDISPATCH_LABELS = _csv("AGENT_GITHUB_REDISPATCH_LABELS", f"{AGENT_ID}-batch")
+REDISPATCH_LABELS = _csv("AGENT_GITHUB_REDISPATCH_LABELS", "")
 REDISPATCH_INTERVAL_SEC = int(os.environ.get("AGENT_GITHUB_REDISPATCH_INTERVAL_SEC", "1800"))
 TASK_TEMPLATE = os.environ.get(
     "AGENT_GITHUB_TASK_TEMPLATE",
