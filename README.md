@@ -2,18 +2,20 @@
 
 [![CI](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml/badge.svg)](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml)
 
-AI-native BPMS and multi-agent control plane. Konoha combines an executable eEPC workflow engine, agent/runtime orchestration, Action Spine contracts, information-system connectors, and a React operator workspace.
+Konoha is an AI-native BPMS and multi-agent control plane. It lets an operator describe a business process, materializes it as an executable eEPC workflow, runs cases, assigns work to people or agents, and records observable runtime state.
 
-## Features
+The project combines a Bun/Hono backend, Redis streams, PostgreSQL shadow persistence, a React operator workspace, MCP tools, connector adapters, and lifecycle-managed AI agents.
 
-- **Workflow Engine** — executable eEPC processes with cases, work items, events, roles, documents, and information-system bindings.
-- **AI constructor** — assistant actions materialize process definitions through server-side action contracts.
-- **Action Spine** — typed action envelope used by UI, HTTP, MCP, and agents to avoid divergent mutation paths.
-- **Agent lifecycle** — managed Claude Code, Codex, and Cursor-style workers with runtime profiles, watchdogs, and health checks.
+## What It Does
+
+- **Executable eEPC workflows** — model processes with events, functions, gateways, roles, documents, and information systems.
+- **Constructor-to-runtime loop** — assistant actions create or update workflow definitions through server-side contracts, not browser-only state.
+- **Cases and work items** — run process instances, pause on human/agent work, resume on completion, and monitor progress.
+- **Event-driven automation** — subscribe to Telegram, webhook, schedule, email, and other external events to start or resume cases.
+- **Action Spine** — typed action contracts used by UI, HTTP, MCP, and agents to keep mutations on one path.
+- **Agent lifecycle** — start, stop, restart, and switch managed Claude Code, Codex, and Cursor-style workers through Konoha APIs.
 - **Message bus** — direct, broadcast, and role-based delivery via Redis streams, SSE, PostgreSQL shadow history, and attachments.
-- **Connectors** — Telegram, email, GitHub, Bitrix, Yandex Tracker, Yonote, and other external systems as workflow information systems.
-- **Operator workspace** — React UI for process design, work execution, monitoring, knowledge, agents, and administration.
-- **MCP server** — Konoha tools for coding agents and operator assistants.
+- **Operator workspace** — React UI for process design, tasks, monitoring, knowledge, agents, connectors, documents, and settings.
 
 ## Konoha WEB
 
@@ -39,160 +41,141 @@ Konoha includes a built-in operator workspace for designing executable processes
 |-----------|--------|
 | ![Documents](docs/screenshots/documents.png) | ![Skills](docs/screenshots/skills.png) |
 
-## In Action
+## Core Concepts
 
-Agents communicate through the bus in real time. Here's Kakashi (bug fixer) receiving a task from Naruto (orchestrator) and reporting back:
-
-```
-❯ Задание для Какаши: fix bug in check_konoha() — paused agents still alerting
-● Bash(gh issue view 76 --repo eaprelsky/konoha)
-● Edit(/home/ubuntu/konoha/scripts/akamaru.py) — add paused param to check_konoha()
-● Bash(systemctl restart akamaru.service)
-● konoha_send(from: "kakashi", to: "naruto", text: "Закрыл issue #76. Оба файла обновлены, akamaru.service перезапущен.")
-  ⎿  Sent. ID: 1774630032388-0
-```
-
-## Quick Start
-
-### Option 1: Bus only (HTTP server, no agents)
-
-Use this if you just need the message bus for agents to communicate over HTTP/REST. No agent setup required — agents can call the API directly with curl or any HTTP client.
-
-```bash
-bun install
-KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run start
-```
-
-### Option 2: Bus + MCP server (Claude Code integration, no agents)
-
-Use this on each agent machine so Claude Code, Codex, or Cursor sessions can use `konoha_*` tools directly. This is the HTTP bus (Option 1) plus an MCP server that exposes Konoha tools inside those coding agents — no managed agent processes are required.
-
-```bash
-# 1. Start the HTTP bus (once, shared)
-KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run start
-
-# 2. Add MCP server to Claude Code settings (.mcp.json):
-# {
-#   "mcpServers": {
-#     "konoha": {
-#       "command": "bun",
-#       "args": ["run", "/path/to/konoha/src/mcp.ts"],
-#       "env": {
-#         "KONOHA_URL": "http://127.0.0.1:3200",
-#         "KONOHA_TOKEN": "your-secret"
-#       }
-#     }
-#   }
-# }
-```
-
-Requires Redis on localhost:6379.
-
-### Option 3: Full stack (Bus + MCP + agents)
-
-Use this when running multiple named Claude Code agents (e.g. Naruto, Sasuke, Mirai) that need to discover each other, exchange files, and route messages by agent ID. Combines Options 1 and 2 with agent registration and heartbeat-based presence tracking. See the [Registration flow](#registration-flow) below and [Architecture](docs/architecture.md) for the full setup.
-
-### Registration flow
-
-```bash
-# 1. Admin creates a one-time invite token
-curl -X POST -H "Authorization: Bearer $KONOHA_TOKEN" \
-  http://127.0.0.1:3200/agents/invite
-# → {"token": "inv-<uuid>", "expiresAt": "..."}
-
-# 2. New agent registers with the invite token, receives its own token
-curl -X POST -H "Authorization: Bearer inv-<uuid>" \
-  -d '{"id":"my-agent","name":"My Agent"}' \
-  http://127.0.0.1:3200/agents/register
-# → {"id":"my-agent", ..., "token": "<agent-uuid>"}
-
-# 3. Agent uses its token for all subsequent calls
-export KONOHA_AGENT_TOKEN=<agent-uuid>
-```
+- **Workflow** — an eEPC process definition: elements plus directed flow.
+- **Case** — a running instance of a workflow.
+- **Work item** — a unit of work assigned to a role, person, system, or agent.
+- **Event** — an external or internal signal that starts or resumes a case.
+- **Role** — a business assignment target resolved to a person, agent, or manual queue.
+- **Information system** — a connector-bound system such as Telegram, email, GitHub, Bitrix, Tracker, or Yonote.
+- **Action** — a typed command in the Action Spine, callable from UI, HTTP, MCP, or agents.
 
 ## Architecture
 
-See [docs/architecture.md](docs/architecture.md) for details.
+Konoha is currently a modular monolith: one primary backend process mounts the workflow engine, bus APIs, action envelope, adapters, MCP surface, and static UI.
 
-```
-+-----------+   +-----------+   +-----------+   +-----------+
-|  Naruto   |   |  Sasuke   |   |  Itachi   |   |  Mirai    |
-| (Agent #1)|   | (Agent #2)|   | (Agent #3)|   | (Agent #4)|
-+-----+-----+   +-----+-----+   +-----+-----+   +-----+-----+
-      |               |               |               |
-      |         HTTP / MCP            |         HTTP / MCP
-      v               v               v               v
-+----------------------------------------------------------+
-|                  Konoha Bus (Hono)                       |
-|  +----------+  +----------------------------------+      |
-|  | Presence |  | /opt/shared/attachments/         |      |
-|  | (PG)     |  | (shared file storage)            |      |
-|  +----------+  +----------------------------------+      |
-|        |                                                  |
-|  +-----v------+                                          |
-|  |   Redis    |                                          |
-|  |  Streams   |                                          |
-|  +------------+                                          |
-+----------------------------------------------------------+
+```text
+React operator workspace / HTTP clients / MCP agents
+        |
+        v
+core/src/server.ts  (Bun + Hono composition root)
+        |
+        +-- modules/workflow-engine/src  workflows, cases, work items, waits
+        +-- src/runtime/*                runtime entities and schedulers
+        +-- src/action-*                 Action Spine contracts and executor
+        +-- src/events/*                 event manager, subscriptions, delay worker
+        +-- src/adapters/*               information-system connectors
+        +-- src/redis.ts                 Redis stream bus facade
+        +-- src/storage/*                PostgreSQL shadow persistence
+        +-- src/agent-lifecycle.ts       managed agent definitions and runtime state
+        +-- src/mcp.ts                   MCP tools for agents and assistants
 ```
 
-## Documentation
+Redis is the active runtime store for workflow and bus entities. PostgreSQL receives shadow writes for durability, analytics, and the planned read cutover. See [Architecture](docs/architecture.md), [Workflow Engine](docs/workflow-engine.md), and [Persistence SoT](docs/persistence-sot.md).
 
-- [API Reference](docs/api.md) — HTTP endpoints, request/response formats
-- [Attachments](docs/attachments.md) — file exchange between agents
-- [Architecture](docs/architecture.md) — system design, message flow, deployment
-- [MCP Integration](docs/mcp.md) — Claude Code / Codex / Cursor tool setup
-- [AI-Native Operator Constitution](docs/governance/ai-native-operator-constitution.md) — governing document for Tsunade/operator architecture work
+## Quick Start
 
-## API Quick Reference
+### Requirements
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /health | none | Health check |
-| POST | /agents/invite | admin | Issue one-time invite token (1h TTL) |
-| POST | /agents/register | admin or invite token | Register an agent, returns per-agent token |
-| DELETE | /agents/:id | admin | Unregister an agent |
-| POST | /agents/:id/heartbeat | own agent or admin | Send heartbeat |
-| GET | /agents | any | List agents |
-| POST | /messages | any | Send a message (`from` auto-set from token) |
-| GET | /messages/:agentId | own agent or admin | Read new messages |
-| GET | /messages/:agentId/history | any | Read message history |
-| GET | /messages/:agentId/stream | any | SSE real-time stream |
-| POST | /attachments | any | Upload a file |
-| GET | /channels | any | List active channels |
-| GET | /channels/:name/history | any | Channel message history |
+- Bun
+- Redis on `localhost:6379`
+- PostgreSQL if you want shadow persistence enabled
+- `KONOHA_TOKEN` for API auth
+- `ANTHROPIC_API_KEY` for assistant/trigger-resolution paths
 
-## MCP Tools
+### Run the backend
 
-| Tool | Description |
-|------|-------------|
-| konoha_register | Register on the bus (auto-heartbeat) |
-| konoha_send | Send a message |
-| konoha_read | Read new messages |
-| konoha_agents | List agents |
-| konoha_channels | List channels |
-| konoha_heartbeat | Manual heartbeat |
-| konoha_history | Read message/channel history |
-| konoha_listen | Real-time SSE listener |
+```bash
+bun install
+KONOHA_TOKEN=dev-token ANTHROPIC_API_KEY=placeholder KONOHA_PORT=3200 bun run start
+```
 
-## Frontend
+### Build and serve the UI
 
-The UI is built with React 18 + TypeScript + Vite (multi-page).
-
-### Development
 ```bash
 cd frontend
 bun install
-bun run dev   # starts at http://localhost:5173
+bun run build
 ```
 
-### Build
+The backend serves the built UI from `dist/ui/` at `/ui`.
+
+### Frontend development server
+
 ```bash
 cd frontend
-bun run build  # outputs to dist/ui/
+bun run dev
 ```
 
-The server serves built files from `dist/ui/` at the `/ui/` path. Pages: Dashboard (`/ui/index.html`), Process Registry (`/ui/processes.html`), Work Items (`/ui/workitems.html`).
+### MCP server
+
+Use the MCP server when Claude Code, Codex, Cursor, or another MCP-capable agent needs Konoha tools.
+
+```json
+{
+  "mcpServers": {
+    "konoha": {
+      "command": "bun",
+      "args": ["run", "/path/to/konoha/src/mcp.ts"],
+      "env": {
+        "KONOHA_URL": "http://127.0.0.1:3200",
+        "KONOHA_TOKEN": "dev-token"
+      }
+    }
+  }
+}
+```
+
+For a production-style server with Telegram connectors and managed agents, see [agents/DEPLOY.md](agents/DEPLOY.md).
+
+## Development Gates
+
+```bash
+scripts/preflight-portable.sh   # CI-safe gate
+scripts/preflight.sh            # production/server gate
+```
+
+The production gate includes system health, lifecycle/watchdog checks, Telegram smoke, backend tests, frontend build, and PostgreSQL shadow verification. See [Testing](docs/testing.md).
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — current component map and operational gates.
+- [Workflow Engine](docs/workflow-engine.md) — eEPC runtime, cases, work items, events, and assignment.
+- [Action Spine Boundary](docs/action-spine-boundary.md) — action contract direction and boundaries.
+- [API Reference](docs/api.md) — HTTP endpoints.
+- [MCP Integration](docs/mcp.md) — agent-facing MCP setup.
+- [Agent Lifecycle](docs/agent-lifecycle.md) — managed agent definitions and runtime modes.
+- [Configuration](docs/configuration.md) — environment and deployment settings.
+- [Testing](docs/testing.md) — portable and production gates.
+- [AI-Native Operator Constitution](docs/governance/ai-native-operator-constitution.md) — governance for operator architecture work.
+
+## API Highlights
+
+| Area | Endpoints |
+|------|-----------|
+| Actions | `POST /act`, `GET /act`, `GET /act/:actionId` |
+| Workflows | `/workflows` |
+| Cases | `/cases` |
+| Work items | `/workitems` |
+| Events and waits | `/events`, `/waits`, `/api/event-manager/subscriptions` |
+| Agents | `/agents`, `/agents/:id/start`, `/agents/:id/stop`, `/agents/:id/restart`, `/agents/:id/switch-runtime` |
+| Messages | `/messages`, `/messages/:agentId`, `/messages/:agentId/stream` |
+| Knowledge | `/api/kb`, `/api/kb/tree`, `/api/kb/file`, `/api/kb/search` |
+| Admin/config | `/admin`, `/config/settings`, `/deploy/status` |
+
+## Repository Layout
+
+```text
+core/src/server.ts          backend composition root
+src/                        platform services, action spine, runtime, adapters, MCP
+modules/workflow-engine/    workflow-engine route module and plugin boundary
+frontend/                   React operator workspace
+agents/                     agent instructions and deployment docs
+scripts/                    preflight, healthcheck, watchdogs, operational tools
+systemd/                    service and timer units
+docs/                       architecture, ADRs, runbooks, API docs, testing docs
+```
 
 ## License
 
