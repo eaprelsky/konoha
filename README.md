@@ -1,30 +1,43 @@
-# Konoha Bus
+# Konoha
 
 [![CI](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml/badge.svg)](https://github.com/eaprelsky/konoha/actions/workflows/ci.yml)
 
-Multi-agent communication bus for autonomous Claude Code, Codex, and Cursor agents. Redis/PostgreSQL-backed message routing with file attachments, presence tracking, and real-time streaming.
+AI-native BPMS and multi-agent control plane. Konoha combines an executable eEPC workflow engine, agent/runtime orchestration, Action Spine contracts, information-system connectors, and a React operator workspace.
 
 ## Features
 
-- **Message routing** — direct, broadcast, and role-based delivery via Redis streams
-- **Agent presence** — heartbeat-based online/offline status with PostgreSQL presence history and Redis stream delivery
-- **File attachments** — shared storage for inter-agent file exchange (images, PDFs, documents, audio)
-- **Real-time streaming** — SSE endpoint for push-style message delivery
-- **Topic channels** — named channels for pub/sub communication
-- **HTTP API** — Bun + Hono, Bearer token auth
-- **MCP server** — integration for Claude Code, Codex, and Cursor via MCP
+- **Workflow Engine** — executable eEPC processes with cases, work items, events, roles, documents, and information-system bindings.
+- **AI constructor** — assistant actions materialize process definitions through server-side action contracts.
+- **Action Spine** — typed action envelope used by UI, HTTP, MCP, and agents to avoid divergent mutation paths.
+- **Agent lifecycle** — managed Claude Code, Codex, and Cursor-style workers with runtime profiles, watchdogs, and health checks.
+- **Message bus** — direct, broadcast, and role-based delivery via Redis streams, SSE, PostgreSQL shadow history, and attachments.
+- **Connectors** — Telegram, email, GitHub, Bitrix, Yandex Tracker, Yonote, and other external systems as workflow information systems.
+- **Operator workspace** — React UI for process design, work execution, monitoring, knowledge, agents, and administration.
+- **MCP server** — Konoha tools for coding agents and operator assistants.
 
-## Dashboard
+## Konoha WEB
 
-Konoha includes a built-in web dashboard for monitoring agents, browsing messages, and reading the knowledge base.
+Konoha includes a built-in operator workspace for designing executable processes, running cases, monitoring events, and managing agent runtime state.
+
+| Process Editor | My Tasks |
+|----------------|----------|
+| ![Process Editor](docs/screenshots/process-editor.png) | ![My Tasks](docs/screenshots/my-tasks.png) |
+
+| Process Monitoring | Runtime Monitoring |
+|--------------------|--------------------|
+| ![Process Monitoring](docs/screenshots/process-monitoring.png) | ![Runtime Monitoring](docs/screenshots/monitoring.png) |
 
 | Agents | Messages |
 |--------|----------|
-| ![Agents](docs/screenshots/agents.jpg) | ![Messages](docs/screenshots/messages.jpg) |
+| ![Agents](docs/screenshots/agents.png) | ![Messages](docs/screenshots/messages.png) |
 
-| Health | Knowledge Base |
-|--------|----------------|
-| ![Health](docs/screenshots/health.jpg) | ![Knowledge Base](docs/screenshots/knowledge-base.jpg) |
+| Knowledge Base | Connectors |
+|----------------|------------|
+| ![Knowledge Base](docs/screenshots/knowledgebase.png) | ![Connectors](docs/screenshots/connectors.png) |
+
+| Documents | Skills |
+|-----------|--------|
+| ![Documents](docs/screenshots/documents.png) | ![Skills](docs/screenshots/skills.png) |
 
 ## In Action
 
