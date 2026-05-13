@@ -19,7 +19,8 @@ os.environ.setdefault("AGENT_BATCH_HEADER", "Задание для Какаши:
 from github_delegation_watchdog import *  # noqa: F401,F403,E402
 
 import watchdog_base as _b
-_b.DESYNC_RECOVERY_ENABLED = False  # 53257306: Codex detection + tmux socket mismatch — suppress restart loop
+_b.DESYNC_RECOVERY_ENABLED = True
+_b.IDLE_TIMEOUT_SEC = int(os.environ.get("KAKASHI_IDLE_TIMEOUT_SEC", "600"))
 
 if __name__ == "__main__":
     main()

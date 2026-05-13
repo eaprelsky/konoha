@@ -119,6 +119,72 @@ class TestDesyncConfig:
         assert is_session_noise({"text": "kakashi:fix issue=505"}) is False
 
 
+class TestDirtyWorkdirGuard:
+    def test_dirty_workdir_report_detects_uncommitted_files(self, tmp_path, monkeypatch):
+        import subprocess
+        import watchdog_base as _b
+
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+        (tmp_path / "dirty.txt").write_text("pending")
+
+        monkeypatch.setattr(_b, "AGENT_ID", "test-agent")
+        monkeypatch.setenv("AGENT_WORKDIR", str(tmp_path))
+
+        report = _b._dirty_workdir_report()
+
+        assert f"workdir={tmp_path}" in report
+        assert "dirty.txt" in report
+
+    def test_dirty_workdir_report_empty_for_clean_repo(self, tmp_path, monkeypatch):
+        import subprocess
+        import watchdog_base as _b
+
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+        monkeypatch.setattr(_b, "AGENT_ID", "test-agent")
+        monkeypatch.setenv("AGENT_WORKDIR", str(tmp_path))
+
+        assert _b._dirty_workdir_report() == ""
+
+
+class TestKibaDeterministicAlertRecovery:
+    @staticmethod
+    def _load_kiba_watchdog():
+        import importlib.util
+        path = os.path.join(os.path.dirname(__file__), "..", "scripts", "watchdog-kiba.py")
+        spec = importlib.util.spec_from_file_location("watchdog_kiba", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_frozen_alert_restarts_agent(self):
+        mod = self._load_kiba_watchdog()
+        assert mod.recovery_action_for_alert(
+            "kiba:alert agent=kakashi frozen timeout=600s msgs_dropped=1"
+        ) == ("restart_agent", "kakashi")
+
+    def test_stuck_alert_restarts_agent(self):
+        mod = self._load_kiba_watchdog()
+        assert mod.recovery_action_for_alert(
+            "kiba:alert agent=naruto runtime=claude stuck duration=2623min"
+        ) == ("restart_agent", "naruto")
+
+    def test_watchdog_dead_restarts_watchdog_only(self):
+        mod = self._load_kiba_watchdog()
+        assert mod.recovery_action_for_alert(
+            "kiba:alert agent=kakashi watchdog=dead session=alive"
+        ) == ("restart_watchdog", "kakashi")
+
+    def test_idle_with_messages_nudges_agent(self):
+        mod = self._load_kiba_watchdog()
+        assert mod.recovery_action_for_alert(
+            "kiba:alert agent=sasuke idle_with_messages msg_age=12min"
+        ) == ("nudge_agent", "sasuke")
+
+    def test_unrelated_alert_is_left_to_llm(self):
+        mod = self._load_kiba_watchdog()
+        assert mod.recovery_action_for_alert("kiba:alert disk=critical pct=95") is None
+
+
 class TestDesyncTimerReset:
     def test_recovery_grace_does_not_retrigger_desync(self, monkeypatch):
         import watchdog_base as _b

@@ -469,6 +469,50 @@ async def heartbeat_loop() -> None:
 _desync_retry_count: int = 0  # track recovery attempts per batch
 
 
+def _agent_workdir() -> str:
+    return os.environ.get("AGENT_WORKDIR", f"/opt/shared/agent-workdirs/{AGENT_ID}")
+
+
+def _dirty_workdir_report() -> str:
+    """Return git dirty-state evidence for the agent workdir, or an empty string."""
+    workdir = _agent_workdir()
+    if not os.path.isdir(workdir):
+        return ""
+    try:
+        inside = subprocess.run(
+            ["git", "-C", workdir, "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if inside.returncode != 0 or inside.stdout.strip() != "true":
+            return ""
+        status = subprocess.run(
+            ["git", "-C", workdir, "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except Exception as e:
+        return f"workdir={workdir} dirty_check_error={e!r}"
+    if status.returncode != 0:
+        return f"workdir={workdir} dirty_check_failed={status.stderr[:300]}"
+    dirty = status.stdout.strip()
+    if not dirty:
+        return ""
+    lines = " | ".join(dirty.splitlines()[:12])
+    return f"workdir={workdir} dirty={lines}"
+
+
+async def _restart_blocked_by_dirty_workdir() -> bool:
+    report = _dirty_workdir_report()
+    if not report:
+        return False
+    log.warning("Desync recovery blocked: dirty agent workdir: %s", report)
+    await _send_desync_audit("restart blocked: dirty agent workdir", report)
+    return True
+
+
 async def _send_desync_audit(reason: str, detail: str = "") -> None:
     """Log a desync event to Konoha bus for observability."""
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
@@ -510,6 +554,9 @@ async def try_desync_recovery() -> bool:
 
     if _desync_retry_count >= DESYNC_MAX_RETRIES:
         log.warning(f"Desync recovery: max retries ({DESYNC_MAX_RETRIES}) reached — not retrying")
+        return False
+
+    if await _restart_blocked_by_dirty_workdir():
         return False
 
     _desync_retry_count += 1
