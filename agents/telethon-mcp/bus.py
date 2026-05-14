@@ -479,10 +479,10 @@ async def on_message(event):
     capability = apply_capability_fields(data, data['router_route'])
 
     # Dedup: set a routing key so other paths can check if Telethon already handled
-    # Key: telegram:routed:{chat_id}:{sender_id}:{first-50-chars-hash}, TTL 30s
+    # Key: telegram:routed:{chat_id}:{sender_id}:{first-500-chars-hash}, TTL 120s
     dedup_key = f"telegram:routed:{event.chat_id}:{sender_id}"
     if msg_text:
-        dedup_key += f":{hashlib.md5(msg_text[:100].encode()).hexdigest()[:12]}"
+        dedup_key += f":{hashlib.md5(msg_text[:500].encode()).hexdigest()[:12]}"
 
     # Check if bot path already claimed this message
     already_routed = await rd.get(dedup_key)
@@ -494,7 +494,7 @@ async def on_message(event):
     if action_hint == 'respond':
         # Claim and route only actionable messages to Sasuke. Non-actionable
         # group traffic is kept in the audit log, but not sent to the LLM.
-        await rd.set(dedup_key, 'telethon', ex=30)
+        await rd.set(dedup_key, 'telethon', ex=120)
         target_stream = capability.get('target_stream') or 'telegram:incoming'
         await rd.xadd(target_stream, data, maxlen=1000)
         if target_stream != 'telegram:incoming':

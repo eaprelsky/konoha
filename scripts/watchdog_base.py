@@ -235,7 +235,8 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                     _desync_retry_count = 0  # delivery succeeded — reset recovery budget (#544)
                     pending.clear()
                 else:
-                    log.warning(f"tmux_send timed out — retrying {len(pending)} msg(s) on next idle")
+                    log.warning(f"tmux_send timed out — clearing {len(pending)} msg(s)")
+                    pending.clear()
             except Exception as e:
                 log.error(f"tmux send failed: {e}")
                 pending.clear()

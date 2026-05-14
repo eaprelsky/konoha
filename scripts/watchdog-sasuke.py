@@ -346,6 +346,14 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
 
         if pending:
             try:
+                # Mark dedup BEFORE delivery to prevent infinite retry loops.
+                # If tmux_send confirmation fails, the text already reached Sasuke's
+                # buffer — we must not paste it again on retry.
+                for ev in pending:
+                    key = _msg_key(ev)
+                    if key:
+                        seen_msg_keys.add(key)
+                        await _redis_dedup_mark(key)
                 prompt = format_batch(pending)
                 delivered = await _b.tmux_send(_b.TMUX_SESSION, prompt)
                 if delivered is not False:
@@ -353,9 +361,11 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                     for ev in pending:
                         ev["_delivered_to_agent"] = True
                 else:
-                    _b.log.warning(f"tmux_send timed out — retrying delivery of {len(pending)} msg(s) on next idle")
+                    _b.log.warning(f"tmux_send timed out — dedup marked, clearing {len(pending)} msg(s)")
+                    pending.clear()
             except Exception as e:
-                _b.log.error(f"tmux send failed: {e}")
+                _b.log.error(f"tmux send failed: {e}, clearing {len(pending)} msg(s)")
+                pending.clear()
                 await asyncio.sleep(1.0)
 
 
