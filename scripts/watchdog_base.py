@@ -231,12 +231,17 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 prompt = format_batch(pending)
                 prompt = sanitize_message_text(prompt)
                 delivered = await tmux_send(TMUX_SESSION, prompt)
-                if delivered is not False:
+                if delivered is True:
                     _desync_retry_count = 0  # delivery succeeded — reset recovery budget (#544)
                     pending.clear()
-                else:
-                    log.warning(f"tmux_send timed out — clearing {len(pending)} msg(s)")
+                elif delivered is False:
+                    # Text sent to buffer but confirmation timed out.
+                    # Clearing is safe: text is in agent's input buffer.
+                    log.warning(f"tmux_send unconfirmed — clearing {len(pending)} msg(s)")
                     pending.clear()
+                else:
+                    # delivered is None — text never reached buffer (session dead / send-keys failed)
+                    log.warning(f"tmux_send failed before buffer — retrying {len(pending)} msg(s) on next idle")
             except Exception as e:
                 log.error(f"tmux send failed: {e}")
                 pending.clear()

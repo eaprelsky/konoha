@@ -346,23 +346,32 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
 
         if pending:
             try:
-                # Mark dedup BEFORE delivery to prevent infinite retry loops.
-                # If tmux_send confirmation fails, the text already reached Sasuke's
-                # buffer — we must not paste it again on retry.
-                for ev in pending:
-                    key = _msg_key(ev)
-                    if key:
-                        seen_msg_keys.add(key)
-                        await _redis_dedup_mark(key)
                 prompt = format_batch(pending)
                 delivered = await _b.tmux_send(_b.TMUX_SESSION, prompt)
-                if delivered is not False:
+                if delivered is True:
+                    # Mark dedup AFTER confirmed delivery to prevent re-injection
+                    for ev in pending:
+                        key = _msg_key(ev)
+                        if key:
+                            seen_msg_keys.add(key)
+                            await _redis_dedup_mark(key)
                     _health["last_delivered_at"] = asyncio.get_running_loop().time()
                     for ev in pending:
                         ev["_delivered_to_agent"] = True
-                else:
-                    _b.log.warning(f"tmux_send timed out — dedup marked, clearing {len(pending)} msg(s)")
+                elif delivered is False:
+                    # Text sent to buffer but confirmation timed out.
+                    # Mark dedup: text is in agent's input buffer, must not re-inject.
+                    for ev in pending:
+                        key = _msg_key(ev)
+                        if key:
+                            seen_msg_keys.add(key)
+                            await _redis_dedup_mark(key)
+                    _b.log.warning(f"tmux_send unconfirmed — dedup marked, clearing {len(pending)} msg(s)")
                     pending.clear()
+                else:
+                    # delivered is None — text never reached buffer (session dead / send-keys failed).
+                    # Do NOT mark dedup — message should be retried.
+                    _b.log.warning(f"tmux_send failed before buffer — retrying {len(pending)} msg(s) on next idle")
             except Exception as e:
                 _b.log.error(f"tmux send failed: {e}, clearing {len(pending)} msg(s)")
                 pending.clear()

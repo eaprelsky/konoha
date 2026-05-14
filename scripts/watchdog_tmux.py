@@ -133,9 +133,14 @@ async def tmux_run(*args: str, timeout: float = 10.0) -> bool:
         return False
 
 
-async def tmux_send(session: str, text: str) -> bool:
-    """Deliver a text prompt to an agent tmux session, handling idle detection,
-    compacting waits, [Pasted text] dismissal, and submit retries."""
+async def tmux_send(session: str, text: str) -> bool | None:
+    """Deliver a text prompt to an agent tmux session.
+
+    Returns tri-state:
+      True  — confirmed delivery (text sent, agent left idle state)
+      False — text sent to buffer but confirmation timed out (dedup-safe to drop)
+      None  — text never reached buffer (session dead / send-keys failed); caller should retry
+    """
     # Collapse newlines to spaces — multi-line text triggers Claude Code [Pasted text] dialog
     text = text.replace("\n", " ").replace("\r", " ")
 
@@ -143,8 +148,8 @@ async def tmux_send(session: str, text: str) -> bool:
     compacting_waited = 0
     while compacting_waited < 120:
         if not is_session_alive(session):
-            log.error(f"Delivery failed: tmux session {session} is missing before send")
-            return False
+            log.error(f"Delivery failed: tmux session {session} is missing before send — text never sent")
+            return None  # None = text never reached buffer, caller should retry
         if is_agent_idle(session, stable_checks=1):
             break
         last_lines = chr(10).join(tmux_pane_content(session).strip().split(chr(10))[-6:])
@@ -206,8 +211,8 @@ async def tmux_send(session: str, text: str) -> bool:
     await asyncio.sleep(0.15)
     ok = await tmux_run("tmux", "-L", session, "send-keys", "-t", session, text, timeout=5.0)
     if not ok:
-        log.error(f"send-keys timed out for {session} — skipping delivery")
-        return False
+        log.error(f"send-keys timed out for {session} — text never sent, caller should retry")
+        return None  # None = text never reached buffer
     await asyncio.sleep(0.5)
     await dismiss_pasted_dialog()
 
@@ -224,5 +229,5 @@ async def tmux_send(session: str, text: str) -> bool:
         if await wait_for_submit(10.0 if attempt == 0 else 6.0):
             return True
 
-    log.error(f"Delivery failed: agent {session} stayed idle after submit retries")
-    return False
+    log.error(f"Delivery unconfirmed: agent {session} stayed idle after submit retries — text likely in buffer")
+    return False  # False = text sent but confirmation timed out; caller should clear + dedup

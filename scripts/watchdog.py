@@ -143,11 +143,15 @@ async def send_loop(batched_queue: asyncio.Queue, cfg: dict) -> None:
             try:
                 prompt = format_batch(pending, cfg)
                 delivered = await tmux_send(session, prompt)
-                if delivered is not False:
+                if delivered is True:
                     get_health()["last_delivered_at"] = asyncio.get_running_loop().time()
                     pending.clear()
+                elif delivered is False:
+                    log.warning(f"tmux_send unconfirmed — clearing {len(pending)} msg(s)")
+                    pending.clear()
                 else:
-                    log.warning(f"tmux_send timed out — retrying {len(pending)} msg(s) on next idle")
+                    # delivered is None — text never reached buffer
+                    log.warning(f"tmux_send failed before buffer — retrying {len(pending)} msg(s) on next idle")
             except Exception as e:
                 log.error(f"tmux send failed: {e}")
                 pending.clear()
