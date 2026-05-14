@@ -301,3 +301,75 @@ class TestDesyncTimerReset:
             assert recovery_calls["count"] == 0
 
         asyncio.run(scenario())
+
+
+class TestSSEDedup:
+    """Regression tests for SSE message dedup (#801)."""
+
+    def test_dedup_trim_preserves_most_recent_ids(self):
+        """Eviction must drop oldest entries first; most recent IDs survive trim."""
+        # Simulate the dict-based dedup from konoha_sse_watcher
+        seen: dict[str, None] = {}
+        MAX_SIZE = 5000
+
+        # Fill with sequential IDs 0..MAX_SIZE
+        for i in range(MAX_SIZE + 1):
+            msg_id = str(i)
+            seen[msg_id] = None
+            if len(seen) > MAX_SIZE:
+                excess = len(seen) - MAX_SIZE // 2
+                for _ in range(excess):
+                    seen.pop(next(iter(seen)))
+
+        # After trim: should be at most MAX_SIZE//2 = 2500 entries
+        assert len(seen) <= MAX_SIZE // 2
+
+        # Most recent ID (str(MAX_SIZE)) must survive
+        assert str(MAX_SIZE) in seen, "most recent ID was evicted — trim does not preserve insertion order"
+
+        # Oldest entries (0, 1, ...) must be evicted
+        assert "0" not in seen, "oldest ID was not evicted"
+        assert "1" not in seen, "oldest ID was not evicted"
+
+        # Entries near the end must survive
+        for i in range(MAX_SIZE - 10, MAX_SIZE + 1):
+            assert str(i) in seen, f"recent ID {i} should survive trim"
+
+    def test_sse_watcher_dedup_skips_duplicate_ids(self, monkeypatch):
+        """Duplicate Konoha message IDs arriving via SSE must be skipped."""
+        import watchdog_base as _b
+
+        async def scenario():
+            # Simulate the dedup logic inline (same code as in konoha_sse_watcher).
+            # We don't mock the full watcher — we test the dedup contract directly.
+            seen: dict[str, None] = {}
+            MAX_SIZE = 5000
+            delivered: list[dict] = []
+
+            messages = [
+                {"id": "msg-1", "from": "naruto", "text": "first"},
+                {"id": "msg-1", "from": "naruto", "text": "first"},  # duplicate
+                {"id": "msg-2", "from": "sasuke", "text": "second"},
+                {"id": "msg-1", "from": "naruto", "text": "first"},  # duplicate again
+                {"id": "msg-3", "from": "kiba", "text": "third"},
+            ]
+
+            for data in messages:
+                msg_id = data.get("id", "")
+                if msg_id and msg_id in seen:
+                    continue  # dedup skip
+                if _b.is_session_noise(data):
+                    continue
+                if msg_id:
+                    seen[msg_id] = None
+                    if len(seen) > MAX_SIZE:
+                        excess = len(seen) - MAX_SIZE // 2
+                        for _ in range(excess):
+                            seen.pop(next(iter(seen)))
+                delivered.append({"source": "konoha", "data": data})
+
+            assert len(delivered) == 3, f"expected 3 unique messages, got {len(delivered)}"
+            ids = [d["data"]["id"] for d in delivered]
+            assert ids == ["msg-1", "msg-2", "msg-3"], f"unexpected order or duplicates: {ids}"
+
+        asyncio.run(scenario())

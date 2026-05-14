@@ -312,7 +312,7 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
     last_event_time = [0.0]  # mutable container for stale_checker closure
     SSE_STALE_TIMEOUT = 300  # seconds — force reconnect if no event received
     SSE_DEDUP_MAX_SIZE = 5000  # max seen IDs before trimming (#801)
-    _seen_ids: set[str] = set()  # Konoha message IDs already processed this session
+    _seen_ids: dict[str, None] = {}  # insertion-ordered dict; trim evicts oldest first
 
     while True:
         proc = None
@@ -385,9 +385,12 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
                                 log.debug(f"Skipping SESSION noise: {data.get('text','')[:50]}")
                                 continue
                             if msg_id:
-                                _seen_ids.add(msg_id)
+                                _seen_ids[msg_id] = None
                                 if len(_seen_ids) > SSE_DEDUP_MAX_SIZE:
-                                    _seen_ids = set(list(_seen_ids)[-SSE_DEDUP_MAX_SIZE // 2:])
+                                    # Evict oldest entries — dict preserves insertion order (Python 3.7+)
+                                    excess = len(_seen_ids) - SSE_DEDUP_MAX_SIZE // 2
+                                    for _ in range(excess):
+                                        _seen_ids.pop(next(iter(_seen_ids)))
                             data["_sse_id"] = last_event_id
                             await raw_queue.put({"source": "konoha", "data": data})
                         except json.JSONDecodeError:
