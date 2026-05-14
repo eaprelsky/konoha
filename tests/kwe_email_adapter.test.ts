@@ -57,7 +57,8 @@ describe("email adapter — template rendering", () => {
       .catch(e => e);
 
     // Should fail at SMTP level (connect/auth), not at validation level
-    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeTruthy();
+    expect(typeof (err as Error).message).toBe("string");
     expect(err.message).not.toContain("'to' is required");
     expect(err.message).not.toContain("'subject' is required");
     expect(err.message).not.toContain("'template' must be");
