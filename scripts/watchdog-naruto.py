@@ -48,7 +48,7 @@ L1_INTERRUPT_AFTER_SEC = 30   # interrupt agent with Ctrl+C if L1 (owner) messag
 OWNER_TG_ID = "93791246"      # Yegor Aprelsky — Level 1 trust
 PASTE_DIALOG_THRESHOLD = 800  # chars below which no paste dialog expected
 
-_SEEN_KONOHA_SSE_IDS: set[str] = set()
+_SEEN_KONOHA_SSE_IDS: dict[str, bool] = {}  # ordered dict for deterministic eviction (Python 3.7+)
 _MAX_SEEN_KONOHA_SSE = 500
 
 
@@ -176,9 +176,12 @@ def format_batch(events: list[dict]) -> str:
             _b.log.info(f"Deduped Konoha SSE replay: {d.get('text','')[:60]}")
             continue
         if sse_id:
-            _SEEN_KONOHA_SSE_IDS.add(sse_id)
+            _SEEN_KONOHA_SSE_IDS[sse_id] = True
             if len(_SEEN_KONOHA_SSE_IDS) > _MAX_SEEN_KONOHA_SSE:
-                _SEEN_KONOHA_SSE_IDS = set(list(_SEEN_KONOHA_SSE_IDS)[-_MAX_SEEN_KONOHA_SSE // 2:])
+                # Evict oldest half — dict keys preserve insertion order
+                keys = list(_SEEN_KONOHA_SSE_IDS.keys())
+                for k in keys[:-_MAX_SEEN_KONOHA_SSE // 2]:
+                    del _SEEN_KONOHA_SSE_IDS[k]
         konoha_sse_deduped.append(ev)
     konoha_events = konoha_sse_deduped
 
