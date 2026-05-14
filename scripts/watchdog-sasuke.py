@@ -237,8 +237,8 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
         msg_id = d.get("msg_id", "")
         if chat_id and msg_id:
             return ("tg", str(chat_id), str(msg_id))
-        # Konoha SSE replay dedup: message id from bus event
-        konoha_id = d.get("id", "")
+        # Konoha SSE replay dedup: use SSE stream id (set by watchdog_base) or fall back to message body id
+        konoha_id = d.get("_sse_id", "") or d.get("id", "")
         if konoha_id:
             return ("konoha", str(konoha_id))
         return None

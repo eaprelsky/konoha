@@ -48,6 +48,9 @@ L1_INTERRUPT_AFTER_SEC = 30   # interrupt agent with Ctrl+C if L1 (owner) messag
 OWNER_TG_ID = "93791246"      # Yegor Aprelsky — Level 1 trust
 PASTE_DIALOG_THRESHOLD = 800  # chars below which no paste dialog expected
 
+_SEEN_KONOHA_SSE_IDS: set[str] = set()
+_MAX_SEEN_KONOHA_SSE = 500
+
 
 # ── L1 priority detection ─────────────────────────────────────────────────────
 
@@ -163,6 +166,22 @@ def format_batch(events: list[dict]) -> str:
 
     # Deduplicate: Konoha TG-bridge echoes look like "[TG Sender] text"
     # If we already have the TG event directly, skip its Konoha echo
+    # Also dedup by SSE stream id to prevent re-delivery loops
+    global _SEEN_KONOHA_SSE_IDS
+    konoha_sse_deduped = []
+    for ev in konoha_events:
+        d = ev.get("data", ev)
+        sse_id = d.get("_sse_id", "")
+        if sse_id and sse_id in _SEEN_KONOHA_SSE_IDS:
+            _b.log.info(f"Deduped Konoha SSE replay: {d.get('text','')[:60]}")
+            continue
+        if sse_id:
+            _SEEN_KONOHA_SSE_IDS.add(sse_id)
+            if len(_SEEN_KONOHA_SSE_IDS) > _MAX_SEEN_KONOHA_SSE:
+                _SEEN_KONOHA_SSE_IDS = set(list(_SEEN_KONOHA_SSE_IDS)[-_MAX_SEEN_KONOHA_SSE // 2:])
+        konoha_sse_deduped.append(ev)
+    konoha_events = konoha_sse_deduped
+
     tg_texts = {(ev.get("data", ev).get("text") or "").strip() for ev in tg_events}
     konoha_deduped = []
     for ev in konoha_events:

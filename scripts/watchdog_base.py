@@ -376,6 +376,7 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
                             if is_session_noise(data):
                                 log.debug(f"Skipping SESSION noise: {data.get('text','')[:50]}")
                                 continue
+                            data["_sse_id"] = last_event_id
                             await raw_queue.put({"source": "konoha", "data": data})
                         except json.JSONDecodeError:
                             pass
