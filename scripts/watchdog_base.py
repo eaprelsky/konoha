@@ -311,6 +311,8 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
     last_event_id_time = 0.0  # monotonic timestamp when last_event_id was set (#521)
     last_event_time = [0.0]  # mutable container for stale_checker closure
     SSE_STALE_TIMEOUT = 300  # seconds — force reconnect if no event received
+    SSE_DEDUP_MAX_SIZE = 5000  # max seen IDs before trimming (#801)
+    _seen_ids: set[str] = set()  # Konoha message IDs already processed this session
 
     while True:
         proc = None
@@ -372,10 +374,20 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
                             continue
                         try:
                             data = json.loads(payload)
+                            # Dedup by Konoha message ID — prevents duplicate delivery
+                            # on SSE reconnect replay (#801)
+                            msg_id = data.get("id", "")
+                            if msg_id and msg_id in _seen_ids:
+                                log.debug(f"SSE dedup: skipping duplicate message {msg_id}")
+                                continue
                             log.info(f"SSE event from {data.get('from','?')}: {data.get('text','')[:60]}")
                             if is_session_noise(data):
                                 log.debug(f"Skipping SESSION noise: {data.get('text','')[:50]}")
                                 continue
+                            if msg_id:
+                                _seen_ids.add(msg_id)
+                                if len(_seen_ids) > SSE_DEDUP_MAX_SIZE:
+                                    _seen_ids = set(list(_seen_ids)[-SSE_DEDUP_MAX_SIZE // 2:])
                             data["_sse_id"] = last_event_id
                             await raw_queue.put({"source": "konoha", "data": data})
                         except json.JSONDecodeError:
