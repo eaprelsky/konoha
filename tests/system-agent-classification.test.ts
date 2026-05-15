@@ -71,4 +71,15 @@ describe("seeded system agent classifications", () => {
       lifecycle_mode: "optional_on_demand",
     });
   });
+
+  test("konoha-lite capability is wired for target agents, not for Naruto", () => {
+    const liteAgents = ["kakashi", "shino", "shikadai", "sasuke", "kiba"];
+    for (const id of liteAgents) {
+      const caps = agent(id).capabilities ?? [];
+      expect(caps).toContain("konoha-lite");
+    }
+    // Naruto stays full profile — needs konoha_agents
+    const narutoCaps = agent("naruto").capabilities ?? [];
+    expect(narutoCaps).not.toContain("konoha-lite");
+  });
 });
