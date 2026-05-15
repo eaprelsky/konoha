@@ -16,7 +16,7 @@ import {
 const log = createLogger("redis");
 
 const BUS_STREAM = "konoha:bus";
-const AGENT_STREAM_PREFIX = "konoha:agent:";
+export const AGENT_STREAM_PREFIX = "konoha:agent:";
 const CHANNEL_STREAM_PREFIX = "konoha:channel:";
 const EVENTS_STREAM = "konoha:events";
 
@@ -329,10 +329,23 @@ export async function readHistory(target: string, count = 20): Promise<Message[]
 }
 
 // Replay messages from agent stream after sinceId (exclusive) — used by SSE on reconnect.
-export async function replayStream(agentId: string, sinceId: string, count = 200): Promise<Message[]> {
+// Uses XREVRANGE to return only the most recent `count` messages, and clamps
+// stale sinceId (older than 24h) to prevent full-history replay from ancient Last-Event-ID.
+const MAX_REPLAY_AGE_MS = 24 * 3600 * 1000;
+export async function replayStream(agentId: string, sinceId: string, count = 50): Promise<Message[]> {
   const stream = AGENT_STREAM_PREFIX + agentId;
-  // `(sinceId` is the exclusive start notation in Redis XRANGE (Redis 6.2+)
-  const entries = await redis.xrange(stream, `(${sinceId}`, "+", "COUNT", count) as [string, string[]][];
+  // Clamp stale sinceId: if older than 24h, use a synthetic ID from 24h ago
+  const nowMs = Date.now();
+  try {
+    const sinceMs = parseInt(sinceId.split("-")[0]);
+    if (!isNaN(sinceMs) && nowMs - sinceMs > MAX_REPLAY_AGE_MS) {
+      sinceId = `${nowMs - MAX_REPLAY_AGE_MS}-0`;
+    }
+  } catch { /* keep sinceId as-is */ }
+  // XREVRANGE + (sinceId: newest first, exclusive lower bound, limited to count
+  const entries = await redis.xrevrange(stream, "+", `(${sinceId}`, "COUNT", count) as [string, string[]][];
+  // Reverse to chronological order
+  entries.reverse();
   return entries.map(([id, fields]) => fieldsToMessage(id, fields));
 }
 

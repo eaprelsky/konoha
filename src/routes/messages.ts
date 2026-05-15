@@ -14,6 +14,8 @@ import {
   replayStream,
   listChannels,
   createSubscriber,
+  redis,
+  AGENT_STREAM_PREFIX,
   type Attachment,
 } from "../redis";
 
@@ -116,7 +118,15 @@ router.get("/:agentId/history", async (c) => {
 // SSE Stream — supports Last-Event-ID header or ?since= param for missed-message replay
 router.get("/:agentId/stream", async (c) => {
   const agentId = c.req.param("agentId");
-  const since = c.req.header("Last-Event-ID") || c.req.query("since") || "";
+  let since = c.req.header("Last-Event-ID") || c.req.query("since") || "";
+  // When no Last-Event-ID is provided, start from the latest entry to avoid
+  // full-history replay on first connect / MCP reconnects that don't track position.
+  if (!since) {
+    try {
+      const lastEntries = await redis.xrevrange(AGENT_STREAM_PREFIX + agentId, "+", "-", "COUNT", 1);
+      if (lastEntries.length > 0) since = lastEntries[0][0];
+    } catch { /* fall through — empty since means no replay (already a no-op) */ }
+  }
 
   return streamSSE(c, async (stream) => {
     // Replay messages missed while disconnected
