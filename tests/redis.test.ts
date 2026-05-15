@@ -456,22 +456,26 @@ describe("listChannels", () => {
 });
 
 describe("replayStream", () => {
-  test("stale sinceId older than 24h is clamped", async () => {
+  test("stale sinceId older than 24h is clamped — recent messages still replayed", async () => {
     const agentId = id("replay-clamp");
     await registerAgent({ id: agentId, name: "Replay Clamp", capabilities: [], roles: [] });
 
     const streamKey = AGENT_STREAM_PREFIX + agentId;
-    await redis.xadd(streamKey, "*", "from", "test", "text", "old-1");
-    await redis.xadd(streamKey, "*", "from", "test", "text", "old-2");
-    await redis.xadd(streamKey, "*", "from", "test", "text", "recent");
+    await redis.xadd(streamKey, "*", "from", "test", "text", "msg-a");
+    await redis.xadd(streamKey, "*", "from", "test", "text", "msg-b");
+    await redis.xadd(streamKey, "*", "from", "test", "text", "msg-c");
 
+    // Clamp prevents full-history replay: ancient sinceId (48h) is replaced
+    // with 24h-ago synthetic ID. All recently-added messages fall within the
+    // 24h window and must be returned.
     const ancientSinceId = `${Date.now() - 48 * 3600 * 1000}-0`;
     const replayed = await replayStream(agentId, ancientSinceId);
 
-    expect(replayed.length).toBeGreaterThanOrEqual(1);
+    expect(replayed.length).toBeGreaterThanOrEqual(3);
     const texts = replayed.map((m: any) => m.text);
-    expect(texts).not.toContain("old-1");
-    expect(texts).not.toContain("old-2");
+    expect(texts).toContain("msg-a");
+    expect(texts).toContain("msg-b");
+    expect(texts).toContain("msg-c");
   });
 
   test("recent sinceId replays only newer messages", async () => {

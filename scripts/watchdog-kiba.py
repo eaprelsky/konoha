@@ -47,13 +47,29 @@ _storm_counter: dict[str, list[float]] = {}  # target -> list of restart timesta
 
 
 def _get_claude_process_uptime(target: str) -> float | None:
-    """Return uptime in seconds of the target agent's Claude process, or None."""
+    """Return uptime in seconds of the target agent's CLI process, or None.
+
+    Tries multiple detection strategies because target names are not guaranteed
+    in process argv (Shikadai review finding #2, refs #794):
+    1. pgrep for claude/codex/opencode containing target name
+    2. Fallback: tmux pane PID descendant search
+    """
+    pids: list[str] = []
     try:
-        result = subprocess.run(
-            ["pgrep", "-f", f"claude.*{target}"],
-            capture_output=True, text=True, timeout=5,
-        )
-        pids = result.stdout.strip().split()
+        for runtime in ["claude", "codex", "opencode"]:
+            result = subprocess.run(
+                ["pgrep", "-f", f"{runtime}.*{target}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            found = result.stdout.strip().split()
+            if found:
+                pids.extend(found)
+                break  # first matching runtime wins
+        # Fallback: search descendants of tmux pane PID
+        if not pids:
+            pid = _b.tmux_pane_pid(target)
+            if pid:
+                pids = [str(pid)]
         if not pids:
             return None
         # Use the first matching PID
@@ -97,26 +113,37 @@ def _storm_allows(target: str) -> bool:
 
 
 def _validate_stuck_alert(agent: str, text: str) -> bool:
-    """Return False if the stuck alert is likely a false Akamaru alarm.
+    """Return False if the alert is likely a false Akamaru alarm.
 
-    Checks if the claimed stuck duration is credible given actual process uptime.
+    Covers stuck, compacting_loop, and frozen alerts (Shikadai review #2, refs #794).
+    Fail-closed: when process uptime cannot be determined, block the restart
+    rather than allowing a potentially unsafe action on a missing agent.
     """
     import re as _re
-    m = _re.search(r"stuck\s+duration[=:]\s*(\d+)\s*min", text, _re.IGNORECASE)
+    # Match stuck/compacting_loop/frozen duration patterns
+    m = _re.search(r"(?:stuck|compacting_loop|frozen)\s+duration[=:]\s*(\d+)\s*min", text, _re.IGNORECASE)
     if not m:
-        return True  # no duration to validate against — allow
+        # Also match frozen=permission_prompt (no duration)
+        if "frozen=permission_prompt" in text.lower():
+            return True  # permission prompts are real — allow restart
+        return True  # no duration to validate — allow (recognized pattern)
     claimed_min = int(m.group(1))
     claimed_sec = claimed_min * 60
     if claimed_sec < KIBA_MIN_CREDIBLE_STUCK_SEC:
         return True  # below noise floor — allow
     uptime = _get_claude_process_uptime(agent)
     if uptime is None:
-        return True  # can't determine — allow (fail open)
-    # If the process has been running less than the claimed stuck duration,
+        # Fail-closed: cannot verify process → block restart, audit-only
+        _b.log.warning(
+            "kiba-alert-handler: cannot determine process uptime for %s — blocking restart (fail-closed)",
+            agent,
+        )
+        return False
+    # If the process has been running less than half the claimed stuck duration,
     # this is a false alarm (Akamaru referencing old/stale metrics)
     if uptime < claimed_sec * 0.5:
         _b.log.warning(
-            "kiba-alert-handler: false stuck alert for %s — claimed=%dmin actual_uptime=%ds — skipping",
+            "kiba-alert-handler: false alert for %s — claimed=%dmin actual_uptime=%ds — skipping",
             agent, claimed_min, int(uptime),
         )
         return False
@@ -142,9 +169,12 @@ def recovery_action_for_alert(text: str) -> tuple[str, str] | None:
 
     Safety gates (refs #794 Shikadai review):
     - Self-target kill-switch: never auto-restart kiba via deterministic path
-    - False-alert validation: skip akamaru stuck alerts when claimed duration
-      far exceeds actual process uptime
+    - False-alert validation: skip akamaru alerts when claimed duration
+      far exceeds actual process uptime (fail-closed)
     - Storm breaker: cap restarts per target per time window
+
+    When a safety gate blocks the action, returns ("audit", reason) so the
+    handler sends a Konoha audit message instead of silently dropping.
     """
     fields, words = parse_kiba_alert(text)
     if not fields:
@@ -167,13 +197,13 @@ def recovery_action_for_alert(text: str) -> tuple[str, str] | None:
                 "kiba-alert-handler: self-target kill-switch blocks restart_agent for %s",
                 target,
             )
-            return None
-        # False-alert validation: skip akamaru stale stuck alerts
+            return ("audit", f"self-target kill-switch blocked restart_agent for {target}")
+        # False-alert validation: skip akamaru stale alerts (fail-closed)
         if not _validate_stuck_alert(target, text):
-            return None
+            return ("audit", f"false-alert validation blocked restart_agent for {target}")
         # Storm breaker: cap restarts per target per window
         if not _storm_allows(target):
-            return None
+            return ("audit", f"storm breaker blocked restart_agent for {target} (max {KIBA_STORM_MAX_RESTARTS}/{KIBA_STORM_WINDOW_SEC}s)")
         return ("restart_agent", target)
     if "idle_with_messages" in words:
         return ("nudge_agent", target)
@@ -328,9 +358,16 @@ async def deterministic_alert_handler(raw_queue: asyncio.Queue) -> None:  # noqa
                     text = data.get("text", "")
                     if not isinstance(text, str) or not text.startswith("kiba:alert "):
                         continue
-                    action = recovery_action_for_alert(text)
-                    if action:
-                        await _handle_recovery_action(action[0], action[1], text)
+                    result = recovery_action_for_alert(text)
+                    if result:
+                        action, target_or_reason = result
+                        if action == "audit":
+                            await _post_konoha_message(
+                                "naruto",
+                                f"[Kiba watchdog] audit-only: {target_or_reason} | alert={text[:200]}",
+                            )
+                        else:
+                            await _handle_recovery_action(action, target_or_reason, text)
             rc = await proc.wait()
             _b.log.warning("kiba-alert-handler: curl exited with code %s", rc)
         except asyncio.CancelledError:

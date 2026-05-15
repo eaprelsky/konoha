@@ -187,6 +187,74 @@ class TestKibaDeterministicAlertRecovery:
         mod = self._load_kiba_watchdog()
         assert mod.recovery_action_for_alert("kiba:alert disk=critical pct=95") is None
 
+    def test_self_target_killswitch_returns_audit(self):
+        """P0: Kiba cannot restart itself — returns audit reason."""
+        mod = self._load_kiba_watchdog()
+        mod.KIBA_SELF_TARGET_KILLSWITCH = True
+        mod._b.AGENT_ID = "kiba"
+        result = mod.recovery_action_for_alert(
+            "kiba:alert agent=kiba runtime=claude stuck duration=30min"
+        )
+        assert result is not None
+        assert result[0] == "audit"
+        assert "self-target kill-switch" in result[1].lower()
+
+    def test_false_alert_validation_returns_audit(self, monkeypatch):
+        """False-alert validation blocks unsafe restart — returns audit."""
+        mod = self._load_kiba_watchdog()
+        mod.KIBA_MIN_CREDIBLE_STUCK_SEC = 300
+        # Mock _validate_stuck_alert to return False
+        monkeypatch.setattr(mod, "_validate_stuck_alert", lambda agent, text: False)
+        result = mod.recovery_action_for_alert(
+            "kiba:alert agent=kakashi runtime=claude stuck duration=120min"
+        )
+        assert result is not None
+        assert result[0] == "audit"
+        assert "false-alert" in result[1].lower()
+
+    def test_storm_breaker_returns_audit(self, monkeypatch):
+        """Storm breaker caps restarts — returns audit reason."""
+        mod = self._load_kiba_watchdog()
+        mod.KIBA_STORM_MAX_RESTARTS = 3
+        mod.KIBA_SELF_TARGET_KILLSWITCH = False
+        # Mock _storm_allows to return False
+        monkeypatch.setattr(mod, "_storm_allows", lambda target: False)
+        result = mod.recovery_action_for_alert(
+            "kiba:alert agent=kakashi runtime=claude stuck duration=10min"
+        )
+        assert result is not None
+        assert result[0] == "audit"
+        assert "storm breaker" in result[1].lower()
+
+    def test_compacting_loop_alert_matched_by_validation(self, monkeypatch):
+        """compacting_loop alerts are validated, not silently passed."""
+        mod = self._load_kiba_watchdog()
+        mod.KIBA_SELF_TARGET_KILLSWITCH = False
+        mod.KIBA_MIN_CREDIBLE_STUCK_SEC = 300
+        # Mock _validate_stuck_alert to capture that it was called
+        called = {"agent": None, "text": None}
+        def fake_validate(agent, text):
+            called["agent"] = agent
+            called["text"] = text
+            return True
+        monkeypatch.setattr(mod, "_validate_stuck_alert", fake_validate)
+        result = mod.recovery_action_for_alert(
+            "kiba:alert agent=sasuke compacting_loop duration=15min"
+        )
+        assert result == ("restart_agent", "sasuke")
+        assert called["agent"] == "sasuke"
+        assert "compacting_loop" in called["text"]
+
+    def test_frozen_permission_prompt_allowed(self):
+        """frozen=permission_prompt is a real alert — allow restart."""
+        mod = self._load_kiba_watchdog()
+        mod.KIBA_SELF_TARGET_KILLSWITCH = False
+        mod.KIBA_MIN_CREDIBLE_STUCK_SEC = 300
+        result = mod.recovery_action_for_alert(
+            "kiba:alert agent=kakashi frozen=permission_prompt action_hint=approve_or_deny"
+        )
+        assert result == ("restart_agent", "kakashi")
+
 
 class TestDesyncTimerReset:
     def test_recovery_grace_does_not_retrigger_desync(self, monkeypatch):
