@@ -1,0 +1,10 @@
+[Unit]
+Description=Konoha agent runtime log retention
+Documentation=https://github.com/eaprelsky/konoha/issues/795
+
+[Service]
+Type=oneshot
+ExecStart=/home/ubuntu/konoha/scripts/konoha-agent-log-retention.sh --json
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

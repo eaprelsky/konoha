@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Konoha agent runtime log retention
+
+[Timer]
+OnCalendar=*-*-* 04:20:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
