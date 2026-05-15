@@ -164,6 +164,9 @@ class TestKibaDeterministicAlertRecovery:
 
     def test_stuck_alert_restarts_agent(self):
         mod = self._load_kiba_watchdog()
+        # Disable false-alert validation for unit test — real host processes
+        # may exist with shorter uptime than the alert's claimed stuck duration
+        mod.KIBA_MIN_CREDIBLE_STUCK_SEC = 999999999
         assert mod.recovery_action_for_alert(
             "kiba:alert agent=naruto runtime=claude stuck duration=2623min"
         ) == ("restart_agent", "naruto")

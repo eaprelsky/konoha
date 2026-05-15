@@ -189,7 +189,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
         grace_deadline = 0.0
         while True:
             if is_agent_idle(TMUX_SESSION):
-                _desync_retry_count = 0  # agent is responsive — reset recovery budget (#544)
+                _set_retry_count(0)  # agent is responsive — reset recovery budget (#544)
                 break
             now = time.monotonic()
             # Startup grace: when agent is busy on first contact (fresh process or
@@ -239,7 +239,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 prompt = sanitize_message_text(prompt)
                 delivered = await tmux_send(TMUX_SESSION, prompt)
                 if delivered is True:
-                    _desync_retry_count = 0  # delivery succeeded — reset recovery budget (#544)
+                    _set_retry_count(0)  # delivery succeeded — reset recovery budget (#544)
                     pending.clear()
                 elif delivered is False:
                     # Text sent to buffer but confirmation timed out.
@@ -507,7 +507,13 @@ async def heartbeat_loop() -> None:
 
 # ── Desync detection and auto-recovery (#505) ─────────────────────────────────
 
-_desync_retry_count: int = 0  # track recovery attempts per batch
+_desync_retry_count: dict[str, int] = {}  # per-agent recovery attempts keyed by AGENT_ID
+
+def _get_retry_count() -> int:
+    return _desync_retry_count.get(AGENT_ID, 0)
+
+def _set_retry_count(v: int) -> None:
+    _desync_retry_count[AGENT_ID] = v
 
 
 def _agent_workdir() -> str:
@@ -587,21 +593,20 @@ async def _send_desync_audit(reason: str, detail: str = "") -> None:
 async def try_desync_recovery() -> bool:
     """Attempt to recover from desync by restarting the agent via Konoha lifecycle API.
     Returns True if restart request succeeded."""
-    global _desync_retry_count
 
     if not DESYNC_RECOVERY_ENABLED:
         log.info("Desync recovery disabled — skipping")
         return False
 
-    if _desync_retry_count >= DESYNC_MAX_RETRIES:
+    if _get_retry_count() >= DESYNC_MAX_RETRIES:
         log.warning(f"Desync recovery: max retries ({DESYNC_MAX_RETRIES}) reached — not retrying")
         return False
 
     if await _restart_blocked_by_dirty_workdir():
         return False
 
-    _desync_retry_count += 1
-    await _send_desync_audit("restarting agent", f"attempt {_desync_retry_count}/{DESYNC_MAX_RETRIES}")
+    _set_retry_count(_get_retry_count() + 1)
+    await _send_desync_audit("restarting agent", f"attempt {_get_retry_count()}/{DESYNC_MAX_RETRIES}")
 
     try:
         env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
@@ -622,7 +627,7 @@ async def try_desync_recovery() -> bool:
                 await asyncio.sleep(5)
                 if is_session_alive(TMUX_SESSION) and is_agent_idle(TMUX_SESSION):
                     log.info(f"Desync recovery: agent {AGENT_ID} is idle after restart")
-                    _desync_retry_count = 0  # reset on success
+                    _set_retry_count(0)  # reset on success
                     return True
             log.warning(f"Desync recovery: agent {AGENT_ID} not idle after 150s")
             return True  # restart succeeded even if not idle yet

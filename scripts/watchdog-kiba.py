@@ -36,6 +36,91 @@ _b.BATCH_FOOTER              = "Выполни задание согласно A
 KONOHA_REPO      = os.path.expanduser("~/konoha")
 GIT_POLL_INTERVAL = 300  # 5 minutes — check for new pushes to main (#363)
 DETERMINISTIC_ALERT_COOLDOWN_SEC = int(os.environ.get("KIBA_ALERT_ACTION_COOLDOWN_SEC", "900"))
+# Self-target protection: never auto-restart kiba via deterministic handler (#794 review)
+KIBA_SELF_TARGET_KILLSWITCH = os.environ.get("KIBA_SELF_TARGET_KILLSWITCH", "1") == "1"
+# Min credible stuck duration: alerts claiming shorter than this are noise (seconds)
+KIBA_MIN_CREDIBLE_STUCK_SEC = int(os.environ.get("KIBA_MIN_CREDIBLE_STUCK_SEC", "300"))
+# Max restarts per target per storm window (0 = disabled)
+KIBA_STORM_MAX_RESTARTS = int(os.environ.get("KIBA_STORM_MAX_RESTARTS", "3"))
+KIBA_STORM_WINDOW_SEC = int(os.environ.get("KIBA_STORM_WINDOW_SEC", "3600"))
+_storm_counter: dict[str, list[float]] = {}  # target -> list of restart timestamps
+
+
+def _get_claude_process_uptime(target: str) -> float | None:
+    """Return uptime in seconds of the target agent's Claude process, or None."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", f"claude.*{target}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        pids = result.stdout.strip().split()
+        if not pids:
+            return None
+        # Use the first matching PID
+        pid = pids[0]
+        # Read process start time from /proc/pid/stat (field 22 = starttime in clock ticks)
+        stat = open(f"/proc/{pid}/stat").read()
+        # field 22 is after the comm field (field 2) which may contain spaces in parens
+        # Parse: split after the closing paren
+        after_comm = stat.rsplit(")", 1)[1].split()
+        starttime_ticks = int(after_comm[19])  # field 22, 0-indexed from after_comm
+        # Convert clock ticks to seconds
+        ticks_per_sec = os.sysconf(os.sysconf_names["SC_CLK_TCK"])
+        uptime_sec = time.time() - (starttime_ticks / ticks_per_sec)
+        # Also read /proc/uptime for the system boot offset
+        with open("/proc/uptime") as f:
+            system_uptime = float(f.read().split()[0])
+        # starttime is relative to boot; uptime since process start:
+        boot_time = time.time() - system_uptime
+        process_start = boot_time + (starttime_ticks / ticks_per_sec)
+        return max(0.0, time.time() - process_start)
+    except Exception:
+        return None
+
+
+def _storm_allows(target: str) -> bool:
+    """Return False if too many restarts for target in the storm window."""
+    if KIBA_STORM_MAX_RESTARTS <= 0:
+        return True
+    now = time.monotonic()
+    ts_list = _storm_counter.setdefault(target, [])
+    # Prune old entries
+    ts_list[:] = [t for t in ts_list if now - t < KIBA_STORM_WINDOW_SEC]
+    if len(ts_list) >= KIBA_STORM_MAX_RESTARTS:
+        _b.log.warning(
+            "kiba-alert-handler: storm breaker blocks restart target=%s count=%d window=%ds",
+            target, len(ts_list), KIBA_STORM_WINDOW_SEC,
+        )
+        return False
+    ts_list.append(now)
+    return True
+
+
+def _validate_stuck_alert(agent: str, text: str) -> bool:
+    """Return False if the stuck alert is likely a false Akamaru alarm.
+
+    Checks if the claimed stuck duration is credible given actual process uptime.
+    """
+    import re as _re
+    m = _re.search(r"stuck\s+duration[=:]\s*(\d+)\s*min", text, _re.IGNORECASE)
+    if not m:
+        return True  # no duration to validate against — allow
+    claimed_min = int(m.group(1))
+    claimed_sec = claimed_min * 60
+    if claimed_sec < KIBA_MIN_CREDIBLE_STUCK_SEC:
+        return True  # below noise floor — allow
+    uptime = _get_claude_process_uptime(agent)
+    if uptime is None:
+        return True  # can't determine — allow (fail open)
+    # If the process has been running less than the claimed stuck duration,
+    # this is a false alarm (Akamaru referencing old/stale metrics)
+    if uptime < claimed_sec * 0.5:
+        _b.log.warning(
+            "kiba-alert-handler: false stuck alert for %s — claimed=%dmin actual_uptime=%ds — skipping",
+            agent, claimed_min, int(uptime),
+        )
+        return False
+    return True
 
 _last_alert_action: dict[tuple[str, str], float] = {}
 
@@ -53,7 +138,14 @@ def parse_kiba_alert(text: str) -> tuple[dict[str, str], set[str]]:
 
 
 def recovery_action_for_alert(text: str) -> tuple[str, str] | None:
-    """Return (action, target) for alerts Kiba can handle without LLM reasoning."""
+    """Return (action, target) for alerts Kiba can handle without LLM reasoning.
+
+    Safety gates (refs #794 Shikadai review):
+    - Self-target kill-switch: never auto-restart kiba via deterministic path
+    - False-alert validation: skip akamaru stuck alerts when claimed duration
+      far exceeds actual process uptime
+    - Storm breaker: cap restarts per target per time window
+    """
     fields, words = parse_kiba_alert(text)
     if not fields:
         return None
@@ -69,6 +161,19 @@ def recovery_action_for_alert(text: str) -> tuple[str, str] | None:
     if fields.get("tmux") == "missing":
         return ("start_agent", target)
     if {"frozen", "stuck", "compacting_loop"} & words:
+        # Self-target kill-switch: kiba cannot deterministically restart itself
+        if KIBA_SELF_TARGET_KILLSWITCH and target == _b.AGENT_ID:
+            _b.log.warning(
+                "kiba-alert-handler: self-target kill-switch blocks restart_agent for %s",
+                target,
+            )
+            return None
+        # False-alert validation: skip akamaru stale stuck alerts
+        if not _validate_stuck_alert(target, text):
+            return None
+        # Storm breaker: cap restarts per target per window
+        if not _storm_allows(target):
+            return None
         return ("restart_agent", target)
     if "idle_with_messages" in words:
         return ("nudge_agent", target)
