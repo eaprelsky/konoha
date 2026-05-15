@@ -310,8 +310,18 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             if grace_deadline == 0.0 and _b.INITIAL_STARTUP_GRACE_SEC > 0:
                 grace_deadline = now + _b.INITIAL_STARTUP_GRACE_SEC
                 _b.log.info(f"Agent {_b.TMUX_SESSION} busy on first contact — startup grace {_b.INITIAL_STARTUP_GRACE_SEC}s")
+            # L1 priority interrupt (#320): owner message waiting too long.
+            # Must fire even during startup grace — orchestrator interrupts
+            # take priority over model load / init.
+            if waited >= L1_INTERRUPT_AFTER_SEC and has_l1_message(pending):
+                _b.log.warning(f"L1 (owner) message pending {int(waited)}s — sending Ctrl+C to interrupt agent")
+                await _b.tmux_run("tmux", "-L", _b.TMUX_SESSION, "send-keys", "-t", _b.TMUX_SESSION, "C-c", timeout=5.0)
+                await asyncio.sleep(2.0)
+                break
             if grace_deadline > now:
-                await asyncio.sleep(min(_b.IDLE_POLL_SEC, max(0.2, grace_deadline - now)))
+                sleep_time = min(_b.IDLE_POLL_SEC, max(0.2, grace_deadline - now))
+                await asyncio.sleep(sleep_time)
+                waited += sleep_time
                 continue
             if grace_deadline > 0.0:
                 _b.log.info(f"Startup grace elapsed for {_b.TMUX_SESSION} — resuming desync timer")
@@ -321,12 +331,6 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 _b.log.warning(f"Agent {_b.TMUX_SESSION} busy >{_b.IDLE_TIMEOUT_SEC}s — dropping {len(pending)} msgs")
                 await _b.send_freeze_alert(_b.TMUX_SESSION, waited, len(pending))
                 sys.exit(1)
-            # L1 priority interrupt (#320): owner message waiting too long
-            if waited >= L1_INTERRUPT_AFTER_SEC and has_l1_message(pending):
-                _b.log.warning(f"L1 (owner) message pending {int(waited)}s — sending Ctrl+C to interrupt agent")
-                await _b.tmux_run("tmux", "-L", _b.TMUX_SESSION, "send-keys", "-t", _b.TMUX_SESSION, "C-c", timeout=5.0)
-                await asyncio.sleep(2.0)
-                break
             await asyncio.sleep(_b.IDLE_POLL_SEC)
             waited += _b.IDLE_POLL_SEC
 

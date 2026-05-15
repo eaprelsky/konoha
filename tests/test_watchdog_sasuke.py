@@ -40,6 +40,7 @@ def test_sasuke_send_loop_honors_recovery_grace(monkeypatch):
         monkeypatch.setattr(module._b, "TMUX_SESSION", "sasuke-test")
         monkeypatch.setattr(module._b, "IDLE_POLL_SEC", 0.01)
         monkeypatch.setattr(module._b, "IDLE_TIMEOUT_SEC", 0.02)
+        monkeypatch.setattr(module._b, "INITIAL_STARTUP_GRACE_SEC", 0)  # d431594: disable 600s grace for unit test
         monkeypatch.setattr(module._b, "DESYNC_RECOVERY_GRACE_SEC", 0.03)
 
         def fake_is_agent_idle(_session, stable_checks=2):
