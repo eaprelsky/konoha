@@ -115,7 +115,9 @@ router.get("/:agentId/history", async (c) => {
   return c.json(messages);
 });
 
-// SSE Stream — supports Last-Event-ID header or ?since= param for missed-message replay
+// SSE Stream — durable-delivery (Stream replay) + live-tail (pub/sub) contract (refs #794).
+// Pre-subscribe buffer closes the gap: messages arriving during replay are held and
+// flushed with dedup, guaranteeing no lost messages and no duplicates.
 router.get("/:agentId/stream", async (c) => {
   const agentId = c.req.param("agentId");
   let since = c.req.header("Last-Event-ID") || c.req.query("since") || "";
@@ -129,26 +131,47 @@ router.get("/:agentId/stream", async (c) => {
   }
 
   return streamSSE(c, async (stream) => {
+    // Pre-subscribe buffer closes the durable-delivery ↔ live-tail gap (refs #794).
+    // Messages arriving during replay are held, then flushed with dedup against
+    // replayed stream IDs — no lost messages, no duplicates.
+    const buffer: { id: string | undefined; event: string; data: string }[] = [];
+    let liveMode = false;
+
+    const sub = createSubscriber(agentId, (msg) => {
+      const evt = { id: msg.id, event: "message", data: JSON.stringify(msg) };
+      if (!liveMode) { buffer.push(evt); }
+      else { try { stream.writeSSE(evt); } catch { sub.close(); } }
+    });
+
     // Replay messages missed while disconnected
     if (since) {
       try {
         const missed = await replayStream(agentId, since);
+        const replayedIds = new Set<string>();
         for (const msg of missed) {
           if (stream.aborted) break;
+          if (msg.id) replayedIds.add(msg.id);
           await stream.writeSSE({ id: msg.id, event: "message", data: JSON.stringify(msg) });
         }
-      } catch { /* ignore — stream may abort mid-replay */ }
+        // Switch to live mode — flush buffered messages not already replayed
+        liveMode = true;
+        for (const evt of buffer) {
+          if (stream.aborted) break;
+          if (evt.id && replayedIds.has(evt.id)) continue;
+          await stream.writeSSE(evt);
+        }
+      } catch { liveMode = true; }
+    } else {
+      liveMode = true;
+      // Flush buffered messages that arrived during subscriber setup
+      for (const evt of buffer) {
+        if (stream.aborted) break;
+        try { stream.writeSSE(evt); } catch { sub.close(); }
+      }
     }
 
     // Ping to confirm stream is live
     try { await stream.writeSSE({ event: "ping", data: "" }); } catch {}
-
-    // Live subscriber — each event carries its Redis stream ID as SSE id:
-    const sub = createSubscriber(agentId, (msg) => {
-      try {
-        stream.writeSSE({ id: msg.id, event: "message", data: JSON.stringify(msg) });
-      } catch { sub.close(); }
-    });
 
     const keepAlive = setInterval(() => {
       try { stream.writeSSE({ event: "ping", data: "" }); }

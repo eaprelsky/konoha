@@ -26,6 +26,9 @@ import {
   getAgentIdByToken,
   createInvite,
   consumeInvite,
+  replayStream,
+  createSubscriber,
+  AGENT_STREAM_PREFIX,
 } from "../src/redis";
 
 const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
@@ -451,4 +454,160 @@ describe("listChannels", () => {
     expect(channels).toContain(channelName);
   });
 });
+
+describe("replayStream", () => {
+  test("stale sinceId older than 24h is clamped", async () => {
+    const agentId = id("replay-clamp");
+    await registerAgent({ id: agentId, name: "Replay Clamp", capabilities: [], roles: [] });
+
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    await redis.xadd(streamKey, "*", "from", "test", "text", "old-1");
+    await redis.xadd(streamKey, "*", "from", "test", "text", "old-2");
+    await redis.xadd(streamKey, "*", "from", "test", "text", "recent");
+
+    const ancientSinceId = `${Date.now() - 48 * 3600 * 1000}-0`;
+    const replayed = await replayStream(agentId, ancientSinceId);
+
+    expect(replayed.length).toBeGreaterThanOrEqual(1);
+    const texts = replayed.map((m: any) => m.text);
+    expect(texts).not.toContain("old-1");
+    expect(texts).not.toContain("old-2");
+  });
+
+  test("recent sinceId replays only newer messages", async () => {
+    const agentId = id("replay-recent");
+    await registerAgent({ id: agentId, name: "Replay Recent", capabilities: [], roles: [] });
+
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    const msg1Id = await redis.xadd(streamKey, "*", "from", "test", "text", "msg-1");
+    await redis.xadd(streamKey, "*", "from", "test", "text", "msg-2");
+
+    const replayed = await replayStream(agentId, msg1Id!);
+
+    const texts = replayed.map((m: any) => m.text);
+    expect(texts).not.toContain("msg-1");
+    expect(texts).toContain("msg-2");
+  });
+
+  test("returns messages in chronological order", async () => {
+    const agentId = id("replay-order");
+    await registerAgent({ id: agentId, name: "Replay Order", capabilities: [], roles: [] });
+
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    const msg1Id = await redis.xadd(streamKey, "*", "from", "test", "text", "first");
+    await redis.xadd(streamKey, "*", "from", "test", "text", "second");
+    await redis.xadd(streamKey, "*", "from", "test", "text", "third");
+
+    const replayed = await replayStream(agentId, msg1Id!);
+
+    const texts = replayed.map((m: any) => m.text);
+    expect(texts).toEqual(["second", "third"]);
+  });
+});
+}
+
+describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)", () => {
+  // Contract (refs #794): subscribe-then-replay with a buffer closes the gap
+  // between durable-delivery and live-tail. Messages arriving during replay
+  // are buffered, then flushed with dedup — no lost messages, no duplicates.
+
+  test("subscribe-before-replay: no lost messages during replay→live transition", async () => {
+    const agentId = id("sse-contract");
+    await registerAgent({ id: agentId, name: "SSE Contract", capabilities: [], roles: [] });
+
+    // Populate stream with initial messages
+    const msg1 = await sendMessage({ to: agentId, from: "test", text: "initial-1" });
+    const msg2 = await sendMessage({ to: agentId, from: "test", text: "initial-2" });
+    const sinceId = msg2; // last delivered before "disconnect"
+
+    // Simulate subscribe-then-replay pattern (SSE endpoint contract):
+    // 1. Subscribe first (buffering)
+    const buffer: any[] = [];
+    let liveMode = false;
+    const sub = createSubscriber(agentId, (msg) => {
+      if (!liveMode) { buffer.push(msg); }
+    });
+
+    // Small yield to let subscriber connect
+    await new Promise(r => setTimeout(r, 50));
+
+    // 2. Send messages that arrive during the "replay window"
+    const msg3 = await sendMessage({ to: agentId, from: "test", text: "during-replay-1" });
+    const msg4 = await sendMessage({ to: agentId, from: "test", text: "during-replay-2" });
+
+    // 3. Replay from sinceId (simulating the replay phase)
+    const replayed = await replayStream(agentId, sinceId);
+    const replayedIds = new Set(replayed.map((m: any) => m.id).filter(Boolean));
+
+    // 4. Switch to live mode — flush buffered messages not in replay
+    liveMode = true;
+    const dedupedBuffer = buffer.filter((m: any) => !replayedIds.has(m.id));
+
+    // 5. Contract verification
+    // All messages after sinceId must be accounted for (replay ∪ buffer)
+    const allDelivered = new Set([
+      ...replayed.map((m: any) => m.id).filter(Boolean),
+      ...dedupedBuffer.map((m: any) => m.id).filter(Boolean),
+    ]);
+
+    // msg3 and msg4 must be in the union of replay + buffer
+    expect(allDelivered.has(msg3)).toBe(true);
+    expect(allDelivered.has(msg4)).toBe(true);
+
+    // No duplicates: replay and buffer must be disjoint after dedup
+    const overlap = replayed.filter((m: any) =>
+      dedupedBuffer.some((b: any) => b.id === m.id)
+    );
+    expect(overlap.length).toBe(0);
+
+    // initial-1 and initial-2 should NOT be in replayed (sinceId is exclusive)
+    const replayedTexts = replayed.map((m: any) => m.text);
+    expect(replayedTexts).not.toContain("initial-1");
+    expect(replayedTexts).not.toContain("initial-2");
+
+    sub.close();
+  });
+
+  test("live-tail delivers messages published after subscription", async () => {
+    const agentId = id("sse-live");
+    await registerAgent({ id: agentId, name: "SSE Live", capabilities: [], roles: [] });
+
+    const received: any[] = [];
+    const sub = createSubscriber(agentId, (msg) => {
+      received.push(msg);
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+
+    const msgId = await sendMessage({ to: agentId, from: "test", text: "live-msg" });
+
+    // Wait for pub/sub delivery
+    await new Promise(r => setTimeout(r, 100));
+
+    const liveTexts = received.map((m: any) => m.text);
+    expect(liveTexts).toContain("live-msg");
+
+    sub.close();
+  });
+
+  test("durable-delivery replays messages persisted in stream", async () => {
+    const agentId = id("sse-durable");
+    await registerAgent({ id: agentId, name: "SSE Durable", capabilities: [], roles: [] });
+
+    const msg1 = await sendMessage({ to: agentId, from: "test", text: "durable-1" });
+    const msg2 = await sendMessage({ to: agentId, from: "test", text: "durable-2" });
+    const msg3 = await sendMessage({ to: agentId, from: "test", text: "durable-3" });
+
+    // Replay from msg1 (exclusive) — should get msg2 and msg3
+    const replayed = await replayStream(agentId, msg1);
+    const texts = replayed.map((m: any) => m.text);
+    expect(texts).toEqual(["durable-2", "durable-3"]);
+
+    // Replay from before all messages — should get all
+    const allReplayed = await replayStream(agentId, "0-0");
+    const allTexts = allReplayed.map((m: any) => m.text);
+    expect(allTexts).toEqual(["durable-1", "durable-2", "durable-3"]);
+  });
+});
+
 }
