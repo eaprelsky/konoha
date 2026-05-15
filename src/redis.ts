@@ -165,7 +165,7 @@ export async function sendMessage(msg: Message): Promise<string> {
     const targets = agents.filter(a => a.id !== msg.from && senderIsTest === a.id.startsWith("rtest-"));
     if (targets.length > 0) {
       for (const agent of targets) {
-        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", "MAXLEN", "~", "5000", ...Object.entries(entry).flat());
         await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...entry, _sid: sid }));
         await pgStoreMessage({
           id: sid ?? undefined,
@@ -188,7 +188,7 @@ export async function sendMessage(msg: Message): Promise<string> {
     const targets = agents.filter(a => a.roles.includes(role) && a.id !== msg.from);
     if (targets.length > 0) {
       for (const agent of targets) {
-        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(entry).flat());
+        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", "MAXLEN", "~", "5000", ...Object.entries(entry).flat());
         await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...entry, _sid: sid }));
         await pgStoreMessage({
           id: sid ?? undefined,
@@ -206,7 +206,7 @@ export async function sendMessage(msg: Message): Promise<string> {
     }
   } else {
     // direct message: capture stream ID and include in pub/sub so SSE clients can track position
-    const streamId = await redis.xadd(AGENT_STREAM_PREFIX + msg.to, "*", ...Object.entries(entry).flat());
+    const streamId = await redis.xadd(AGENT_STREAM_PREFIX + msg.to, "*", "MAXLEN", "~", "5000", ...Object.entries(entry).flat());
     await redis.publish(NOTIFY_PREFIX + msg.to, JSON.stringify({ ...entry, _sid: streamId }));
     await pgStoreMessage({
       id: streamId ?? undefined,
@@ -331,7 +331,7 @@ export async function readHistory(target: string, count = 20): Promise<Message[]
 // Replay messages from agent stream after sinceId (exclusive) — used by SSE on reconnect.
 // Uses XREVRANGE to return only the most recent `count` messages, and clamps
 // stale sinceId (older than 24h) to prevent full-history replay from ancient Last-Event-ID.
-const MAX_REPLAY_AGE_MS = 24 * 3600 * 1000;
+const MAX_REPLAY_AGE_MS = 6 * 3600 * 1000;  // 6h — prevents massive replay after extended downtime (refs #794)
 export async function replayStream(agentId: string, sinceId: string, count = 50): Promise<Message[]> {
   const stream = AGENT_STREAM_PREFIX + agentId;
   // Clamp stale sinceId: if older than 24h, use a synthetic ID from 24h ago
@@ -411,7 +411,7 @@ export async function publishEvent(event: KonohaEvent): Promise<string> {
         text: JSON.stringify(event),
         timestamp: event.timestamp,
       };
-      const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", ...Object.entries(msgEntry).flat());
+      const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", "MAXLEN", "~", "5000", ...Object.entries(msgEntry).flat());
       await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...msgEntry, _sid: sid }));
       await pgStoreMessage({
         id: sid ?? undefined,
