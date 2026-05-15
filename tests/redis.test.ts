@@ -612,3 +612,4 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     expect(allTexts).toEqual(["durable-1", "durable-2", "durable-3"]);
   });
 });
+}
