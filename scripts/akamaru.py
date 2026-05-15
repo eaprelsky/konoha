@@ -293,6 +293,11 @@ CODEX_QUEUED_MESSAGES_HINT = "messages to be submitted after next tool call"
 # Per-session idle tracking: {session: last_seen_idle_monotonic}
 _last_idle: dict[str, float] = {}
 
+# Per-session PID tracking: {session: (pid, first_seen_monotonic)}
+# Used to suppress false stuck alerts for freshly started agent processes.
+_fresh_pids: dict[str, tuple[int, float]] = {}
+FRESH_PID_GRACE_SEC = 600  # 10 min grace after PID change before stuck alerts fire
+
 LOG_FILE = "/tmp/akamaru.log"
 
 class _FlushFileHandler(logging.FileHandler):
@@ -566,6 +571,33 @@ def is_idle_prompt_state(lines: list[str]) -> bool:
 
 # ── Check functions ───────────────────────────────────────────────────────────
 
+def check_pid_fresh(session: str) -> bool:
+    """Return True if session PID is fresh (recently started) — suppress stuck alerts.
+
+    When a tmux session PID changes (agent restart), reset the idle tracker and
+    suppress stuck/compacting alerts for FRESH_PID_GRACE_SEC. This eliminates false
+    stuck alerts during agent startup (model load, AGENTS.md, registration, memory).
+
+    Side effect: updates _last_idle and _fresh_pids on PID change.
+    """
+    pid = tmux_pane_pid(session)
+    if pid is None:
+        return False
+    now_mono = time.monotonic()
+    entry = _fresh_pids.get(session)
+    if entry is not None:
+        prev_pid, first_seen = entry
+        if pid != prev_pid:
+            _fresh_pids[session] = (pid, now_mono)
+            _last_idle[session] = now_mono
+            log.info(f"Fresh PID for {session}: {prev_pid} → {pid}, grace {FRESH_PID_GRACE_SEC}s")
+            return True
+        return now_mono - first_seen < FRESH_PID_GRACE_SEC
+    _fresh_pids[session] = (pid, now_mono)
+    _last_idle[session] = now_mono
+    return True
+
+
 def check_services(paused: set[str] = frozenset()) -> list[str]:
     alerts = []
     for svc in WATCHED_SERVICES:
@@ -651,19 +683,25 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                         non_idle_secs = now_mono - last_idle
                         is_compacting = any("ompacting" in l for l in lines[-10:])
                         if is_compacting and non_idle_secs >= COMPACTING_TIMEOUT:
-                            key = f"tmux:{session}:compacting"
-                            if should_alert(key):
-                                mins = int(non_idle_secs // 60)
-                                alerts.append(
-                                    f"kiba:alert agent={session} compacting_loop duration={mins}min"
-                                )
+                            if check_pid_fresh(session):
+                                log.debug(f"Suppressing compacting alert for {session}: fresh PID")
+                            else:
+                                key = f"tmux:{session}:compacting"
+                                if should_alert(key):
+                                    mins = int(non_idle_secs // 60)
+                                    alerts.append(
+                                        f"kiba:alert agent={session} compacting_loop duration={mins}min"
+                                    )
                         elif not is_compacting and non_idle_secs >= STUCK_TIMEOUT:
-                            key = f"tmux:{session}:stuck"
-                            if should_alert(key):
-                                mins = int(non_idle_secs // 60)
-                                alerts.append(
-                                    f"kiba:alert agent={session} runtime={runtime} stuck duration={mins}min"
-                                )
+                            if check_pid_fresh(session):
+                                log.debug(f"Suppressing stuck alert for {session}: fresh PID")
+                            else:
+                                key = f"tmux:{session}:stuck"
+                                if should_alert(key):
+                                    mins = int(non_idle_secs // 60)
+                                    alerts.append(
+                                        f"kiba:alert agent={session} runtime={runtime} stuck duration={mins}min"
+                                    )
 
                     # Detect token/context exhaustion (#111)
                     # Only check the last 30 lines (not full scrollback) to avoid false positives
