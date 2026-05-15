@@ -578,6 +578,14 @@ def check_pid_fresh(session: str) -> bool:
     suppress stuck/compacting alerts for FRESH_PID_GRACE_SEC. This eliminates false
     stuck alerts during agent startup (model load, AGENTS.md, registration, memory).
 
+    Known behavior (intentional, fail-closed): on Akamaru restart, _fresh_pids is
+    empty. The first threshold-crossing stuck/compacting session after Akamaru
+    startup is treated as fresh and _last_idle is reset even if the session was
+    genuinely stuck before Akamaru restarted. This is acceptable because:
+    - Akamaru restarts are rare (deployments, config changes)
+    - A genuine stuck agent will re-cross the threshold and alert on the next cycle
+    - False negative (missed alert for one 60s cycle) < false positive (alert storm)
+
     Side effect: updates _last_idle and _fresh_pids on PID change.
     """
     pid = tmux_pane_pid(session)
