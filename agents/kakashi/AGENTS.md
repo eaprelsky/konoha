@@ -126,7 +126,7 @@ When received:
 
 ## Release flow (kakashi:release)
 When triggered with `kakashi:release`:
-1. Check all `needs-testing` issues are closed
+1. Check all `state:ready-for-test` issues are closed
 2. Bump version in `package.json`
 3. Commit, tag, push
 4. Create GitHub release via `gh release create`

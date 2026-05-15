@@ -251,10 +251,18 @@ echo ""
 echo "=== Migration summary ==="
 echo "  migrated:   $MIGRATED"
 echo "  skipped:    $SKIPPED (no legacy labels)"
-echo "  violations: $VIOLATIONS (guardrail-blocked)"
+echo "  violations: $VIOLATIONS (guardrail-blocked or failed)"
 if $DRY_RUN; then
   echo "  (dry run — no changes applied)"
 fi
+
+if [[ $VIOLATIONS -gt 0 ]]; then
+  echo ""
+  echo "ERROR: $VIOLATIONS violation(s) found. Fix before proceeding."
+  echo "Skipping label retirement — do NOT retire legacy labels until violations are resolved."
+  exit 1
+fi
+
 echo ""
 echo "Next: review migrated issues, then retire legacy labels:"
 echo "  gh label delete 'P0' --yes"
