@@ -30,8 +30,11 @@ function tmuxSession(id: string): string {
   return id;
 }
 
-/** Agents that use the default tmux socket instead of isolated per-agent sockets */
-const DEFAULT_SOCKET_AGENTS = new Set(["sasuke", "kiba"]);
+/** Agents that use the default tmux socket instead of isolated per-agent sockets.
+ *  NOTE: sasuke and kiba were previously here but actually use named sockets
+ *  (-L sasuke, -L kiba) via agent-api-service.sh. Including them caused
+ *  tmux -L "" which resolves to /tmp/tmux-1000/ (a directory), breaking restarts. */
+const DEFAULT_SOCKET_AGENTS = new Set<string>([]);
 
 /** tmux socket name — isolates each agent on its own tmux server.
  *  Returns empty string for agents that should use the default tmux socket. */
