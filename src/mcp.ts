@@ -83,30 +83,11 @@ const server = new McpServer({
   version: "0.1.0",
 });
 
-server.tool(
-  "konoha_action_catalog",
-  "List canonical Action Spine operations available through /act. Use this before konoha_action_call.",
-  actionCatalogSchema,
-  async (args) => actionCatalog(args)
-);
+// ── Skill gating ────────────────────────────────────────────────────────────
+const enabledSkills = (process.env.KONOHA_SKILLS || "").split(",").map(s => s.trim()).filter(Boolean);
+const isLite = enabledSkills.includes("konoha-lite");
 
-server.tool(
-  "konoha_action_get",
-  "Get one canonical Action Spine operation contract, including args, security, audit, and implementation metadata.",
-  actionGetSchema,
-  async ({ action }) => actionGet(action)
-);
-
-server.tool(
-  "konoha_action_call",
-  "Invoke a canonical Action Spine operation through /act and return the same action receipt as the API.",
-  actionCallSchema,
-  async (args) => actionCall(args, {
-    api,
-    tokenProvider: () => agentToken,
-    allowAdminFallback: process.env.KONOHA_MCP_ACTION_ADMIN_FALLBACK === "1",
-  })
-);
+// ── Lite tools (always registered) ─────────────────────────────────────────
 
 server.tool(
   "konoha_register",
@@ -175,6 +156,22 @@ server.tool(
 );
 
 server.tool(
+  "konoha_heartbeat",
+  "Send a heartbeat to keep agent status online",
+  {
+    agentId: z.string().describe("Your agent ID"),
+  },
+  async ({ agentId }) => {
+    await agentApi("POST", `/agents/${agentId}/heartbeat`);
+    return { content: [{ type: "text", text: "Heartbeat sent." }] };
+  }
+);
+
+// ── Full profile tools ─────────────────────────────────────────────────────
+
+if (!isLite) {
+
+server.tool(
   "konoha_agents",
   "List agents registered on the Konoha bus",
   {
@@ -202,18 +199,6 @@ server.tool(
       return { content: [{ type: "text", text: "No active channels." }] };
     }
     return { content: [{ type: "text", text: channels.join("\n") }] };
-  }
-);
-
-server.tool(
-  "konoha_heartbeat",
-  "Send a heartbeat to keep agent status online",
-  {
-    agentId: z.string().describe("Your agent ID"),
-  },
-  async ({ agentId }) => {
-    await agentApi("POST", `/agents/${agentId}/heartbeat`);
-    return { content: [{ type: "text", text: "Heartbeat sent." }] };
   }
 );
 
@@ -313,11 +298,37 @@ server.tool(
   }
 );
 
+  // ── Action Spine tools ──────────────────────────────────────────────────────
+  server.tool(
+    "konoha_action_catalog",
+    "List canonical Action Spine operations available through /act. Use this before konoha_action_call.",
+    actionCatalogSchema,
+    async (args) => actionCatalog(args)
+  );
+
+  server.tool(
+    "konoha_action_get",
+    "Get one canonical Action Spine operation contract, including args, security, audit, and implementation metadata.",
+    actionGetSchema,
+    async ({ action }) => actionGet(action)
+  );
+
+  server.tool(
+    "konoha_action_call",
+    "Invoke a canonical Action Spine operation through /act and return the same action receipt as the API.",
+    actionCallSchema,
+    async (args) => actionCall(args, {
+      api,
+      tokenProvider: () => agentToken,
+      allowAdminFallback: process.env.KONOHA_MCP_ACTION_ADMIN_FALLBACK === "1",
+    })
+  );
+
+} // end !isLite full profile block
+
 // ── Process Tools (Skill: process-tools) ─────────────────────────────────────
 // These 14 tools are registered only when KONOHA_SKILLS includes "process-tools".
 // Assign the skill to an agent via capabilities: ["process-tools"] in its AgentDef.
-
-const enabledSkills = (process.env.KONOHA_SKILLS || "").split(",").map(s => s.trim()).filter(Boolean);
 
 if (enabledSkills.includes("process-tools")) {
 
