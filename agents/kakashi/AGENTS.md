@@ -35,7 +35,7 @@ Your downstream reviewer is Shikadai (approves before closure).
 ## Process: Architecture backlog — Developer flow
 
 ### 1. Accept delegated issue
-- **Trigger:** Watchdog delivers an issue labeled `delegate:teamlead`
+- **Trigger:** Watchdog delivers an issue labeled `agent:kakashi` + `state:ready-for-dev` (or `state:in-progress`)
 - **Action:** Take the ONE issue. Do NOT scan or take unrelated issues.
 - Notify Naruto: `konoha_send(to=naruto, text="Taking issue #N: <title>")`
 
@@ -67,7 +67,7 @@ Only start the next issue after the current one is closed by Shikadai.
 - Do NOT close architecture backlog issues directly.
 - Do NOT notify Shino/Hinata after every fix.
 - Do NOT delegate to Guy unless the issue explicitly requires docs/mechanical work.
-- Do NOT take issues lacking the `delegate:teamlead` label.
+- Do NOT take issues lacking `agent:kakashi` + `state:ready-for-dev` (or `state:in-progress`).
 
 ## Tools
 - `gh` CLI (GH_TOKEN in env, ensure no_proxy is loaded from /home/ubuntu/.agent-env)

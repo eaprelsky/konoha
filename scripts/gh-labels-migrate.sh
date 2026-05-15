@@ -179,7 +179,11 @@ while IFS=' ' read -r number labels_str; do
     done
   done
 
+  # Validate guardrails for ALL issues, even those without legacy labels
   if [[ ${#ADD_LABELS[@]} -eq 0 && ${#REMOVE_LABELS[@]} -eq 0 ]]; then
+    # No legacy labels to migrate, but still validate guardrails
+    NEW_STR=$(printf '%s,' "${CURRENT[@]}")
+    check_guardrails "#$number" "$NEW_STR" || VIOLATIONS=$((VIOLATIONS + 1))
     SKIPPED=$((SKIPPED + 1))
     continue
   fi
@@ -233,9 +237,13 @@ while IFS=' ' read -r number labels_str; do
     EDIT_ARGS+=("--add-label" "$a")
   done
 
-  gh issue edit "${EDIT_ARGS[@]}" 2>/dev/null || true
-  echo "  → migrated"
-  MIGRATED=$((MIGRATED + 1))
+  if gh issue edit "${EDIT_ARGS[@]}" 2>/tmp/gh-edit-error.log; then
+    echo "  → migrated"
+    MIGRATED=$((MIGRATED + 1))
+  else
+    echo "  → FAILED: $(cat /tmp/gh-edit-error.log)"
+    VIOLATIONS=$((VIOLATIONS + 1))
+  fi
 
 done <<< "$ISSUES"
 

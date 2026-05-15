@@ -206,8 +206,8 @@ Agents receive messages via systemd watchdog services — no /loop polling neede
 - Guy — Agent #10, Optional mechanical helper (only on explicit Kakashi request)
 External-facing: both respond as "Claude"
 
-## Bootstrap Delegation (#794) — effective 2026-05-12
-- `delegate:teamlead` → Kakashi (Developer) via `github_delegation_watchdog.py`
-- `delegate:architect` → Shikadai (Reviewer) via `github_delegation_watchdog.py`
+## Canonical Label Dispatch (#793) — effective 2026-05-15
+- `agent:kakashi` + `state:ready-for-dev`|`state:in-progress` → Kakashi (Developer) via `github_delegation_watchdog.py`
+- `agent:shikadai` → Shikadai (Reviewer) via `github_delegation_watchdog.py`
 - Developer→Reviewer→Closure pipeline: Kakashi implements → Shikadai reviews → close only after acceptance
-- `kakashi-batch` decommissioned; mandatory post-fix QA gate decommissioned
+- Legacy labels (`delegate:*`, `kakashi-batch`, `awaiting-test`) decommissioned; see `docs/label-taxonomy.md` for migration

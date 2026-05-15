@@ -48,6 +48,10 @@ AUTO_PUSH_INTERVAL = int(os.environ.get("AGENT_AUTO_PUSH_INTERVAL", "300"))
 AUTO_PUSH_ENABLED = _bool("AGENT_AUTO_PUSH_ENABLED") or (AGENT_ID == "kakashi" and _bool("KAKASHI_AUTO_PUSH_ENABLED"))
 DELEGATION_LABELS = _csv("AGENT_GITHUB_DELEGATION_LABELS", "agent:kakashi")
 SKIP_LABELS = _csv("AGENT_GITHUB_SKIP_LABELS", "state:done,state:blocked")
+# If set, at least one of these state labels must be present for dispatch.
+# Kakashi: state:ready-for-dev,state:in-progress — prevents triage/review/test
+# issues from routing to developer prematurely (#793).
+REQUIRED_STATES = _csv("AGENT_GITHUB_REQUIRED_STATES", "")
 DISPATCH_STATE_PATH = Path(os.environ.get(
     "AGENT_GITHUB_DISPATCH_STATE",
     os.path.expanduser(f"~/.cache/konoha/{AGENT_ID}-github-dispatched.json"),
@@ -70,7 +74,13 @@ def issue_label_names(issue: dict) -> set[str]:
 
 def is_delegated_issue(issue: dict) -> bool:
     labels = issue_label_names(issue)
-    return bool(labels & DELEGATION_LABELS) and not bool(labels & SKIP_LABELS)
+    if not (labels & DELEGATION_LABELS):
+        return False
+    if labels & SKIP_LABELS:
+        return False
+    if REQUIRED_STATES and not (labels & REQUIRED_STATES):
+        return False
+    return True
 
 
 def is_redispatchable_issue(issue: dict) -> bool:

@@ -22,6 +22,7 @@ def load_module(agent_id: str, labels: str, redispatch_labels: str):
         "AGENT_ID": agent_id,
         "AGENT_GITHUB_DELEGATION_LABELS": labels,
         "AGENT_GITHUB_REDISPATCH_LABELS": redispatch_labels,
+        "AGENT_GITHUB_REQUIRED_STATES": "",
     }, clear=False):
         spec.loader.exec_module(module)
     return module

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-QA Watcher — legacy/explicit QA adapter for GitHub Issues closed with
-'awaiting-test'. It pings Shino via Konoha to write a test plan; Shino decides
+QA Watcher — explicit QA adapter for GitHub Issues closed with
+'state:ready-for-test'. It pings Shino via Konoha to write a test plan; Shino decides
 whether to trigger Hinata. This is not the universal post-fix gate for ordinary
-#794 Developer -> Reviewer delivery.
+Developer -> Reviewer delivery.
 
 Polls every 60 seconds. Tracks already-notified issues in a state file to avoid
 duplicate pings.
@@ -88,7 +88,7 @@ def check_once(notified: set) -> None:
         "issue", "list",
         "--repo", REPO,
         "--state", "closed",
-        "--label", "awaiting-test",
+        "--label", "state:ready-for-test",
         "--json", "number,title,labels,closedAt",
         "--limit", "50",
     ])
@@ -97,14 +97,14 @@ def check_once(notified: set) -> None:
         if num in notified:
             continue
         title = issue.get("title", "")
-        log.info(f"New awaiting-test issue found: #{num} {title}")
+        log.info(f"New state:ready-for-test issue found: #{num} {title}")
         send_to_shino(num, title)
         notified.add(num)
     save_notified(notified)
 
 
 def main() -> None:
-    log.info("QA Watcher starting — polling every 60s for awaiting-test closed issues")
+    log.info("QA Watcher starting — polling every 60s for state:ready-for-test closed issues")
     notified = load_notified()
     while True:
         try:

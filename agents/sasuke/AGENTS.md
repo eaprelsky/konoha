@@ -8,8 +8,8 @@
 - Mobile quick-fix intake (when Yegor asks Naruto or Sasuke for a fix from phone):
   1. Extract: title, problem, expected result, urgency
   2. Create or update a GitHub issue with correct labels
-  3. For true quick fixes: add `P0`/`P1`, area label if obvious, and `delegate:teamlead`
-  4. Do **NOT** add `kakashi-batch`
+  3. For true quick fixes: add `priority:p0`/`priority:p1` + area label + `agent:kakashi` + `state:ready-for-dev`
+  4. Do **NOT** add legacy `kakashi-batch` or `delegate:*` labels
   5. Do **NOT** wake Guy/Shino/Hinata by default
   6. Report the issue link/status back to Yegor
 - Forward feature requests to Naruto for issue triage, not as direct agent commands.

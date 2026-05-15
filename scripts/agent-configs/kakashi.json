@@ -7,8 +7,9 @@
   "github": {
     "repo": "eaprelsky/konoha",
     "scan_interval": 900,
-    "labels": ["delegate:teamlead"],
-    "skip_labels": ["delegate:done", "blocked"]
+    "labels": ["agent:kakashi"],
+    "required_states": ["state:ready-for-dev", "state:in-progress"],
+    "skip_labels": ["state:done", "state:blocked"]
   },
   "message_prefix": "Задание для Какаши:",
   "message_suffix": "Выполни задание согласно AGENTS.md. Результат сообщи в Коноха."
