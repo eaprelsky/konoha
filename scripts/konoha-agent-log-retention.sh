@@ -155,7 +155,6 @@ recl_journal=$(( before_journal - after_journal ))
 [ "$recl_journal" -lt 0 ] && recl_journal=0
 
 # ── Codex ───────────────────────────────────────────────────────────────────
-mkdir -p "$CODEX_DIR/rotated-logs"
 
 # SQLite log rotation (inactive only)
 codex_sqlite_bytes=0
@@ -170,6 +169,7 @@ if [ "$codex_sqlite_bytes" -gt $((1024 * 1024 * 1024)) ]; then
   else
     ts=$(date +%Y%m%d-%H%M%S)
     log "rotate codex sqlite logs bytes=$codex_sqlite_bytes ts=$ts"
+    run mkdir -p "$CODEX_DIR/rotated-logs"
     for f in "$CODEX_DIR"/logs_*.sqlite "$CODEX_DIR"/logs_*.sqlite-wal "$CODEX_DIR"/logs_*.sqlite-shm; do
       [ -e "$f" ] || continue
       run mv "$f" "$CODEX_DIR/rotated-logs/$(basename "$f").$ts"

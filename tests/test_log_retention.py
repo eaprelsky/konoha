@@ -334,6 +334,48 @@ class TestJournaldConfig:
 
 # ── CLI flag tests ──────────────────────────────────────────────────────────
 
+class TestDryRunMutation:
+    def test_dry_run_does_not_create_rotated_logs_dir(self, tmp_path: Path):
+        env = {"CODEX_DIR": str(tmp_path / "codex"), "HOME_DIR": str(tmp_path)}
+        # Do NOT pre-create codex dir — dry-run should not create anything
+        result = run_retention(env, ["--json", "--dry-run"])
+        assert result.returncode == 0
+        assert not (tmp_path / "codex" / "rotated-logs").exists()
+        assert not (tmp_path / "codex").exists()  # Codex dir itself shouldn't appear
+
+    def test_live_run_does_create_rotated_logs_on_rotation(self, tmp_path: Path):
+        env = {"CODEX_DIR": str(tmp_path / "codex"), "HOME_DIR": str(tmp_path)}
+        codex = tmp_path / "codex"
+        codex.mkdir(parents=True)
+        # Create >1GB sqlite to trigger rotation
+        big = codex / "logs_test.sqlite"
+        big.write_bytes(b"\x00" * (1024 * 1024 * 1024 + 1))
+        # Fake pgrep — codex NOT running
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        pgrep = fake_bin / "pgrep"
+        pgrep.write_text("#!/bin/bash\nexit 1\n")
+        pgrep.chmod(pgrep.stat().st_mode | stat.S_IEXEC)
+        env["PATH"] = str(fake_bin) + ":" + os.environ.get("PATH", "")
+
+        result = run_retention(env, ["--json"])
+        assert result.returncode == 0
+        assert (codex / "rotated-logs").exists()
+
+
+class TestSystemdUnit:
+    def test_service_has_user_ubuntu(self):
+        unit = Path(__file__).resolve().parents[1] / "systemd" / "konoha-agent-log-retention.service"
+        content = unit.read_text()
+        assert "User=ubuntu" in content
+        assert "Environment=HOME_DIR=/home/ubuntu" in content
+
+    def test_service_has_sandboxing(self):
+        unit = Path(__file__).resolve().parents[1] / "systemd" / "konoha-agent-log-retention.service"
+        content = unit.read_text()
+        assert "NoNewPrivileges=yes" in content
+
+
 class TestCliFlags:
     def test_help_flag(self):
         result = subprocess.run([str(SCRIPT), "--help"], capture_output=True, text=True, timeout=10)
