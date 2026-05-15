@@ -209,7 +209,7 @@ def _is_stale_pending_id(redis_id: str, *, now_ms: int | None = None) -> bool:
     return (current_ms - created_ms) > STALE_PENDING_MAX_AGE_SEC * 1000
 
 
-DEDUP_REDIS_TTL = 86400  # 24h — dedup keys survive watchdog restarts
+DEDUP_REDIS_TTL = 7 * 86400  # 7 days — defense-in-depth against SSE replay after extended downtime (refs #794)
 DEDUP_REDIS_PREFIX = "sasuke:dedup:"
 
 
