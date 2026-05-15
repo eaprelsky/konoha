@@ -300,9 +300,23 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
             continue
 
         waited = 0.0
+        grace_deadline = 0.0
         while True:
             if _b.is_agent_idle(_b.TMUX_SESSION):
                 break
+            now = asyncio.get_running_loop().time()
+            # Startup grace (refs #794, 48b54ee): when agent is busy on first
+            # contact, give it time for model load + init before desync countdown.
+            if grace_deadline == 0.0 and _b.INITIAL_STARTUP_GRACE_SEC > 0:
+                grace_deadline = now + _b.INITIAL_STARTUP_GRACE_SEC
+                _b.log.info(f"Agent {_b.TMUX_SESSION} busy on first contact — startup grace {_b.INITIAL_STARTUP_GRACE_SEC}s")
+            if grace_deadline > now:
+                await asyncio.sleep(min(_b.IDLE_POLL_SEC, max(0.2, grace_deadline - now)))
+                continue
+            if grace_deadline > 0.0:
+                _b.log.info(f"Startup grace elapsed for {_b.TMUX_SESSION} — resuming desync timer")
+                grace_deadline = 0.0
+                waited = 0.0
             if waited >= _b.IDLE_TIMEOUT_SEC:
                 _b.log.warning(f"Agent {_b.TMUX_SESSION} busy >{_b.IDLE_TIMEOUT_SEC}s — dropping {len(pending)} msgs")
                 await _b.send_freeze_alert(_b.TMUX_SESSION, waited, len(pending))
