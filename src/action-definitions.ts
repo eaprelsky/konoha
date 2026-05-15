@@ -646,7 +646,7 @@ export const ACTIONS: ActionDef[] = [
     args: [
       { name: "title",    type: "string", required: true,  description: "Issue title." },
       { name: "body",     type: "string", required: true,  description: "Issue body (markdown)." },
-      { name: "priority", type: "string", required: false, description: "Priority label: P0 | P1 | P2 | P3." },
+      { name: "priority", type: "string", required: false, description: "Priority label: priority:p0 | priority:p1 | priority:p2 | priority:p3." },
       { name: "labels",   type: "array",  required: false, description: "Additional labels." },
     ],
     implementation: { kind: "registered-handler", note: "Registered in action-handlers.ts." },

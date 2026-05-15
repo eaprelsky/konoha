@@ -9,9 +9,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("AGENT_ID", "kakashi")
 os.environ.setdefault("AGENT_DISPLAY_NAME", "Какаши")
 os.environ.setdefault("AGENT_TMUX_SESSION", "kakashi")
-os.environ.setdefault("AGENT_GITHUB_DELEGATION_LABELS", "delegate:teamlead")
-# #794 bootstrap: kakashi-batch is decommissioned. Only explicit one-issue
-# delegate:teamlead delivery is active until the delivery controller exists.
+os.environ.setdefault("AGENT_GITHUB_DELEGATION_LABELS", "agent:kakashi")
+# #793 canonical taxonomy: agent:kakashi + state:ready-for-dev drives dispatch.
 os.environ.setdefault("AGENT_GITHUB_REDISPATCH_LABELS", "")
 os.environ.setdefault("AGENT_GITHUB_TASK_VERB", "fix")
 os.environ.setdefault("AGENT_BATCH_HEADER", "Задание для Какаши:")

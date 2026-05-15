@@ -127,14 +127,14 @@ def check_runtime_size() -> tuple[bool, str]:
 
 
 def check_no_p0_issues() -> tuple[bool, str]:
-    """Check 5: no open GitHub issues with label 'P0: critical'."""
+    """Check 5: no open GitHub issues with label 'priority:p0'."""
     gh_token = os.environ.get("GH_TOKEN") or ENV_DEFAULTS.get("GH_TOKEN") or ""
     if not gh_token:
         return True, "P0 issues: GH_TOKEN not set, skipping"
     env = {**os.environ, "GH_TOKEN": gh_token}
     result = subprocess.run(
         ["gh", "issue", "list", "--repo", "eaprelsky/konoha",
-         "--label", "P0: critical", "--state", "open",
+         "--label", "priority:p0", "--state", "open",
          "--json", "number,title", "--limit", "10"],
         capture_output=True, text=True, timeout=30, env=env,
     )

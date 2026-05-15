@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Migrate open GitHub issues from legacy labels to canonical taxonomy.
-# Reads legacy→canonical map, applies replacements per-issue, removes
-# legacy labels, and validates guardrails.
+# Reads legacy→canonical map (pipe-delimited: "legacy|canonical"),
+# applies replacements per-issue, removes legacy labels, and validates guardrails.
 # Usage: ./scripts/gh-labels-migrate.sh [--dry-run]
 # refs: docs/label-taxonomy.md, #793
 
@@ -13,64 +13,66 @@ if [[ "${1:-}" == "--dry-run" ]]; then
   shift
 fi
 
-# ── Migration map (legacy → canonical) ─────────────────────────────────
-# Format: "legacy_label canonical_replacement"
-# Empty canonical means REMOVE only (no replacement).
+# ── Migration map (legacy|canonical) ─────────────────────────────────────
+# Pipe-delimited so labels with spaces (e.g. "P0: critical") parse correctly.
+# Empty canonical means REMOVE only.
 MIGRATIONS=(
   # Priority
-  "P0 priority:p0"
-  "P0: critical priority:p0"
-  "P1 priority:p1"
-  "P1: high priority:p1"
-  "P2 priority:p2"
-  "P2: medium priority:p2"
-  "P3 priority:p3"
-  "P3: low priority:p3"
+  "P0|priority:p0"
+  "P0: critical|priority:p0"
+  "P1|priority:p1"
+  "P1: high|priority:p1"
+  "P2|priority:p2"
+  "P2: medium|priority:p2"
+  "P3|priority:p3"
+  "P3: low|priority:p3"
   # State
-  "delegate:done state:done"
-  "kakashi-ready state:ready-for-dev"
-  "awaiting-test state:ready-for-test"
-  '"awaiting-test" state:ready-for-test'
-  "needs-testing state:ready-for-test"
-  "blocked state:blocked"
+  "delegate:done|state:done"
+  "kakashi-ready|state:ready-for-dev"
+  "awaiting-test|state:ready-for-test"
+  '"awaiting-test"|state:ready-for-test'
+  "needs-testing|state:ready-for-test"
+  "blocked|state:blocked"
   # Agent
-  "delegate:architect agent:shikadai"
+  "delegate:architect|agent:shikadai"
   # Type
-  "bug type:bug"
-  "feature type:feature"
-  "enhancement type:enhancement"
-  "refactor type:refactor"
-  "architecture type:architecture"
-  "tech-debt type:tech-debt"
-  "security type:security"
-  "documentation type:docs"
-  "smoke type:test"
-  "test-failure type:bug"
+  "bug|type:bug"
+  "feature|type:feature"
+  "enhancement|type:enhancement"
+  "refactor|type:refactor"
+  "architecture|type:architecture"
+  "tech-debt|type:tech-debt"
+  "security|type:security"
+  "documentation|type:docs"
+  "smoke|type:test"
+  "test-failure|type:bug"
   # Area
-  "backend area:backend"
-  "frontend area:frontend"
-  "messenger area:messenger"
-  "mcp area:mcp"
-  "action-spine area:action-spine"
-  "testbench area:testbench"
-  "devops area:devops"
-  "monitoring area:devops"
-  "i18n area:i18n"
+  "backend|area:backend"
+  "frontend|area:frontend"
+  "messenger|area:messenger"
+  "mcp|area:mcp"
+  "action-spine|area:action-spine"
+  "testbench|area:testbench"
+  "devops|area:devops"
+  "monitoring|area:devops"
+  "i18n|area:i18n"
   # Risk
-  "critical risk:critical"
-  "regression risk:regression"
+  "critical|risk:critical"
+  "regression|risk:regression"
   # Remove-only (no replacement)
-  "delegate:teamlead "
-  "kakashi-batch "
-  "test-cases-written "
-  "workflow "
+  "delegate:teamlead|"
+  "kakashi-batch|"
+  "test-cases-written|"
+  "workflow|"
 )
 
-# ── Guardrails ─────────────────────────────────────────────────────────
+# ── Guardrails ───────────────────────────────────────────────────────────
 # Labels that must be unique within their category
 declare -A CATEGORY_RULES
 CATEGORY_RULES[priority]="priority:p0 priority:p1 priority:p2 priority:p3"
 CATEGORY_RULES[state]="state:triage state:ready-for-dev state:in-progress state:ready-for-review state:ready-for-test state:blocked state:done"
+
+MANDATORY_CATEGORIES=("priority" "state")
 
 CONFLICT_PAIRS=(
   "state:ready-for-dev state:ready-for-review"
@@ -86,6 +88,20 @@ check_guardrails() {
   local issue="$1"
   local labels="$2"
   local violations=()
+
+  # Check mandatory: must have at least one label from each mandatory category
+  for cat in "${MANDATORY_CATEGORIES[@]}"; do
+    local found=false
+    for canonical in ${CATEGORY_RULES[$cat]}; do
+      if echo "$labels" | grep -qF "$canonical"; then
+        found=true
+        break
+      fi
+    done
+    if ! $found; then
+      violations+=("missing: no $cat label (must have one of: ${CATEGORY_RULES[$cat]})")
+    fi
+  done
 
   # Check mutual exclusivity within category
   for cat in priority state; do
@@ -119,7 +135,7 @@ check_guardrails() {
   return 0
 }
 
-# ── Main ───────────────────────────────────────────────────────────────
+# ── Main ─────────────────────────────────────────────────────────────────
 echo "=== Konoha label migration ==="
 if $DRY_RUN; then
   echo "DRY RUN — no changes will be made"
@@ -149,7 +165,8 @@ while IFS=' ' read -r number labels_str; do
     current_label="${current_label//\"/}"   # strip quotes
     current_label="${current_label//\'/}"   # strip single quotes
     for mapping in "${MIGRATIONS[@]}"; do
-      read -r legacy canonical <<< "$mapping"
+      legacy="${mapping%%|*}"
+      canonical="${mapping#*|}"
       legacy_clean="${legacy//\"/}"
       legacy_clean="${legacy_clean//\'/}"
       if [[ "$current_label" == "$legacy_clean" ]]; then
@@ -168,7 +185,10 @@ while IFS=' ' read -r number labels_str; do
   fi
 
   # Dedup add list
-  ADD_DEDUP=($(printf '%s\n' "${ADD_LABELS[@]}" | sort -u))
+  ADD_DEDUP=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && ADD_DEDUP+=("$line")
+  done < <(printf '%s\n' "${ADD_LABELS[@]}" | sort -u)
 
   echo "#$number"
   echo "  current: ${CURRENT[*]}"
@@ -178,7 +198,6 @@ while IFS=' ' read -r number labels_str; do
   # New label set for guardrail check
   NEW_SET=()
   for l in "${CURRENT[@]}"; do
-    # Skip removed labels
     skip=false
     for r in "${REMOVE_LABELS[@]}"; do
       [[ "$l" == "$r" ]] && skip=true && break
@@ -205,15 +224,16 @@ while IFS=' ' read -r number labels_str; do
     continue
   fi
 
-  # Build gh issue edit command
-  # Remove legacy labels
-  if [[ ${#REMOVE_LABELS[@]} -gt 0 ]]; then
-    gh issue edit "$number" $(printf '--remove-label "%s" ' "${REMOVE_LABELS[@]}") 2>/dev/null || true
-  fi
-  # Add canonical labels
-  if [[ ${#ADD_DEDUP[@]} -gt 0 ]]; then
-    gh issue edit "$number" $(printf '--add-label "%s" ' "${ADD_DEDUP[@]}") 2>/dev/null || true
-  fi
+  # Build gh issue edit command with arrays (safe for labels with spaces)
+  EDIT_ARGS=("$number")
+  for r in "${REMOVE_LABELS[@]}"; do
+    EDIT_ARGS+=("--remove-label" "$r")
+  done
+  for a in "${ADD_DEDUP[@]}"; do
+    EDIT_ARGS+=("--add-label" "$a")
+  done
+
+  gh issue edit "${EDIT_ARGS[@]}" 2>/dev/null || true
   echo "  → migrated"
   MIGRATED=$((MIGRATED + 1))
 
@@ -221,8 +241,8 @@ done <<< "$ISSUES"
 
 echo ""
 echo "=== Migration summary ==="
-echo "  migrated:  $MIGRATED"
-echo "  skipped:   $SKIPPED (no legacy labels)"
+echo "  migrated:   $MIGRATED"
+echo "  skipped:    $SKIPPED (no legacy labels)"
 echo "  violations: $VIOLATIONS (guardrail-blocked)"
 if $DRY_RUN; then
   echo "  (dry run — no changes applied)"
@@ -232,8 +252,11 @@ echo "Next: review migrated issues, then retire legacy labels:"
 echo "  gh label delete 'P0' --yes"
 echo "  gh label delete 'P0: critical' --yes"
 echo "  gh label delete 'P1' --yes"
+echo "  gh label delete 'P1: high' --yes"
 echo "  gh label delete 'P2' --yes"
+echo "  gh label delete 'P2: medium' --yes"
 echo "  gh label delete 'P3' --yes"
+echo "  gh label delete 'P3: low' --yes"
 echo "  gh label delete 'delegate:teamlead' --yes"
 echo "  gh label delete 'delegate:done' --yes"
 echo "  gh label delete 'delegate:architect' --yes"

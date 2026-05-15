@@ -42,21 +42,21 @@ export interface NormalizedGithubIssueEvent {
   received_at: string;
 }
 
-export const GITHUB_DELEGATE_TEAMLEAD_TRIGGER: MessageTrigger = {
+export const GITHUB_AGENT_KAKASHI_TRIGGER: MessageTrigger = {
   kind: "message",
   source: "github",
   filter: {
     event: "issue_labeled",
-    label: "delegate:teamlead",
+    label: "agent:kakashi",
   },
 };
 
-export const GITHUB_DELEGATE_ARCHITECT_TRIGGER: MessageTrigger = {
+export const GITHUB_AGENT_SHIKADAI_TRIGGER: MessageTrigger = {
   kind: "message",
   source: "github",
   filter: {
     event: "issue_labeled",
-    label: "delegate:architect",
+    label: "agent:shikadai",
   },
 };
 
@@ -171,12 +171,12 @@ export function githubEventMatchesFilter(
   return true;
 }
 
-export function isDelegateTeamleadIssueEvent(event: NormalizedGithubIssueEvent): boolean {
-  return event.type === "issue_labeled" && event.label === "delegate:teamlead";
+export function isAgentKakashiIssueEvent(event: NormalizedGithubIssueEvent): boolean {
+  return event.type === "issue_labeled" && event.label === "agent:kakashi";
 }
 
-export function isDelegateArchitectIssueEvent(event: NormalizedGithubIssueEvent): boolean {
-  return event.type === "issue_labeled" && event.label === "delegate:architect";
+export function isAgentShikadaiIssueEvent(event: NormalizedGithubIssueEvent): boolean {
+  return event.type === "issue_labeled" && event.label === "agent:shikadai";
 }
 
 function baseEvent(

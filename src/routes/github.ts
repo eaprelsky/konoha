@@ -126,7 +126,7 @@ router.post("/webhooks/github", async (c) => {
     } else if (eventType === "issues" && action === "labeled") {
       const label = (payload.label as any)?.name || "";
       // Only route priority labels (skip noise)
-      if (label.startsWith("P0") || label.startsWith("P1")) {
+      if (label.startsWith("priority:p0") || label.startsWith("priority:p1")) {
         const text = [
           `[GitHub] Issue #${number} помечен "${label}": ${title}`,
           `Repo: ${repo} | ${htmlUrl || ""}`,

@@ -10,8 +10,8 @@ os.environ.setdefault("AGENT_ID", "shikadai")
 os.environ.setdefault("AGENT_DISPLAY_NAME", "Шикадай")
 os.environ.setdefault("AGENT_TMUX_SESSION", "shikadai")
 os.environ.setdefault("AGENT_WAKE_TIMEOUT_SEC", "180")
-os.environ.setdefault("AGENT_GITHUB_DELEGATION_LABELS", "delegate:architect")
-# #794 bootstrap: reviewer work is explicit delegate:architect only; batch labels are legacy.
+os.environ.setdefault("AGENT_GITHUB_DELEGATION_LABELS", "agent:shikadai")
+# #793 canonical taxonomy: agent:shikadai drives review dispatch.
 os.environ.setdefault("AGENT_GITHUB_REDISPATCH_LABELS", "")
 os.environ.setdefault("AGENT_GITHUB_TASK_VERB", "analyze")
 os.environ.setdefault(

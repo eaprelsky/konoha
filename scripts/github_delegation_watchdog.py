@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generic GitHub issue delegation watchdog for explicit label-based work.
 
-#794 bootstrap compatibility:
-- delegate:teamlead routes one issue to Kakashi/Developer.
-- delegate:architect routes review/decomposition to Shikadai/Reviewer.
-- Batch redispatch labels are opt-in only; kakashi-batch is not a default path.
+Uses canonical label taxonomy (#793):
+- agent:kakashi + state:ready-for-dev routes one issue to Kakashi/Developer.
+- agent:shikadai routes review/decomposition to Shikadai/Reviewer.
+- Batch redispatch labels are opt-in only.
 """
 
 import asyncio
@@ -46,8 +46,8 @@ SCAN_INTERVAL = int(os.environ.get("AGENT_GITHUB_SCAN_INTERVAL", "60"))
 KONOHA_REPO = os.path.expanduser(os.environ.get("KONOHA_REPO", "~/konoha"))
 AUTO_PUSH_INTERVAL = int(os.environ.get("AGENT_AUTO_PUSH_INTERVAL", "300"))
 AUTO_PUSH_ENABLED = _bool("AGENT_AUTO_PUSH_ENABLED") or (AGENT_ID == "kakashi" and _bool("KAKASHI_AUTO_PUSH_ENABLED"))
-DELEGATION_LABELS = _csv("AGENT_GITHUB_DELEGATION_LABELS", "delegate:teamlead")
-SKIP_LABELS = _csv("AGENT_GITHUB_SKIP_LABELS", "delegate:done,blocked")
+DELEGATION_LABELS = _csv("AGENT_GITHUB_DELEGATION_LABELS", "agent:kakashi")
+SKIP_LABELS = _csv("AGENT_GITHUB_SKIP_LABELS", "state:done,state:blocked")
 DISPATCH_STATE_PATH = Path(os.environ.get(
     "AGENT_GITHUB_DISPATCH_STATE",
     os.path.expanduser(f"~/.cache/konoha/{AGENT_ID}-github-dispatched.json"),

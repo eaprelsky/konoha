@@ -74,7 +74,7 @@ router.post("/github/issues", async (c) => {
   const body = await c.req.json<{
     title: string;
     body: string;
-    priority?: "P0: critical" | "P1: high" | "P2: medium" | "P3: low";
+    priority?: "priority:p0" | "priority:p1" | "priority:p2" | "priority:p3";
     labels?: string[];
     session_id?: string;
   }>().catch(() => null);

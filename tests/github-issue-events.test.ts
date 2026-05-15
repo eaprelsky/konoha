@@ -1,55 +1,55 @@
 import { describe, expect, test } from "bun:test";
 import {
-  GITHUB_DELEGATE_ARCHITECT_TRIGGER,
-  GITHUB_DELEGATE_TEAMLEAD_TRIGGER,
+  GITHUB_AGENT_KAKASHI_TRIGGER,
+  GITHUB_AGENT_SHIKADAI_TRIGGER,
   githubEventMatchesFilter,
-  isDelegateArchitectIssueEvent,
-  isDelegateTeamleadIssueEvent,
+  isAgentKakashiIssueEvent,
+  isAgentShikadaiIssueEvent,
   normalizeGithubIssueEvent,
 } from "../src/github-issue-events";
 
 describe("github issue connector events", () => {
-  test("normalizes delegate:teamlead issue label events", () => {
+  test("normalizes agent:kakashi issue label events", () => {
     const event = normalizeGithubIssueEvent("issues", {
       action: "labeled",
       repository: { full_name: "eaprelsky/konoha" },
       sender: { login: "itachi" },
-      label: { name: "delegate:teamlead" },
+      label: { name: "agent:kakashi" },
       issue: {
         number: 649,
         title: "Kakashi delegated backlog batch",
         html_url: "https://github.com/eaprelsky/konoha/issues/649",
-        labels: [{ name: "delegate:teamlead" }, { name: "kakashi-batch" }],
+        labels: [{ name: "agent:kakashi" }, { name: "priority:p2" }],
       },
     }, "2026-04-30T00:00:00.000Z");
 
     expect(event?.type).toBe("issue_labeled");
     expect(event?.repo).toBe("eaprelsky/konoha");
     expect(event?.issue_number).toBe(649);
-    expect(event?.label).toBe("delegate:teamlead");
-    expect(event?.labels).toContain("kakashi-batch");
-    expect(event && isDelegateTeamleadIssueEvent(event)).toBe(true);
-    expect(event && githubEventMatchesFilter(event, GITHUB_DELEGATE_TEAMLEAD_TRIGGER.filter)).toBe(true);
+    expect(event?.label).toBe("agent:kakashi");
+    expect(event?.labels).toContain("priority:p2");
+    expect(event && isAgentKakashiIssueEvent(event)).toBe(true);
+    expect(event && githubEventMatchesFilter(event, GITHUB_AGENT_KAKASHI_TRIGGER.filter)).toBe(true);
   });
 
-  test("normalizes delegate:architect issue label events", () => {
+  test("normalizes agent:shikadai issue label events", () => {
     const event = normalizeGithubIssueEvent("issues", {
       action: "labeled",
       repository: { full_name: "eaprelsky/konoha" },
       sender: { login: "itachi" },
-      label: { name: "delegate:architect" },
+      label: { name: "agent:shikadai" },
       issue: {
         number: 654,
         title: "Architecture decomposition intake",
         html_url: "https://github.com/eaprelsky/konoha/issues/654",
-        labels: [{ name: "delegate:architect" }, { name: "P2" }],
+        labels: [{ name: "agent:shikadai" }, { name: "priority:p2" }],
       },
     }, "2026-04-30T00:00:00.000Z");
 
     expect(event?.type).toBe("issue_labeled");
-    expect(event?.label).toBe("delegate:architect");
-    expect(event && isDelegateArchitectIssueEvent(event)).toBe(true);
-    expect(event && githubEventMatchesFilter(event, GITHUB_DELEGATE_ARCHITECT_TRIGGER.filter)).toBe(true);
+    expect(event?.label).toBe("agent:shikadai");
+    expect(event && isAgentShikadaiIssueEvent(event)).toBe(true);
+    expect(event && githubEventMatchesFilter(event, GITHUB_AGENT_SHIKADAI_TRIGGER.filter)).toBe(true);
   });
 
   test("normalizes issue comments", () => {

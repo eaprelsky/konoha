@@ -1,7 +1,9 @@
 import importlib.util
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,29 +29,31 @@ class KakashiGitHubScannerTest(unittest.TestCase):
     def test_requires_delegation_label(self):
         module = load_watchdog_kakashi()
 
-        self.assertTrue(module.is_delegated_issue(issue_with_labels("delegate:teamlead")))
-        self.assertFalse(module.is_delegated_issue(issue_with_labels("bug", "P1")))
+        self.assertTrue(module.is_delegated_issue(issue_with_labels("agent:kakashi")))
+        self.assertFalse(module.is_delegated_issue(issue_with_labels("type:bug", "priority:p1")))
 
     def test_respects_skip_labels(self):
         module = load_watchdog_kakashi()
 
         self.assertFalse(
-            module.is_delegated_issue(issue_with_labels("delegate:teamlead", "blocked"))
+            module.is_delegated_issue(issue_with_labels("agent:kakashi", "state:blocked"))
         )
         self.assertFalse(
-            module.is_delegated_issue(issue_with_labels("delegate:teamlead", "delegate:done"))
+            module.is_delegated_issue(issue_with_labels("agent:kakashi", "state:done"))
         )
 
     def test_regular_delegated_issue_dispatches_only_once(self):
         module = load_watchdog_kakashi()
-        issue = issue_with_labels("delegate:teamlead")
+        issue = issue_with_labels("agent:kakashi")
 
         self.assertTrue(module.should_dispatch_issue(issue, set(), {}, now=1000))
         self.assertFalse(module.should_dispatch_issue(issue, {649}, {649: 1000}, now=999999))
 
     def test_batch_issue_redispatches_after_cooldown(self):
+        # #793: REDISPATCH_LABELS defaults to empty; override via env for this test
+        os.environ["AGENT_GITHUB_REDISPATCH_LABELS"] = "canonical-batch"
         module = load_watchdog_kakashi()
-        issue = issue_with_labels("delegate:teamlead", "kakashi-batch")
+        issue = issue_with_labels("agent:kakashi", "canonical-batch")
 
         self.assertFalse(module.should_dispatch_issue(issue, {649}, {649: 1000}, now=1000 + module.REDISPATCH_INTERVAL_SEC - 1))
         self.assertTrue(module.should_dispatch_issue(issue, {649}, {649: 1000}, now=1000 + module.REDISPATCH_INTERVAL_SEC))
