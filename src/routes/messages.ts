@@ -121,15 +121,6 @@ router.get("/:agentId/history", async (c) => {
 router.get("/:agentId/stream", async (c) => {
   const agentId = c.req.param("agentId");
   let since = c.req.header("Last-Event-ID") || c.req.query("since") || "";
-  // When no Last-Event-ID is provided, start from the latest entry to avoid
-  // full-history replay on first connect / MCP reconnects that don't track position.
-  if (!since) {
-    try {
-      const lastEntries = await redis.xrevrange(AGENT_STREAM_PREFIX + agentId, "+", "-", "COUNT", 1);
-      if (lastEntries.length > 0) since = lastEntries[0][0];
-    } catch { /* fall through — empty since means no replay (already a no-op) */ }
-  }
-
   return streamSSE(c, async (stream) => {
     // Pre-subscribe buffer closes the durable-delivery ↔ live-tail gap (refs #794).
     // Messages arriving during replay are held, then flushed with dedup against
@@ -143,10 +134,22 @@ router.get("/:agentId/stream", async (c) => {
       else { try { stream.writeSSE(evt); } catch { sub.close(); } }
     });
 
-    // Replay messages missed while disconnected
-    if (since) {
+    // Resolve the "since" cursor AFTER the subscriber is live to close
+    // the window between cursor fetch and subscriber creation (refs #794).
+    // Messages arriving during this window are held in the pre-subscribe
+    // buffer and flushed with dedup — no lost messages.
+    let resolvedSince = since;
+    if (!resolvedSince) {
       try {
-        const missed = await replayStream(agentId, since);
+        const lastEntries = await redis.xrevrange(AGENT_STREAM_PREFIX + agentId, "+", "-", "COUNT", 1);
+        if (lastEntries.length > 0) resolvedSince = lastEntries[0][0];
+      } catch { /* fall through */ }
+    }
+
+    // Replay messages missed while disconnected
+    if (resolvedSince) {
+      try {
+        const missed = await replayStream(agentId, resolvedSince);
         const replayedIds = new Set<string>();
         for (const msg of missed) {
           if (stream.aborted) break;

@@ -508,7 +508,6 @@ describe("replayStream", () => {
     expect(texts).toEqual(["second", "third"]);
   });
 });
-}
 
 describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)", () => {
   // Contract (refs #794): subscribe-then-replay with a buffer closes the gap
@@ -613,5 +612,3 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     expect(allTexts).toEqual(["durable-1", "durable-2", "durable-3"]);
   });
 });
-
-}
