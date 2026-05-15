@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 
 # ── Noise filter ──────────────────────────────────────────────────────────────
 
-NOISE_TEXT_PREFIXES = ("SESSION_ONLINE:", "SESSION_OFFLINE:")
+NOISE_TEXT_PREFIXES = ("SESSION_ONLINE:", "SESSION_OFFLINE:", "SESSION_READY:")
 NOISE_TEXT_CONTAINS = ("going offline (session end)",)
 
 

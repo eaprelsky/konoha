@@ -115,6 +115,7 @@ class TestDesyncConfig:
         from watchdog_base import is_session_noise
         assert is_session_noise({"text": "SESSION_ONLINE:kakashi"}) is True
         assert is_session_noise({"text": "SESSION_OFFLINE:kakashi"}) is True
+        assert is_session_noise({"text": "SESSION_READY:kakashi"}) is True
         assert is_session_noise({"text": "kakashi going offline (session end)"}) is True
         assert is_session_noise({"text": "kakashi:fix issue=505"}) is False
 
