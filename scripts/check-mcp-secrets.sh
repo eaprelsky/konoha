@@ -47,7 +47,7 @@ usage() {
 Usage: check-mcp-secrets.sh [-h|--help] [--lite|--full]
 
   Scan MCP/config files for embedded raw secrets and missing env vars.
-  --lite  Only validate KONOHA_TOKEN (for lite-profile agents).
+  --lite  Only validate KONOHA_TOKEN env var (raw-secret scanning still covers all keys).
   --full  Validate all known MCP secret vars (default).
   Exit 0 if clean, exit 1 if violations found.
 
@@ -65,7 +65,8 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# Lite mode: only validate KONOHA_TOKEN
+# Lite mode: only validate KONOHA_TOKEN env var (Check 3).
+# Raw-secret scanning (Checks 1+2) always covers all known keys.
 if [ "$MODE" = "lite" ]; then
   REQUIRED_ENV_VARS=(KONOHA_TOKEN)
 fi
@@ -115,10 +116,6 @@ loaded_env_vars() {
 
 # Known JSON keys that must use ${VAR}
 KNOWN_KEYS_RE="KONOHA_(TOKEN|MIRAI_TOKEN|SHINO_TOKEN)|TRACKER_(TOKEN|CLOUD_ORG_ID)|GITLAB_PERSONAL_ACCESS_TOKEN|YONOTE_API_KEY|CALDAV_(USERNAME|PASSWORD)|OPENROUTER_API_KEY|MIRO_API_TOKEN|BITRIX24_WEBHOOK_URL|CHATBOT_BITRIX_WEBHOOK"
-# Lite mode: only check KONOHA_TOKEN key
-if [ "$MODE" = "lite" ]; then
-  KNOWN_KEYS_RE="KONOHA_TOKEN"
-fi
 
 EXCLUDE_ARGS=$(build_exclude_args)
 
