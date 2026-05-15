@@ -31,6 +31,7 @@ from watchdog_tmux import (
     is_session_alive,
     tmux_pane_capture,
     tmux_pane_content,
+    tmux_pane_pid,
     is_agent_idle,
     tmux_run,
     tmux_send,

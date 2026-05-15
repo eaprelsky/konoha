@@ -48,6 +48,18 @@ def tmux_pane_content(session: str) -> str:
     return tmux_pane_capture(session)[1]
 
 
+def tmux_pane_pid(session: str) -> int | None:
+    """Return the tmux pane root pid for runtime detection, or None if unavailable."""
+    try:
+        pid = subprocess.check_output(
+            ["tmux", "-L", session, "display-message", "-pt", session, "#{pane_pid}"],
+            timeout=3,
+        ).decode("utf-8", errors="replace").strip()
+        return int(pid) if pid else None
+    except Exception:
+        return None
+
+
 def _has_active_work(line: str) -> bool:
     return any(marker in line for marker in ACTIVE_WORK_MARKERS)
 
