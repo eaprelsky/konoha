@@ -142,7 +142,7 @@ export async function sendMessage(msg: Message): Promise<string> {
   const entry: Record<string, string> = {
     from: msg.from,
     to: msg.to,
-    type: msg.type,
+    type: msg.type || "message",
     text: msg.text,
     timestamp: msg.timestamp || new Date().toISOString(),
     village_id: msg.village_id || DEFAULT_VILLAGE,
@@ -165,13 +165,13 @@ export async function sendMessage(msg: Message): Promise<string> {
     const targets = agents.filter(a => a.id !== msg.from && senderIsTest === a.id.startsWith("rtest-"));
     if (targets.length > 0) {
       for (const agent of targets) {
-        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", "MAXLEN", "~", "5000", ...Object.entries(entry).flat());
+        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "MAXLEN", "~", "5000", "*", ...Object.entries(entry).flat());
         await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...entry, _sid: sid }));
         await pgStoreMessage({
           id: sid ?? undefined,
           from: msg.from,
           to: agent.id,
-          type: msg.type,
+          type: entry.type as Message["type"],
           text: msg.text,
           channel: msg.channel,
           replyTo: msg.replyTo,
@@ -188,13 +188,13 @@ export async function sendMessage(msg: Message): Promise<string> {
     const targets = agents.filter(a => a.roles.includes(role) && a.id !== msg.from);
     if (targets.length > 0) {
       for (const agent of targets) {
-        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", "MAXLEN", "~", "5000", ...Object.entries(entry).flat());
+        const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "MAXLEN", "~", "5000", "*", ...Object.entries(entry).flat());
         await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...entry, _sid: sid }));
         await pgStoreMessage({
           id: sid ?? undefined,
           from: msg.from,
           to: agent.id,
-          type: msg.type,
+          type: entry.type as Message["type"],
           text: msg.text,
           channel: msg.channel,
           replyTo: msg.replyTo,
@@ -206,13 +206,13 @@ export async function sendMessage(msg: Message): Promise<string> {
     }
   } else {
     // direct message: capture stream ID and include in pub/sub so SSE clients can track position
-    const streamId = await redis.xadd(AGENT_STREAM_PREFIX + msg.to, "*", "MAXLEN", "~", "5000", ...Object.entries(entry).flat());
+    const streamId = await redis.xadd(AGENT_STREAM_PREFIX + msg.to, "MAXLEN", "~", "5000", "*", ...Object.entries(entry).flat());
     await redis.publish(NOTIFY_PREFIX + msg.to, JSON.stringify({ ...entry, _sid: streamId }));
     await pgStoreMessage({
       id: streamId ?? undefined,
       from: msg.from,
       to: msg.to,
-      type: msg.type,
+      type: entry.type as Message["type"],
       text: msg.text,
       channel: msg.channel,
       replyTo: msg.replyTo,
@@ -411,7 +411,7 @@ export async function publishEvent(event: KonohaEvent): Promise<string> {
         text: JSON.stringify(event),
         timestamp: event.timestamp,
       };
-      const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "*", "MAXLEN", "~", "5000", ...Object.entries(msgEntry).flat());
+      const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "MAXLEN", "~", "5000", "*", ...Object.entries(msgEntry).flat());
       await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...msgEntry, _sid: sid }));
       await pgStoreMessage({
         id: sid ?? undefined,

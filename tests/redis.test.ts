@@ -518,10 +518,11 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     const agentId = id("sse-contract");
     await registerAgent({ id: agentId, name: "SSE Contract", capabilities: [], roles: [] });
 
-    // Populate stream with initial messages
-    const msg1 = await sendMessage({ to: agentId, from: "test", text: "initial-1" });
-    const msg2 = await sendMessage({ to: agentId, from: "test", text: "initial-2" });
-    const sinceId = msg2; // last delivered before "disconnect"
+    // Populate stream with initial messages (use raw XADD for accurate agent-stream IDs)
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    const msg1Id = await redis.xadd(streamKey, "*", "from", "test", "to", agentId, "type", "message", "text", "initial-1", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    const msg2Id = await redis.xadd(streamKey, "*", "from", "test", "to", agentId, "type", "message", "text", "initial-2", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    const sinceId = msg2Id; // last delivered before "disconnect"
 
     // Simulate subscribe-then-replay pattern (SSE endpoint contract):
     // 1. Subscribe first (buffering)
@@ -554,8 +555,10 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     ]);
 
     // msg3 and msg4 must be in the union of replay + buffer
-    expect(allDelivered.has(msg3)).toBe(true);
-    expect(allDelivered.has(msg4)).toBe(true);
+    // Use text-based check: sendMessage returns BUS_STREAM id, replay/buffer carry AGENT_STREAM id
+    const deliveredTexts = [...replayed, ...dedupedBuffer].map((m: any) => m.text);
+    expect(deliveredTexts).toContain("during-replay-1");
+    expect(deliveredTexts).toContain("during-replay-2");
 
     // No duplicates: replay and buffer must be disjoint after dedup
     const overlap = replayed.filter((m: any) =>
@@ -597,12 +600,14 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     const agentId = id("sse-durable");
     await registerAgent({ id: agentId, name: "SSE Durable", capabilities: [], roles: [] });
 
-    const msg1 = await sendMessage({ to: agentId, from: "test", text: "durable-1" });
-    const msg2 = await sendMessage({ to: agentId, from: "test", text: "durable-2" });
-    const msg3 = await sendMessage({ to: agentId, from: "test", text: "durable-3" });
+    // Use raw XADD to get real agent-stream IDs (sendMessage returns BUS_STREAM id)
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    const msg1Id = await redis.xadd(streamKey, "*", "from", "test", "to", agentId, "type", "message", "text", "durable-1", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    const msg2Id = await redis.xadd(streamKey, "*", "from", "test", "to", agentId, "type", "message", "text", "durable-2", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    const msg3Id = await redis.xadd(streamKey, "*", "from", "test", "to", agentId, "type", "message", "text", "durable-3", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
 
     // Replay from msg1 (exclusive) — should get msg2 and msg3
-    const replayed = await replayStream(agentId, msg1);
+    const replayed = await replayStream(agentId, msg1Id!);
     const texts = replayed.map((m: any) => m.text);
     expect(texts).toEqual(["durable-2", "durable-3"]);
 
