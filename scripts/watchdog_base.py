@@ -62,7 +62,8 @@ FREEZE_ALERT_TARGET = ""
 DESYNC_RECOVERY_ENABLED = True   # enable auto-restart + redispatch on stuck agent
 TASK_ACK_TIMEOUT_SEC    = 120    # seconds to wait for agent progress after dispatch
 DESYNC_MAX_RETRIES      = 1      # max recovery attempts before giving up (per batch)
-DESYNC_RECOVERY_GRACE_SEC = 30   # startup grace after successful recovery; does not consume waited budget
+DESYNC_RECOVERY_GRACE_SEC = 60   # startup grace after successful recovery; does not consume waited budget
+INITIAL_STARTUP_GRACE_SEC = 600  # grace period when agent is busy on first contact (covers startup: model load, AGENTS.md, registration, memory)
 
 KONOHA_TEXT_LIMIT = 3500  # chars; tmux send-keys has ~4095 byte TTY buffer limit (#299)
 
@@ -191,6 +192,12 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 _desync_retry_count = 0  # agent is responsive — reset recovery budget (#544)
                 break
             now = time.monotonic()
+            # Startup grace: when agent is busy on first contact (fresh process or
+            # just-restarted), give it time for model load + AGENTS.md + registration
+            # + memory before starting desync countdown.
+            if grace_deadline == 0.0 and INITIAL_STARTUP_GRACE_SEC > 0:
+                grace_deadline = now + INITIAL_STARTUP_GRACE_SEC
+                log.info(f"Agent {TMUX_SESSION} busy on first contact — startup grace {INITIAL_STARTUP_GRACE_SEC}s")
             if grace_deadline > now:
                 await asyncio.sleep(min(IDLE_POLL_SEC, max(0.2, grace_deadline - now)))
                 continue
@@ -450,10 +457,12 @@ async def heartbeat_loop() -> None:
 
     Managed agents no longer map 1:1 to legacy agent-{agent}.service units, so
     liveness must follow the named tmux session used by Konoha lifecycle.
+    Also broadcasts SESSION_READY when the agent first becomes idle after startup.
     """
     url = f"{KONOHA_URL}/agents/{AGENT_ID}/heartbeat"
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
     was_active = is_session_alive(TMUX_SESSION)
+    _ready_sent = False
     while True:
         try:
             is_active = is_session_alive(TMUX_SESSION)
@@ -464,6 +473,16 @@ async def heartbeat_loop() -> None:
         if is_active:
             if not was_active:
                 await _send_lifecycle(f"SESSION_ONLINE:{AGENT_ID}", env)
+                _ready_sent = False  # reset ready flag on new session
+            # Broadcast SESSION_READY when agent first becomes idle after startup
+            if not _ready_sent:
+                try:
+                    if is_agent_idle(TMUX_SESSION):
+                        _ready_sent = True
+                        await _send_lifecycle(f"SESSION_READY:{AGENT_ID}", env)
+                        log.info(f"Agent {AGENT_ID} is ready (first idle after startup)")
+                except Exception:
+                    pass  # retry next heartbeat
             try:
                 proc = await asyncio.create_subprocess_exec(
                     "curl", "-s", "-X", "POST",
