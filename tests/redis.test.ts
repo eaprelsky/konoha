@@ -675,5 +675,21 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     expect(received.map((m: any) => m.text)).toEqual(["live-real-message"]);
     sub.close();
   });
+
+  test("durable replay count applies to visible messages, not lifecycle noise", async () => {
+    const agentId = id("sse-noise-window");
+    await registerAgent({ id: agentId, name: "SSE Noise Window", capabilities: [], roles: [] });
+
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    const sinceId = await redis.xadd(streamKey, "*", "from", "test", "to", agentId, "type", "message", "text", "baseline", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    await redis.xadd(streamKey, "*", "from", "src", "to", agentId, "type", "message", "text", "real-after-since", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    for (let i = 0; i < 60; i += 1) {
+      await redis.xadd(streamKey, "*", "from", "watchdog-kakashi", "to", agentId, "type", "event", "text", `SESSION_READY:kakashi:${i}`, "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    }
+
+    const replayed = await replayStream(agentId, sinceId!, 50);
+
+    expect(replayed.map((m: any) => m.text)).toEqual(["real-after-since"]);
+  });
 });
 }

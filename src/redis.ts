@@ -401,6 +401,7 @@ export async function readHistory(target: string, count = 20): Promise<Message[]
 // stale sinceId (older than 24h) to prevent full-history replay from ancient Last-Event-ID.
 const MAX_REPLAY_AGE_MS = 6 * 3600 * 1000;  // 6h — prevents massive replay after extended downtime (refs #794)
 export async function replayStream(agentId: string, sinceId: string, count = 50): Promise<Message[]> {
+  if (count <= 0) return [];
   const stream = AGENT_STREAM_PREFIX + agentId;
   // Clamp stale sinceId: if older than 24h, use a synthetic ID from 24h ago
   const nowMs = Date.now();
@@ -410,13 +411,36 @@ export async function replayStream(agentId: string, sinceId: string, count = 50)
       sinceId = `${nowMs - MAX_REPLAY_AGE_MS}-0`;
     }
   } catch { /* keep sinceId as-is */ }
-  // XREVRANGE + (sinceId: newest first, exclusive lower bound, limited to count
-  const entries = await redis.xrevrange(stream, "+", `(${sinceId}`, "COUNT", count) as [string, string[]][];
-  // Reverse to chronological order
-  entries.reverse();
-  return entries
-    .map(([id, fields]) => fieldsToMessage(id, fields))
-    .filter(msg => !isLifecycleNoiseMessage(msg));
+
+  // Page newest→oldest until we have `count` user-visible messages. Filtering
+  // after a single COUNT window lets SESSION_READY storms consume the whole
+  // raw replay budget and hide real messages behind them.
+  const messagesNewestFirst: Message[] = [];
+  const pageSize = Math.max(count * 2, 100);
+  let newestBound = "+";
+
+  while (messagesNewestFirst.length < count) {
+    const entries = await redis.xrevrange(
+      stream,
+      newestBound,
+      `(${sinceId}`,
+      "COUNT",
+      pageSize,
+    ) as [string, string[]][];
+
+    if (entries.length === 0) break;
+
+    for (const [id, fields] of entries) {
+      const msg = fieldsToMessage(id, fields);
+      if (isLifecycleNoiseMessage(msg)) continue;
+      messagesNewestFirst.push(msg);
+      if (messagesNewestFirst.length >= count) break;
+    }
+
+    newestBound = `(${entries[entries.length - 1][0]}`;
+  }
+
+  return messagesNewestFirst.reverse();
 }
 
 export async function listChannels(): Promise<string[]> {
