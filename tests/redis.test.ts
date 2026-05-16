@@ -27,10 +27,12 @@ import {
   createInvite,
   consumeInvite,
   replayStream,
+  replayStreamBefore,
   createSubscriber,
   sampleEnsureGroupMetrics,
   AGENT_STREAM_PREFIX,
 } from "../src/redis";
+import { createSseMessageDeduper } from "../src/sse-dedup";
 
 const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
 const RUN = `r${Date.now()}`;
@@ -605,6 +607,45 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     expect(replayedTexts).not.toContain("initial-2");
 
     sub.close();
+  });
+
+  test("reconnect replay skips logical duplicate with a new stream id", async () => {
+    const agentId = id("sse-replay-dedup");
+    await registerAgent({ id: agentId, name: "SSE Replay Dedup", capabilities: [], roles: [] });
+
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    const timestamp = new Date().toISOString();
+    const sinceId = await redis.xadd(streamKey, "*", "from", "src", "to", agentId, "type", "message", "text", "already-delivered", "timestamp", timestamp, "village_id", "comind.konoha");
+    await redis.xadd(streamKey, "*", "from", "src", "to", agentId, "type", "message", "text", "already-delivered", "timestamp", timestamp, "village_id", "comind.konoha");
+    await redis.xadd(streamKey, "*", "from", "src", "to", agentId, "type", "message", "text", "new-message", "timestamp", new Date(Date.now() + 1).toISOString(), "village_id", "comind.konoha");
+
+    const deduper = createSseMessageDeduper();
+    deduper.seed(await replayStreamBefore(agentId, sinceId!));
+    const delivered = (await replayStream(agentId, sinceId!)).filter((msg) => deduper.shouldDeliverMessage(msg));
+
+    expect(delivered.map((m: any) => m.text)).toEqual(["new-message"]);
+  });
+
+  test("buffer flush skips replay overlap by message signature, not only stream id", async () => {
+    const deduper = createSseMessageDeduper();
+    const timestamp = new Date().toISOString();
+    const replayed = {
+      id: "1-0",
+      from: "src",
+      to: "kakashi",
+      type: "message" as const,
+      text: "overlap",
+      timestamp,
+      village_id: "comind.konoha",
+    };
+    const buffered = {
+      id: "2-0",
+      event: "message",
+      data: JSON.stringify({ ...replayed, id: "2-0" }),
+    };
+
+    expect(deduper.shouldDeliverMessage(replayed)).toBe(true);
+    expect(deduper.shouldDeliverEvent(buffered)).toBe(false);
   });
 
   test("live-tail delivers messages published after subscription", async () => {

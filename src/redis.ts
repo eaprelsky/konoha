@@ -443,6 +443,37 @@ export async function replayStream(agentId: string, sinceId: string, count = 50)
   return messagesNewestFirst.reverse();
 }
 
+export async function replayStreamBefore(agentId: string, beforeOrAtId: string, count = 200): Promise<Message[]> {
+  if (count <= 0) return [];
+  const stream = AGENT_STREAM_PREFIX + agentId;
+  const messagesNewestFirst: Message[] = [];
+  const pageSize = Math.max(count * 2, 100);
+  let newestBound = beforeOrAtId;
+
+  while (messagesNewestFirst.length < count) {
+    const entries = await redis.xrevrange(
+      stream,
+      newestBound,
+      "-",
+      "COUNT",
+      pageSize,
+    ) as [string, string[]][];
+
+    if (entries.length === 0) break;
+
+    for (const [id, fields] of entries) {
+      const msg = fieldsToMessage(id, fields);
+      if (isLifecycleNoiseMessage(msg)) continue;
+      messagesNewestFirst.push(msg);
+      if (messagesNewestFirst.length >= count) break;
+    }
+
+    newestBound = `(${entries[entries.length - 1][0]}`;
+  }
+
+  return messagesNewestFirst.reverse();
+}
+
 export async function listChannels(): Promise<string[]> {
   return pgListChannels();
 }

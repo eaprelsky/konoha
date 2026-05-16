@@ -12,12 +12,14 @@ import {
   ackMessages,
   readHistory,
   replayStream,
+  replayStreamBefore,
   listChannels,
   createSubscriber,
   redis,
   AGENT_STREAM_PREFIX,
   type Attachment,
 } from "../redis";
+import { createSseMessageDeduper, type SseMessageEvent } from "../sse-dedup";
 
 const ATTACHMENTS_DIR = "/opt/shared/attachments";
 
@@ -122,16 +124,20 @@ router.get("/:agentId/stream", async (c) => {
   const agentId = c.req.param("agentId");
   let since = c.req.header("Last-Event-ID") || c.req.query("since") || "";
   return streamSSE(c, async (stream) => {
-    // Pre-subscribe buffer closes the durable-delivery ↔ live-tail gap (refs #794).
-    // Messages arriving during replay are held, then flushed with dedup against
-    // replayed stream IDs — no lost messages, no duplicates.
-    const buffer: { id: string | undefined; event: string; data: string }[] = [];
+    // Messages arriving during replay are held, then flushed through the same
+    // deduper as replay/live writes. The deduper is seeded from the delivered
+    // lookbehind window so reconnect replay does not resend logical duplicates
+    // that have a new Redis stream/SSE id.
+    const buffer: SseMessageEvent[] = [];
+    const deduper = createSseMessageDeduper();
     let liveMode = false;
 
     const sub = createSubscriber(agentId, (msg) => {
       const evt = { id: msg.id, event: "message", data: JSON.stringify(msg) };
       if (!liveMode) { buffer.push(evt); }
-      else { try { stream.writeSSE(evt); } catch { sub.close(); } }
+      else if (deduper.shouldDeliverEvent(evt)) {
+        try { stream.writeSSE(evt); } catch { sub.close(); }
+      }
     });
 
     // Resolve the "since" cursor AFTER the subscriber is live to close
@@ -149,18 +155,20 @@ router.get("/:agentId/stream", async (c) => {
     // Replay messages missed while disconnected
     if (resolvedSince) {
       try {
+        try {
+          deduper.seed(await replayStreamBefore(agentId, resolvedSince));
+        } catch { /* replay still works without the reconnect lookbehind seed */ }
         const missed = await replayStream(agentId, resolvedSince);
-        const replayedIds = new Set<string>();
         for (const msg of missed) {
           if (stream.aborted) break;
-          if (msg.id) replayedIds.add(msg.id);
+          if (!deduper.shouldDeliverMessage(msg)) continue;
           await stream.writeSSE({ id: msg.id, event: "message", data: JSON.stringify(msg) });
         }
-        // Switch to live mode — flush buffered messages not already replayed
+        // Switch to live mode — flush buffered messages not already delivered
         liveMode = true;
         for (const evt of buffer) {
           if (stream.aborted) break;
-          if (evt.id && replayedIds.has(evt.id)) continue;
+          if (!deduper.shouldDeliverEvent(evt)) continue;
           await stream.writeSSE(evt);
         }
       } catch { liveMode = true; }
@@ -169,6 +177,7 @@ router.get("/:agentId/stream", async (c) => {
       // Flush buffered messages that arrived during subscriber setup
       for (const evt of buffer) {
         if (stream.aborted) break;
+        if (!deduper.shouldDeliverEvent(evt)) continue;
         try { stream.writeSSE(evt); } catch { sub.close(); }
       }
     }
