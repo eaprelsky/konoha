@@ -12,6 +12,7 @@ Every API endpoint → action ID → autonomy level → audit status. Generated 
 | `GET /workflows` | `workflow.list` | auto | no |
 | `GET /workflows/:id` | `workflow.get` | auto | no |
 | `PUT /workflows/:id` | `workflow.update` | confirm | yes |
+| `/act` direct | `workflow.deploy` | confirm | yes |
 | `DELETE /workflows/:id` | `workflow.delete` | confirm | yes |
 
 ## Element Actions

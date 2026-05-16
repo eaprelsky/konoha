@@ -85,6 +85,24 @@ export interface WorkflowDocumentSeed {
   content: string;
 }
 
+export type WorkflowLifecycleState = "draft" | "validated" | "deployed" | "executable" | "retired";
+
+export interface WorkflowValidationMetadata {
+  status: "passed" | "failed" | "skipped";
+  checked_at: string;
+  error_count: number;
+  errors?: ValidationError[];
+  source: string;
+}
+
+export interface WorkflowDeployMetadata {
+  status: "succeeded" | "blocked" | "retired";
+  checked_at: string;
+  deployed_at?: string;
+  source: string;
+  details?: string[];
+}
+
 // Flow edge: [from, to] or [from, to, condition]
 // condition is a JS expression evaluated against case payload (e.g. "payload.qualified === true")
 export type FlowEdge = [string, string] | [string, string, string];
@@ -100,6 +118,11 @@ export interface WorkflowDefinition {
   flow: FlowEdge[]; // [from, to] or [from, to, condition]
   parent_id?: string;        // ID of the parent workflow (if this is a sub-process)
   parent_function_id?: string; // ID of the function node in the parent that this sub-process represents
+  status?: string;
+  lifecycle_state?: WorkflowLifecycleState;
+  last_validation?: WorkflowValidationMetadata;
+  last_deploy?: WorkflowDeployMetadata;
+  needs_review?: boolean;
 }
 
 export interface ValidationError {
@@ -109,6 +132,67 @@ export interface ValidationError {
 
 const WORKFLOW_KEY_PREFIX = "workflow:";
 export const WORKFLOW_INDEX_KEY = "konoha:workflow:index";
+const WORKFLOW_LIFECYCLE_STATES = new Set<WorkflowLifecycleState>([
+  "draft",
+  "validated",
+  "deployed",
+  "executable",
+  "retired",
+]);
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function validationMetadata(
+  errors: ValidationError[],
+  source: string,
+  status: WorkflowValidationMetadata["status"] = errors.length > 0 ? "failed" : "passed",
+): WorkflowValidationMetadata {
+  return {
+    status,
+    checked_at: nowIso(),
+    error_count: errors.length,
+    ...(errors.length > 0 ? { errors } : {}),
+    source,
+  };
+}
+
+export function getWorkflowLifecycleState(def: Pick<WorkflowDefinition, "status" | "lifecycle_state">): WorkflowLifecycleState {
+  if (def.lifecycle_state && WORKFLOW_LIFECYCLE_STATES.has(def.lifecycle_state)) return def.lifecycle_state;
+  if (def.status && WORKFLOW_LIFECYCLE_STATES.has(def.status as WorkflowLifecycleState)) {
+    return def.status as WorkflowLifecycleState;
+  }
+  if (def.status === "draft") return "draft";
+  if (def.status === "needs_review") return "validated";
+  return "executable";
+}
+
+export function isWorkflowExecutable(def: WorkflowDefinition): boolean {
+  return getWorkflowLifecycleState(def) === "executable";
+}
+
+function withLifecycle(
+  def: WorkflowDefinition,
+  state: WorkflowLifecycleState,
+  options: {
+    validation?: WorkflowValidationMetadata;
+    deploy?: WorkflowDeployMetadata;
+    needsReview?: boolean;
+    clearDeploy?: boolean;
+  } = {},
+): WorkflowDefinition {
+  const next: WorkflowDefinition = {
+    ...def,
+    status: state,
+    lifecycle_state: state,
+    needs_review: options.needsReview,
+  };
+  if (options.validation) next.last_validation = options.validation;
+  if (options.clearDeploy) delete next.last_deploy;
+  if (options.deploy) next.last_deploy = options.deploy;
+  return next;
+}
 
 async function syncWorkflowDocuments(def: WorkflowDefinition): Promise<void> {
   for (const doc of def.documents ?? []) {
@@ -322,7 +406,13 @@ function normalizeWorkflow(def: WorkflowDefinition): WorkflowDefinition {
     }
     return out;
   });
-  return { ...def, elements };
+  const normalized = { ...def, elements };
+  const lifecycle_state = getWorkflowLifecycleState(normalized);
+  return {
+    ...normalized,
+    status: normalized.status ?? lifecycle_state,
+    lifecycle_state,
+  };
 }
 
 /** @deprecated use normalizeWorkflow instead */
@@ -444,30 +534,36 @@ export async function listWorkflows(): Promise<WorkflowDefinition[]> {
 const WORKFLOW_VERSION_KEY_PREFIX = "workflow:version:"; // workflow:{id}:v{N}
 const WORKFLOW_VERSION_CTR_PREFIX = "konoha:workflow:versionctr:"; // INCR counter per workflow id
 
-export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: boolean } = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] }> {
+export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: boolean; lifecycleState?: WorkflowLifecycleState } = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] }> {
   def = normalizeSystems(def);
   if (opts.draft) {
-    const saved = { ...def, status: 'draft' };
-    await syncWorkflowDocuments(saved as WorkflowDefinition);
+    const saved = withLifecycle(def, "draft", {
+      validation: validationMetadata([], "workflow.create", "skipped"),
+      clearDeploy: true,
+    });
+    await syncWorkflowDocuments(saved);
     await redis.set(WORKFLOW_KEY_PREFIX + saved.id, JSON.stringify(saved));
     await redis.sadd(WORKFLOW_INDEX_KEY, saved.id);
-    await updateRoleWorkflowIndex(saved as WorkflowDefinition);
+    await updateRoleWorkflowIndex(saved);
     await pgUpsertWorkflow(saved as any);
-    syncSchemaToRegistry(saved as WorkflowDefinition, null).catch(e => log.error("schema-sync create error", { error: e instanceof Error ? e.message : String(e) }));
+    syncSchemaToRegistry(saved, null).catch(e => log.error("schema-sync create error", { error: e instanceof Error ? e.message : String(e) }));
     return { workflow: saved, errors: [] };
   }
   const errors = validateWorkflow(def);
-  if (errors.length > 0) return { workflow: def, errors };
-  await syncWorkflowDocuments(def);
-  await redis.set(WORKFLOW_KEY_PREFIX + def.id, JSON.stringify(def));
+  const validation = validationMetadata(errors, "workflow.create");
+  if (errors.length > 0) return { workflow: withLifecycle(def, "draft", { validation, clearDeploy: true }), errors };
+  const lifecycleState = opts.lifecycleState ?? "validated";
+  const saved = withLifecycle(def, lifecycleState, { validation, clearDeploy: lifecycleState !== "executable" });
+  await syncWorkflowDocuments(saved);
+  await redis.set(WORKFLOW_KEY_PREFIX + saved.id, JSON.stringify(saved));
   await redis.sadd(WORKFLOW_INDEX_KEY, def.id);
-  await updateRoleWorkflowIndex(def);
-  await pgUpsertWorkflow(def as any);
-  syncSchemaToRegistry(def, null).catch(e => log.error("schema-sync create error", { error: e instanceof Error ? e.message : String(e) }));
-  return { workflow: def, errors: [] };
+  await updateRoleWorkflowIndex(saved);
+  await pgUpsertWorkflow(saved as any);
+  syncSchemaToRegistry(saved, null).catch(e => log.error("schema-sync create error", { error: e instanceof Error ? e.message : String(e) }));
+  return { workflow: saved, errors: [] };
 }
 
-export async function updateWorkflow(id: string, patch: Partial<WorkflowDefinition>, opts: { draft?: boolean } = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] } | null> {
+export async function updateWorkflow(id: string, patch: Partial<WorkflowDefinition>, opts: { draft?: boolean; lifecycleState?: WorkflowLifecycleState; deploy?: WorkflowDeployMetadata; needsReview?: boolean } = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] } | null> {
   const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
   if (!raw) return null;
 
@@ -483,26 +579,38 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   const normalized = normalizeSystems(updated);
 
   if (opts.draft) {
-    const saved = { ...normalized, status: 'draft' };
-    await syncWorkflowDocuments(saved as WorkflowDefinition);
+    const saved = withLifecycle(normalized, "draft", {
+      validation: validationMetadata([], "workflow.update", "skipped"),
+      clearDeploy: true,
+    });
+    await syncWorkflowDocuments(saved);
     await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
-    await updateRoleWorkflowIndex(saved as WorkflowDefinition);
+    await updateRoleWorkflowIndex(saved);
     await pgUpsertWorkflow(saved as any);
-    syncSchemaToRegistry(saved as WorkflowDefinition, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
+    syncSchemaToRegistry(saved, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
     return { workflow: saved, errors: [] };
   }
 
   const errors = validateWorkflow(normalized);
-  if (errors.length > 0) return { workflow: normalized, errors };
+  const validation = validationMetadata(errors, opts.lifecycleState === "executable" ? "workflow.deploy" : "workflow.update");
+  if (errors.length > 0) return { workflow: withLifecycle(normalized, "draft", { validation, clearDeploy: true }), errors };
 
-  await syncWorkflowDocuments(normalized);
-  await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(normalized));
-  await updateRoleWorkflowIndex(normalized);
+  const lifecycleState = opts.lifecycleState ?? "validated";
+  const saved = withLifecycle(normalized, lifecycleState, {
+    validation,
+    deploy: opts.deploy,
+    needsReview: opts.needsReview,
+    clearDeploy: lifecycleState !== "executable" && !opts.deploy,
+  });
+
+  await syncWorkflowDocuments(saved);
+  await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
+  await updateRoleWorkflowIndex(saved);
   // Notify hot-reload listener: agents with roles in this workflow need AGENTS.md refresh
   redis.xadd("konoha:agent-reload", "*", "type", "workflow.updated", "workflow_id", id, "timestamp", new Date().toISOString()).catch(silentCatch("workflow updated notification"));
-  await pgUpsertWorkflow(normalized as any);
-  syncSchemaToRegistry(normalized, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
-  return { workflow: normalized, errors: [] };
+  await pgUpsertWorkflow(saved as any);
+  syncSchemaToRegistry(saved, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
+  return { workflow: saved, errors: [] };
 }
 
 export async function archiveWorkflow(id: string): Promise<boolean> {

@@ -69,9 +69,9 @@ casesRouter.get("/", async (c) => {
 
 casesRouter.post("/", requireAdmin, async (c) => {
   const body = await c.req.json();
-  const { process_id, subject, payload = {}, start_node } = body;
+  const { process_id, subject, payload = {}, start_node, admin_override } = body;
   if (!process_id || !subject) return c.json({ error: "process_id and subject required" }, 400);
-  const result = await executeActionDirect("case.start", { process_id, subject, payload, start_node });
+  const result = await executeActionDirect("case.start", { process_id, subject, payload, start_node, admin_override });
   return actionJson(c, result!);
 });
 

@@ -33,8 +33,10 @@ Mounted at `/workflows` in the main server (no `/api/` prefix).
 Main routes:
 - `GET /workflows` — list all workflows
 - `GET /workflows/:id` — get workflow by ID
-- `POST /workflows?draft=true` — create new workflow
-- `PUT /workflows/:id` — update workflow
+- `POST /workflows?draft=true` — create new workflow draft
+- `POST /workflows` — create a validated workflow definition; this does not deploy runtime triggers
+- `PUT /workflows/:id` — update workflow as draft or validated; updates do not imply deployment
+- `/act` with `workflow.deploy` — validate, materialize runtime start triggers, and make the workflow executable
 - `DELETE /workflows/:id` — delete workflow
 
 ## Related

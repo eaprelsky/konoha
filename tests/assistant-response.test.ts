@@ -175,7 +175,7 @@ describe("normalizeAssistantResponse", () => {
         { id: "e2", type: "event", label: "Done" },
       ],
       flow: [["e1", "f1"], ["f1", "e2"]],
-    }, { draft: true });
+    }, { lifecycleState: "executable" });
 
     const resp = await normalizeAssistantResponse(JSON.stringify({
       reply: "Запускаю процесс.",
@@ -202,7 +202,7 @@ describe("normalizeAssistantResponse", () => {
   it("starts the sales demo case and returns the next business-role work item", async () => {
     const processId = `assistant-sales-demo-${Date.now()}`;
     const rawWorkflow = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");
-    await createWorkflow({ ...JSON.parse(rawWorkflow), id: processId }, { draft: true });
+    await createWorkflow({ ...JSON.parse(rawWorkflow), id: processId }, { lifecycleState: "executable" });
 
     try {
       const resp = await normalizeAssistantResponse(JSON.stringify({

@@ -98,7 +98,7 @@ function baseTools(toolNames: string[]): string[] {
   // Filter out process-tools and testbench tools to get only base MCP tools
   const processTools = [
     "konoha_workflow_list", "konoha_workflow_get", "konoha_workflow_create",
-    "konoha_workflow_update", "konoha_case_list", "konoha_case_start",
+    "konoha_workflow_update", "konoha_workflow_deploy", "konoha_case_list", "konoha_case_start",
     "konoha_case_get", "konoha_workitem_list", "konoha_workitem_complete",
     "konoha_role_list", "konoha_role_assign", "konoha_skill_list",
     "konoha_mining", "konoha_event_emit",

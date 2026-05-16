@@ -24,6 +24,13 @@ async function registerWorkflow(def: WorkflowDefinition): Promise<void> {
   await createWorkflow(def, { draft: true });
 }
 
+async function registerExecutableWorkflow(def: WorkflowDefinition): Promise<void> {
+  const result = await createWorkflow(def, { lifecycleState: "executable" });
+  if (result.errors.length > 0) {
+    throw new Error(`Executable workflow fixture failed validation: ${JSON.stringify(result.errors)}`);
+  }
+}
+
 async function cleanupWorkflow(id: string): Promise<void> {
   const caseIds = await redis.smembers(`konoha:cases:process:${id}`);
   await new Promise(resolve => setTimeout(resolve, 50));
@@ -164,7 +171,7 @@ describe("eEPC state-machine regression suite", () => {
     const id = wfId("sales-lead-intake");
     const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");
     const def: WorkflowDefinition = { ...JSON.parse(raw), id };
-    await registerWorkflow(def);
+    await registerExecutableWorkflow(def);
 
     const kase = await createCase(id, "coMind Лиды: AI assistant request", {
       source_chat: "coMind Лиды",
@@ -240,7 +247,7 @@ describe("eEPC state-machine regression suite", () => {
     const id = wfId("knowledge-source-classification");
     const raw = readFileSync(join(import.meta.dir, "..", "workflows", "knowledge", "source-classification.json"), "utf-8");
     const def: WorkflowDefinition = { ...JSON.parse(raw), id };
-    await registerWorkflow(def);
+    await registerExecutableWorkflow(def);
 
     const kase = await createCase(id, "ADR-42 source intake", {
       source_kind: "adr",
@@ -279,7 +286,7 @@ describe("eEPC state-machine regression suite", () => {
     const chatTitle = `${RUN} Лиды`;
     const start = def.elements.find(el => el.id === "e1");
     if (start?.trigger?.filter) start.trigger.filter = { chat_title: chatTitle };
-    await registerWorkflow(def);
+    await registerExecutableWorkflow(def);
 
     const cases = await processEvent("telegram.message.received", "telegram", {
       chat_title: chatTitle,
@@ -309,7 +316,7 @@ describe("eEPC state-machine regression suite", () => {
     const chatTitle = `${RUN} Connector Leads`;
     const start = def.elements.find(el => el.id === "e1");
     if (start?.trigger?.filter) start.trigger.filter = { chat_title: chatTitle };
-    await registerWorkflow(def);
+    await registerExecutableWorkflow(def);
 
     const event = normalizeTelegramStreamEvent({
       endpoint_id: "telegram-user-sasuke",
@@ -351,7 +358,7 @@ describe("eEPC state-machine regression suite", () => {
       const def: WorkflowDefinition = { ...JSON.parse(raw), id };
       const start = def.elements.find(el => el.id === "e1");
       if (start?.trigger?.filter) start.trigger.filter = { chat_title: chatTitle };
-      await registerWorkflow(def);
+      await registerExecutableWorkflow(def);
     }
 
     const cases = await processEvent("telegram.message.received", "telegram", {
@@ -764,15 +771,14 @@ describe("eEPC state-machine regression suite", () => {
 
   test("event_fired idempotency suppresses duplicate deliveries", async () => {
     const id = wfId("idempotent-event");
-    await registerWorkflow({
+    await registerExecutableWorkflow({
       id,
       version: "1.0.0",
       name: "Idempotent event regression",
       elements: [
         { id: "start", type: "event", label: "Started" },
-        { id: "end", type: "event", label: "Finished" },
       ],
-      flow: [["start", "end"]],
+      flow: [],
     });
 
     const key = `${RUN}-idem`;

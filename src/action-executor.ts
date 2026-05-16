@@ -5,6 +5,8 @@ import {
   createWorkflow,
   updateWorkflow,
   archiveWorkflow,
+  getWorkflowLifecycleState,
+  isWorkflowExecutable,
   type WorkflowDefinition,
   type WorkflowElement,
 } from "./workflow-loader";
@@ -189,26 +191,8 @@ async function executeWorkflowCreate(args: Record<string, unknown>, opts: Workfl
   const draft = body.draft === true;
   const normalized = await normalizeElementsIfNeeded(body);
 
-  if (!draft && Array.isArray(body.elements) && body.elements.length > 0) {
-    const ctx: ProcessContext = {
-      process_id: String(body.id),
-      process_name: typeof body.name === "string" ? body.name : undefined,
-      events: (body.elements as WorkflowElement[]).filter(el => el.type === "event").map(el => ({ id: el.id, label: el.label })),
-      functions: (body.elements as WorkflowElement[]).filter(el => el.type === "function").map(el => ({ id: el.id, label: el.label })),
-    };
-    const { elements, needs_review } = await resolveTriggers(body.elements as WorkflowElement[], ctx);
-    body.elements = elements;
-    if (needs_review) body.status = "needs_review";
-  }
-
   const result = await createWorkflow(body as unknown as WorkflowDefinition, { draft });
   if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
-
-  if (!draft && !(result.workflow as any).status?.includes("needs_review")) {
-    subscribeStartEvents(result.workflow).catch(e =>
-      console.error(`[workflow-deploy] subscribeStartEvents error: ${e.message}`),
-    );
-  }
 
   return { status: 201, data: { ...result.workflow, normalized } };
 }
@@ -225,28 +209,90 @@ async function executeWorkflowUpdate(args: Record<string, unknown>): Promise<Act
 
   const normalized = await normalizeElementsIfNeeded(body);
 
-  if (!draft && Array.isArray(body.elements) && body.elements.length > 0) {
-    const ctx: ProcessContext = {
-      process_id: id,
-      process_name: typeof body.name === "string" ? body.name : undefined,
-      events: (body.elements as WorkflowElement[]).filter(el => el.type === "event").map(el => ({ id: el.id, label: el.label })),
-      functions: (body.elements as WorkflowElement[]).filter(el => el.type === "function").map(el => ({ id: el.id, label: el.label })),
-    };
-    const { elements, needs_review } = await resolveTriggers(body.elements as WorkflowElement[], ctx);
-    body.elements = elements;
-    if (needs_review) body.status = "needs_review";
-  }
-
   const result = await updateWorkflow(id, body as Partial<WorkflowDefinition>, { draft });
   if (result === null) return { status: 404, data: { error: "Workflow not found" } };
   if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
 
-  if (!draft && !(result.workflow as any).status?.includes("needs_review")) {
-    subscribeStartEvents(result.workflow).catch(e =>
-      console.error(`[workflow-deploy] subscribeStartEvents update error: ${e.message}`),
-    );
+  return { status: 200, data: { ...result.workflow, normalized } };
+}
+
+async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<ActionExecution> {
+  const invalid = validationFailure("workflow.deploy", args);
+  if (invalid) return invalid;
+
+  const id = String(args.id);
+  const current = await getWorkflow(id);
+  if (!current) return { status: 404, data: { error: "Workflow not found" } };
+  const currentState = getWorkflowLifecycleState(current);
+  if (currentState === "retired") {
+    return {
+      status: 409,
+      data: {
+        error: "Workflow is retired",
+        code: "WORKFLOW_RETIRED",
+        process_id: id,
+        lifecycle_state: currentState,
+      },
+    };
   }
 
+  const body: WorkflowDefinition = { ...current };
+  const normalized = await normalizeElementsIfNeeded(body as unknown as Record<string, unknown>);
+  let needs_review = false;
+
+  if (Array.isArray(body.elements) && body.elements.length > 0) {
+    const ctx: ProcessContext = {
+      process_id: id,
+      process_name: typeof body.name === "string" ? body.name : undefined,
+      events: body.elements.filter(el => el.type === "event").map(el => ({ id: el.id, label: el.label })),
+      functions: body.elements.filter(el => el.type === "function").map(el => ({ id: el.id, label: el.label })),
+    };
+    const resolved = await resolveTriggers(body.elements, ctx);
+    body.elements = resolved.elements;
+    needs_review = resolved.needs_review;
+  }
+
+  if (needs_review) {
+    const result = await updateWorkflow(id, body, {
+      lifecycleState: "validated",
+      deploy: {
+        status: "blocked",
+        checked_at: new Date().toISOString(),
+        source: "workflow.deploy",
+        details: ["trigger resolution needs manual review"],
+      },
+      needsReview: true,
+    });
+    if (result === null) return { status: 404, data: { error: "Workflow not found" } };
+    if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
+    return {
+      status: 409,
+      data: {
+        error: "Workflow deploy blocked by trigger review",
+        code: "WORKFLOW_DEPLOY_NEEDS_REVIEW",
+        process_id: id,
+        lifecycle_state: "validated",
+        workflow: { ...result.workflow, normalized },
+      },
+    };
+  }
+
+  const deployedAt = new Date().toISOString();
+  const result = await updateWorkflow(id, body, {
+    lifecycleState: "executable",
+    deploy: {
+      status: "succeeded",
+      checked_at: deployedAt,
+      deployed_at: deployedAt,
+      source: "workflow.deploy",
+      details: ["validation passed", "start-event subscriptions materialized"],
+    },
+    needsReview: false,
+  });
+  if (result === null) return { status: 404, data: { error: "Workflow not found" } };
+  if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
+
+  await subscribeStartEvents(result.workflow);
   return { status: 200, data: { ...result.workflow, normalized } };
 }
 
@@ -342,6 +388,8 @@ export async function executeWorkflowAction(
       return executeWorkflowCreate(args, opts);
     case "workflow.update":
       return executeWorkflowUpdate(args);
+    case "workflow.deploy":
+      return executeWorkflowDeploy(args);
     case "workflow.delete":
       return executeWorkflowDelete(args);
     case "workflow.batch_delete":
@@ -365,9 +413,27 @@ async function executeCaseAction(action: string, args: Record<string, unknown>):
     case "case.start": {
       const invalid = validationFailure("case.start", args);
       if (invalid) return invalid;
+      const processId = String(args.process_id);
+      const workflow = await getWorkflow(processId);
+      if (!workflow) return { status: 404, data: { error: `Workflow ${processId} not found` } };
+      const lifecycleState = getWorkflowLifecycleState(workflow);
+      if (!isWorkflowExecutable(workflow) && args.admin_override !== true) {
+        return {
+          status: 409,
+          data: {
+            error: "Workflow is not executable",
+            code: "WORKFLOW_NOT_EXECUTABLE",
+            process_id: processId,
+            lifecycle_state: lifecycleState,
+            status: workflow.status,
+            required_lifecycle_state: "executable",
+            admin_override_available: true,
+          },
+        };
+      }
       try {
         const kase = await createCase(
-          String(args.process_id),
+          processId,
           String(args.subject),
           (args.payload as Record<string, unknown>) ?? {},
           args.start_node ? String(args.start_node) : undefined,

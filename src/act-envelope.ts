@@ -124,8 +124,8 @@ function ok(action: string, data: unknown, status = 200): ActResult {
   return { ok: true, action, data, status, action_version: ACTION_VERSION };
 }
 
-function fail(action: string, error: string): ActResult {
-  return { ok: false, action, error, action_version: ACTION_VERSION };
+function fail(action: string, error: string, status?: number, data?: unknown): ActResult {
+  return { ok: false, action, error, status, data, action_version: ACTION_VERSION };
 }
 
 function needConfirm(action: string): ActResult {
@@ -290,7 +290,12 @@ export async function executeAction(
     }
     return direct.status >= 200 && direct.status < 300
       ? ok(envelope.action, direct.data, direct.status)
-      : fail(envelope.action, isRecordWithError(direct.data) ? direct.data.error : JSON.stringify(direct.data));
+      : fail(
+        envelope.action,
+        isRecordWithError(direct.data) ? direct.data.error : JSON.stringify(direct.data),
+        direct.status,
+        direct.data,
+      );
   }
 
   const registered = await executeRegisteredHandler(action, envelope.args, ctx);
@@ -439,7 +444,7 @@ actRouter.post("/", requireAuth, async (c) => {
     return c.json(result, 202);
   }
   if (!result.ok) {
-    return c.json(result, result.error?.startsWith("Validation") ? 400 : 500);
+    return c.json(result, (result.status ?? (result.error?.startsWith("Validation") ? 400 : 500)) as any);
   }
   return c.json(result, (result.status ?? 200) as any);
 });

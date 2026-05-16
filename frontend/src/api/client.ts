@@ -150,6 +150,8 @@ export const api = {
       actMutation<Workflow>('workflow.create', { ...body, draft }, [`${BASE}/workflows`, `${BASE}/cases`, `${BASE}/workitems`]),
     update: (id: string, body: Partial<Workflow>, draft = false) =>
       actMutation<Workflow>('workflow.update', { ...body, id, draft }, [`${BASE}/workflows`, `${BASE}/cases`, `${BASE}/workitems`]),
+    deploy: (id: string) =>
+      actMutation<Workflow>('workflow.deploy', { id }, [`${BASE}/workflows`, `${BASE}/cases`, `${BASE}/workitems`]),
     delete: (id: string) =>
       actMutation<{ ok: boolean }>('workflow.delete', { id }, [`${BASE}/workflows`, `${BASE}/cases`, `${BASE}/workitems`]),
   },

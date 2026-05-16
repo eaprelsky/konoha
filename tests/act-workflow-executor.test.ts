@@ -167,17 +167,28 @@ describe("/act workflow executor", () => {
 
   test("keeps legacy /cases start as a compatibility wrapper around case.start", async () => {
     const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-case`;
-    const workflowRes = await app.fetch(new Request("http://localhost/workflows?draft=true", {
+    const workflowRes = await app.fetch(new Request("http://localhost/workflows", {
       method: "POST",
       headers: adminHeaders(),
       body: JSON.stringify({
         id: workflowId,
         name: "HTTP case wrapper workflow",
-        elements: [{ id: "start", type: "event", label: "Start" }],
+        elements: [{ id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } }],
         flow: [],
       }),
     }));
     expect(workflowRes.status).toBe(201);
+
+    const deployRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.deploy",
+        category: "act",
+        args: { id: workflowId },
+      }),
+    }));
+    expect(deployRes.status).toBe(200);
 
     const res = await app.fetch(new Request("http://localhost/cases", {
       method: "POST",

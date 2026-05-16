@@ -4,7 +4,7 @@
  */
 
 import { redis } from "../../redis";
-import { getWorkflow, type WorkflowDefinition } from "../../workflow-loader";
+import { getWorkflow, isWorkflowExecutable, type WorkflowDefinition } from "../../workflow-loader";
 import { pgDeleteCasesByProcess } from "../../storage/pg";
 import { emitEvent } from "../event-log";
 import { cancelSubscriptionsByInstance } from "../../event-manager";
@@ -89,6 +89,7 @@ export async function processEvent(
     const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
     if (!raw) continue;
     const def: WorkflowDefinition = JSON.parse(raw);
+    if (!isWorkflowExecutable(def)) continue;
 
     if (!def.triggers) continue;
     for (const trigger of def.triggers) {
@@ -161,6 +162,13 @@ export async function handleEventFired(payload: {
 
   if (!instance_id || instance_id === "new") {
     const wfDef = await getWorkflow(process_id).catch(() => null);
+    if (wfDef && !isWorkflowExecutable(wfDef)) {
+      log.warn("event_fired: workflow not executable, skipped", {
+        process_id,
+        lifecycle_state: wfDef.lifecycle_state ?? wfDef.status,
+      });
+      return null;
+    }
     const displayName = wfDef?.name || process_id;
     const subject = `${displayName} #${Date.now().toString(36).slice(-4)}`;
     const initPayload = source_data ?? {};

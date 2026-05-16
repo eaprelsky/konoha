@@ -10,6 +10,7 @@ describe("workflow action contract validation", () => {
     const ids = wfActions.map(a => a.id).sort();
     expect(ids).toContain("workflow.create");
     expect(ids).toContain("workflow.update");
+    expect(ids).toContain("workflow.deploy");
     expect(ids).toContain("workflow.delete");
     expect(ids).toContain("workflow.list");
     expect(ids).toContain("workflow.get");
@@ -37,6 +38,15 @@ describe("workflow action contract validation", () => {
     const result = validateActionArgs("workflow.delete", {});
     expect(result.valid).toBe(false);
     expect(result.errors).toContain("Missing required argument: id");
+  });
+
+  it("workflow.deploy requires id", () => {
+    const missing = validateActionArgs("workflow.deploy", {});
+    expect(missing.valid).toBe(false);
+    expect(missing.errors).toContain("Missing required argument: id");
+
+    const valid = validateActionArgs("workflow.deploy", { id: "wf-123" });
+    expect(valid.valid).toBe(true);
   });
 
   it("workflow.delete accepts valid args", () => {
@@ -125,6 +135,7 @@ describe("workflow action contract validation", () => {
   it("canonicalActionType maps legacy ids and is idempotent for canonical ids", () => {
     expect(canonicalActionType("workflow_create")).toBe("workflow.create");
     expect(canonicalActionType("workflow_update")).toBe("workflow.update");
+    expect(canonicalActionType("workflow_deploy")).toBe("workflow.deploy");
     expect(canonicalActionType("case_start")).toBe("case.start");
     expect(canonicalActionType("message_send")).toBe("message.send");
     expect(canonicalActionType("workflow.create")).toBe("workflow.create");

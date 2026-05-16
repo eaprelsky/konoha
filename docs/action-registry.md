@@ -57,8 +57,9 @@ argument metadata.
 
 | Action | Description | Autonomy |
 |--------|-------------|----------|
-| `workflow.create` | Create new workflow (draft or deployed) | confirm |
-| `workflow.update` | Update existing workflow | confirm |
+| `workflow.create` | Create new workflow as draft or validated; never deploys runtime triggers | confirm |
+| `workflow.update` | Update existing workflow as draft or validated; demotes executable workflows until redeploy | confirm |
+| `workflow.deploy` | Validate, materialize runtime start triggers, and mark workflow executable | confirm |
 | `workflow.delete` | Archive workflow + cascade delete cases | confirm |
 | `workflow.list` | List all workflows | auto |
 | `workflow.get` | Get single workflow by ID | auto |

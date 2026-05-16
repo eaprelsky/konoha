@@ -704,6 +704,22 @@ export function useProcessEditor(readOnly = false) {
     return true;
   }
 
+  async function deployWorkflow(): Promise<boolean> {
+    const saved = await saveRef.current();
+    if (!saved || !wfId.trim()) return false;
+    setSaving(true); setError(null); setDraftWarning(null);
+    try {
+      await api.workflows.deploy(wfId.trim());
+      refreshList();
+      return true;
+    } catch (err: any) {
+      setError(err.message);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // Keep saveRef current
   saveRef.current = save;
   panXRef.current = panX; panYRef.current = panY; zoomRef.current = zoom;
@@ -805,7 +821,7 @@ export function useProcessEditor(readOnly = false) {
     zoomIn, zoomOut, zoomReset, zoomFit,
     refreshList, newProcess, startCreatingNew, commitNewProc,
     startRename, commitRename, dupWorkflow, delWorkflow,
-    loadWorkflow, drillDown, toggleMining, applyTsunadePatch,
+    loadWorkflow, drillDown, toggleMining, applyTsunadePatch, deployWorkflow,
     addElement, paletteClick, pickFromRegistry, deleteElement, updateElement, removeEdge, applyPatch,
     switchMode, scheduleAutosave, syncEntityOnEdit,
     onResizeMouseDown,

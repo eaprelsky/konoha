@@ -13,6 +13,10 @@ interface Props {
 }
 
 export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Props) {
+  const workflow = s.workflows.find(w => w.id === s.wfId);
+  const lifecycle = workflow?.lifecycle_state ?? workflow?.status ?? (s.wfId ? 'draft' : '');
+  const runnable = lifecycle === 'executable';
+
   return (
     <div className="ipe-bar">
       <button className="mob-side-toggle" onClick={onToggleMobSide} title="Список процессов">☰</button>
@@ -42,6 +46,23 @@ export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Pro
       )}
 
       <div className="sep" />
+      {s.wfId && (
+        <span
+          title={runnable ? 'Процесс развёрнут и доступен для запуска' : 'Процесс не исполняемый: сохраните, провалидируйте и выполните deploy перед запуском'}
+          style={{
+            fontSize: 11,
+            color: runnable ? '#86efac' : '#fbbf24',
+            background: runnable ? '#052e16' : '#1c1408',
+            border: `1px solid ${runnable ? '#166534' : '#78350f'}`,
+            borderRadius: 4,
+            padding: '3px 8px',
+            flexShrink: 0,
+          }}
+        >
+          {lifecycle}
+        </span>
+      )}
+      <div className="sep" />
       <button title="Уменьшить масштаб (−)" style={{ padding: '5px 8px', fontWeight: 700, fontSize: 14 }} onClick={s.zoomOut}>−</button>
       <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 36, textAlign: 'center', flexShrink: 0 }}>{Math.round(s.zoom * 100)}%</span>
       <button title="Увеличить масштаб (+)" style={{ padding: '5px 8px', fontWeight: 700, fontSize: 14 }} onClick={s.zoomIn}>+</button>
@@ -56,6 +77,14 @@ export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Pro
           <div className="sep" />
           <button className="btn-save" onClick={s.save} disabled={s.saving}>
             {s.saving ? 'Сохранение…' : '💾 Сохранить'}
+          </button>
+          <button
+            title="Провалидировать, развернуть триггеры и сделать процесс доступным для запуска"
+            onClick={s.deployWorkflow}
+            disabled={s.saving || !s.wfId.trim() || runnable}
+            style={{ padding: '5px 10px', fontWeight: 600 }}
+          >
+            Deploy
           </button>
         </>
       )}

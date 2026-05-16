@@ -359,7 +359,7 @@ if (enabledSkills.includes("process-tools")) {
 
   server.tool(
     "konoha_workflow_create",
-    "Create (deploy) a new workflow definition",
+    "Create a new workflow definition as draft or validated; this does not deploy runtime triggers",
     {
       id: z.string().describe("Workflow ID (slug, e.g. 'sales/lead-qualification')"),
       name: z.string().describe("Human-readable workflow name"),
@@ -368,7 +368,7 @@ if (enabledSkills.includes("process-tools")) {
         type: z.string().describe("'event', 'function', 'gateway', 'connector'"),
         label: z.string().optional(),
       }).passthrough()).optional().describe("Workflow elements (nodes and connectors)"),
-      draft: z.boolean().optional().default(false).describe("Save as draft without deploying triggers"),
+      draft: z.boolean().optional().default(false).describe("Save as draft instead of validating the definition"),
     },
     async ({ id, name, elements, draft }) => {
       const result = await agentApi<unknown>(
@@ -382,7 +382,7 @@ if (enabledSkills.includes("process-tools")) {
 
   server.tool(
     "konoha_workflow_update",
-    "Update an existing workflow definition",
+    "Update an existing workflow definition as draft or validated; this does not deploy runtime triggers",
     {
       id: z.string().describe("Workflow ID to update"),
       name: z.string().optional().describe("New name"),
@@ -399,6 +399,22 @@ if (enabledSkills.includes("process-tools")) {
         `/workflows/${encodeURIComponent(id)}${draft ? "?draft=true" : ""}`,
         { name, elements }
       );
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "konoha_workflow_deploy",
+    "Validate and deploy a workflow, materializing runtime start triggers and marking it executable",
+    {
+      id: z.string().describe("Workflow ID to deploy"),
+    },
+    async ({ id }) => {
+      const result = await agentApi<unknown>("POST", "/act", {
+        action: "workflow.deploy",
+        category: "act",
+        args: { id },
+      });
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
   );

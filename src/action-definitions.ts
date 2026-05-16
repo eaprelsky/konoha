@@ -11,7 +11,7 @@ export const ACTIONS: ActionDef[] = [
   // ── Workflow ──────────────────────────────────────────────────────────────
   {
     id: "workflow.create",
-    description: "Create a new workflow (process definition). Accepts draft or deployed state.",
+    description: "Create a new workflow definition as draft or validated. This does not deploy runtime triggers.",
     scope: "workflow",
     args: [
       { name: "id",          type: "string",  required: false, description: "Workflow ID. Auto-generated if omitted." },
@@ -27,7 +27,7 @@ export const ACTIONS: ActionDef[] = [
   },
   {
     id: "workflow.update",
-    description: "Update an existing workflow definition.",
+    description: "Update an existing workflow definition as draft or validated. This does not deploy runtime triggers.",
     scope: "workflow",
     args: [
       { name: "id",          type: "string",  required: true,  description: "Workflow ID to update." },
@@ -37,6 +37,17 @@ export const ACTIONS: ActionDef[] = [
       { name: "draft",       type: "boolean", required: false, description: "Save as draft." },
     ],
     currentEndpoint: "PUT /workflows/:id",
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
+    id: "workflow.deploy",
+    description: "Validate and deploy a workflow definition, materializing runtime start triggers and marking it executable when readiness passes.",
+    scope: "workflow",
+    args: [
+      { name: "id", type: "string", required: true, description: "Workflow ID to deploy." },
+    ],
+    implementation: { kind: "direct", note: "Transitions validated workflows to executable through action-executor." },
     autonomy: "confirm",
     audited: true,
   },
@@ -197,6 +208,7 @@ export const ACTIONS: ActionDef[] = [
       { name: "subject",    type: "string",  required: true,  description: "Case subject / title." },
       { name: "payload",    type: "object",  required: false, description: "Initial case data." },
       { name: "start_node", type: "string",  required: false, description: "Override start element ID." },
+      { name: "admin_override", type: "boolean", required: false, description: "Explicit admin-only override for tests or migration to start a non-executable workflow." },
     ],
     currentEndpoint: "POST /cases",
     autonomy: "auto",

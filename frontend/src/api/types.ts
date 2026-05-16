@@ -7,6 +7,21 @@ export interface Workflow {
   description?: string;
   category?: string;
   status?: string;
+  lifecycle_state?: 'draft' | 'validated' | 'deployed' | 'executable' | 'retired';
+  last_validation?: {
+    status: 'passed' | 'failed' | 'skipped';
+    checked_at: string;
+    error_count: number;
+    errors?: Array<{ rule: number; message: string }>;
+    source: string;
+  };
+  last_deploy?: {
+    status: 'succeeded' | 'blocked' | 'retired';
+    checked_at: string;
+    deployed_at?: string;
+    source: string;
+    details?: string[];
+  };
   metadata?: OperatorArtifactMetadata;
   elements: WorkflowElement[];
   flow: [string, string, string?][];
@@ -151,7 +166,7 @@ export interface PaginatedWorkItems {
 }
 
 export type WorkflowActionStatus = 'executed' | 'needs_confirm' | 'failed' | 'skipped';
-export type WorkflowActionType = 'workflow.create' | 'workflow.update' | 'workflow.open' | 'workflow.save' | 'workflow.confirm' | 'case.start';
+export type WorkflowActionType = 'workflow.create' | 'workflow.update' | 'workflow.deploy' | 'workflow.open' | 'workflow.save' | 'workflow.confirm' | 'case.start';
 export type WorkflowReceiptStatus = 'succeeded' | 'pending_confirmation' | 'failed' | 'partial';
 export type WorkflowObservableStatus = WorkflowReceiptStatus | 'no_effect';
 export type WorkflowResourceKind = 'workflow' | 'element' | 'flow' | 'confirmation' | 'case' | 'work_item';
