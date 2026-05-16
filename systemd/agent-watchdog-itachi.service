@@ -14,6 +14,11 @@ Environment=ITACHI_TMUX=itachi
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-itachi.py
 Restart=on-failure
+Slice=konoha-qa.slice
+MemoryHigh=256M
+MemoryMax=384M
+CPUWeight=100
+CPUQuota=50%
 RestartSec=10
 StandardOutput=journal
 StandardError=journal

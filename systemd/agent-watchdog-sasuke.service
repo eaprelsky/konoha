@@ -9,6 +9,11 @@ EnvironmentFile=/home/ubuntu/.agent-env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-sasuke.py
 Restart=on-failure
+Slice=konoha-connectors.slice
+MemoryHigh=256M
+MemoryMax=384M
+CPUWeight=150
+CPUQuota=75%
 RestartSec=10
 StandardOutput=journal
 StandardError=journal

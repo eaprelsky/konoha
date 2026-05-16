@@ -15,6 +15,11 @@ Environment=TELEGRAM_EVENT_STREAM=telegram:log
 Environment=TELEGRAM_EVENT_GROUP=event-bridge
 ExecStart=/usr/bin/python3 -u /home/ubuntu/konoha/scripts/telegram-event-bridge.py
 Restart=always
+Slice=konoha-connectors.slice
+MemoryHigh=384M
+MemoryMax=512M
+CPUWeight=150
+CPUQuota=100%
 RestartSec=5
 StandardOutput=journal
 StandardError=journal

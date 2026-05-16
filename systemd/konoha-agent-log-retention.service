@@ -7,6 +7,11 @@ Type=oneshot
 User=ubuntu
 Environment=HOME_DIR=/home/ubuntu
 ExecStart=/home/ubuntu/konoha/scripts/konoha-agent-log-retention.sh --json
+Slice=konoha-agents.slice
+MemoryHigh=128M
+MemoryMax=256M
+CPUWeight=50
+CPUQuota=25%
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

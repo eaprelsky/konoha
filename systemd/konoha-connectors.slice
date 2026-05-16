@@ -1,0 +1,10 @@
+[Unit]
+Description=Konoha connector and always-on agent runtime slice
+Documentation=https://github.com/eaprelsky/konoha/issues/781
+
+[Slice]
+MemoryHigh=1600M
+MemoryMax=2200M
+CPUWeight=250
+CPUQuota=300%
+TasksMax=8192

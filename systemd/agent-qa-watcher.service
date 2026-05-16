@@ -9,6 +9,11 @@ EnvironmentFile=/home/ubuntu/.agent-env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/qa-watcher.py
 Restart=on-failure
+Slice=konoha-qa.slice
+MemoryHigh=256M
+MemoryMax=384M
+CPUWeight=100
+CPUQuota=50%
 RestartSec=15
 StandardOutput=journal
 StandardError=journal

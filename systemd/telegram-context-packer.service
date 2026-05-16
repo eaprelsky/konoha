@@ -16,6 +16,11 @@ Environment=TELEGRAM_CONTEXT_MIN_CONFIDENCE=0.65
 Environment=TELEGRAM_CONTEXT_TIMEOUT_SEC=8.0
 ExecStart=/usr/bin/python3 -u /home/ubuntu/konoha/scripts/telegram-context-packer.py
 Restart=always
+Slice=konoha-connectors.slice
+MemoryHigh=384M
+MemoryMax=512M
+CPUWeight=150
+CPUQuota=100%
 RestartSec=5
 StandardOutput=journal
 StandardError=journal

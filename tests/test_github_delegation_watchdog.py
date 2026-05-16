@@ -60,6 +60,11 @@ class GitHubDelegationWatchdogTest(unittest.TestCase):
         self.assertFalse(module.should_dispatch_issue(issue, {654}, {654: 1000}, now=1000 + module.REDISPATCH_INTERVAL_SEC - 1))
         self.assertTrue(module.should_dispatch_issue(issue, {654}, {654: 1000}, now=1000 + module.REDISPATCH_INTERVAL_SEC))
 
+    def test_auto_push_does_not_restart_core_by_default(self):
+        module = load_module("kakashi", "agent:kakashi", "")
+
+        self.assertEqual(module.AUTO_PUSH_RESTART_UNIT, "")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,11 @@ Environment=PYTHONUNBUFFERED=1
 # #794 bootstrap: delegate:architect routes review/decomposition to Shikadai.
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-shikadai.py
 Restart=always
+Slice=konoha-qa.slice
+MemoryHigh=256M
+MemoryMax=384M
+CPUWeight=100
+CPUQuota=50%
 RestartSec=5
 StandardOutput=journal
 StandardError=journal

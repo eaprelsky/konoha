@@ -13,6 +13,11 @@ Environment=TESTBENCH_POOL_SIZE=3
 Environment=DISPLAY=:99
 ExecStart=/home/ubuntu/.bun/bin/bun src/server.ts
 Restart=on-failure
+Slice=konoha-qa.slice
+MemoryHigh=900M
+MemoryMax=1200M
+CPUWeight=100
+CPUQuota=150%
 RestartSec=5s
 StandardOutput=journal
 StandardError=journal

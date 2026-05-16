@@ -9,6 +9,11 @@ EnvironmentFile=/home/ubuntu/.agent-env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-kiba.py
 Restart=always
+Slice=konoha-agents.slice
+MemoryHigh=256M
+MemoryMax=384M
+CPUWeight=100
+CPUQuota=50%
 RestartSec=5
 StandardOutput=journal
 StandardError=journal

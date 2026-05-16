@@ -1,0 +1,10 @@
+[Unit]
+Description=Konoha QA, SDD, and on-demand agent runtime slice
+Documentation=https://github.com/eaprelsky/konoha/issues/781
+
+[Slice]
+MemoryHigh=1200M
+MemoryMax=1800M
+CPUWeight=100
+CPUQuota=200%
+TasksMax=8192

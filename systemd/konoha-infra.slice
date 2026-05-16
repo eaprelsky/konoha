@@ -1,0 +1,10 @@
+[Unit]
+Description=Konoha external infrastructure accounting slice
+Documentation=https://github.com/eaprelsky/konoha/issues/781
+
+[Slice]
+MemoryHigh=1500M
+MemoryMax=2500M
+CPUWeight=200
+CPUQuota=250%
+TasksMax=4096

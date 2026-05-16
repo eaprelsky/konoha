@@ -28,6 +28,10 @@ Each wrapper calls:
 ```
 
 That script talks to the Konoha lifecycle API and ensures the tmux session exists.
+The API starts tmux in a transient systemd scope under the agent's runtime slice,
+so the tmux server, LLM runtime, and MCP child processes are not children of
+`konoha.service`. Slice names and budgets are documented in
+`docs/systemd-slices.md`.
 
 ## Control Plane Policy
 
@@ -47,6 +51,9 @@ Delivery watchdogs are adapters, not lifecycle owners:
 The shared watchdog core is `scripts/watchdog_base.py`. The legacy universal `scripts/watchdog.py` is retained as a non-active fallback/reference and is split into small modules; it must not be wired into active systemd units without a deliberate migration.
 
 `python3 scripts/healthcheck-system.py` enforces this policy by checking permanent agent service entrypoints, known watchdog entrypoints, and source files over 1000 lines.
+It also checks `konoha-core.slice`, connector/optional/QA slices, and known
+service-to-slice assignments. Optional slices are healthy when the deployment
+policy disables the corresponding optional monitor.
 
 ## On-Demand Workers
 

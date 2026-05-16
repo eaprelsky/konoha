@@ -199,8 +199,15 @@ Move an agent to Docker/remote only when a tool profile requires stronger filesy
 
 ### 4. Launch runtime in isolated tmux with restart loop
 
+Production launches the tmux server through a transient systemd scope so the
+interactive runtime and MCP children are accounted outside `konoha.service`.
+See `docs/systemd-slices.md` for the slice policy and rollback switch.
+
 ```bash
-tmux -L {id} new-session -d -s {id} -c /opt/shared/agent-workdirs/{id} bash -c "
+sudo -n systemd-run --scope --collect --unit=konoha-agent-{id} \
+  --slice=<konoha-connectors|konoha-agents|konoha-qa>.slice \
+  --uid=ubuntu --gid=ubuntu \
+  tmux -L {id} new-session -d -s {id} -c /opt/shared/agent-workdirs/{id} bash -c "
   while true; do
     <runtime command built from AgentDef.runtime + AgentDef.model>
     echo '[date] runtime exited (code $?), restarting in 5s...'
@@ -211,6 +218,9 @@ tmux -L {id} new-session -d -s {id} -c /opt/shared/agent-workdirs/{id} bash -c "
 
 The runtime command is built by `src/agent/runtime.ts` and may be Claude, Codex, Cursor, or GLM.
 The `while true` loop ensures the interactive CLI automatically restarts after processing a startup message or crashing.
+Set `KONOHA_AGENT_SYSTEMD_SCOPE=0` only as a rollback switch; it restores the
+old direct `tmux new-session` behavior and will again put agent children under
+the API process cgroup when started by `konoha.service`.
 
 ### 5. Inject startup message
 

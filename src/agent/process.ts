@@ -12,6 +12,7 @@ import { silentCatch } from "../logger";
 import { buildSystemPrompt } from "./prompt";
 import { buildMcpConfig, buildLaunchCommand, shellEscape, ensureCodexProjectTrusted, getLiveBitrixWebhook } from "./runtime";
 import { AGENT_WORKDIR_ROOT } from "./runtime";
+import { buildAgentSystemdScopeCommand, systemdScopesEnabled } from "./systemd-slices";
 import { resolveSharedMcpAllowlist } from "./tool-profiles";
 import type { AgentDef, AgentState, LifecycleStatus } from "./types";
 
@@ -55,6 +56,16 @@ async function sh(cmd: string, args: string[]): Promise<{ ok: boolean; stdout: s
   } catch (e: any) {
     return { ok: false, stdout: "", stderr: e.stderr?.trim() || e.message };
   }
+}
+
+async function startTmuxSessionInScope(id: string, def: AgentDef, args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string; detail: string }> {
+  if (!systemdScopesEnabled()) {
+    const r = await sh("tmux", args);
+    return { ...r, detail: "scope=disabled" };
+  }
+  const scoped = buildAgentSystemdScopeCommand(id, def, "tmux", args);
+  const r = await sh(scoped.cmd, scoped.args);
+  return { ...r, detail: `scope=${scoped.unit}.scope slice=${scoped.policy.slice}` };
 }
 
 export async function isTmuxRunning(id: string): Promise<boolean> {
@@ -271,7 +282,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
 
     // Use named socket (-L) to isolate each agent on its own tmux server.
     // If one tmux server crashes, only that agent is affected — not all lifecycle agents.
-    const r = await sh("tmux", ["-L", socket, "new-session", "-d", "-s", session, "-x", "200", "-y", "50", "-c", workdir, "bash", "-c", loopScript]);
+    const r = await startTmuxSessionInScope(id, def, ["-L", socket, "new-session", "-d", "-s", session, "-x", "200", "-y", "50", "-c", workdir, "bash", "-c", loopScript]);
     if (!r.ok) throw new Error(r.stderr || "tmux new-session failed");
 
     // Wait for the interactive CLI to boot and become ready.
@@ -301,7 +312,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
       tmux_session: session,
     };
     await saveState(state);
-    await audit(id, "started", `socket=${socket} session=${session} pid=${pid}`);
+    await audit(id, "started", `socket=${socket} session=${session} pid=${pid} ${r.detail}`);
     return await getAgentState(id);
   } catch (e: any) {
     const state: AgentState = { agent_id: id, status: "error", error: e.message };

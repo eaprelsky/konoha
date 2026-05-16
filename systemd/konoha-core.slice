@@ -1,0 +1,10 @@
+[Unit]
+Description=Konoha protected core runtime slice
+Documentation=https://github.com/eaprelsky/konoha/issues/781
+
+[Slice]
+MemoryHigh=900M
+MemoryMax=1200M
+CPUWeight=300
+CPUQuota=200%
+TasksMax=4096

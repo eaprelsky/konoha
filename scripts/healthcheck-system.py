@@ -51,6 +51,76 @@ CONNECTOR_SERVICE_GROUPS = {
 OPTIONAL_MONITOR_SERVICE_GROUPS = {
     "akamaru": ["akamaru"],
     "kiba": ["agent-kiba", "agent-watchdog-kiba"],
+    "kakashi": ["agent-kakashi", "agent-watchdog-kakashi"],
+    "shikadai": ["agent-watchdog-shikadai"],
+}
+SYSTEMD_SLICE_POLICIES = {
+    "konoha.slice": {
+        "classification": "required_core",
+        "memory_high": "5500M",
+        "memory_max": "6500M",
+        "cpu_weight": "200",
+        "cpu_quota": "600%",
+    },
+    "konoha-core.slice": {
+        "classification": "required_core",
+        "memory_high": "900M",
+        "memory_max": "1200M",
+        "cpu_weight": "300",
+        "cpu_quota": "200%",
+    },
+    "konoha-connectors.slice": {
+        "classification": "connector_owned",
+        "connector": "telegram",
+        "memory_high": "1600M",
+        "memory_max": "2200M",
+        "cpu_weight": "250",
+        "cpu_quota": "300%",
+    },
+    "konoha-agents.slice": {
+        "classification": "optional_worker",
+        "optional_monitors": {"akamaru", "kiba"},
+        "memory_high": "900M",
+        "memory_max": "1200M",
+        "cpu_weight": "120",
+        "cpu_quota": "175%",
+    },
+    "konoha-qa.slice": {
+        "classification": "qa_on_demand",
+        "optional_monitors": {"kakashi", "shikadai", "shino", "hinata", "guy", "ibiki"},
+        "memory_high": "1200M",
+        "memory_max": "1800M",
+        "cpu_weight": "100",
+        "cpu_quota": "200%",
+    },
+    "konoha-infra.slice": {
+        "classification": "external_infra",
+        "memory_high": "1500M",
+        "memory_max": "2500M",
+        "cpu_weight": "200",
+        "cpu_quota": "250%",
+    },
+}
+SYSTEMD_SERVICE_SLICES = {
+    "konoha.service": "konoha-core.slice",
+    "agent-naruto.service": "konoha-connectors.slice",
+    "agent-sasuke.service": "konoha-connectors.slice",
+    "agent-watchdog-naruto.service": "konoha-connectors.slice",
+    "agent-watchdog-sasuke.service": "konoha-connectors.slice",
+    "telegram-bot.service": "konoha-connectors.slice",
+    "telegram-bus.service": "konoha-connectors.slice",
+    "telegram-context-packer.service": "konoha-connectors.slice",
+    "telegram-event-bridge.service": "konoha-connectors.slice",
+    "telegram-vision-packer.service": "konoha-connectors.slice",
+    "akamaru.service": "konoha-agents.slice",
+    "agent-kiba.service": "konoha-agents.slice",
+    "agent-watchdog-kiba.service": "konoha-agents.slice",
+    "agent-kakashi.service": "konoha-qa.slice",
+    "agent-managed@.service": "konoha-qa.slice",
+    "agent-watchdog-kakashi.service": "konoha-qa.slice",
+    "agent-watchdog-shikadai.service": "konoha-qa.slice",
+    "agent-watchdog-lifecycle.service": "konoha-qa.slice",
+    "agent-qa-watcher.service": "konoha-qa.slice",
 }
 CONNECTOR_AGENTS = {
     "naruto": "telegram",
@@ -202,6 +272,113 @@ def run(cmd: list[str], timeout: int = 10) -> tuple[int, str, str]:
 def run_env(cmd: list[str], env: dict[str, str], timeout: int = 10) -> tuple[int, str, str]:
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env={**os.environ, **env})
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def parse_systemd_show(output: str) -> dict[str, str]:
+    props: dict[str, str] = {}
+    for line in output.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        props[key.strip()] = value.strip()
+    return props
+
+
+def systemd_show(unit: str, *properties: str) -> dict[str, str]:
+    args = ["systemctl", "show", unit]
+    for prop in properties:
+        args.extend(["-p", prop])
+    args.append("--no-pager")
+    rc, stdout, stderr = run(args, timeout=8)
+    if rc != 0:
+        raise RuntimeError(stderr or stdout or f"systemctl show {unit} failed")
+    return parse_systemd_show(stdout)
+
+
+def systemd_size_to_bytes(value: str) -> int | None:
+    raw = str(value).strip()
+    if not raw or raw == "infinity":
+        return None
+    if raw.isdigit():
+        return int(raw)
+    match = re.fullmatch(r"(\d+)([KMGTP])", raw, re.IGNORECASE)
+    if not match:
+        return None
+    amount = int(match.group(1))
+    power = "KMGTPE".index(match.group(2).upper()) + 1
+    return amount * (1024 ** power)
+
+
+def cpu_quota_configured(value: str) -> bool:
+    raw = str(value).strip().lower()
+    return bool(raw and raw != "infinity")
+
+
+def slice_policy_enabled(slice_name: str, expected: dict[str, Any], policy: HealthcheckPolicy) -> bool:
+    classification = str(expected.get("classification") or "")
+    if classification == "required_core":
+        return True
+    if classification == "external_infra":
+        return False
+    connector = expected.get("connector")
+    if connector:
+        return str(connector) in policy.enabled_connectors
+    monitors = expected.get("optional_monitors") or set()
+    return bool(set(monitors) & set(policy.enabled_optional_monitors))
+
+
+def systemd_slice_policy_check(
+    slice_name: str,
+    props: dict[str, str] | None,
+    expected: dict[str, Any],
+    policy: HealthcheckPolicy,
+) -> Check:
+    enabled = slice_policy_enabled(slice_name, expected, policy)
+    if props is None:
+        if enabled:
+            return Check("WARN", f"slice.{slice_name}", "not configured policy=enabled", f"Install/reload {slice_name}")
+        return Check("OK", f"slice.{slice_name}", "not configured policy=disabled optional")
+
+    state = props.get("ActiveState", "unknown")
+    memory_high = props.get("MemoryHigh", "")
+    memory_max = props.get("MemoryMax", "")
+    cpu_weight = props.get("CPUWeight", "")
+    cpu_quota = props.get("CPUQuotaPerSecUSec", "")
+    expected_high = systemd_size_to_bytes(str(expected.get("memory_high") or ""))
+    expected_max = systemd_size_to_bytes(str(expected.get("memory_max") or ""))
+    actual_high = systemd_size_to_bytes(memory_high)
+    actual_max = systemd_size_to_bytes(memory_max)
+
+    violations: list[str] = []
+    if expected_high is not None and actual_high != expected_high:
+        violations.append(f"MemoryHigh={memory_high or 'unset'} expected={expected['memory_high']}")
+    if expected_max is not None and actual_max != expected_max:
+        violations.append(f"MemoryMax={memory_max or 'unset'} expected={expected['memory_max']}")
+    if str(cpu_weight or "") != str(expected.get("cpu_weight")):
+        violations.append(f"CPUWeight={cpu_weight or 'unset'} expected={expected.get('cpu_weight')}")
+    if not cpu_quota_configured(cpu_quota):
+        violations.append("CPUQuota=infinity")
+
+    detail = f"state={state} classification={expected.get('classification')} MemoryHigh={memory_high} MemoryMax={memory_max} CPUWeight={cpu_weight} CPUQuota={cpu_quota}"
+    if violations:
+        level = "WARN" if enabled else "OK"
+        return Check(level, f"slice.{slice_name}", f"{detail} policy={'enabled' if enabled else 'disabled'} violations={'; '.join(violations)}")
+    return Check("OK", f"slice.{slice_name}", f"{detail} policy={'enabled' if enabled else 'disabled'}")
+
+
+def systemd_service_slice_check(service: str, props: dict[str, str] | None, expected_slice: str, policy: HealthcheckPolicy) -> Check:
+    if props is None:
+        connector = connector_for_service(service.removesuffix(".service"))
+        optional_monitor = optional_monitor_for_service(service.removesuffix(".service"))
+        if connector and connector not in policy.enabled_connectors:
+            return Check("OK", f"service_slice.{service}", f"not configured connector={connector} policy=disabled")
+        if optional_monitor and optional_monitor not in policy.enabled_optional_monitors:
+            return Check("OK", f"service_slice.{service}", f"not configured optional_monitor={optional_monitor} policy=disabled")
+        return Check("WARN", f"service_slice.{service}", "not configured", f"Install/reload {service}")
+    actual = props.get("Slice", "")
+    if actual == expected_slice:
+        return Check("OK", f"service_slice.{service}", f"Slice={actual}")
+    return Check("WARN", f"service_slice.{service}", f"Slice={actual or 'unset'} expected={expected_slice}", f"Move {service} to {expected_slice}")
 
 
 def redis_json(*args: str) -> Any:
@@ -402,6 +579,25 @@ def check_systemd(policy: HealthcheckPolicy | None = None) -> list[Check]:
         states = stdout.splitlines()
         for service, state in zip(services, states):
             checks.append(systemd_service_check(service, state or stderr[:120], group, policy))
+    return checks
+
+
+def check_systemd_slices(policy: HealthcheckPolicy | None = None) -> list[Check]:
+    policy = policy or load_healthcheck_policy()
+    checks: list[Check] = []
+    for slice_name, expected in SYSTEMD_SLICE_POLICIES.items():
+        try:
+            props = systemd_show(slice_name, "ActiveState", "MemoryHigh", "MemoryMax", "CPUWeight", "CPUQuotaPerSecUSec")
+        except Exception:
+            props = None
+        checks.append(systemd_slice_policy_check(slice_name, props, expected, policy))
+
+    for service, expected_slice in SYSTEMD_SERVICE_SLICES.items():
+        try:
+            props = systemd_show(service, "Slice")
+        except Exception:
+            props = None
+        checks.append(systemd_service_slice_check(service, props, expected_slice, policy))
     return checks
 
 
@@ -1019,6 +1215,7 @@ def main() -> int:
     policy = load_healthcheck_policy()
     checks: list[Check] = []
     checks.extend(check_systemd(policy))
+    checks.extend(check_systemd_slices(policy))
     checks.extend(check_api())
     checks.extend(check_redis_streams(policy))
     checks.extend(check_redis_polling_storm())

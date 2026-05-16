@@ -21,7 +21,7 @@ Each wrapper configures `watchdog_base.py` and adds only the source-specific beh
 **Unique features**:
 - Naruto: Telegram bot queue, reactions, owner-priority interrupt, Konoha echo dedup
 - Sasuke: Telegram Redis stream, reactions, mark-read commands, stuck-delivery monitor
-- Kakashi: Konoha SSE, GitHub issue scanner for one explicitly delegated `delegate:teamlead` issue, on-demand only; `kakashi-batch` is decommissioned; auto-push is opt-in with `KAKASHI_AUTO_PUSH_ENABLED=1`
+- Kakashi: Konoha SSE, GitHub issue scanner for one explicitly delegated `delegate:teamlead` issue, on-demand only; `kakashi-batch` is decommissioned; auto-push is opt-in with `KAKASHI_AUTO_PUSH_ENABLED=1` and does not restart `konoha.service` unless `AGENT_AUTO_PUSH_RESTART_UNIT` explicitly names a unit
 - Shikadai: Konoha SSE, GitHub issue scanner for `delegate:architect`, on-demand review/decomposition; approves before closure in the #794 Developer -> Reviewer flow
 - Kiba: Akamaru alert delivery, wake-on-demand, circuit breaker, git-push review poller
 
@@ -92,4 +92,4 @@ The duplication between `watchdog.py` and `watchdog_base.py` was resolved in #57
 
 ## Systemd supervision
 
-Active watchdogs run under systemd. The TypeScript lifecycle API (`POST /agents/:id/start|stop|restart`) is the only control plane for agent lifecycle. Systemd unit files contain no business logic beyond choosing the delivery adapter.
+Active watchdogs run under systemd. The TypeScript lifecycle API (`POST /agents/:id/start|stop|restart`) is the only control plane for agent lifecycle. Systemd unit files contain no business logic beyond choosing the delivery adapter. Watchdogs and managed agent wrappers are assigned to the slice layout in `docs/systemd-slices.md`; optional worker recovery must target the agent/watchdog unit, not `konoha.service`.

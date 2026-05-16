@@ -147,3 +147,77 @@ def test_redis_polling_storm_ok_when_rates_are_low():
 
     assert checks[0].level == "OK"
     assert "xreadgroup_rate=1.00/s" in checks[0].detail
+
+
+def test_slice_policy_accepts_configured_core_budget():
+    policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
+    props = {
+        "ActiveState": "active",
+        "MemoryHigh": str(900 * 1024 * 1024),
+        "MemoryMax": str(1200 * 1024 * 1024),
+        "CPUWeight": "300",
+        "CPUQuotaPerSecUSec": "2s",
+    }
+
+    check = healthcheck.systemd_slice_policy_check(
+        "konoha-core.slice",
+        props,
+        healthcheck.SYSTEMD_SLICE_POLICIES["konoha-core.slice"],
+        policy,
+    )
+
+    assert check.level == "OK"
+    assert "classification=required_core" in check.detail
+
+
+def test_slice_policy_warns_when_enabled_slice_has_no_budget():
+    policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
+    props = {
+        "ActiveState": "active",
+        "MemoryHigh": "infinity",
+        "MemoryMax": "infinity",
+        "CPUWeight": "",
+        "CPUQuotaPerSecUSec": "infinity",
+    }
+
+    check = healthcheck.systemd_slice_policy_check(
+        "konoha-connectors.slice",
+        props,
+        healthcheck.SYSTEMD_SLICE_POLICIES["konoha-connectors.slice"],
+        policy,
+    )
+
+    assert check.level == "WARN"
+    assert "MemoryMax=infinity" in check.detail
+    assert "CPUQuota=infinity" in check.detail
+
+
+def test_disabled_optional_slice_absence_is_healthy():
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_HEALTH_ENABLED_OPTIONAL_MONITORS": "none"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
+
+    check = healthcheck.systemd_slice_policy_check(
+        "konoha-qa.slice",
+        None,
+        healthcheck.SYSTEMD_SLICE_POLICIES["konoha-qa.slice"],
+        policy,
+    )
+
+    assert check.level == "OK"
+    assert "policy=disabled" in check.detail
+
+
+def test_service_slice_check_detects_core_reparenting_risk():
+    policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
+
+    check = healthcheck.systemd_service_slice_check(
+        "agent-kiba.service",
+        {"Slice": "konoha-core.slice"},
+        "konoha-agents.slice",
+        policy,
+    )
+
+    assert check.level == "WARN"
+    assert "expected=konoha-agents.slice" in check.detail

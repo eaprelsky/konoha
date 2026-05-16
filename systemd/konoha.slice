@@ -1,0 +1,10 @@
+[Unit]
+Description=Konoha runtime parent slice
+Documentation=https://github.com/eaprelsky/konoha/issues/781
+
+[Slice]
+MemoryHigh=5500M
+MemoryMax=6500M
+CPUWeight=200
+CPUQuota=600%
+TasksMax=20000

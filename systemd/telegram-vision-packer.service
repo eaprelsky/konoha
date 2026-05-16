@@ -15,6 +15,11 @@ Environment=TELEGRAM_VISION_MODEL=qwen/qwen3.5-flash
 Environment=TELEGRAM_VISION_TIMEOUT_SEC=20.0
 ExecStart=/usr/bin/python3 -u /home/ubuntu/konoha/scripts/telegram-vision-packer.py
 Restart=always
+Slice=konoha-connectors.slice
+MemoryHigh=384M
+MemoryMax=512M
+CPUWeight=150
+CPUQuota=100%
 RestartSec=5
 StandardOutput=journal
 StandardError=journal

@@ -13,7 +13,12 @@ Environment=KONOHA_AGENT_ID=sasuke
 Environment=PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh sasuke
 Restart=always
-MemoryMax=800M
+Slice=konoha-connectors.slice
+MemoryHigh=900M
+MemoryMax=1200M
+CPUWeight=250
+CPUQuota=250%
+TasksMax=4096
 RestartSec=10
 StandardOutput=journal
 StandardError=journal

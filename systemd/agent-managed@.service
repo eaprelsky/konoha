@@ -13,6 +13,12 @@ Environment=PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu
 # Managed agents read repo AGENTS.md plus runtime memory on startup.
 ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh %i
 Restart=always
+Slice=konoha-qa.slice
+MemoryHigh=700M
+MemoryMax=900M
+CPUWeight=100
+CPUQuota=150%
+TasksMax=3072
 RestartSec=10
 StandardOutput=journal
 StandardError=journal

@@ -9,6 +9,11 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/telegram-bot-service
 ExecStart=/home/ubuntu/konoha/scripts/telegram-bot-service.sh
 Restart=always
+Slice=konoha-connectors.slice
+MemoryHigh=384M
+MemoryMax=512M
+CPUWeight=150
+CPUQuota=100%
 RestartSec=10
 
 [Install]

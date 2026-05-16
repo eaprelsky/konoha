@@ -46,6 +46,7 @@ SCAN_INTERVAL = int(os.environ.get("AGENT_GITHUB_SCAN_INTERVAL", "60"))
 KONOHA_REPO = os.path.expanduser(os.environ.get("KONOHA_REPO", "~/konoha"))
 AUTO_PUSH_INTERVAL = int(os.environ.get("AGENT_AUTO_PUSH_INTERVAL", "300"))
 AUTO_PUSH_ENABLED = _bool("AGENT_AUTO_PUSH_ENABLED") or (AGENT_ID == "kakashi" and _bool("KAKASHI_AUTO_PUSH_ENABLED"))
+AUTO_PUSH_RESTART_UNIT = os.environ.get("AGENT_AUTO_PUSH_RESTART_UNIT", "").strip()
 DELEGATION_LABELS = _csv("AGENT_GITHUB_DELEGATION_LABELS", "agent:kakashi")
 SKIP_LABELS = _csv("AGENT_GITHUB_SKIP_LABELS", "state:done,state:blocked")
 # If set, at least one of these state labels must be present for dispatch.
@@ -220,16 +221,20 @@ async def auto_push_loop() -> None:
                 _, push_err = await asyncio.wait_for(push_proc.communicate(), timeout=60)
                 if push_proc.returncode == 0:
                     _b.log.info(f"auto-push: pushed {n} commit(s) successfully")
-                    restart_proc = await asyncio.create_subprocess_exec(
-                        "sudo", "systemctl", "restart", "konoha.service",
-                        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
-                    )
-                    _, restart_err = await asyncio.wait_for(restart_proc.communicate(), timeout=30)
-                    if restart_proc.returncode == 0:
-                        _b.log.info("auto-push: konoha.service restarted")
-                        await notify_auto_push(n)
+                    if AUTO_PUSH_RESTART_UNIT:
+                        restart_proc = await asyncio.create_subprocess_exec(
+                            "sudo", "systemctl", "restart", AUTO_PUSH_RESTART_UNIT,
+                            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+                        )
+                        _, restart_err = await asyncio.wait_for(restart_proc.communicate(), timeout=30)
+                        if restart_proc.returncode == 0:
+                            _b.log.info(f"auto-push: {AUTO_PUSH_RESTART_UNIT} restarted")
+                            await notify_auto_push(n, AUTO_PUSH_RESTART_UNIT)
+                        else:
+                            _b.log.warning(f"auto-push: {AUTO_PUSH_RESTART_UNIT} restart failed: {restart_err.decode()[:200]}")
                     else:
-                        _b.log.warning(f"auto-push: konoha.service restart failed: {restart_err.decode()[:200]}")
+                        _b.log.info("auto-push: no restart unit configured; konoha.service left running")
+                        await notify_auto_push(n, "")
                 else:
                     _b.log.warning(f"auto-push: git push failed: {push_err.decode()[:200]}")
         except Exception as e:
@@ -237,14 +242,18 @@ async def auto_push_loop() -> None:
         await asyncio.sleep(AUTO_PUSH_INTERVAL)
 
 
-async def notify_auto_push(commit_count: int) -> None:
+async def notify_auto_push(commit_count: int, restart_unit: str = "") -> None:
     target = os.environ.get("AGENT_AUTO_PUSH_NOTIFY_TO", "naruto")
     if not target:
         return
     payload = json.dumps({
         "from": f"watchdog-{AGENT_ID}",
         "to": target,
-        "text": f"{AGENT_DISPLAY_NAME}: pushed {commit_count} commits to main, konoha.service restarted",
+        "text": (
+            f"{AGENT_DISPLAY_NAME}: pushed {commit_count} commits to main, restarted {restart_unit}"
+            if restart_unit
+            else f"{AGENT_DISPLAY_NAME}: pushed {commit_count} commits to main; konoha.service was not restarted"
+        ),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}

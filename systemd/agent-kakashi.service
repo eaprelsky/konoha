@@ -13,7 +13,12 @@ Environment=KONOHA_AGENT_ID=kakashi
 Environment=PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh kakashi
 Restart=always
-MemoryMax=800M
+Slice=konoha-qa.slice
+MemoryHigh=700M
+MemoryMax=900M
+CPUWeight=100
+CPUQuota=150%
+TasksMax=3072
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
