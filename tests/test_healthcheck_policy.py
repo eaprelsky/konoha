@@ -70,10 +70,24 @@ def test_parse_redis_commandstats_extracts_stream_counters():
         "# Commandstats\n"
         "cmdstat_xreadgroup:calls=120,usec=360,usec_per_call=3.00,rejected_calls=0,failed_calls=0\n"
         "cmdstat_xgroup:calls=14,usec=70,usec_per_call=5.00,rejected_calls=0,failed_calls=9\n"
+        "cmdstat_xgroup|create:calls=4,usec=20,usec_per_call=5.00,rejected_calls=0,failed_calls=3\n"
     )
 
     assert stats["xreadgroup"]["calls"] == 120
     assert stats["xgroup"]["failed_calls"] == 9
+    assert stats["xgroup|create"]["failed_calls"] == 3
+
+
+def test_aggregate_commandstats_includes_xgroup_create_subcommand():
+    stats = healthcheck.parse_redis_commandstats(
+        "cmdstat_xgroup:calls=10,usec=50,usec_per_call=5.00,rejected_calls=0,failed_calls=1\n"
+        "cmdstat_xgroup|create:calls=4,usec=20,usec_per_call=5.00,rejected_calls=0,failed_calls=3\n"
+    )
+
+    aggregated = healthcheck.aggregate_commandstats(stats, "xgroup")
+
+    assert aggregated["calls"] == 14
+    assert aggregated["failed_calls"] == 4
 
 
 def test_redis_polling_storm_warns_on_failed_xgroup_growth():
@@ -86,6 +100,26 @@ def test_redis_polling_storm_warns_on_failed_xgroup_growth():
         "stats": {
             "xreadgroup": {"calls": 100},
             "xgroup": {"calls": 20, "failed_calls": 10},
+        },
+    }
+
+    checks = healthcheck.redis_polling_storm_checks(current, previous, now=130.0)
+
+    assert checks[0].level == "WARN"
+    assert checks[0].name == "redis.commandstats.xgroup_failed"
+    assert "xgroup_failed_delta=1" in checks[0].detail
+
+
+def test_redis_polling_storm_warns_on_failed_xgroup_create_growth():
+    current = {
+        "xreadgroup": {"calls": 200},
+        "xgroup|create": {"calls": 25, "failed_calls": 11},
+    }
+    previous = {
+        "ts": 100.0,
+        "stats": {
+            "xreadgroup": {"calls": 100},
+            "xgroup|create": {"calls": 20, "failed_calls": 10},
         },
     }
 

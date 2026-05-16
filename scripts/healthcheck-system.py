@@ -260,13 +260,30 @@ def save_redis_commandstats_snapshot(stats: dict[str, dict[str, float]], now: fl
         pass
 
 
+def aggregate_commandstats(stats: dict[str, dict[str, float]], command: str) -> dict[str, float]:
+    """Return counters for a Redis command, including Redis 7 subcommand rows.
+
+    Redis INFO commandstats may expose XGROUP CREATE as cmdstat_xgroup|create
+    instead of rolling it into cmdstat_xgroup. Healthcheck storm detection cares
+    about the whole XGROUP family, especially CREATE failed_calls.
+    """
+    prefix = f"{command.lower()}|"
+    out: dict[str, float] = {}
+    for name, counters in stats.items():
+        if name != command and not name.startswith(prefix):
+            continue
+        for key, value in counters.items():
+            out[key] = out.get(key, 0.0) + float(value or 0)
+    return out
+
+
 def redis_polling_storm_checks(
     current: dict[str, dict[str, float]],
     previous: dict[str, Any] | None,
     now: float,
 ) -> list[Check]:
-    xread = current.get("xreadgroup", {})
-    xgroup = current.get("xgroup", {})
+    xread = aggregate_commandstats(current, "xreadgroup")
+    xgroup = aggregate_commandstats(current, "xgroup")
     if not xread and not xgroup:
         return [Check("WARN", "redis.commandstats.stream_polling", "xreadgroup/xgroup stats unavailable", "Inspect: redis-cli INFO commandstats")]
 
@@ -275,8 +292,8 @@ def redis_polling_storm_checks(
 
     elapsed = max(1.0, now - float(previous.get("ts") or now))
     prev_stats = previous.get("stats") or {}
-    prev_xread = prev_stats.get("xreadgroup", {}) if isinstance(prev_stats, dict) else {}
-    prev_xgroup = prev_stats.get("xgroup", {}) if isinstance(prev_stats, dict) else {}
+    prev_xread = aggregate_commandstats(prev_stats, "xreadgroup") if isinstance(prev_stats, dict) else {}
+    prev_xgroup = aggregate_commandstats(prev_stats, "xgroup") if isinstance(prev_stats, dict) else {}
 
     xread_delta = max(0.0, float(xread.get("calls") or 0) - float(prev_xread.get("calls") or 0))
     xgroup_delta = max(0.0, float(xgroup.get("calls") or 0) - float(prev_xgroup.get("calls") or 0))
