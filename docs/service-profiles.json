@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "default_profile": "prod-core",
+  "profiles": {
+    "prod-core": {
+      "description": "Lean always-on production core: API, Redis/Postgres, Telegram ingestion, Naruto/Sasuke, and bounded Akamaru/Kiba monitoring.",
+      "enabled_connectors": ["telegram"],
+      "enabled_optional_monitors": ["akamaru", "kiba"],
+      "autostart_agents": ["naruto", "sasuke", "kiba"],
+      "lifecycle_watchdog_agents": [],
+      "required_services": [
+        "konoha.service",
+        "redis-server.service",
+        "telegram-bot.service",
+        "telegram-bus.service",
+        "telegram-context-packer.service",
+        "telegram-event-bridge.service",
+        "telegram-vision-packer.service",
+        "agent-naruto.service",
+        "agent-sasuke.service",
+        "akamaru.service",
+        "agent-kiba.service"
+      ],
+      "optional_services": [
+        "agent-kakashi.service",
+        "agent-watchdog-kakashi.service",
+        "agent-watchdog-shikadai.service",
+        "agent-managed@shino.service",
+        "agent-managed@hinata.service",
+        "agent-managed@guy.service",
+        "agent-managed@ibiki.service",
+        "konoha-testbench.service"
+      ]
+    },
+    "prod-full": {
+      "description": "Production with SDD lane enabled for active development/review while still keeping specialist workers on demand.",
+      "enabled_connectors": ["telegram"],
+      "enabled_optional_monitors": ["akamaru", "kiba", "kakashi", "shikadai"],
+      "autostart_agents": ["naruto", "sasuke", "kiba", "kakashi"],
+      "lifecycle_watchdog_agents": [],
+      "required_services": [
+        "konoha.service",
+        "redis-server.service",
+        "telegram-bot.service",
+        "telegram-bus.service",
+        "telegram-context-packer.service",
+        "telegram-event-bridge.service",
+        "telegram-vision-packer.service",
+        "agent-naruto.service",
+        "agent-sasuke.service",
+        "akamaru.service",
+        "agent-kiba.service",
+        "agent-kakashi.service",
+        "agent-watchdog-kakashi.service",
+        "agent-watchdog-shikadai.service"
+      ],
+      "optional_services": [
+        "agent-managed@shino.service",
+        "agent-managed@hinata.service",
+        "agent-managed@guy.service",
+        "agent-managed@ibiki.service",
+        "konoha-testbench.service"
+      ]
+    },
+    "staging-core": {
+      "description": "Staging API core with local monitor only; external Telegram connector and worker fleet are disabled unless explicitly enabled.",
+      "enabled_connectors": [],
+      "enabled_optional_monitors": ["akamaru"],
+      "autostart_agents": [],
+      "lifecycle_watchdog_agents": [],
+      "required_services": [
+        "konoha.service",
+        "redis-server.service",
+        "akamaru.service"
+      ],
+      "optional_services": [
+        "telegram-bot.service",
+        "telegram-bus.service",
+        "telegram-context-packer.service",
+        "telegram-event-bridge.service",
+        "telegram-vision-packer.service",
+        "agent-naruto.service",
+        "agent-sasuke.service",
+        "agent-kiba.service",
+        "agent-kakashi.service",
+        "agent-watchdog-kakashi.service",
+        "agent-watchdog-shikadai.service",
+        "konoha-testbench.service"
+      ]
+    },
+    "qa-on-demand": {
+      "description": "QA/test profile: core health stays checked, QA workers and TestBench are started manually for bounded sessions.",
+      "enabled_connectors": [],
+      "enabled_optional_monitors": ["akamaru"],
+      "autostart_agents": [],
+      "lifecycle_watchdog_agents": ["shino", "hinata", "guy", "ibiki"],
+      "required_services": [
+        "konoha.service",
+        "redis-server.service",
+        "akamaru.service"
+      ],
+      "optional_services": [
+        "agent-managed@shino.service",
+        "agent-managed@hinata.service",
+        "agent-managed@guy.service",
+        "agent-managed@ibiki.service",
+        "konoha-testbench.service",
+        "agent-kakashi.service",
+        "agent-watchdog-kakashi.service",
+        "agent-watchdog-shikadai.service"
+      ]
+    }
+  }
+}

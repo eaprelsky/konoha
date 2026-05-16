@@ -29,6 +29,10 @@ sudo -n systemd-run --scope --collect \
 That scope owns the tmux server, the interactive runtime, and MCP child
 processes. Konoha core only performs the lifecycle API request.
 
+Deployment service profiles decide which of these units are expected for a
+given environment. See `docs/service-profiles.md` for `prod-core`, `prod-full`,
+`staging-core`, and `qa-on-demand`.
+
 ## Before Snapshot
 
 Before #781, live accounting showed managed agents and MCP children inside the

@@ -11,29 +11,40 @@ assert spec.loader is not None
 sys.modules[spec.name] = healthcheck
 spec.loader.exec_module(healthcheck)
 
-ROSTER_PATH = Path(__file__).resolve().parents[1] / "docs" / "system-agent-roster.json"
-
-
-def load_roster():
-    return json.loads(ROSTER_PATH.read_text(encoding="utf-8"))
-
-
-def test_default_policy_keeps_telegram_enabled():
+def test_default_policy_uses_prod_core_service_profile():
     policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
 
+    assert policy.service_profile == "prod-core"
     assert "telegram" in policy.enabled_connectors
     assert "akamaru" in policy.enabled_optional_monitors
+    assert "kiba" in policy.enabled_optional_monitors
+    assert "kakashi" not in policy.enabled_optional_monitors
 
 
-def test_default_optional_monitor_policy_follows_canonical_roster():
-    roster = load_roster()
-    expected = {
-        agent["id"]
-        for agent in roster["agents"]
-        if agent["health_policy"] == "optional_monitor_default"
-    }
+def test_service_profile_can_select_qa_on_demand_policy():
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_SERVICE_PROFILE": "qa-on-demand"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
 
-    assert healthcheck.DEFAULT_ENABLED_OPTIONAL_MONITORS == expected
+    assert policy.service_profile == "qa-on-demand"
+    assert policy.enabled_connectors == frozenset()
+    assert policy.enabled_optional_monitors == frozenset({"akamaru"})
+
+
+def test_prod_core_treats_sdd_worker_absence_as_optional_disabled():
+    policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
+
+    assert healthcheck.agent_policy_enabled("kakashi", "optional_worker", policy) is False
+    check = healthcheck.systemd_service_slice_check(
+        "agent-watchdog-kakashi.service",
+        None,
+        "konoha-qa.slice",
+        policy,
+    )
+
+    assert check.level == "OK"
+    assert "optional_monitor=kakashi policy=disabled" in check.detail
 
 
 def test_env_can_disable_connector_checks_for_fresh_install():

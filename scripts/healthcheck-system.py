@@ -20,12 +20,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from service_profiles import resolve_service_profile_from_env
+
 
 KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 ENV_FILES = [Path("/home/ubuntu/.agent-env"), Path("/opt/shared/.shared-credentials")]
 ROSTER_PATH = Path(__file__).resolve().parents[1] / "docs" / "system-agent-roster.json"
-RESOURCE_INVENTORY_SCRIPT = Path(__file__).resolve().parent / "resource-inventory.py"
+RESOURCE_INVENTORY_SCRIPT = SCRIPT_DIR / "resource-inventory.py"
 
 
 def load_system_agent_roster(path: Path = ROSTER_PATH) -> dict[str, Any]:
@@ -230,9 +235,11 @@ class Check:
 class HealthcheckPolicy:
     enabled_connectors: frozenset[str]
     enabled_optional_monitors: frozenset[str]
+    service_profile: str
 
-    def as_dict(self) -> dict[str, list[str]]:
+    def as_dict(self) -> dict[str, Any]:
         return {
+            "service_profile": self.service_profile,
             "enabled_connectors": sorted(self.enabled_connectors),
             "enabled_optional_monitors": sorted(self.enabled_optional_monitors),
         }
@@ -251,8 +258,9 @@ def parse_policy_csv(value: str | None, default: set[str]) -> set[str]:
 
 def load_healthcheck_policy(environ: dict[str, str] | None = None, policy_file: Path | None = None) -> HealthcheckPolicy:
     env = environ or os.environ
-    connectors = set(DEFAULT_ENABLED_CONNECTORS)
-    optional_monitors = set(DEFAULT_ENABLED_OPTIONAL_MONITORS)
+    profile = resolve_service_profile_from_env(env)
+    connectors = set(profile.enabled_connectors)
+    optional_monitors = set(profile.enabled_optional_monitors)
     path = policy_file or Path(env.get("KONOHA_HEALTH_POLICY_FILE", str(HEALTH_POLICY_FILE)))
 
     if path.exists():
@@ -266,7 +274,7 @@ def load_healthcheck_policy(environ: dict[str, str] | None = None, policy_file: 
     optional_env = env.get("KONOHA_HEALTH_ENABLED_OPTIONAL_MONITORS") or env.get("KONOHA_ENABLED_OPTIONAL_MONITORS")
     connectors = parse_policy_csv(connector_env, connectors)
     optional_monitors = parse_policy_csv(optional_env, optional_monitors)
-    return HealthcheckPolicy(frozenset(connectors), frozenset(optional_monitors))
+    return HealthcheckPolicy(frozenset(connectors), frozenset(optional_monitors), profile.id)
 
 
 def connector_for_service(service: str) -> str | None:

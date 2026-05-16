@@ -33,6 +33,12 @@ so the tmux server, LLM runtime, and MCP child processes are not children of
 `konoha.service`. Slice names and budgets are documented in
 `docs/systemd-slices.md`.
 
+Named deployment profiles are defined in `docs/service-profiles.md` and
+`docs/service-profiles.json`. Default `prod-core` autostarts only Naruto,
+Sasuke, and Kiba; development, review, QA, TestBench, deprecated compatibility
+agents, and heavy MCP packs stay optional unless a profile or explicit policy
+enables them.
+
 ## Control Plane Policy
 
 Systemd is only a supervisor. It must not launch `claude`, `codex`, `opencode`, or `tmux` directly for managed agents. Permanent `agent-*.service` units must call `scripts/agent-api-service.sh <id>`, which reconciles the Konoha lifecycle API with the tmux session.
@@ -197,19 +203,18 @@ python3 scripts/healthcheck-system.py
 
 Exit code `0` means there are no hard failures. `WARN` lines are degraded signals to watch; `FAIL` lines require action before delegation.
 
-Connector and optional monitor checks are deployment-policy driven. By default,
-healthcheck keeps the current production posture with Telegram enabled:
+Connector and optional monitor checks are deployment-profile driven. By default,
+healthcheck uses `KONOHA_SERVICE_PROFILE=prod-core`:
 
 ```bash
-KONOHA_HEALTH_ENABLED_CONNECTORS=telegram
-KONOHA_HEALTH_ENABLED_OPTIONAL_MONITORS=akamaru,kakashi,kiba
+KONOHA_SERVICE_PROFILE=prod-core
 ```
 
-For a fresh non-Telegram install, disable Telegram connector checks without
-removing the healthcheck:
+For a fresh non-Telegram install or staging core, select the staging profile
+without removing healthcheck:
 
 ```bash
-KONOHA_HEALTH_ENABLED_CONNECTORS=none python3 scripts/healthcheck-system.py
+KONOHA_SERVICE_PROFILE=staging-core python3 scripts/healthcheck-system.py
 python3 scripts/healthcheck-system.py --policy-dry-run
 ```
 
@@ -218,7 +223,7 @@ The same values can live in `/opt/shared/konoha-health-policy.json`:
 ```json
 {
   "enabled_connectors": ["telegram"],
-  "enabled_optional_monitors": ["akamaru", "kakashi", "kiba"]
+  "enabled_optional_monitors": ["akamaru", "kiba"]
 }
 ```
 
