@@ -19,7 +19,7 @@ const PROFILES: Record<string, ToolProfile> = {
     name: "Full access (all shared MCPs)",
     mcp_servers: [], // empty = no allowlist filtering, include all shared MCPs
     scopes: ["read", "write", "execute"],
-    notes: "Current behaviour for permanent agents. All shared MCP servers included.",
+    notes: "Manual/debug profile only. Do not assign to always-on or monitoring agents by default.",
   },
   readonly: {
     id: "readonly",
@@ -46,10 +46,18 @@ const PROFILES: Record<string, ToolProfile> = {
   diagnostics: {
     id: "diagnostics",
     name: "Diagnostics and alerting",
-    mcp_servers: [],
+    mcp_servers: ["konoha"],
     scopes: ["read", "write", "execute"],
     dangerous_tools: ["systemctl", "tmux", "redis-cli"],
-    notes: "Operational profile for Kiba/Kakashi-style diagnostics. Requires auditability before expanding.",
+    notes: "Operational profile for Kiba/Kakashi-style diagnostics. Shared browser MCPs are intentionally excluded; GUI checks use TestBench.",
+  },
+  "browser-debug-ttl": {
+    id: "browser-debug-ttl",
+    name: "Direct browser MCP for time-boxed QA/debug",
+    mcp_servers: ["puppeteer"],
+    scopes: ["read", "write", "execute"],
+    dangerous_tools: ["browser-automation"],
+    notes: "Not for always-on agents. Use only for explicit QA/debug sessions with operator-approved TTL and resource limits; default GUI checks use TestBench.",
   },
   "business-ops": {
     id: "business-ops",

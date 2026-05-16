@@ -102,4 +102,22 @@ describe("seeded system agent classifications", () => {
     const narutoCaps = agent("naruto").capabilities ?? [];
     expect(narutoCaps).not.toContain("konoha-lite");
   });
+
+  test("monitoring and connector agents do not start browser MCP by default", () => {
+    const browserMcpServers = new Set(["puppeteer", "playwright", "browser"]);
+    const alwaysOnNonQa = ["naruto", "sasuke", "kiba", "kakashi"];
+
+    for (const id of alwaysOnNonQa) {
+      const seeded = agent(id);
+      expect(seeded.tool_profile).not.toBe("browser-debug-ttl");
+      expect(seeded.tool_profile).not.toBe("full");
+      expect((seeded.shared_mcp_allowlist ?? []).some(server => browserMcpServers.has(server))).toBe(false);
+      expect(seeded.capabilities ?? []).not.toContain("testbench");
+    }
+  });
+
+  test("QA browser checks route through bounded TestBench by default", () => {
+    expect(agent("hinata").capabilities ?? []).toContain("testbench");
+    expect(agent("hinata").tool_profile).not.toBe("browser-debug-ttl");
+  });
 });

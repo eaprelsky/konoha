@@ -282,7 +282,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
     launch_strategy: "persistent_interactive" as const,
     system_prompt: agentFilePrompt("hinata", "SDD test executor"),
     tags: ["system", "optional-worker", "sdd-worker", "on-demand"],
-    capabilities: ["run-tests", "smoke", "regression", "report"],
+    capabilities: ["run-tests", "smoke", "regression", "report", "testbench"],
     tool_profile: "default",
     sandbox_profile: "tmux",
     tmux_session_override: "hinata",

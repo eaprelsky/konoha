@@ -176,6 +176,10 @@ For each skill in `capabilities[]`, its `mcp_servers` entries are merged in. Env
 - `capabilities[]` describes skills/roles that shape the system prompt and may add skill-local MCP servers.
 - `tool_profile` describes shared MCP boundaries such as `telegram-userbot`, `diagnostics`, `business-ops`, or `knowledge-readwrite`.
 - `shared_mcp_allowlist` is still supported and takes precedence over `tool_profile` for backward compatibility.
+- Browser automation is not part of monitoring/connector defaults. Use
+  `docs/browser-testing-policy.md`: TestBench is the default GUI verification
+  path, and direct browser MCP is limited to explicit `browser-debug-ttl`
+  QA/debug sessions.
 
 Available profiles are exposed by:
 

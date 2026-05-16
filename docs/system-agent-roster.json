@@ -164,7 +164,7 @@
     },
     {
       "id": "hinata",
-      "role": "Optional QA executor",
+      "role": "Optional QA executor with TestBench browser checks",
       "seed_classification": "optional_worker",
       "lifecycle_mode": "optional_on_demand",
       "launch_strategy": "persistent_interactive",
