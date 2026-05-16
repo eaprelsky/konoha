@@ -85,12 +85,17 @@ restart `konoha.service`.
 - `slice.<name>` budget checks for MemoryHigh, MemoryMax, CPUWeight, and finite CPUQuota.
 - `service_slice.<service>` checks that known services are assigned to their intended slice.
 - Disabled optional monitor slices as healthy when policy disables them.
+- `resource_inventory.budget_pressure` from `scripts/resource-inventory.py --json --no-disk`.
 
 Run:
 
 ```bash
 python3 scripts/healthcheck-system.py
+python3 scripts/resource-inventory.py
 ```
+
+See `docs/resource-inventory.md` for the live process/MCP/cache inventory
+format and redaction policy.
 
 ## Rollback
 

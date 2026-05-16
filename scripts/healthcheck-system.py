@@ -25,6 +25,7 @@ KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 ENV_FILES = [Path("/home/ubuntu/.agent-env"), Path("/opt/shared/.shared-credentials")]
 ROSTER_PATH = Path(__file__).resolve().parents[1] / "docs" / "system-agent-roster.json"
+RESOURCE_INVENTORY_SCRIPT = Path(__file__).resolve().parent / "resource-inventory.py"
 
 
 def load_system_agent_roster(path: Path = ROSTER_PATH) -> dict[str, Any]:
@@ -1291,6 +1292,35 @@ def check_large_source_files() -> list[Check]:
     )]
 
 
+def check_resource_inventory_budget() -> list[Check]:
+    if not RESOURCE_INVENTORY_SCRIPT.exists():
+        return [Check("WARN", "resource_inventory.report", "script missing", "Restore scripts/resource-inventory.py")]
+    try:
+        rc, stdout, stderr = run([sys.executable, str(RESOURCE_INVENTORY_SCRIPT), "--json", "--no-disk"], timeout=20)
+    except Exception as exc:
+        return [Check("WARN", "resource_inventory.report", str(exc), "Run: python3 scripts/resource-inventory.py --json")]
+    if rc != 0:
+        return [Check("WARN", "resource_inventory.report", (stderr or stdout)[:240], "Run: python3 scripts/resource-inventory.py")]
+    try:
+        report = json.loads(stdout)
+    except Exception as exc:
+        return [Check("WARN", "resource_inventory.report", f"invalid JSON: {exc}", "Run: python3 scripts/resource-inventory.py --json --no-disk")]
+
+    groups = report.get("groups") or {}
+    pressure = {
+        name: group.get("budget_pressure")
+        for name, group in groups.items()
+        if group.get("budget_pressure") in {"warning", "critical"}
+    }
+    total_rss_kib = sum(int(group.get("rss_kib") or 0) for group in groups.values())
+    detail = f"groups={len(groups)} total_rss_kib={total_rss_kib} pressure={pressure or 'none'}"
+    if any(level == "critical" for level in pressure.values()):
+        return [Check("WARN", "resource_inventory.budget_pressure", detail, "Inspect: python3 scripts/resource-inventory.py")]
+    if pressure:
+        return [Check("WARN", "resource_inventory.budget_pressure", detail, "Inspect: python3 scripts/resource-inventory.py")]
+    return [Check("OK", "resource_inventory.budget_pressure", detail)]
+
+
 def main() -> int:
     load_env_defaults()
     if "--policy-dry-run" in sys.argv:
@@ -1307,7 +1337,7 @@ def main() -> int:
     checks.extend(check_messenger_connector_health(policy))
     checks.extend(check_agents(policy))
     checks.extend(check_lifecycle_control_plane(policy))
-    for fn in (check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_role_registry_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files):
+    for fn in (check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_role_registry_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files, check_resource_inventory_budget):
         checks.extend(fn())
     return print_report(checks)
 

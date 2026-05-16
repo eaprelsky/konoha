@@ -320,3 +320,29 @@ def test_disabled_lifecycle_managed_instance_absence_is_healthy():
 
     assert check.level == "OK"
     assert "managed_agent=shino policy=disabled" in check.detail
+
+
+def test_resource_inventory_budget_pressure_is_reported(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        assert "resource-inventory.py" in cmd[1]
+        return 0, '{"groups":{"core_konoha_api":{"rss_kib":100,"budget_pressure":"ok"},"mcp_server":{"rss_kib":900,"budget_pressure":"warning"}}}', ""
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+
+    checks = healthcheck.check_resource_inventory_budget()
+
+    assert checks[0].level == "WARN"
+    assert checks[0].name == "resource_inventory.budget_pressure"
+    assert "'mcp_server': 'warning'" in checks[0].detail
+
+
+def test_resource_inventory_budget_pressure_ok(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        return 0, '{"groups":{"core_konoha_api":{"rss_kib":100,"budget_pressure":"ok"}}}', ""
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+
+    checks = healthcheck.check_resource_inventory_budget()
+
+    assert checks[0].level == "OK"
+    assert "pressure=none" in checks[0].detail
