@@ -157,6 +157,7 @@ def test_slice_policy_accepts_configured_core_budget():
         "MemoryMax": str(1200 * 1024 * 1024),
         "CPUWeight": "300",
         "CPUQuotaPerSecUSec": "2s",
+        "TasksMax": "4096",
     }
 
     check = healthcheck.systemd_slice_policy_check(
@@ -178,6 +179,7 @@ def test_slice_policy_warns_when_enabled_slice_has_no_budget():
         "MemoryMax": "infinity",
         "CPUWeight": "",
         "CPUQuotaPerSecUSec": "infinity",
+        "TasksMax": "infinity",
     }
 
     check = healthcheck.systemd_slice_policy_check(
@@ -190,6 +192,50 @@ def test_slice_policy_warns_when_enabled_slice_has_no_budget():
     assert check.level == "WARN"
     assert "MemoryMax=infinity" in check.detail
     assert "CPUQuota=infinity" in check.detail
+
+
+def test_slice_policy_warns_when_finite_cpu_quota_is_wrong():
+    policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
+    props = {
+        "ActiveState": "active",
+        "MemoryHigh": str(900 * 1024 * 1024),
+        "MemoryMax": str(1200 * 1024 * 1024),
+        "CPUWeight": "300",
+        "CPUQuotaPerSecUSec": "500ms",
+        "TasksMax": "4096",
+    }
+
+    check = healthcheck.systemd_slice_policy_check(
+        "konoha-core.slice",
+        props,
+        healthcheck.SYSTEMD_SLICE_POLICIES["konoha-core.slice"],
+        policy,
+    )
+
+    assert check.level == "WARN"
+    assert "CPUQuota=500ms expected=200%" in check.detail
+
+
+def test_slice_policy_warns_when_tasks_max_is_wrong():
+    policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
+    props = {
+        "ActiveState": "active",
+        "MemoryHigh": str(900 * 1024 * 1024),
+        "MemoryMax": str(1200 * 1024 * 1024),
+        "CPUWeight": "300",
+        "CPUQuotaPerSecUSec": "2s",
+        "TasksMax": "128",
+    }
+
+    check = healthcheck.systemd_slice_policy_check(
+        "konoha-core.slice",
+        props,
+        healthcheck.SYSTEMD_SLICE_POLICIES["konoha-core.slice"],
+        policy,
+    )
+
+    assert check.level == "WARN"
+    assert "TasksMax=128 expected=4096" in check.detail
 
 
 def test_disabled_optional_slice_absence_is_healthy():
@@ -221,3 +267,39 @@ def test_service_slice_check_detects_core_reparenting_risk():
 
     assert check.level == "WARN"
     assert "expected=konoha-agents.slice" in check.detail
+
+
+def test_service_slice_expectations_do_not_include_template_literal():
+    policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
+
+    services = healthcheck.expected_service_slices(policy)
+
+    assert "agent-managed@.service" not in services
+
+
+def test_enabled_lifecycle_managed_instance_is_validated():
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_HEALTH_ENABLED_OPTIONAL_MONITORS": "shino"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
+
+    services = healthcheck.expected_service_slices(policy)
+
+    assert services["agent-managed@shino.service"] == "konoha-qa.slice"
+
+
+def test_disabled_lifecycle_managed_instance_absence_is_healthy():
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_HEALTH_ENABLED_OPTIONAL_MONITORS": "none"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
+
+    check = healthcheck.systemd_service_slice_check(
+        "agent-managed@shino.service",
+        None,
+        "konoha-qa.slice",
+        policy,
+    )
+
+    assert check.level == "OK"
+    assert "managed_agent=shino policy=disabled" in check.detail
