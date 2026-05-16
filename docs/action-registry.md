@@ -14,7 +14,7 @@ Every operation the system exposes — API, MCP, assistant, UI — is described 
 
 ## Version
 
-Current: **v2** (`ACTION_VERSION = 2`)
+Current: **v10** (`ACTION_VERSION = 10`)
 
 Bump the version when the vocabulary changes (new actions, renamed args, removed actions).
 
@@ -25,6 +25,11 @@ The short architecture/runbook for the Action Spine control plane is
 ## Naming convention
 
 Actions use **object-scope naming**: `{scope}.{verb}`
+
+Category classification is derived from the verb contract, not from UI routes.
+Mutation verbs include direct writes such as `add`, `set`, `resolve`, `deploy`,
+`retire`, and `validate`, and the classifier also recognizes snake_case verbs
+such as `batch_delete` and `update_labels` by their write segment.
 
 | Scope | Meaning |
 |-------|---------|

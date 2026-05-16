@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { ACTION_VERSION, validateActionArgs, getActionContract, dumpRegistry, listActions, isValidAction, listActionSurface } from "../src/action-registry";
+import { ACTION_VERSION, classifyAction, validateActionArgs, getActionContract, dumpRegistry, listActions, isValidAction, listActionSurface } from "../src/action-registry";
+import { validateEnvelope } from "../src/act-envelope";
 import { canonicalActionType } from "../src/assistant-actions";
 
 describe("workflow action contract validation", () => {
@@ -115,6 +116,39 @@ describe("workflow action contract validation", () => {
     expect(result.errors).toContain("Missing required argument: id");
     expect(result.errors).toContain("Missing required argument: type");
     expect(result.errors).toContain("Missing required argument: label");
+  });
+
+  it("classifies workflow edit and lifecycle verbs as mutations", () => {
+    const byId = new Map(listActionSurface().map(action => [action.id, action]));
+    for (const id of [
+      "element.add",
+      "flow.add",
+      "trigger.set",
+      "trigger.resolve",
+      "workflow.deploy",
+      "workflow.batch_delete",
+    ]) {
+      expect(byId.get(id)?.category).toBe("act");
+      expect(byId.get(id)?.audited).toBe(true);
+    }
+
+    expect(classifyAction("workflow.retire")).toBe("act");
+    expect(classifyAction("workflow.validate")).toBe("act");
+  });
+
+  it("rejects read-only envelopes for workflow edit mutations", () => {
+    const args = {
+      workflow_id: "wf-123",
+      id: "f_review",
+      type: "function",
+      label: "Review",
+    };
+
+    expect(validateEnvelope({ action: "element.add", category: "act", args })).toEqual([]);
+    expect(validateEnvelope({ action: "element.add", category: "inspect", args })).toContainEqual({
+      field: "category",
+      message: "Action element.add is category 'act', not 'inspect'",
+    });
   });
 
   it("agent.start requires id", () => {

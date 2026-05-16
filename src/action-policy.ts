@@ -11,9 +11,9 @@ export interface ActionSecurityPolicy {
 }
 
 const MUTATION_VERBS = new Set([
-  "create", "update", "delete", "remove", "close", "complete",
+  "add", "apply", "create", "update", "delete", "remove", "close", "complete",
   "cancel", "start", "stop", "restart", "register", "set",
-  "deploy",
+  "deploy", "retire", "validate",
   "resolve", "send", "send_message", "invoke", "upsert", "approve", "reject",
   "upsert_user", "remove_user", "add_group", "remove_group",
   "update_status", "update_profile",
@@ -47,8 +47,9 @@ const ADMIN_DEFAULT_SCOPES = new Set<ObjectScope>([
 ]);
 
 export function classifyAction(actionId: string): ActionCategory {
-  const verb = actionId.split(".")[1] ?? "";
-  if (MUTATION_VERBS.has(verb)) return "act";
+  const dotIndex = actionId.indexOf(".");
+  const verb = dotIndex >= 0 ? actionId.slice(dotIndex + 1) : actionId;
+  if (MUTATION_VERBS.has(verb) || verb.split("_").some(segment => MUTATION_VERBS.has(segment))) return "act";
   if (DRILL_VERBS.has(verb)) return "drill";
   return "inspect";
 }

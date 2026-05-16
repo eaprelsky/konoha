@@ -89,8 +89,10 @@ action instead of duplicating behavior.
 1. Add one dotted `{scope}.{verb}` entry to `ACTIONS` in `src/action-registry.ts`.
 2. Define the argument contract, implementation metadata, `currentEndpoint` when
    routing through an existing endpoint, autonomy, and `audited`.
-3. Confirm the category produced by `classifyAction()` is correct; extend
-   `src/action-policy.ts` only when the verb or actor boundary needs a new rule.
+3. Confirm the category produced by `classifyAction()` is correct. Workflow edit
+   and lifecycle verbs such as `add`, `set`, `resolve`, `deploy`, `retire`, and
+   `validate` must be `act`; extend `src/action-policy.ts` when a new mutation
+   verb or actor boundary needs a rule.
 4. Set or verify the actor policy from `getActionSecurity()`. Admin-only
    mutations should stay admin-only unless a narrower `agent_self` or
    authenticated read policy is intentional.
