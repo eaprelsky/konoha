@@ -357,13 +357,18 @@ explicit:
 | `kiba` | Системный монитор | `optional_worker` | `optional_on_demand` | optional, enabled on deployments that need active monitoring |
 | `kakashi`, `guy`, `shino`, `hinata` | SDD workflow workers | `optional_worker` | `optional_on_demand` | no; started by assignment/policy |
 | `mirai` | External-source connector compatibility actor | `connector_owned` | `connector_owned` | no default autostart |
-| `shikadai` | architecture decomposition worker | `optional_worker` | `optional_on_demand` | no; started by assignment/policy |
+| `shikadai` | Reviewer / architecture-code review worker | `optional_worker` | `optional_on_demand` | no; started by `state:ready-for-review` + `agent:shikadai` |
 | `jiraiya`, `ino`, `inojin` | legacy specialist aliases | `deprecated_compat` | `deprecated` | no |
 | `ibiki` | optional security worker | `optional_worker` | `optional_on_demand` | no |
 
 Seed is idempotent and can be re-run via `POST /admin/seed-system-agents`.
 Existing runtime ids, tmux sessions, and systemd unit names remain stable until
 #620.
+
+The default SDD lifecycle is a two-role Developer -> Reviewer process: Kakashi
+handles Developer work, then Shikadai handles architecture/code review. Architecture
+decomposition is intentionally separate from the reviewer watchdog and must use
+the `route:architecture-decomposition` path when needed.
 
 When seed runs over an existing definition, structural/runtime metadata is
 refreshed from code, but org-owned display fields are preserved: `name`,
