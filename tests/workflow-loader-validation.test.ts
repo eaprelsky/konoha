@@ -218,13 +218,13 @@ describe("workflow-loader e2e: developer-reviewer GitHub issue workflow", () => 
       { id: "f_escalate_blocked_review", role: "system" },
     ]);
 
-    expect(def.flow).toContainEqual(["g_review_decision", "e_review_approved", "payload.review_route === 'approved'"]);
+    expect(def.flow).toContainEqual(["g_review_decision", "e_review_approved", "payload.review_route === 'approved' && payload.closure_allowed === true"]);
     expect(def.flow).toContainEqual(["g_review_decision", "e_changes_requested", "payload.review_route === 'request_changes'"]);
-    expect(def.flow).toContainEqual(["g_review_decision", "e_review_blocked", "payload.review_route === 'blocked'"]);
+    expect(def.flow).toContainEqual(["g_review_decision", "e_review_blocked", "payload.review_route === 'blocked' || payload.closure_allowed !== true"]);
     expect(def.flow).toContainEqual(["e_rework_ready", "f_reviewer_review"]);
   });
 
-  test("binds GitHub side effects to Action Spine issue actions", () => {
+  test("binds GitHub side effects to uniquely scoped Action Spine issue actions", () => {
     const close = def.elements.find(el => el.id === "f_close_issue");
     const selectNext = def.elements.find(el => el.id === "f_select_next_lane");
 
@@ -237,6 +237,16 @@ describe("workflow-loader e2e: developer-reviewer GitHub issue workflow", () => 
       "issue.list",
       "issue.update_labels",
       "message.send",
+    ]);
+    expect(close?.systems?.map(system => system.binding_id)).toEqual([
+      "f_close_issue.issue.comment",
+      "f_close_issue.issue.update_labels",
+      "f_close_issue.issue.close",
+    ]);
+    expect(selectNext?.systems?.map(system => system.binding_id)).toEqual([
+      "f_select_next_lane.issue.list",
+      "f_select_next_lane.issue.update_labels",
+      "f_select_next_lane.message.send",
     ]);
   });
 });

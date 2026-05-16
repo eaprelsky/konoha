@@ -20,7 +20,7 @@
       "doc_id": "sdd.github.close-issue",
       "name": "Reviewed close side effect contract",
       "type": "instruction",
-      "content": "Close the GitHub issue only when review_route='approved' and closure_allowed=true. Provide action_args keyed by issue.comment, issue.update_labels, and issue.close; preserve the Action Spine audit receipt."
+      "content": "Close the GitHub issue only when review_route='approved' and closure_allowed=true. Provide action_args keyed by binding_id: f_close_issue.issue.comment, f_close_issue.issue.update_labels, and f_close_issue.issue.close; preserve the Action Spine audit receipt."
     },
     {
       "doc_id": "sdd.github.request-changes",
@@ -32,13 +32,13 @@
       "doc_id": "sdd.github.blocked-escalation",
       "name": "Blocked review escalation contract",
       "type": "instruction",
-      "content": "Notify Naruto/operator with the blocked reason, issue URL, current commit, and required decision. Provide action_args['message.send']; wait for explicit recovery or operator instruction."
+      "content": "Notify Naruto/operator with the blocked reason, issue URL, current commit, and required decision. Provide action_args['f_escalate_blocked_review.message.send']; wait for explicit recovery or operator instruction."
     },
     {
       "doc_id": "sdd.github.select-next-lane",
       "name": "Next lane selection contract",
       "type": "instruction",
-      "content": "After approved closure, scan the backlog by policy, select the next P0 lane, apply state:ready-for-dev and agent:kakashi where appropriate, and notify Naruto and Kakashi. Provide action_args keyed by issue.list, issue.update_labels, and message.send."
+      "content": "After approved closure, scan the backlog by policy, select the next P0 lane, apply state:ready-for-dev and agent:kakashi where appropriate, and notify Naruto and Kakashi. Provide action_args keyed by binding_id: f_select_next_lane.issue.list, f_select_next_lane.issue.update_labels, and f_select_next_lane.message.send."
     }
   ],
   "elements": [
@@ -64,8 +64,8 @@
       "documents": ["sdd.github.developer-implementation"],
       "systems": [
         { "connector": "github", "operation": "issue.get" },
-        { "connector": "action_spine", "operation": "issue.comment" },
-        { "connector": "action_spine", "operation": "issue.update_labels" }
+        { "binding_id": "f_developer_implement.issue.comment", "connector": "action_spine", "operation": "issue.comment" },
+        { "binding_id": "f_developer_implement.issue.update_labels", "connector": "action_spine", "operation": "issue.update_labels" }
       ]
     },
     {
@@ -81,7 +81,7 @@
       "documents": ["sdd.github.reviewer-decision"],
       "systems": [
         { "connector": "github", "operation": "issue.get" },
-        { "connector": "action_spine", "operation": "issue.comment" }
+        { "binding_id": "f_reviewer_review.issue.comment", "connector": "action_spine", "operation": "issue.comment" }
       ]
     },
     {
@@ -107,9 +107,9 @@
       "role": "system",
       "documents": ["sdd.github.close-issue"],
       "systems": [
-        { "connector": "action_spine", "operation": "issue.comment" },
-        { "connector": "action_spine", "operation": "issue.update_labels" },
-        { "connector": "action_spine", "operation": "issue.close" }
+        { "binding_id": "f_close_issue.issue.comment", "connector": "action_spine", "operation": "issue.comment" },
+        { "binding_id": "f_close_issue.issue.update_labels", "connector": "action_spine", "operation": "issue.update_labels" },
+        { "binding_id": "f_close_issue.issue.close", "connector": "action_spine", "operation": "issue.close" }
       ]
     },
     {
@@ -124,9 +124,9 @@
       "role": "system",
       "documents": ["sdd.github.select-next-lane"],
       "systems": [
-        { "connector": "action_spine", "operation": "issue.list" },
-        { "connector": "action_spine", "operation": "issue.update_labels" },
-        { "connector": "action_spine", "operation": "message.send" }
+        { "binding_id": "f_select_next_lane.issue.list", "connector": "action_spine", "operation": "issue.list" },
+        { "binding_id": "f_select_next_lane.issue.update_labels", "connector": "action_spine", "operation": "issue.update_labels" },
+        { "binding_id": "f_select_next_lane.message.send", "connector": "action_spine", "operation": "message.send" }
       ]
     },
     {
@@ -150,8 +150,8 @@
       ],
       "systems": [
         { "connector": "github", "operation": "issue.get" },
-        { "connector": "action_spine", "operation": "issue.comment" },
-        { "connector": "action_spine", "operation": "issue.update_labels" }
+        { "binding_id": "f_rework_issue.issue.comment", "connector": "action_spine", "operation": "issue.comment" },
+        { "binding_id": "f_rework_issue.issue.update_labels", "connector": "action_spine", "operation": "issue.update_labels" }
       ]
     },
     {
@@ -171,7 +171,7 @@
       "role": "system",
       "documents": ["sdd.github.blocked-escalation"],
       "systems": [
-        { "connector": "action_spine", "operation": "message.send" }
+        { "binding_id": "f_escalate_blocked_review.message.send", "connector": "action_spine", "operation": "message.send" }
       ]
     },
     {
@@ -186,7 +186,7 @@
     ["e_implementation_handoff", "f_reviewer_review"],
     ["f_reviewer_review", "e_review_recorded"],
     ["e_review_recorded", "g_review_decision"],
-    ["g_review_decision", "e_review_approved", "payload.review_route === 'approved'"],
+    ["g_review_decision", "e_review_approved", "payload.review_route === 'approved' && payload.closure_allowed === true"],
     ["e_review_approved", "f_close_issue"],
     ["f_close_issue", "e_issue_closed"],
     ["e_issue_closed", "f_select_next_lane"],
@@ -195,7 +195,7 @@
     ["e_changes_requested", "f_rework_issue"],
     ["f_rework_issue", "e_rework_ready"],
     ["e_rework_ready", "f_reviewer_review"],
-    ["g_review_decision", "e_review_blocked", "payload.review_route === 'blocked'"],
+    ["g_review_decision", "e_review_blocked", "payload.review_route === 'blocked' || payload.closure_allowed !== true"],
     ["e_review_blocked", "f_escalate_blocked_review"],
     ["f_escalate_blocked_review", "e_blocked_escalated"]
   ]

@@ -66,13 +66,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function actionArgsFor(operation: string, payload: Record<string, unknown> = {}): Record<string, unknown> | null {
+function bindingScope(binding: SystemBinding, elementId: string): string {
+  const operation = binding.operation ?? "default";
+  return binding.binding_id ?? `${elementId}.${operation}`;
+}
+
+function actionArgsFor(binding: SystemBinding, elementId: string, payload: Record<string, unknown> = {}): Record<string, unknown> | null {
   const actionArgs = payload.action_args;
   if (isRecord(actionArgs)) {
-    const scoped = actionArgs[operation];
+    const scoped = actionArgs[bindingScope(binding, elementId)];
     if (isRecord(scoped)) return scoped;
   }
   return null;
+}
+
+function closureAllowedForIssueClose(operation: string, payload: Record<string, unknown> = {}): boolean {
+  return operation !== "issue.close" || payload.closure_allowed === true;
 }
 
 async function failSystemWorkItem(work_item_id: string, output: Record<string, unknown>): Promise<void> {
@@ -85,22 +94,37 @@ async function executeActionSpineBindings(params: SystemExecParams, systems: Sys
   const actionBindings = systems.filter(binding => binding.connector === "action_spine" && binding.operation);
   if (actionBindings.length === 0) return false;
 
-  const receipts: Array<{ action: string; status: number; data: unknown }> = [];
+  const receipts: Array<{ action: string; status: number; data: unknown; binding_scope: string }> = [];
   const [{ executeAction }, { classifyAction }] = await Promise.all([
     import("./act-envelope"),
     import("./action-registry"),
   ]);
   for (const binding of actionBindings) {
     const operation = binding.operation!;
-    const args = actionArgsFor(operation, params.payload);
+    const scope = bindingScope(binding, params.element_id);
+    if (!closureAllowedForIssueClose(operation, params.payload)) {
+      const output = {
+        system: "action_spine-error",
+        error: "issue.close requires closure_allowed=true",
+        action: operation,
+        binding_scope: scope,
+        work_item_id: params.work_item_id,
+      };
+      log.error("action_spine closure guard failed", { work_item_id: params.work_item_id, operation, scope });
+      await failSystemWorkItem(params.work_item_id, output);
+      return true;
+    }
+
+    const args = actionArgsFor(binding, params.element_id, params.payload);
     if (!args) {
       const output = {
         system: "action_spine-error",
-        error: `missing action_args for ${operation}`,
+        error: `missing action_args for ${scope}`,
         action: operation,
+        binding_scope: scope,
         work_item_id: params.work_item_id,
       };
-      log.error("action_spine args missing", { work_item_id: params.work_item_id, operation });
+      log.error("action_spine args missing", { work_item_id: params.work_item_id, operation, scope });
       await failSystemWorkItem(params.work_item_id, output);
       return true;
     }
@@ -120,11 +144,12 @@ async function executeActionSpineBindings(params: SystemExecParams, systems: Sys
     });
 
     const status = result.status ?? (result.ok ? 200 : 500);
-    receipts.push({ action: operation, status, data: result.ok ? result.data : { error: result.error } });
+    receipts.push({ action: operation, status, data: result.ok ? result.data : { error: result.error }, binding_scope: scope });
     if (!result.ok || status < 200 || status >= 300) {
       const output = {
         system: "action_spine-error",
         action: operation,
+        binding_scope: scope,
         status,
         data: result.ok ? result.data : { error: result.error },
         receipts,

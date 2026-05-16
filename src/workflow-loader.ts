@@ -11,6 +11,7 @@ const log = createLogger("workflow-loader");
 const PG_READ = process.env.PG_READ === "true";
 
 export interface SystemBinding {
+  binding_id?: string; // stable payload scope key for action_args, unique within a workflow
   connector: string;  // adapter name (e.g. "telegram", "bitrix24")
   operation?: string; // specific operation; defaults to function label slug
 }

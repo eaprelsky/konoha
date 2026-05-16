@@ -50,6 +50,11 @@ export function buildAdjacency(def: WorkflowDefinition): {
 
 export function evalCondition(condition: string, payload: Record<string, unknown>): boolean {
   const expr = condition.trim();
+  const orParts = expr.split(/\s+\|\|\s+/);
+  if (orParts.length > 1) return orParts.some(part => evalCondition(part, payload));
+  const andParts = expr.split(/\s+&&\s+/);
+  if (andParts.length > 1) return andParts.every(part => evalCondition(part, payload));
+
   const match = expr.match(
     /^payload\.([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(===|!==|>=|<=|>|<)\s*(.+)$/,
   );
