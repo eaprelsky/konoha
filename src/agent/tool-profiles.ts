@@ -17,9 +17,9 @@ const PROFILES: Record<string, ToolProfile> = {
   full: {
     id: "full",
     name: "Full access (all shared MCPs)",
-    mcp_servers: [], // empty = no allowlist filtering, include all shared MCPs
+    mcp_servers: [], // empty = broad shared MCPs minus runtime-gated optional packs
     scopes: ["read", "write", "execute"],
-    notes: "Manual/debug profile only. Do not assign to always-on or monitoring agents by default.",
+    notes: "Manual/debug profile only. Office/Miro/spreadsheet/browser packs still require explicit TTL profiles.",
   },
   readonly: {
     id: "readonly",
@@ -58,6 +58,14 @@ const PROFILES: Record<string, ToolProfile> = {
     scopes: ["read", "write", "execute"],
     dangerous_tools: ["browser-automation"],
     notes: "Not for always-on agents. Use only for explicit QA/debug sessions with operator-approved TTL and resource limits; default GUI checks use TestBench.",
+  },
+  "office-miro-debug-ttl": {
+    id: "office-miro-debug-ttl",
+    name: "Office, Miro, and spreadsheet MCPs for time-boxed debug",
+    mcp_servers: ["excel", "word", "google-docs", "google-sheets", "miro", "miro-api"],
+    scopes: ["read", "write", "execute"],
+    dangerous_tools: ["document-write", "spreadsheet-write", "miro-write"],
+    notes: "Not for always-on agents. Use only for explicit on-demand document/spreadsheet/whiteboard debug sessions with operator-approved TTL and resource limits.",
   },
   "business-ops": {
     id: "business-ops",

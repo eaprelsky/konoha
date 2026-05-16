@@ -148,6 +148,15 @@ const SHARED_MCP_CONFIG_PATHS = [
   CANONICAL_SHARED_MCP_CONFIG_PATH,
   "/home/ubuntu/.mcp.json",
 ] as const;
+export const OPTIONAL_SHARED_MCP_PACKS = new Set([
+  "excel",
+  "word",
+  "google-docs",
+  "google-sheets",
+  "miro",
+  "miro-api",
+  "puppeteer",
+]);
 const MCP_BIN_OVERRIDES = {
   bun: "/home/ubuntu/.bun/bin/bun",
   uv: "/home/ubuntu/.local/bin/uv",
@@ -232,8 +241,9 @@ function loadSharedMcpServers(
   const globalEnv = loadGlobalEnv();
   const vars = { ...loadProcessEnv(), ...globalEnv, ...agentEnv };
   const merged: Record<string, ResolvedMcpServerDef> = {};
-  // Distinguish between "no allowlist provided" (include all shared MCPs)
-  // and "explicit empty allowlist" (include none of the shared MCPs).
+  // Distinguish between "no allowlist provided" (include broad shared MCPs
+  // except runtime-gated optional packs) and "explicit empty allowlist"
+  // (include none of the shared MCPs).
   const allowed = allowlist ? new Set(allowlist) : null;
 
   for (const configPath of SHARED_MCP_CONFIG_PATHS) {
@@ -243,6 +253,14 @@ function loadSharedMcpServers(
       const raw = JSON.parse(readFileSync(configPath, "utf-8")) as { mcpServers?: Record<string, RawMcpServerDef> };
       for (const [name, server] of Object.entries(raw.mcpServers ?? {})) {
         if (allowed && !allowed.has(name)) continue;
+        if (!allowed && OPTIONAL_SHARED_MCP_PACKS.has(name)) {
+          log.info("skipping optional shared MCP pack", {
+            server: name,
+            path: configPath,
+            reason: "requires explicit allowlist/tool_profile with TTL",
+          });
+          continue;
+        }
         if (merged[name]) continue;
 
         let resolvedEnv = server.env && Object.keys(server.env).length

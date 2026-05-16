@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
 import {
   getSandboxProfile,
   getToolProfile,
   listSandboxProfiles,
   listToolProfiles,
+  OPTIONAL_SHARED_MCP_PACKS,
   resolveSharedMcpAllowlist,
   toolProfileToMcpAllowlist,
 } from "../src/agent";
@@ -15,6 +18,7 @@ describe("tool and sandbox profiles", () => {
     expect(getToolProfile("telegram-userbot")?.mcp_servers).toEqual(["telethon-channel", "bitrix24"]);
     expect(getToolProfile("diagnostics")?.scopes).toContain("execute");
     expect(getToolProfile("browser-debug-ttl")?.mcp_servers).toEqual(["puppeteer"]);
+    expect(getToolProfile("office-miro-debug-ttl")?.mcp_servers).toEqual(["excel", "word", "google-docs", "google-sheets", "miro", "miro-api"]);
   });
 
   test("maps tool profiles to MCP allowlists unless an explicit allowlist is present", () => {
@@ -32,6 +36,30 @@ describe("tool and sandbox profiles", () => {
       if (allowedBrowserProfiles.has(profile.id)) continue;
       expect(profile.mcp_servers.some(server => browserServers.has(server))).toBe(false);
     }
+  });
+
+  test("keeps Office, Miro, and spreadsheet MCPs out of non-debug shared tool profiles", () => {
+    const officeMiroSpreadsheet = new Set(["excel", "word", "google-docs", "google-sheets", "miro", "miro-api"]);
+    const allowedProfiles = new Set(["office-miro-debug-ttl"]);
+
+    for (const profile of listToolProfiles()) {
+      if (allowedProfiles.has(profile.id)) continue;
+      expect(profile.mcp_servers.some(server => officeMiroSpreadsheet.has(server))).toBe(false);
+    }
+  });
+
+  test("runtime-gates optional heavy shared MCP packs from broad profiles", () => {
+    expect([...OPTIONAL_SHARED_MCP_PACKS].sort()).toEqual([
+      "excel",
+      "google-docs",
+      "google-sheets",
+      "miro",
+      "miro-api",
+      "puppeteer",
+      "word",
+    ]);
+    const runtimeSource = readFileSync(join(import.meta.dir, "..", "src", "agent", "runtime.ts"), "utf-8");
+    expect(runtimeSource).toContain("skipping optional shared MCP pack");
   });
 
   test("keeps sandbox profiles separate from runtime adapters", () => {

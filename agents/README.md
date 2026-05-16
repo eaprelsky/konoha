@@ -80,6 +80,9 @@ Kakashi, Shikadai, Kiba, Naruto, and Sasuke use dedicated watchdogs because thei
 Browser/UI checks should use TestBench by default. Direct browser MCP servers
 such as Puppeteer are reserved for explicit time-boxed QA/debug sessions; see
 [`docs/browser-testing-policy.md`](../docs/browser-testing-policy.md).
+Office, Miro, and spreadsheet MCP servers are also optional packs and should not
+start in always-on agent sessions; see
+[`docs/mcp-optional-packs-policy.md`](../docs/mcp-optional-packs-policy.md).
 
 ## Adding a New Agent
 

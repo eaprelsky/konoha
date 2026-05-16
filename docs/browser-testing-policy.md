@@ -18,6 +18,9 @@ monitoring-only agent defaults. They are allowed only through the explicit
 `browser-debug-ttl` tool profile for time-boxed QA/debug sessions with an
 operator-approved TTL and resource limit.
 
+Other heavy collaboration MCPs, including Office, Miro, Google Docs, and
+spreadsheet packs, follow `docs/mcp-optional-packs-policy.md`.
+
 Do not assign `full`, `browser-debug-ttl`, `puppeteer`, `playwright`, or
 `browser` shared MCP access to Naruto, Sasuke, Kiba, Kakashi, or other
 monitoring/connector agents by default.

@@ -180,6 +180,10 @@ For each skill in `capabilities[]`, its `mcp_servers` entries are merged in. Env
   `docs/browser-testing-policy.md`: TestBench is the default GUI verification
   path, and direct browser MCP is limited to explicit `browser-debug-ttl`
   QA/debug sessions.
+- Office, Miro, Google Docs, and spreadsheet MCPs are also optional packs. Use
+  `docs/mcp-optional-packs-policy.md`: broad shared MCP startup skips them and
+  logs each skip unless a time-boxed on-demand profile explicitly allowlists
+  the pack.
 
 Available profiles are exposed by:
 

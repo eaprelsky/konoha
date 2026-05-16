@@ -116,6 +116,18 @@ describe("seeded system agent classifications", () => {
     }
   });
 
+  test("always-on agents do not start Office, Miro, or spreadsheet MCP by default", () => {
+    const officeMiroSpreadsheet = new Set(["excel", "word", "google-docs", "google-sheets", "miro", "miro-api"]);
+    const alwaysOnNonOffice = ["naruto", "sasuke", "kiba", "kakashi", "shikadai"];
+
+    for (const id of alwaysOnNonOffice) {
+      const seeded = agent(id);
+      expect(seeded.tool_profile).not.toBe("office-miro-debug-ttl");
+      expect(seeded.tool_profile).not.toBe("full");
+      expect((seeded.shared_mcp_allowlist ?? []).some(server => officeMiroSpreadsheet.has(server))).toBe(false);
+    }
+  });
+
   test("QA browser checks route through bounded TestBench by default", () => {
     expect(agent("hinata").capabilities ?? []).toContain("testbench");
     expect(agent("hinata").tool_profile).not.toBe("browser-debug-ttl");
