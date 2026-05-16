@@ -9,6 +9,7 @@ interface RosterAgent {
   lifecycle_mode: string;
   launch_strategy: string;
   owner: string;
+  tool_profile?: string;
   mcp_allowlist: string[];
   resource_budget: string;
   systemd: {
@@ -112,6 +113,12 @@ describe("canonical system agent roster", () => {
       expect(agent?.tmux_session).toBe(seeded.tmux_session_override);
       expect(sorted(agent?.mcp_allowlist ?? [])).toEqual(sorted(seeded.shared_mcp_allowlist ?? []));
     }
+  });
+
+  test("Kiba roster pins the monitoring-only tool profile", () => {
+    const kiba = rosterById().get("kiba");
+    expect(kiba?.tool_profile).toBe("kiba-monitor-core");
+    expect(kiba?.tool_profile).toBe(SYSTEM_AGENTS.find(agent => agent.id === "kiba")?.tool_profile);
   });
 
   test("lifecycle watchdog WATCHDOG_AGENTS matches roster lifecycle scope", () => {

@@ -21,14 +21,21 @@ server name and source config path. An explicit `shared_mcp_allowlist` or
 time-boxed `tool_profile` can still include one of these servers for an
 on-demand session.
 
-## Allowed On-Demand Profiles
+## Bounded and On-Demand Profiles
 
+- `kiba-monitor-core`: Kiba default profile; Konoha health/action tools only.
 - `browser-debug-ttl`: direct Puppeteer MCP for explicit QA/debug sessions.
 - `office-miro-debug-ttl`: Office, Miro, Google Docs, and Google Sheets MCPs for
   explicit document/spreadsheet/whiteboard debug sessions.
 
-Do not assign these profiles to Naruto, Sasuke, Kiba, Kakashi, Shikadai, or
-other always-on/default operational agents.
+Do not assign the `browser-debug-ttl` or `office-miro-debug-ttl` profiles to
+Naruto, Sasuke, Kiba, Kakashi, Shikadai, or other always-on/default operational
+agents.
+
+`kiba-monitor-core` is the exception because it is the bounded default profile,
+not an on-demand expansion. Kiba must not carry GitLab, Yonote, Yandex Tracker,
+Miro, Office/document tools, browser/Puppeteer, memory/mempalace, spreadsheets,
+calendar, audio/transcription, or broad corporate operations MCPs by default.
 
 ## Default GUI Path
 

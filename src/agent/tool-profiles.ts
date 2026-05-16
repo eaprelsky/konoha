@@ -51,6 +51,14 @@ const PROFILES: Record<string, ToolProfile> = {
     dangerous_tools: ["systemctl", "tmux", "redis-cli"],
     notes: "Operational profile for Kiba/Kakashi-style diagnostics. Shared browser MCPs are intentionally excluded; GUI checks use TestBench.",
   },
+  "kiba-monitor-core": {
+    id: "kiba-monitor-core",
+    name: "Kiba monitoring core",
+    mcp_servers: ["konoha"],
+    scopes: ["read", "write", "execute"],
+    dangerous_tools: ["konoha-health-actions"],
+    notes: "Kiba default profile. Konoha health/action tools only; corporate, memory, browser, Office, Miro, calendar, audio, and document MCPs require explicit time-boxed diagnostic profiles.",
+  },
   "browser-debug-ttl": {
     id: "browser-debug-ttl",
     name: "Direct browser MCP for time-boxed QA/debug",

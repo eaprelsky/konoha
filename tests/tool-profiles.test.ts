@@ -17,6 +17,7 @@ describe("tool and sandbox profiles", () => {
     expect(profiles.map(p => p.id)).toContain("telegram-userbot");
     expect(getToolProfile("telegram-userbot")?.mcp_servers).toEqual(["telethon-channel", "bitrix24"]);
     expect(getToolProfile("diagnostics")?.scopes).toContain("execute");
+    expect(getToolProfile("kiba-monitor-core")?.mcp_servers).toEqual(["konoha"]);
     expect(getToolProfile("browser-debug-ttl")?.mcp_servers).toEqual(["puppeteer"]);
     expect(getToolProfile("office-miro-debug-ttl")?.mcp_servers).toEqual(["excel", "word", "google-docs", "google-sheets", "miro", "miro-api"]);
   });
@@ -24,6 +25,7 @@ describe("tool and sandbox profiles", () => {
   test("maps tool profiles to MCP allowlists unless an explicit allowlist is present", () => {
     expect(toolProfileToMcpAllowlist("telegram-userbot")).toEqual(["telethon-channel", "bitrix24"]);
     expect(toolProfileToMcpAllowlist("diagnostics")).toEqual(["konoha"]);
+    expect(toolProfileToMcpAllowlist("kiba-monitor-core")).toEqual(["konoha"]);
     expect(toolProfileToMcpAllowlist("full")).toBeUndefined();
     expect(resolveSharedMcpAllowlist(["yonote"], "telegram-userbot")).toEqual(["yonote"]);
   });

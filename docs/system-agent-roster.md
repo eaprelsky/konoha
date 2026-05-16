@@ -37,6 +37,10 @@ separate compatibility migration says to do so.
   Guy.
 - Kakashi, Shikadai, Kiba, Naruto, and Sasuke have dedicated watchdogs because
   their delivery filters are role-specific.
+- Kiba's default tool profile is `kiba-monitor-core`: Konoha health/action MCP
+  only. GitLab, Yonote, Yandex Tracker, Miro, Office/document tools,
+  browser/Puppeteer, memory/mempalace, spreadsheets, calendar,
+  audio/transcription, and broad corporate operations MCPs are on-demand only.
 - Deprecated aliases stay seeded only for compatibility. They should be parked
   by default and may be listed in `/opt/shared/kiba/paused-services.txt` when an
   operator intentionally suppresses expected inactivity.

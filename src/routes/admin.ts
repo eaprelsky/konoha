@@ -189,7 +189,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
     system_prompt: RELIABILITY_GUARD_PROMPT,
     tags: ["system", "optional-worker", "autostart"],
     capabilities: ["konoha-lite", "health-check", "alert", "diagnose", "escalate"],
-    tool_profile: "diagnostics",
+    tool_profile: "kiba-monitor-core",
     sandbox_profile: "tmux",
     tmux_session_override: "kiba",
     gender: "male" as const,

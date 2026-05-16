@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolveSharedMcpAllowlist } from "../src/agent";
 import { SYSTEM_AGENTS } from "../src/routes/admin";
 
 function agent(id: string) {
@@ -89,7 +90,35 @@ describe("seeded system agent classifications", () => {
       name: "System monitor",
       seed_classification: "optional_worker",
       lifecycle_mode: "optional_on_demand",
+      tool_profile: "kiba-monitor-core",
     });
+  });
+
+  test("Kiba default MCP surface is bounded to Konoha monitoring actions", () => {
+    const seeded = agent("kiba");
+    const nonMonitoringMcp = new Set([
+      "gitlab",
+      "yonote",
+      "yandex-tracker",
+      "miro",
+      "miro-api",
+      "excel",
+      "word",
+      "google-docs",
+      "google-sheets",
+      "puppeteer",
+      "memory",
+      "mempalace",
+      "caldav",
+      "openrouter-audio",
+      "email",
+      "bitrix24",
+      "telethon-channel",
+    ]);
+
+    expect(resolveSharedMcpAllowlist(seeded.shared_mcp_allowlist, seeded.tool_profile)).toEqual(["konoha"]);
+    expect((seeded.shared_mcp_allowlist ?? []).some(server => nonMonitoringMcp.has(server))).toBe(false);
+    expect(seeded.capabilities ?? []).toEqual(["konoha-lite", "health-check", "alert", "diagnose", "escalate"]);
   });
 
   test("konoha-lite capability is wired for target agents, not for Naruto", () => {

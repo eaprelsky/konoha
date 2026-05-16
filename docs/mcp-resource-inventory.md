@@ -51,3 +51,31 @@ After affected agents restart and their `.mcp.json` files are regenerated:
 The shared catalog can still contain these server definitions for explicit
 on-demand sessions. Startup profiles skip them by default and log each skipped
 optional pack.
+
+## Kiba MCP Surface Before #762
+
+Snapshot on 2026-05-16 before applying the `kiba-monitor-core` profile. The
+running Kiba service still used a stale generated
+`/opt/shared/agent-workdirs/kiba/.mcp.json` with broad corporate MCP access.
+
+Command:
+
+```bash
+pstree -p 711418
+```
+
+Observed non-monitoring MCPs under the Kiba Claude process included GitLab,
+Yonote, memory, Puppeteer, CalDAV, sequential-thinking, openrouter-audio,
+Miro API, Bitrix24, Excel, Word, Telethon channel, email, and mempalace.
+
+Process/RSS summary:
+
+| Kiba child process set | Process count | RSS KiB | Notes |
+|------------------------|---------------|---------|-------|
+| All MCP descendants under running Kiba | 29 | 1,433,224 | Includes stale broad MCP startup plus one Konoha MCP server |
+| Expected `kiba-monitor-core` default | 1 | about 86,900 | Konoha MCP server only, based on the live Konoha MCP child RSS in the same sample |
+| Expected non-monitoring MCPs after Kiba restart/regeneration | 0 | 0 | GitLab/Yonote/Yandex/Miro/Office/browser/memory/calendar/audio/corporate ops are not in Kiba default profile |
+
+The running process tree remains stale until Kiba is restarted or the affected
+agent workdir `.mcp.json` is regenerated. The source-of-truth default now uses
+`kiba-monitor-core`, which resolves to the Konoha MCP server only.

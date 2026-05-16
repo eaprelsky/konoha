@@ -169,6 +169,14 @@ Always includes the Konoha MCP server (so agents can call `konoha_register`, `ko
 
 For each skill in `capabilities[]`, its `mcp_servers` entries are merged in. Environment variable references (`${VAR}`) are resolved from `/opt/konoha/.env.global` and the agent's own `env` map.
 
+Tool profiles provide the shared MCP boundary before launch. Kiba's default
+profile is `kiba-monitor-core`, which resolves to Konoha health/action MCP only.
+Do not use `diagnostics`, `full`, browser, Office/Miro/spreadsheet,
+memory/mempalace, calendar, audio, or corporate-document packs as Kiba's
+always-on baseline. Temporary diagnostics must use an explicit operator-approved
+TTL profile or `shared_mcp_allowlist`, then restart/regenerate the affected
+agent workdir when the TTL expires.
+
 ### Tool Profiles
 
 `tool_profile` is the preferred way to describe shared MCP access. It is separate from `capabilities[]`:
