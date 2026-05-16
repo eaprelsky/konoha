@@ -217,11 +217,22 @@ describe("workflow-loader e2e: developer-reviewer GitHub issue workflow", () => 
       { id: "f_rework_issue", role: "kakashi" },
       { id: "f_escalate_blocked_review", role: "system" },
     ]);
+    expect(new Set(functions.map(el => el.role))).toEqual(new Set(["kakashi", "shikadai", "system"]));
+    expect(functions.map(el => el.role)).not.toContain("shino");
+    expect(functions.map(el => el.role)).not.toContain("hinata");
+    expect(functions.map(el => el.role)).not.toContain("guy");
 
     expect(def.flow).toContainEqual(["g_review_decision", "e_review_approved", "payload.review_route === 'approved' && payload.closure_allowed === true"]);
     expect(def.flow).toContainEqual(["g_review_decision", "e_changes_requested", "payload.review_route === 'request_changes'"]);
     expect(def.flow).toContainEqual(["g_review_decision", "e_review_blocked", "payload.review_route === 'blocked' || payload.closure_allowed !== true"]);
     expect(def.flow).toContainEqual(["e_rework_ready", "f_reviewer_review"]);
+  });
+
+  test("documents the two-role default and specialist escalation criteria", () => {
+    const docs = new Map(def.documents?.map(doc => [doc.doc_id, doc.content]));
+    expect(docs.get("sdd.github.two-role-policy")).toContain("Default GitHub delivery uses at most two durable human roles");
+    expect(docs.get("sdd.github.reviewer-decision")).toContain("The Reviewer may run tests directly");
+    expect(docs.get("sdd.github.reviewer-decision")).toContain("Request Shino/Hinata only for QA-heavy or release/regression scopes");
   });
 
   test("binds GitHub side effects to uniquely scoped Action Spine issue actions", () => {

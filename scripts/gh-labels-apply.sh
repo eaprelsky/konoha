@@ -46,7 +46,7 @@ create_or_update "state:triage"       "ededed" "New — needs classification"
 create_or_update "state:ready-for-dev" "0052cc" "Spec complete — Kakashi can implement"
 create_or_update "state:in-progress"   "1d76db" "Implementation active"
 create_or_update "state:ready-for-review" "5319e7" "Code complete — Shikadai reviews"
-create_or_update "state:ready-for-test" "0075ca" "Review passed — Hinata tests"
+create_or_update "state:ready-for-test" "0075ca" "Optional specialist QA branch requested by Reviewer"
 create_or_update "state:blocked"       "d93f0b" "Cannot proceed — see blocked:* for reason"
 create_or_update "state:done"          "0e8a16" "Delivered / closed"
 
@@ -83,9 +83,9 @@ create_or_update "risk:regression" "e11d48" "Previously working behaviour broken
 echo "=== Agent ==="
 create_or_update "agent:kakashi"  "ededed" "Developer — implementation"
 create_or_update "agent:shikadai" "5319e7" "Reviewer — architecture / code review"
-create_or_update "agent:hinata"   "0075ca" "Tester — QA / acceptance"
-create_or_update "agent:shino"    "0e8a16" "Test author — writes test cases"
-create_or_update "agent:naruto"   "d93f0b" "Orchestrator — delegation / triage"
+create_or_update "agent:hinata"   "0075ca" "Optional QA executor — explicit reviewer/test request only"
+create_or_update "agent:shino"    "0e8a16" "Optional QA specialist — explicit reviewer request only"
+create_or_update "agent:naruto"   "d93f0b" "Exception handler / intake, not ordinary dispatcher"
 
 # ── Blocker reason ─────────────────────────────────────────────────────
 echo "=== Blocker ==="

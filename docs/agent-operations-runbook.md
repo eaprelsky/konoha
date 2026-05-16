@@ -59,12 +59,15 @@ policy disables the corresponding optional monitor.
 
 On-demand workers are normally inactive and must not carry the `autostart` tag
 unless a deployment policy explicitly enables them. Current SDD workers are
-Kakashi, Shino, Hinata, and Guy; they should be assigned through workflow roles
-instead of being treated as a hardcoded default fleet.
+Kakashi, Shikadai, Shino, Hinata, and Guy. Ordinary delivery uses only two
+durable roles: Developer (Kakashi) and Reviewer (Shikadai). Shino, Hinata,
+Guy, and Ibiki are optional specialist workers and must be assigned through
+explicit workflow branches or reviewer/developer escalation, not as a hardcoded
+default fleet.
 
-Mirai is connector-owned; Jiraiya/Ino/Inojin are deprecated; Shikadai is an
-optional architecture decomposition worker
-compatibility aliases; they are not required seeded system agents.
+Mirai is connector-owned; Jiraiya/Ino/Inojin are deprecated. Shikadai is the
+default Reviewer for the architecture backlog path, while optional specialist
+agents remain on-demand compatibility runtimes.
 
 Start an on-demand agent through the Konoha lifecycle API:
 
@@ -78,10 +81,9 @@ curl -fsS -X POST \
 ```
 
 Delivery for most on-demand agents is handled by `agent-watchdog-lifecycle.service`.
-Shikadai is the exception: architecture delegation uses the explicit
-`delegate:architect` GitHub label and `agent-watchdog-shikadai.service`, which
-also owns his Konoha SSE delivery to avoid duplicate delivery from the lifecycle
-watchdog.
+Kakashi and Shikadai currently keep dedicated GitHub watchdogs for the
+Developer -> Reviewer lane so issue label delivery does not duplicate through
+the generic lifecycle watchdog.
 
 Kakashi is a special on-demand interactive worker. His dedicated systemd units exist for manual starts, but are disabled by default:
 
@@ -91,26 +93,27 @@ sudo systemctl start agent-kakashi.service
 sudo systemctl stop agent-kakashi.service agent-watchdog-kakashi.service
 ```
 
-GitHub is Kakashi's canonical task intake for delegated code work during #794
-bootstrap. Add `delegate:teamlead` to exactly one ready issue to make the
-dedicated watchdog deliver it. This label means Developer/Kakashi under the
-old compatibility watchdog; it is not a signal to scan the whole open queue.
-GitHub assignee is not used as the routing signal. The scanner skips issues
-with `delegate:done` or `blocked`, persists dispatched issue numbers in
-`~/.cache/konoha/kakashi-github-dispatched.json`, and never scans the whole
-open queue as implicit work.
+GitHub labels are Kakashi's canonical task intake for delegated code work. Add
+`state:ready-for-dev` + `agent:kakashi` to exactly one ready issue to make the
+dedicated watchdog deliver it. The scanner also accepts `state:in-progress` for
+continuation/rework. GitHub assignee is not used as the routing signal. The
+scanner skips issues with `state:done` or `state:blocked`, persists dispatched
+issue numbers in `~/.cache/konoha/kakashi-github-dispatched.json`, and never
+scans the whole open queue as implicit work.
 
 `kakashi-batch` is decommissioned for architecture/lean backlog execution.
-Do not use it as the normal path. Each issue moves through:
-`delegate:teamlead` -> Kakashi implements -> ready-for-review comment/Konoha
-handoff -> `delegate:architect` or manual Shikadai review -> accept, request
-changes, or block -> close only after reviewer acceptance.
+Do not use it as the normal path. Each ordinary issue moves through:
+`state:ready-for-dev` + `agent:kakashi` -> Kakashi implements ->
+`state:ready-for-review` + `agent:shikadai` -> Shikadai reviews architecture,
+code, and required checks -> accept, request changes, or block -> close only
+after reviewer acceptance.
 
-GitHub is also Shikadai's compatibility intake for architecture decomposition.
-Add `delegate:architect` to an issue when the expected output is an architecture
-breakdown, sequencing recommendation, acceptance criteria, or risk review. Do
-not use it for implementation tasks; those should go to Kakashi through
-`delegate:teamlead` after the architecture slice is approved.
+GitHub is also Shikadai's compatibility intake for review and architecture
+decomposition. Use `state:ready-for-review` + `agent:shikadai` for Developer
+handoff review. Use `agent:shikadai` on an architecture-labelled issue when
+the expected output is a decomposition, sequencing recommendation, acceptance
+criteria, or risk review. Do not use reviewer routing for implementation tasks;
+those should go to Kakashi through `state:ready-for-dev` + `agent:kakashi`.
 
 Start the Shikadai reviewer path with:
 

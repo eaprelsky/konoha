@@ -32,16 +32,18 @@ exactly one state label per issue at any time.
 | `state:ready-for-dev` | Spec complete — Kakashi can implement | `#0052cc` |
 | `state:in-progress` | Implementation active | `#1d76db` |
 | `state:ready-for-review` | Code complete — Shikadai reviews | `#5319e7` |
-| `state:ready-for-test` | Review passed — Hinata tests | `#0075ca` |
+| `state:ready-for-test` | Optional specialist QA branch requested by Reviewer | `#0075ca` |
 | `state:blocked` | Cannot proceed — see `blocked:*` for reason | `#d93f0b` |
 | `state:done` | Delivered / closed | `#0e8a16` |
 
-State transitions (happy path):
+Default two-role state transitions (happy path):
 ```
-triage → ready-for-dev → in-progress → ready-for-review → ready-for-test → done
+triage → ready-for-dev → in-progress → ready-for-review → done
 ```
 
 Any state can transition to `blocked`. `blocked` returns to the state it left.
+`state:ready-for-test` is not part of ordinary delivery; use it only when the
+Reviewer explicitly requests a QA-heavy/release/regression specialist branch.
 
 Guardrails:
 - `state:ready-for-dev` + `state:ready-for-review` = CONFLICT
@@ -99,14 +101,15 @@ workflow state — state labels drive the pipeline, agent labels drive dispatch.
 |---|---|---|
 | `agent:kakashi` | Developer — implementation | `#ededed` |
 | `agent:shikadai` | Reviewer — architecture / code review | `#5319e7` |
-| `agent:hinata` | Tester — QA / acceptance | `#0075ca` |
-| `agent:shino` | Test author — writes test cases | `#0e8a16` |
-| `agent:naruto` | Orchestrator — delegation / triage | `#d93f0b` |
+| `agent:hinata` | Optional QA executor — explicit reviewer/test request only | `#0075ca` |
+| `agent:shino` | Optional QA specialist — explicit reviewer request only | `#0e8a16` |
+| `agent:naruto` | Exception handler / intake, not ordinary dispatcher | `#d93f0b` |
 
 Guardrails:
 - `agent:kakashi` is appropriate for `state:ready-for-dev` and `state:in-progress`
 - `agent:shikadai` is appropriate for `state:ready-for-review`
-- `agent:hinata` is appropriate for `state:ready-for-test`
+- `agent:shino` / `agent:hinata` require an explicit Reviewer QA request and
+  must not be inserted into ordinary Developer → Reviewer delivery.
 
 ### Blocker reason — `blocked:<reason>`
 
@@ -133,10 +136,10 @@ Required when `state:blocked` is set. Explains why work cannot proceed.
 | `delegate:architect` | `agent:shikadai` | Replace |
 | `kakashi-ready` | `state:ready-for-dev` | Replace |
 | `kakashi-batch` | (none) | **Remove** — batching is implementation detail |
-| `awaiting-test` | `state:ready-for-test` | Replace |
-| `"awaiting-test"` | `state:ready-for-test` | Replace (remove quoted duplicate) |
+| `awaiting-test` | (none) | **Remove** — QA is reviewer-requested, not a default state |
+| `"awaiting-test"` | (none) | **Remove** — quoted duplicate |
 | `test-cases-written` | (none) | **Remove** — integrated into definition-of-ready |
-| `needs-testing` | `state:ready-for-test` | Replace |
+| `needs-testing` | (none) | **Remove** — QA is reviewer-requested, not a default state |
 | `blocked` | `state:blocked` | Replace |
 | `bug` | `type:bug` | Replace |
 | `feature` | `type:feature` | Replace |
@@ -175,10 +178,9 @@ How each agent interprets labels for dispatch decisions:
 | Naruto (orchestrator) | `state:blocked` | Review blocker reason, unblock or escalate |
 | Kakashi (developer) | `state:ready-for-dev` + `agent:kakashi` | Take and implement |
 | Kakashi (developer) | `state:in-progress` + `agent:kakashi` | Continue / complete implementation |
-| Shikadai (reviewer) | `state:ready-for-review` | Review, approve or request changes |
-| Shikadai (reviewer) | `agent:shikadai` + any open state | Architecture review / decomposition |
-| Hinata (tester) | `state:ready-for-test` | Run tests, verify acceptance criteria |
-| Shino (test author) | `agent:shino` + pre-implementation | Write test cases in comments |
+| Shikadai (reviewer) | `state:ready-for-review` + `agent:shikadai` | Review architecture/code/tests, approve, request changes, or block |
+| Shikadai (reviewer) | `agent:shikadai` + architecture-labelled open state | Architecture review / decomposition |
+| Shino / Hinata (optional QA) | Explicit Reviewer request, usually QA-heavy/release/regression scope | Plan/run specialist tests and report back to Reviewer |
 
 ## Automation guardrails
 
@@ -191,7 +193,8 @@ Rules enforced by the label application/migration scripts:
 5. **Blocked requires reason**: if `state:blocked`, at least one `blocked:*` SHOULD be present
 6. **Done is terminal**: `state:done` cannot coexist with any other `state:*`
 7. **Agent matches state**: `agent:*` should be consistent with workflow state
-8. **No legacy labels**: after migration, legacy labels (P0-P3, delegate:*, kakashi-*, awaiting-test, etc.) must not appear on open issues
+8. **Two-role default**: ordinary issues use Kakashi + Shikadai only; Shino/Hinata/Guy/Ibiki require explicit specialist scope
+9. **No legacy labels**: after migration, legacy labels (P0-P3, delegate:*, kakashi-*, awaiting-test, needs-testing, etc.) must not appear on open issues
 
 ## Files
 

@@ -29,9 +29,9 @@ MIGRATIONS=(
   # State
   "delegate:done|state:done"
   "kakashi-ready|state:ready-for-dev"
-  "awaiting-test|state:ready-for-test"
-  '"awaiting-test"|state:ready-for-test'
-  "needs-testing|state:ready-for-test"
+  "awaiting-test|"
+  '"awaiting-test"|'
+  "needs-testing|"
   "blocked|state:blocked"
   # Agent
   "delegate:architect|agent:shikadai"

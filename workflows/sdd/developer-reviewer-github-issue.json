@@ -1,8 +1,8 @@
 {
   "id": "developer-reviewer-github-issue",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "name": "Developer -> Reviewer GitHub issue delivery",
-  "description": "Shadow-run workflow for the Kakashi Developer -> Shikadai Reviewer lane. GitHub label events start a workflow case, Kakashi and Shikadai work items carry structured outputs, and GitHub label/comment/close side effects execute through Action Spine system bindings.",
+  "description": "Canonical two-role Konoha delivery workflow for ordinary GitHub issues. GitHub labels start a Developer (Kakashi) work item, Reviewer (Shikadai) owns review, test decisions, acceptance, and closure, and optional specialists are explicit escalations outside the default path.",
   "documents": [
     {
       "doc_id": "sdd.github.developer-implementation",
@@ -14,7 +14,7 @@
       "doc_id": "sdd.github.reviewer-decision",
       "name": "Reviewer decision output contract",
       "type": "instruction",
-      "content": "Review the implementation and return review_route='approved'|'request_changes'|'blocked', decision, commit, findings, verification, closure_allowed:boolean, and reviewer_summary. Malformed, missing, or closure_allowed=false decisions must use review_route='blocked' and fail closed."
+      "content": "Review architecture, code, and required checks for the implementation. Return review_route='approved'|'request_changes'|'blocked', decision, commit, findings, verification, closure_allowed:boolean, and reviewer_summary. The Reviewer may run tests directly. Request Shino/Hinata only for QA-heavy or release/regression scopes, request Ibiki only for security-sensitive scopes, and request Guy only through the Developer for mechanical batches. Malformed, missing, or closure_allowed=false decisions must use review_route='blocked' and fail closed."
     },
     {
       "doc_id": "sdd.github.close-issue",
@@ -33,6 +33,12 @@
       "name": "Blocked review escalation contract",
       "type": "instruction",
       "content": "Notify Naruto/operator with the blocked reason, issue URL, current commit, and required decision. Provide action_args['f_escalate_blocked_review.message.send']; wait for explicit recovery or operator instruction."
+    },
+    {
+      "doc_id": "sdd.github.two-role-policy",
+      "name": "Two-role delivery policy",
+      "type": "policy",
+      "content": "Default GitHub delivery uses at most two durable human roles: Developer=Kakashi and Reviewer=Shikadai. Naruto handles intake/exceptions, not ordinary dispatch. Shino, Hinata, Guy, and Ibiki are on-demand specialists and must not appear in the default issue path unless the issue carries an explicit specialist scope or the Reviewer/Developer requests a bounded escalation."
     },
     {
       "doc_id": "sdd.github.select-next-lane",
@@ -61,7 +67,10 @@
       "type": "function",
       "label": "Implement delegated issue",
       "role": "kakashi",
-      "documents": ["sdd.github.developer-implementation"],
+      "documents": [
+        "sdd.github.developer-implementation",
+        "sdd.github.two-role-policy"
+      ],
       "systems": [
         { "connector": "github", "operation": "issue.get" },
         { "binding_id": "f_developer_implement.issue.comment", "connector": "action_spine", "operation": "issue.comment" },
@@ -78,7 +87,10 @@
       "type": "function",
       "label": "Review implementation",
       "role": "shikadai",
-      "documents": ["sdd.github.reviewer-decision"],
+      "documents": [
+        "sdd.github.reviewer-decision",
+        "sdd.github.two-role-policy"
+      ],
       "systems": [
         { "connector": "github", "operation": "issue.get" },
         { "binding_id": "f_reviewer_review.issue.comment", "connector": "action_spine", "operation": "issue.comment" }
@@ -146,7 +158,8 @@
       "role": "kakashi",
       "documents": [
         "sdd.github.developer-implementation",
-        "sdd.github.request-changes"
+        "sdd.github.request-changes",
+        "sdd.github.two-role-policy"
       ],
       "systems": [
         { "connector": "github", "operation": "issue.get" },

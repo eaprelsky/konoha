@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
 import Redis from "ioredis";
-import { createCase, deleteCasesByProcess, handleEventFired, processEvent } from "../src/runtime";
+import { createCase, deleteCasesByProcess, handleEventFired, loadCase, processEvent } from "../src/runtime";
 import { completeWorkItem } from "../src/runtime/work-items";
 import { loadActiveWaitsForCase } from "../src/runtime/event-waits";
 import { deleteReminder, listReminders } from "../src/runtime/reminders";
@@ -83,6 +83,20 @@ async function pendingWorkItemForCase(caseId: string, elementId: string): Promis
   const item = items.find(wi => wi.element_id === elementId && wi.status === "pending");
   if (!item) throw new Error(`Pending work item not found for ${elementId}`);
   return item;
+}
+
+async function waitForCase(
+  caseId: string,
+  predicate: (kase: Record<string, any> | null) => boolean,
+  maxMs = 5000,
+): Promise<Record<string, any> | null> {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    const kase = await loadCase(caseId) as Record<string, any> | null;
+    if (predicate(kase)) return kase;
+    await new Promise(r => setTimeout(r, 50));
+  }
+  return loadCase(caseId) as Promise<Record<string, any> | null>;
 }
 
 afterAll(async () => {
@@ -433,6 +447,73 @@ describe("eEPC state-machine regression suite", () => {
       checks: ["rerun"],
     });
     expect(afterPassingRerun.case?.position).toBe("f_review");
+  });
+
+  test("Developer -> Reviewer issue workflow runs as a two-role KWE fixture", async () => {
+    const id = wfId("developer-reviewer-github-issue");
+    const raw = readFileSync(join(import.meta.dir, "..", "workflows", "sdd", "developer-reviewer-github-issue.json"), "utf-8");
+    const def: WorkflowDefinition = { ...JSON.parse(raw), id };
+    await registerWorkflow(def);
+
+    const kase = await createCase(id, "GitHub issue #792", {
+      issue_number: 792,
+      issue_url: "https://github.com/eaprelsky/konoha/issues/792",
+    });
+    expect(kase.status).toBe("running");
+    expect(kase.position).toBe("f_developer_implement");
+
+    const implementation = await pendingWorkItemForCase(kase.case_id, "f_developer_implement");
+    expect(implementation.assignee).toBe("kakashi");
+    await completeWorkItem(implementation.work_item_id, {
+      commit_hash: "abc1234",
+      changed_files: ["workflows/sdd/developer-reviewer-github-issue.json"],
+      checks_run: ["workflow-loader-validation"],
+      handoff_state: "state:ready-for-review",
+    });
+
+    const review = await pendingWorkItemForCase(kase.case_id, "f_reviewer_review");
+    expect(review.assignee).toBe("shikadai");
+    await completeWorkItem(review.work_item_id, {
+      review_route: "request_changes",
+      closure_allowed: false,
+      findings: ["Need explicit KWE fixture regression."],
+      verification: [],
+    });
+
+    const rework = await pendingWorkItemForCase(kase.case_id, "f_rework_issue");
+    expect(rework.assignee).toBe("kakashi");
+    await completeWorkItem(rework.work_item_id, {
+      commit_hash: "def5678",
+      changed_files: ["tests/eepc-state-machine-regression.test.ts"],
+      checks_run: ["eepc-state-machine-regression"],
+      handoff_state: "state:ready-for-review",
+    });
+
+    const secondReview = await pendingWorkItemForCase(kase.case_id, "f_reviewer_review");
+    expect(secondReview.assignee).toBe("shikadai");
+    await completeWorkItem(secondReview.work_item_id, {
+      review_route: "blocked",
+      closure_allowed: false,
+      decision: "blocked",
+      findings: ["Human decision required."],
+      verification: ["reviewed KWE fixture path"],
+      action_args: {
+        "f_escalate_blocked_review.message.send": {
+          to: `${RUN}-reviewer-escalation`,
+          text: "Blocked review escalation for #792 fixture test",
+          type: "status",
+        },
+      },
+    });
+
+    const done = await waitForCase(kase.case_id, c => c?.status === "done");
+    expect(done?.position).toBe("e_blocked_escalated");
+
+    const items = await workItemsForCase(kase.case_id);
+    expect(new Set(items.map(wi => wi.assignee))).toEqual(new Set(["kakashi", "shikadai", "system"]));
+    expect(items.map(wi => wi.assignee)).not.toContain("shino");
+    expect(items.map(wi => wi.assignee)).not.toContain("hinata");
+    expect(items.map(wi => wi.assignee)).not.toContain("guy");
   });
 
   test("knowledge intake workflow progresses discovery to review and publish", async () => {
