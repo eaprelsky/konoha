@@ -30,6 +30,16 @@ describe("github issue connector events", () => {
     expect(event?.labels).toContain("priority:p2");
     expect(event && isAgentKakashiIssueEvent(event)).toBe(true);
     expect(event && githubEventMatchesFilter(event, GITHUB_AGENT_KAKASHI_TRIGGER.filter)).toBe(true);
+    expect(event && githubEventMatchesFilter(event, {
+      event: "issue_labeled",
+      repo: "eaprelsky/konoha",
+      label: "agent:kakashi",
+      required_labels: ["agent:kakashi", "priority:p2"],
+    })).toBe(true);
+    expect(event && githubEventMatchesFilter(event, {
+      event: "issue_labeled",
+      required_labels: ["state:ready-for-dev"],
+    })).toBe(false);
   });
 
   test("normalizes agent:shikadai issue label events", () => {
@@ -50,6 +60,27 @@ describe("github issue connector events", () => {
     expect(event?.label).toBe("agent:shikadai");
     expect(event && isAgentShikadaiIssueEvent(event)).toBe(true);
     expect(event && githubEventMatchesFilter(event, GITHUB_AGENT_SHIKADAI_TRIGGER.filter)).toBe(true);
+  });
+
+  test("matches ready-for-dev workflow trigger when either required label was just added", () => {
+    const event = normalizeGithubIssueEvent("issues", {
+      action: "labeled",
+      repository: { full_name: "eaprelsky/konoha" },
+      sender: { login: "shikadai" },
+      label: { name: "state:ready-for-dev" },
+      issue: {
+        number: 803,
+        title: "Workflow migration",
+        html_url: "https://github.com/eaprelsky/konoha/issues/803",
+        labels: [{ name: "state:ready-for-dev" }, { name: "agent:kakashi" }],
+      },
+    });
+
+    expect(event && githubEventMatchesFilter(event, {
+      event: "issue_labeled",
+      repo: "eaprelsky/konoha",
+      required_labels: ["state:ready-for-dev", "agent:kakashi"],
+    })).toBe(true);
   });
 
   test("normalizes issue comments", () => {

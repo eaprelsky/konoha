@@ -164,6 +164,10 @@ export function githubEventMatchesFilter(
   if (filter.event && filter.event !== event.type) return false;
   if (filter.repo && filter.repo !== event.repo) return false;
   if (filter.label && filter.label !== event.label) return false;
+  if (Array.isArray(filter.required_labels)) {
+    const labels = new Set(event.labels);
+    if (!filter.required_labels.every(label => typeof label === "string" && labels.has(label))) return false;
+  }
   if (filter.issue_number && Number(filter.issue_number) !== event.issue_number) return false;
   if (filter.branch && filter.branch !== event.branch?.name) return false;
   if (filter.base && filter.base !== event.branch?.base) return false;

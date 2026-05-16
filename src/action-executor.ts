@@ -49,6 +49,7 @@ import {
 } from "./agent-lifecycle";
 import { invokeAssistant } from "./assistant-invocation";
 import { sendConnectorMessage } from "./messenger-outbound";
+import { executeGithubIssueAction } from "./github-issue-actions";
 import { ServiceError } from "./errors";
 import {
   buildPgOnlyRetentionCleanupApply,
@@ -779,6 +780,16 @@ async function executeAssistantAction(action: string, args: Record<string, unkno
   }
 }
 
+async function executeIssueAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  const invalid = validationFailure(action, args);
+  if (invalid) return invalid;
+  try {
+    return await executeGithubIssueAction(action, args);
+  } catch (e) {
+    return serviceFailure(e);
+  }
+}
+
 async function executeRetentionAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
   switch (action) {
     case "retention.report": {
@@ -854,6 +865,9 @@ export async function executeActionDirect(
   }
   if (action.startsWith("connector.")) {
     return executeConnectorAction(action, args);
+  }
+  if (action.startsWith("issue.")) {
+    return executeIssueAction(action, args);
   }
   if (action.startsWith("retention.")) {
     return executeRetentionAction(action, args);

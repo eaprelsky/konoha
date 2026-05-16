@@ -182,6 +182,65 @@ describe("workflow-loader e2e: sdd-harness-factory", () => {
   });
 });
 
+describe("workflow-loader e2e: developer-reviewer GitHub issue workflow", () => {
+  const workflowPath = join(import.meta.dir, "..", "workflows", "sdd", "developer-reviewer-github-issue.json");
+  let def: WorkflowDefinition;
+
+  test("loads and validates Developer -> Reviewer workflow from disk", () => {
+    const raw = readFileSync(workflowPath, "utf-8");
+    def = JSON.parse(raw);
+    expect(def.id).toBe("developer-reviewer-github-issue");
+    expect(validateWorkflow(def)).toEqual([]);
+  });
+
+  test("starts from a GitHub ready-for-dev label event", () => {
+    const start = def.elements.find(el => el.id === "e_issue_ready_for_dev");
+    expect(start?.type).toBe("event");
+    expect(start?.trigger).toMatchObject({
+      kind: "message",
+      source: "github",
+      filter: {
+        event: "issue_labeled",
+        repo: "eaprelsky/konoha",
+        required_labels: ["state:ready-for-dev", "agent:kakashi"],
+      },
+    });
+  });
+
+  test("models Developer, Reviewer, close, request-changes, and blocked branches", () => {
+    const functions = def.elements.filter(el => el.type === "function");
+    expect(functions.map(el => ({ id: el.id, role: el.role }))).toEqual([
+      { id: "f_developer_implement", role: "developer" },
+      { id: "f_reviewer_review", role: "reviewer" },
+      { id: "f_close_issue", role: "workflow_controller" },
+      { id: "f_select_next_lane", role: "workflow_controller" },
+      { id: "f_rework_issue", role: "developer" },
+      { id: "f_escalate_blocked_review", role: "workflow_controller" },
+    ]);
+
+    expect(def.flow).toContainEqual(["g_review_decision", "e_review_approved", "payload.decision === 'approved' && payload.closure_allowed === true"]);
+    expect(def.flow).toContainEqual(["g_review_decision", "e_changes_requested", "payload.decision === 'request_changes'"]);
+    expect(def.flow).toContainEqual(["g_review_decision", "e_review_blocked", "payload.decision === 'blocked' || payload.closure_allowed !== true"]);
+    expect(def.flow).toContainEqual(["e_rework_ready", "f_reviewer_review"]);
+  });
+
+  test("binds GitHub side effects to Action Spine issue actions", () => {
+    const close = def.elements.find(el => el.id === "f_close_issue");
+    const selectNext = def.elements.find(el => el.id === "f_select_next_lane");
+
+    expect(close?.systems?.map(system => system.operation)).toEqual([
+      "issue.comment",
+      "issue.update_labels",
+      "issue.close",
+    ]);
+    expect(selectNext?.systems?.map(system => system.operation)).toEqual([
+      "issue.list",
+      "issue.update_labels",
+      "message.send",
+    ]);
+  });
+});
+
 describe("workflow-loader e2e: knowledge-intake", () => {
   const workflowPath = join(import.meta.dir, "..", "workflows", "knowledge", "intake.json");
   let def: WorkflowDefinition;
