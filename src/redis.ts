@@ -232,11 +232,77 @@ export async function sendMessage(msg: Message): Promise<string> {
 
 // Ensure a consumer group exists on a stream.
 // For fan-out: each (agentId, consumer) pair gets its own group so all consumers receive all messages.
+// Uses in-process cache to avoid sending XGROUP CREATE on every poll (#780).
+const createdGroups = new Set<string>();
+
+// Counters for healthcheck polling-storm detection (#780)
+export const ensureGroupMetrics = {
+  calls: 0,
+  createAttempts: 0,
+  created: 0,
+  busy: 0,
+  cached: 0,
+  errors: 0,
+};
+
+export function sampleEnsureGroupMetrics(): {
+  calls: number;
+  createAttempts: number;
+  created: number;
+  busy: number;
+  cached: number;
+  errors: number;
+} {
+  const m = { ...ensureGroupMetrics };
+  ensureGroupMetrics.calls = 0;
+  ensureGroupMetrics.createAttempts = 0;
+  ensureGroupMetrics.created = 0;
+  ensureGroupMetrics.busy = 0;
+  ensureGroupMetrics.cached = 0;
+  ensureGroupMetrics.errors = 0;
+  return m;
+}
+
 async function ensureGroup(stream: string, group: string): Promise<void> {
+  ensureGroupMetrics.calls++;
+  const key = consumerGroupKey(stream, group);
+  if (createdGroups.has(key)) {
+    ensureGroupMetrics.cached++;
+    return;
+  }
   try {
+    ensureGroupMetrics.createAttempts++;
     await redis.xgroup("CREATE", stream, group, "0", "MKSTREAM");
+    createdGroups.add(key);
+    ensureGroupMetrics.created++;
   } catch (e: any) {
-    if (!e.message?.includes("BUSYGROUP")) throw e;
+    if (!e.message?.includes("BUSYGROUP")) {
+      ensureGroupMetrics.errors++;
+      throw e;
+    }
+    createdGroups.add(key);
+    ensureGroupMetrics.busy++;
+  }
+}
+
+async function xreadgroupWithCachedBootstrap(
+  stream: string,
+  group: string,
+  consumerName: string,
+  count: number,
+  id: "0" | ">",
+): Promise<[string, [string, string[]][]][] | null> {
+  try {
+    return await redis.xreadgroup(
+      "GROUP", group, consumerName, "COUNT", count, "STREAMS", stream, id
+    ) as [string, [string, string[]][]][] | null;
+  } catch (e: any) {
+    if (!isMissingConsumerGroupError(e)) throw e;
+    createdGroups.delete(consumerGroupKey(stream, group));
+    await ensureGroup(stream, group);
+    return await redis.xreadgroup(
+      "GROUP", group, consumerName, "COUNT", count, "STREAMS", stream, id
+    ) as [string, [string, string[]][]][] | null;
   }
 }
 
@@ -254,9 +320,7 @@ export async function readMessages(agentId: string, count = 10, consumer?: strin
   const messages: Message[] = [];
 
   // 1. Re-deliver pending (unacked from previous poll)
-  const pending = await redis.xreadgroup(
-    "GROUP", group, consumerName, "COUNT", count, "STREAMS", stream, "0"
-  ) as [string, [string, string[]][]][] | null;
+  const pending = await xreadgroupWithCachedBootstrap(stream, group, consumerName, count, "0");
 
   if (pending) {
     for (const [, entries] of pending) {
@@ -271,9 +335,7 @@ export async function readMessages(agentId: string, count = 10, consumer?: strin
   // 2. Read new messages
   const remaining = count - messages.length;
   if (remaining > 0) {
-    const fresh = await redis.xreadgroup(
-      "GROUP", group, consumerName, "COUNT", remaining, "STREAMS", stream, ">"
-    ) as [string, [string, string[]][]][] | null;
+    const fresh = await xreadgroupWithCachedBootstrap(stream, group, consumerName, remaining, ">");
 
     if (fresh) {
       for (const [, entries] of fresh) {
@@ -294,9 +356,7 @@ export async function readMessagesPending(agentId: string, consumer: string, cou
   const group = `${agentId}:${consumer}`;
   await ensureGroup(stream, group);
 
-  const pending = await redis.xreadgroup(
-    "GROUP", group, consumer, "COUNT", count, "STREAMS", stream, "0"
-  ) as [string, [string, string[]][]][] | null;
+  const pending = await xreadgroupWithCachedBootstrap(stream, group, consumer, count, "0");
 
   const messages: Message[] = [];
   if (pending) {
@@ -449,4 +509,11 @@ function fieldsToMessage(id: string, fields: string[]): Message {
     attachments,
     village_id: obj.village_id || DEFAULT_VILLAGE,
   };
+}
+function consumerGroupKey(stream: string, group: string): string {
+  return `${stream}:${group}`;
+}
+
+function isMissingConsumerGroupError(e: any): boolean {
+  return Boolean(e.message?.includes("NOGROUP") || e.message?.includes("WRONGTYPE"));
 }

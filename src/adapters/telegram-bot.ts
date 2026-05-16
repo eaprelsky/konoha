@@ -178,6 +178,8 @@ export class TelegramBotAdapter implements DataAdapter {
             }
           }
         }
+        // Micro-delay to prevent tight re-poll during message storms (#780)
+        await new Promise(r => setTimeout(r, 50));
       } catch (e: any) {
         if (!this.loopActive) break;
         log.error("redis loop error", { error: e.message });

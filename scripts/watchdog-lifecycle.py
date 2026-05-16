@@ -403,6 +403,27 @@ async def sse_watcher(agent_id: str, raw_queue: asyncio.Queue) -> None:
 
 # ── Redis stream watcher ──────────────────────────────────────────────────────
 
+_created_groups: set[str] = set()
+
+def _forget_group_if_missing(err: Exception, stream: str, group: str) -> None:
+    text = str(err)
+    if "NOGROUP" in text or "no such key" in text.lower():
+        _created_groups.discard(f"{stream}:{group}")
+
+async def _ensure_group_once(r, stream: str, group: str, id: str = "$") -> None:
+    """Cache XGROUP CREATE to avoid Redis churn on every reconnect (#780)."""
+    key = f"{stream}:{group}"
+    if key in _created_groups:
+        return
+    try:
+        await r.xgroup_create(stream, group, id=id, mkstream=True)
+        _created_groups.add(key)
+    except Exception as e:
+        if "BUSYGROUP" not in str(e):
+            raise
+        _created_groups.add(key)
+
+
 async def redis_stream_watcher(
     agent_id: str, stream: str, group: str, consumer: str, raw_queue: asyncio.Queue
 ) -> None:
@@ -421,12 +442,7 @@ async def redis_stream_watcher(
             if r is None:
                 r = aioredis.Redis(host="127.0.0.1", port=6379, decode_responses=True)
 
-            try:
-                await r.xgroup_create(stream, group, id="$", mkstream=True)
-                log.info(f"[{agent_id}] Created consumer group {group} on {stream}")
-            except Exception as e:
-                if "BUSYGROUP" not in str(e):
-                    raise
+            await _ensure_group_once(r, stream, group)
 
             log.info(f"[{agent_id}] Redis stream watcher: {stream} (group={group}, consumer={consumer})")
             backoff = 1
@@ -458,6 +474,7 @@ async def redis_stream_watcher(
             raise
         except Exception as e:
             log.warning(f"[{agent_id}] Redis watcher error ({stream}): {e!r}, retrying in {backoff}s")
+            _forget_group_if_missing(e, stream, group)
             if r:
                 try:
                     await r.aclose()

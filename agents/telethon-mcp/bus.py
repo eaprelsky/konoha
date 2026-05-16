@@ -537,17 +537,28 @@ async def on_message(event):
         flush=True,
     )
 
+_created_groups: set[str] = set()
+
+def _forget_group_if_missing(err: Exception, stream: str, group: str) -> None:
+    text = str(err)
+    if 'NOGROUP' in text or 'no such key' in text.lower():
+        _created_groups.discard(f"{stream}:{group}")
+
 async def outgoing_loop():
     rd = aioredis.Redis(host='localhost', port=6379, decode_responses=True)
     failed_attempts: dict[str, int] = {}
     replay_pending = True
     while True:
         try:
-            try:
-                await rd.xgroup_create(OUTGOING_STREAM, OUTGOING_GROUP, id='0', mkstream=True)
-            except Exception as e:
-                if 'BUSYGROUP' not in str(e):
-                    raise
+            group_key = f"{OUTGOING_STREAM}:{OUTGOING_GROUP}"
+            if group_key not in _created_groups:
+                try:
+                    await rd.xgroup_create(OUTGOING_STREAM, OUTGOING_GROUP, id='0', mkstream=True)
+                    _created_groups.add(group_key)
+                except Exception as e:
+                    if 'BUSYGROUP' not in str(e):
+                        raise
+                    _created_groups.add(group_key)
 
             stream_id = '0' if replay_pending else '>'
             msgs = await rd.xreadgroup(
@@ -620,6 +631,7 @@ async def outgoing_loop():
                                 flush=True,
                             )
         except Exception as e:
+            _forget_group_if_missing(e, OUTGOING_STREAM, OUTGOING_GROUP)
             if 'Connection' not in str(e):
                 print(f'OUT ERR: {e}', flush=True)
             await asyncio.sleep(1)

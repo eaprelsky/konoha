@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,6 +110,9 @@ SENSITIVE_TEMP_FILES = [
     Path("/home/ubuntu/.dashboard-initial-password"),
 ]
 HEALTH_POLICY_FILE = Path(os.environ.get("KONOHA_HEALTH_POLICY_FILE", "/opt/shared/konoha-health-policy.json"))
+REDIS_COMMANDSTATS_STATE_FILE = Path(os.environ.get("KONOHA_REDIS_COMMANDSTATS_STATE_FILE", "/tmp/konoha-healthcheck-redis-commandstats.json"))
+XREADGROUP_WARN_PER_SEC = float(os.environ.get("KONOHA_XREADGROUP_WARN_PER_SEC", "20"))
+XGROUP_WARN_PER_SEC = float(os.environ.get("KONOHA_XGROUP_WARN_PER_SEC", "1"))
 
 
 @dataclass
@@ -207,6 +211,88 @@ def redis_json(*args: str) -> Any:
     if not stdout:
         return None
     return json.loads(stdout)
+
+
+def redis_text(*args: str) -> str:
+    rc, stdout, stderr = run(["redis-cli", *args], timeout=8)
+    if rc != 0:
+        raise RuntimeError(stderr or stdout or f"redis-cli {' '.join(args)} failed")
+    return stdout
+
+
+def parse_redis_commandstats(info_text: str) -> dict[str, dict[str, float]]:
+    stats: dict[str, dict[str, float]] = {}
+    for line in info_text.splitlines():
+        line = line.strip()
+        if not line.startswith("cmdstat_") or ":" not in line:
+            continue
+        raw_name, raw_fields = line.split(":", 1)
+        command = raw_name.removeprefix("cmdstat_").lower()
+        parsed: dict[str, float] = {}
+        for field in raw_fields.split(","):
+            if "=" not in field:
+                continue
+            key, value = field.split("=", 1)
+            try:
+                parsed[key] = float(value)
+            except ValueError:
+                continue
+        stats[command] = parsed
+    return stats
+
+
+def load_redis_commandstats_snapshot(path: Path = REDIS_COMMANDSTATS_STATE_FILE) -> dict[str, Any] | None:
+    try:
+        if not path.exists():
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return None
+        return raw
+    except Exception:
+        return None
+
+
+def save_redis_commandstats_snapshot(stats: dict[str, dict[str, float]], now: float, path: Path = REDIS_COMMANDSTATS_STATE_FILE) -> None:
+    try:
+        path.write_text(json.dumps({"ts": now, "stats": stats}, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def redis_polling_storm_checks(
+    current: dict[str, dict[str, float]],
+    previous: dict[str, Any] | None,
+    now: float,
+) -> list[Check]:
+    xread = current.get("xreadgroup", {})
+    xgroup = current.get("xgroup", {})
+    if not xread and not xgroup:
+        return [Check("WARN", "redis.commandstats.stream_polling", "xreadgroup/xgroup stats unavailable", "Inspect: redis-cli INFO commandstats")]
+
+    if not previous or "stats" not in previous or "ts" not in previous:
+        return [Check("OK", "redis.commandstats.stream_polling", "baseline captured for XREADGROUP/XGROUP rates")]
+
+    elapsed = max(1.0, now - float(previous.get("ts") or now))
+    prev_stats = previous.get("stats") or {}
+    prev_xread = prev_stats.get("xreadgroup", {}) if isinstance(prev_stats, dict) else {}
+    prev_xgroup = prev_stats.get("xgroup", {}) if isinstance(prev_stats, dict) else {}
+
+    xread_delta = max(0.0, float(xread.get("calls") or 0) - float(prev_xread.get("calls") or 0))
+    xgroup_delta = max(0.0, float(xgroup.get("calls") or 0) - float(prev_xgroup.get("calls") or 0))
+    xgroup_failed_delta = max(0.0, float(xgroup.get("failed_calls") or 0) - float(prev_xgroup.get("failed_calls") or 0))
+    xread_rate = xread_delta / elapsed
+    xgroup_rate = xgroup_delta / elapsed
+    detail = (
+        f"elapsed={elapsed:.0f}s xreadgroup_rate={xread_rate:.2f}/s "
+        f"xgroup_rate={xgroup_rate:.2f}/s xgroup_failed_delta={int(xgroup_failed_delta)}"
+    )
+
+    if xgroup_failed_delta > 0:
+        return [Check("WARN", "redis.commandstats.xgroup_failed", detail, "XGROUP CREATE failures are growing; verify group creation is outside hot poll loops")]
+    if xread_rate > XREADGROUP_WARN_PER_SEC or xgroup_rate > XGROUP_WARN_PER_SEC:
+        return [Check("WARN", "redis.commandstats.stream_polling", detail, "Possible Redis stream polling storm; inspect watchdogs/packers and blocking reads")]
+    return [Check("OK", "redis.commandstats.stream_polling", detail)]
 
 
 def api_get(path: str) -> Any:
@@ -368,6 +454,19 @@ def check_redis_streams(policy: HealthcheckPolicy | None = None) -> list[Check]:
             checks.append(Check("WARN", f"redis.dead_letter.{stream}", f"len={length}", f"Inspect: redis-cli XRANGE {stream} - + COUNT 10"))
         else:
             checks.append(Check("OK", f"redis.dead_letter.{stream}", "empty"))
+    return checks
+
+
+def check_redis_polling_storm() -> list[Check]:
+    now = time.time()
+    try:
+        stats = parse_redis_commandstats(redis_text("INFO", "commandstats"))
+    except Exception as exc:
+        return [Check("WARN", "redis.commandstats.stream_polling", str(exc), "Inspect: redis-cli INFO commandstats")]
+
+    previous = load_redis_commandstats_snapshot()
+    checks = redis_polling_storm_checks(stats, previous, now)
+    save_redis_commandstats_snapshot(stats, now)
     return checks
 
 
@@ -905,6 +1004,7 @@ def main() -> int:
     checks.extend(check_systemd(policy))
     checks.extend(check_api())
     checks.extend(check_redis_streams(policy))
+    checks.extend(check_redis_polling_storm())
     checks.extend(check_messenger_connector_health(policy))
     checks.extend(check_agents(policy))
     checks.extend(check_lifecycle_control_plane(policy))

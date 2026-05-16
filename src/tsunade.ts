@@ -8,7 +8,7 @@
 // so that test Redis DB (1) and production DB (0) are fully isolated.
 
 import Redis from "ioredis";
-import { registerAgent, sendMessage, REDIS_CONNECTION_OPTS } from "./redis";
+import { registerAgent, sendMessage, REDIS_CONNECTION_OPTS, sampleEnsureGroupMetrics } from "./redis";
 import { silentCatch, createLogger } from "./logger";
 
 const log = createLogger("tsunade");
@@ -116,6 +116,8 @@ async function startStreamPoller(pollRedis: Redis): Promise<void> {
             await pollRedis.xack(TSUNADE_STREAM, TSUNADE_GROUP, entryId).catch(silentCatch("tsunade stream ack"));
           }
         }
+        // Micro-delay to prevent tight re-poll during message storms (#780)
+        await new Promise(r => setTimeout(r, 50));
       } catch (e: any) {
         if (e.message?.includes("NOGROUP")) {
           // Consumer group was destroyed (e.g. stream deleted by cleanup).
@@ -139,6 +141,11 @@ async function startStreamPoller(pollRedis: Redis): Promise<void> {
 const HEALTHCHECK_INTERVAL_MS = 30_000; // 30 seconds
 
 function startWorkItemHealthcheck(): void {
+  // Polling storm detection (#780): track ensureGroup calls per interval.
+  // A high cached/call ratio with high total calls indicates the cache is working
+  // but the poll loop is still too hot — stream pollers should not call ensureGroup
+  // more than ~2-3 times per 30s interval (one per active agent stream).
+  const POLL_STORM_THRESHOLD = 60; // ensureGroup calls per 30s interval
   const check = async () => {
     try {
       const result = await recoverStuckWorkItems();
@@ -153,6 +160,20 @@ function startWorkItemHealthcheck(): void {
           timestamp: new Date().toISOString(),
           village_id: "comind.konoha",
         }).catch(silentCatch("tsunade fire-and-forget"));
+      }
+
+      // Polling storm detection (#780)
+      const m = sampleEnsureGroupMetrics();
+      if (m.calls > POLL_STORM_THRESHOLD) {
+        log.warn("healthcheck: possible polling storm", {
+          ensureGroup_calls: m.calls,
+          ensureGroup_create_attempts: m.createAttempts,
+          ensureGroup_created: m.created,
+          ensureGroup_busy: m.busy,
+          ensureGroup_cached: m.cached,
+          ensureGroup_errors: m.errors,
+          interval_s: HEALTHCHECK_INTERVAL_MS / 1000,
+        });
       }
     } catch (e: any) {
       log.error("healthcheck error", { error: e.message });

@@ -353,6 +353,26 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
 SEEN_REACTIONS_FILE = Path(f"/tmp/watchdog-naruto-seen-reactions.json")
 MAX_SEEN_REACTIONS = 500
 
+_created_groups: set[str] = set()
+
+def _forget_group_if_missing(err: Exception, stream: str, group: str) -> None:
+    text = str(err)
+    if "NOGROUP" in text or "no such key" in text.lower():
+        _created_groups.discard(f"{stream}:{group}")
+
+async def _ensure_group_once(r, stream: str, group: str, id: str = "$") -> None:
+    """Cache XGROUP CREATE to avoid Redis churn on every reconnect (#780)."""
+    key = f"{stream}:{group}"
+    if key in _created_groups:
+        return
+    try:
+        await r.xgroup_create(stream, group, id=id, mkstream=True)
+        _created_groups.add(key)
+    except Exception as e:
+        if "BUSYGROUP" not in str(e):
+            raise
+        _created_groups.add(key)
+
 
 def _load_seen_reactions() -> set:
     if SEEN_REACTIONS_FILE.exists():
@@ -382,12 +402,7 @@ async def telegram_redis_watcher(raw_queue: asyncio.Queue) -> None:
             if r is None:
                 r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
-            try:
-                await r.xgroup_create(TG_STREAM, TG_GROUP, id="$", mkstream=True)
-                _b.log.info(f"Created consumer group {TG_GROUP} on {TG_STREAM}")
-            except Exception as e:
-                if "BUSYGROUP" not in str(e):
-                    raise
+            await _ensure_group_once(r, TG_STREAM, TG_GROUP)
 
             _b.log.info(f"Listening on Redis stream {TG_STREAM} (group={TG_GROUP}, consumer={TG_CONSUMER})")
             backoff = 1
@@ -443,6 +458,7 @@ async def telegram_redis_watcher(raw_queue: asyncio.Queue) -> None:
             raise
         except Exception as e:
             _b.log.warning(f"TG Redis watcher error: {e!r}, retrying in {backoff}s")
+            _forget_group_if_missing(e, TG_STREAM, TG_GROUP)
             if r:
                 try:
                     await r.aclose()

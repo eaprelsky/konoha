@@ -63,3 +63,53 @@ def test_optional_monitor_policy_enables_matching_agent_control_plane():
 
     assert healthcheck.agent_policy_enabled("kiba", "optional_worker", policy) is True
     assert healthcheck.agent_policy_enabled("kakashi", "optional_worker", policy) is False
+
+
+def test_parse_redis_commandstats_extracts_stream_counters():
+    stats = healthcheck.parse_redis_commandstats(
+        "# Commandstats\n"
+        "cmdstat_xreadgroup:calls=120,usec=360,usec_per_call=3.00,rejected_calls=0,failed_calls=0\n"
+        "cmdstat_xgroup:calls=14,usec=70,usec_per_call=5.00,rejected_calls=0,failed_calls=9\n"
+    )
+
+    assert stats["xreadgroup"]["calls"] == 120
+    assert stats["xgroup"]["failed_calls"] == 9
+
+
+def test_redis_polling_storm_warns_on_failed_xgroup_growth():
+    current = {
+        "xreadgroup": {"calls": 200},
+        "xgroup": {"calls": 25, "failed_calls": 11},
+    }
+    previous = {
+        "ts": 100.0,
+        "stats": {
+            "xreadgroup": {"calls": 100},
+            "xgroup": {"calls": 20, "failed_calls": 10},
+        },
+    }
+
+    checks = healthcheck.redis_polling_storm_checks(current, previous, now=130.0)
+
+    assert checks[0].level == "WARN"
+    assert checks[0].name == "redis.commandstats.xgroup_failed"
+    assert "xgroup_failed_delta=1" in checks[0].detail
+
+
+def test_redis_polling_storm_ok_when_rates_are_low():
+    current = {
+        "xreadgroup": {"calls": 130},
+        "xgroup": {"calls": 11, "failed_calls": 0},
+    }
+    previous = {
+        "ts": 100.0,
+        "stats": {
+            "xreadgroup": {"calls": 100},
+            "xgroup": {"calls": 10, "failed_calls": 0},
+        },
+    }
+
+    checks = healthcheck.redis_polling_storm_checks(current, previous, now=130.0)
+
+    assert checks[0].level == "OK"
+    assert "xreadgroup_rate=1.00/s" in checks[0].detail

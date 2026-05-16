@@ -28,6 +28,7 @@ import {
   consumeInvite,
   replayStream,
   createSubscriber,
+  sampleEnsureGroupMetrics,
   AGENT_STREAM_PREFIX,
 } from "../src/redis";
 
@@ -338,6 +339,38 @@ describe("sendMessage / readMessages", () => {
   test("empty inbox returns empty array", async () => {
     const msgs = await readMessages(id("empty-inbox"), 5);
     expect(msgs).toEqual([]);
+  });
+
+  test("consumer group bootstrap is cached after first read", async () => {
+    sampleEnsureGroupMetrics();
+    const agentId = id("cached-group");
+    await registerAgent({ id: agentId, name: "Cached Group", capabilities: [], roles: [] });
+
+    await sendMessage({ from: "src", to: agentId, type: "message", text: "cache me" });
+    await readMessages(agentId);
+    await readMessages(agentId);
+
+    const metrics = sampleEnsureGroupMetrics();
+    expect(metrics.calls).toBe(2);
+    expect(metrics.createAttempts).toBe(1);
+    expect(metrics.busy).toBe(1);
+    expect(metrics.cached).toBe(1);
+    expect(metrics.errors).toBe(0);
+  });
+
+  test("cached consumer group recovers if stream was deleted", async () => {
+    sampleEnsureGroupMetrics();
+    const agentId = id("cached-group-recreate");
+    await registerAgent({ id: agentId, name: "Cached Group Recreate", capabilities: [], roles: [] });
+
+    await sendMessage({ from: "src", to: agentId, type: "message", text: "before delete" });
+    await readMessages(agentId);
+    await redis.del(AGENT_STREAM_PREFIX + agentId);
+
+    await sendMessage({ from: "src", to: agentId, type: "message", text: "after delete" });
+    const recovered = await readMessages(agentId);
+
+    expect(recovered.find(m => m.text === "after delete")).toBeDefined();
   });
 });
 

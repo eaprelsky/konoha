@@ -294,6 +294,26 @@ async def reaction_queue_watcher(raw_queue: asyncio.Queue, cfg: dict) -> None:
 
 # ── Redis stream watcher ──────────────────────────────────────────────────────
 
+_created_groups: set[str] = set()
+
+def _forget_group_if_missing(err: Exception, stream: str, group: str) -> None:
+    text = str(err)
+    if "NOGROUP" in text or "no such key" in text.lower():
+        _created_groups.discard(f"{stream}:{group}")
+
+async def _ensure_group_once(r, stream: str, group: str, id: str = "$") -> None:
+    """Cache XGROUP CREATE to avoid Redis churn on every reconnect (#780)."""
+    key = f"{stream}:{group}"
+    if key in _created_groups:
+        return
+    try:
+        await r.xgroup_create(stream, group, id=id, mkstream=True)
+        _created_groups.add(key)
+    except Exception as e:
+        if "BUSYGROUP" not in str(e):
+            raise
+        _created_groups.add(key)
+
 async def telegram_redis_watcher(raw_queue: asyncio.Queue, cfg: dict) -> None:
     """Read a Redis stream via consumer group.
     Requires cfg["redis_stream"] = {"stream": ..., "group": ..., "consumer": ...}
@@ -317,12 +337,7 @@ async def telegram_redis_watcher(raw_queue: asyncio.Queue, cfg: dict) -> None:
             if r is None:
                 r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
-            try:
-                await r.xgroup_create(stream, group, id="$", mkstream=True)
-                log.info(f"Created consumer group {group} on {stream}")
-            except Exception as e:
-                if "BUSYGROUP" not in str(e):
-                    raise
+            await _ensure_group_once(r, stream, group)
 
             log.info(f"Listening on Redis stream {stream} (group={group}, consumer={consumer})")
             backoff = 1
@@ -359,6 +374,7 @@ async def telegram_redis_watcher(raw_queue: asyncio.Queue, cfg: dict) -> None:
             raise
         except Exception as e:
             log.warning(f"Redis watcher error: {e!r}, retrying in {backoff}s")
+            _forget_group_if_missing(e, stream, group)
             if r:
                 try:
                     await r.aclose()
@@ -392,12 +408,7 @@ async def redis_reactions_watcher(raw_queue: asyncio.Queue, cfg: dict) -> None:
             if r is None:
                 r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
-            try:
-                await r.xgroup_create(stream, group, id="$", mkstream=True)
-                log.info(f"Created consumer group {group} on {stream}")
-            except Exception as e:
-                if "BUSYGROUP" not in str(e):
-                    raise
+            await _ensure_group_once(r, stream, group)
 
             log.info(f"Listening on Redis stream {stream} (group={group}, consumer={consumer})")
             backoff = 1
@@ -430,6 +441,7 @@ async def redis_reactions_watcher(raw_queue: asyncio.Queue, cfg: dict) -> None:
             raise
         except Exception as e:
             log.warning(f"Reaction Redis watcher error: {e!r}, retrying in {backoff}s")
+            _forget_group_if_missing(e, stream, group)
             if r:
                 try:
                     await r.aclose()
