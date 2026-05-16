@@ -169,5 +169,7 @@ def test_disk_inventory_survives_du_timeout(monkeypatch, tmp_path):
         "name": "slow_cache",
         "path": str(target),
         "size_kib": None,
+        "budget_kib": None,
+        "budget_pressure": "unknown",
         "status": "unavailable_or_timeout",
     }]

@@ -31,7 +31,9 @@ processes. Konoha core only performs the lifecycle API request.
 
 Deployment service profiles decide which of these units are expected for a
 given environment. See `docs/service-profiles.md` for `prod-core`, `prod-full`,
-`staging-core`, and `qa-on-demand`.
+`staging-core`, and `qa-on-demand`. The machine-readable budget contract for
+these slices, service limits, TestBench caps, and scale-out thresholds is
+`docs/resource-budgets.json`.
 
 ## Before Snapshot
 
@@ -100,6 +102,8 @@ python3 scripts/resource-inventory.py
 
 See `docs/resource-inventory.md` for the live process/MCP/cache inventory
 format and redaction policy.
+See `docs/resource-budget-policy.md` for profile budget envelopes and scale-out
+rules.
 
 ## Rollback
 

@@ -24,6 +24,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from service_profiles import resolve_service_profile_from_env
+from resource_budgets import systemd_slice_policies
 
 
 KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
@@ -81,59 +82,7 @@ OPTIONAL_MONITOR_SERVICE_GROUPS = {
     "kakashi": ["agent-kakashi", "agent-watchdog-kakashi"],
     "shikadai": ["agent-watchdog-shikadai"],
 }
-SYSTEMD_SLICE_POLICIES = {
-    "konoha.slice": {
-        "classification": "required_core",
-        "memory_high": "5500M",
-        "memory_max": "6500M",
-        "cpu_weight": "200",
-        "cpu_quota": "600%",
-        "tasks_max": "20000",
-    },
-    "konoha-core.slice": {
-        "classification": "required_core",
-        "memory_high": "900M",
-        "memory_max": "1200M",
-        "cpu_weight": "300",
-        "cpu_quota": "200%",
-        "tasks_max": "4096",
-    },
-    "konoha-connectors.slice": {
-        "classification": "connector_owned",
-        "connector": "telegram",
-        "memory_high": "1600M",
-        "memory_max": "2200M",
-        "cpu_weight": "250",
-        "cpu_quota": "300%",
-        "tasks_max": "8192",
-    },
-    "konoha-agents.slice": {
-        "classification": "optional_worker",
-        "optional_monitors": {"akamaru", "kiba"},
-        "memory_high": "900M",
-        "memory_max": "1200M",
-        "cpu_weight": "120",
-        "cpu_quota": "175%",
-        "tasks_max": "4096",
-    },
-    "konoha-qa.slice": {
-        "classification": "qa_on_demand",
-        "optional_monitors": {"kakashi", "shikadai", "shino", "hinata", "guy", "ibiki"},
-        "memory_high": "1200M",
-        "memory_max": "1800M",
-        "cpu_weight": "100",
-        "cpu_quota": "200%",
-        "tasks_max": "8192",
-    },
-    "konoha-infra.slice": {
-        "classification": "external_infra",
-        "memory_high": "1500M",
-        "memory_max": "2500M",
-        "cpu_weight": "200",
-        "cpu_quota": "250%",
-        "tasks_max": "4096",
-    },
-}
+SYSTEMD_SLICE_POLICIES = systemd_slice_policies()
 SYSTEMD_SERVICE_SLICES = {
     "konoha.service": "konoha-core.slice",
     "agent-naruto.service": "konoha-connectors.slice",
@@ -1338,16 +1287,28 @@ def check_resource_inventory_budget() -> list[Check]:
         return [Check("WARN", "resource_inventory.report", f"invalid JSON: {exc}", "Run: python3 scripts/resource-inventory.py --json --no-disk")]
 
     groups = report.get("groups") or {}
-    pressure = {
+    group_pressure = {
         name: group.get("budget_pressure")
         for name, group in groups.items()
         if group.get("budget_pressure") in {"warning", "critical"}
     }
+    service_pressure = {
+        row.get("unit"): row.get("budget_pressure")
+        for row in report.get("service_budgets", [])
+        if row.get("budget_pressure") in {"warning", "critical"}
+    }
+    disk_pressure = {
+        row.get("name"): row.get("budget_pressure")
+        for row in report.get("disk", [])
+        if row.get("budget_pressure") in {"warning", "critical"}
+    }
     total_rss_kib = sum(int(group.get("rss_kib") or 0) for group in groups.values())
-    detail = f"groups={len(groups)} total_rss_kib={total_rss_kib} pressure={pressure or 'none'}"
-    if any(level == "critical" for level in pressure.values()):
+    pressure = {"groups": group_pressure, "services": service_pressure, "disk": disk_pressure}
+    detail = f"groups={len(groups)} total_rss_kib={total_rss_kib} pressure={pressure}"
+    levels = [*group_pressure.values(), *service_pressure.values(), *disk_pressure.values()]
+    if any(level == "critical" for level in levels):
         return [Check("WARN", "resource_inventory.budget_pressure", detail, "Inspect: python3 scripts/resource-inventory.py")]
-    if pressure:
+    if levels:
         return [Check("WARN", "resource_inventory.budget_pressure", detail, "Inspect: python3 scripts/resource-inventory.py")]
     return [Check("OK", "resource_inventory.budget_pressure", detail)]
 

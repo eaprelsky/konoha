@@ -1,13 +1,23 @@
 /**
  * pool.ts — BrowserContext session pool for konoha-testbench.
- * Maintains N=3 isolated Playwright BrowserContexts on a single persistent Chromium instance.
+ * Maintains a bounded set of isolated Playwright BrowserContexts on a single persistent Chromium instance.
  * Callers acquire a session, use it, then release it back to the pool.
  */
 
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
-export const POOL_SIZE = parseInt(process.env.TESTBENCH_POOL_SIZE || "3");
-const ACQUIRE_TIMEOUT_MS = 30_000;
+const DEFAULT_POOL_SIZE = 3;
+const DEFAULT_MAX_POOL_SIZE = 3;
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(raw || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const requestedPoolSize = parsePositiveInt(process.env.TESTBENCH_POOL_SIZE, DEFAULT_POOL_SIZE);
+export const MAX_POOL_SIZE = parsePositiveInt(process.env.TESTBENCH_MAX_POOL_SIZE, DEFAULT_MAX_POOL_SIZE);
+export const POOL_SIZE = Math.min(requestedPoolSize, MAX_POOL_SIZE);
+const ACQUIRE_TIMEOUT_MS = parsePositiveInt(process.env.TESTBENCH_ACQUIRE_TIMEOUT_MS, 30_000);
 
 export interface Session {
   id: number;
@@ -162,11 +172,22 @@ export async function releaseSession(session: Session, reset = false): Promise<v
 }
 
 /** Pool status for GET /testbench/status */
-export function poolStatus(): { total: number; free: number; waiting: number; sessions: object[] } {
+export function poolStatus(): {
+  total: number;
+  free: number;
+  waiting: number;
+  limits: { requested_pool_size: number; max_pool_size: number; acquire_timeout_ms: number };
+  sessions: object[];
+} {
   return {
     total: POOL_SIZE,
     free: _available.length,
     waiting: _waiters.length,
+    limits: {
+      requested_pool_size: requestedPoolSize,
+      max_pool_size: MAX_POOL_SIZE,
+      acquire_timeout_ms: ACQUIRE_TIMEOUT_MS,
+    },
     sessions: _pool.map((s, i) => ({
       id: i,
       free: _available.includes(i),

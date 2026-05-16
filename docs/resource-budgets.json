@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 757,
+  "default_budget_profile": "prod-core",
+  "budget_profiles": {
+    "prod-core": {
+      "service_profile": "prod-core",
+      "purpose": "Production smoke and lean always-on runtime.",
+      "memory_max_mib": 6500,
+      "cpu_quota_percent": 600,
+      "disk_budget_gib": 35,
+      "testbench": { "default": "disabled", "pool_size": 0, "max_pool_size": 0 },
+      "scale_out_at": { "memory_pressure": "critical", "disk_used_percent": 85, "sustained_cpu_percent": 450 }
+    },
+    "prod-full": {
+      "service_profile": "prod-full",
+      "purpose": "Production with SDD developer/reviewer lane enabled.",
+      "memory_max_mib": 6500,
+      "cpu_quota_percent": 600,
+      "disk_budget_gib": 40,
+      "testbench": { "default": "on-demand", "pool_size": 1, "max_pool_size": 3 },
+      "scale_out_at": { "memory_pressure": "critical", "disk_used_percent": 85, "sustained_cpu_percent": 450 }
+    },
+    "staging-core": {
+      "service_profile": "staging-core",
+      "purpose": "Staging golden-path API/runtime tests without production connectors or agent fleet.",
+      "memory_max_mib": 2600,
+      "cpu_quota_percent": 250,
+      "disk_budget_gib": 12,
+      "testbench": { "default": "on-demand", "pool_size": 1, "max_pool_size": 1 },
+      "scale_out_at": { "memory_pressure": "warning", "disk_used_percent": 80, "sustained_cpu_percent": 175 }
+    },
+    "qa-on-demand": {
+      "service_profile": "qa-on-demand",
+      "purpose": "Bounded QA/test sessions with manually started TestBench and QA workers.",
+      "memory_max_mib": 3600,
+      "cpu_quota_percent": 350,
+      "disk_budget_gib": 20,
+      "testbench": { "default": "manual", "pool_size": 1, "max_pool_size": 2 },
+      "scale_out_at": { "memory_pressure": "warning", "disk_used_percent": 80, "sustained_cpu_percent": 250 }
+    },
+    "ci-test": {
+      "service_profile": "qa-on-demand",
+      "purpose": "CI/unit/integration test execution without production connectors, agents, or persistent browser pool.",
+      "memory_max_mib": 2200,
+      "cpu_quota_percent": 250,
+      "disk_budget_gib": 10,
+      "testbench": { "default": "disabled", "pool_size": 0, "max_pool_size": 0 },
+      "scale_out_at": { "memory_pressure": "warning", "disk_used_percent": 80, "sustained_cpu_percent": 175 }
+    }
+  },
+  "systemd": {
+    "slices": {
+      "konoha.slice": {
+        "classification": "required_core",
+        "memory_high": "5500M",
+        "memory_max": "6500M",
+        "cpu_weight": "200",
+        "cpu_quota": "600%",
+        "tasks_max": "20000"
+      },
+      "konoha-core.slice": {
+        "classification": "required_core",
+        "memory_high": "900M",
+        "memory_max": "1200M",
+        "cpu_weight": "300",
+        "cpu_quota": "200%",
+        "tasks_max": "4096"
+      },
+      "konoha-connectors.slice": {
+        "classification": "connector_owned",
+        "connector": "telegram",
+        "memory_high": "1600M",
+        "memory_max": "2200M",
+        "cpu_weight": "250",
+        "cpu_quota": "300%",
+        "tasks_max": "8192"
+      },
+      "konoha-agents.slice": {
+        "classification": "optional_worker",
+        "optional_monitors": ["akamaru", "kiba"],
+        "memory_high": "900M",
+        "memory_max": "1200M",
+        "cpu_weight": "120",
+        "cpu_quota": "175%",
+        "tasks_max": "4096"
+      },
+      "konoha-qa.slice": {
+        "classification": "qa_on_demand",
+        "optional_monitors": ["kakashi", "shikadai", "shino", "hinata", "guy", "ibiki"],
+        "memory_high": "1200M",
+        "memory_max": "1800M",
+        "cpu_weight": "100",
+        "cpu_quota": "200%",
+        "tasks_max": "8192"
+      },
+      "konoha-infra.slice": {
+        "classification": "external_infra",
+        "memory_high": "1500M",
+        "memory_max": "2500M",
+        "cpu_weight": "200",
+        "cpu_quota": "250%",
+        "tasks_max": "4096"
+      }
+    },
+    "units": {
+      "konoha.service": { "slice": "konoha-core.slice", "memory_max": "1200M", "cpu_quota": "200%", "restart": "always" },
+      "redis-server.service": { "slice": "konoha-infra.slice", "memory_max": "768M", "cpu_quota": "100%", "restart": "always", "retention": "appendonly everysec; maxmemory-policy noeviction unless explicitly changed" },
+      "postgresql.service": { "slice": "konoha-infra.slice", "memory_max": "1200M", "cpu_quota": "150%", "restart": "always", "retention": "7 daily logical backups minimum; prune shadow bloat through retention reports" },
+      "agent-naruto.service": { "slice": "konoha-connectors.slice", "memory_max": "1200M", "cpu_quota": "250%", "restart": "always" },
+      "agent-sasuke.service": { "slice": "konoha-connectors.slice", "memory_max": "1200M", "cpu_quota": "250%", "restart": "always" },
+      "agent-kiba.service": { "slice": "konoha-agents.slice", "memory_max": "900M", "cpu_quota": "150%", "restart": "always" },
+      "agent-kakashi.service": { "slice": "konoha-qa.slice", "memory_max": "900M", "cpu_quota": "150%", "restart": "always" },
+      "agent-managed@.service": { "slice": "konoha-qa.slice", "memory_max": "900M", "cpu_quota": "150%", "restart": "always" },
+      "agent-watchdog-naruto.service": { "slice": "konoha-connectors.slice", "memory_max": "384M", "cpu_quota": "75%", "restart": "on-failure" },
+      "agent-watchdog-sasuke.service": { "slice": "konoha-connectors.slice", "memory_max": "384M", "cpu_quota": "75%", "restart": "on-failure" },
+      "agent-watchdog-kiba.service": { "slice": "konoha-agents.slice", "memory_max": "384M", "cpu_quota": "50%", "restart": "always" },
+      "agent-watchdog-kakashi.service": { "slice": "konoha-qa.slice", "memory_max": "384M", "cpu_quota": "50%", "restart": "always" },
+      "agent-watchdog-shikadai.service": { "slice": "konoha-qa.slice", "memory_max": "384M", "cpu_quota": "50%", "restart": "always" },
+      "agent-watchdog-lifecycle.service": { "slice": "konoha-qa.slice", "memory_max": "384M", "cpu_quota": "50%", "restart": "always" },
+      "akamaru.service": { "slice": "konoha-agents.slice", "memory_max": "384M", "cpu_quota": "50%", "restart": "always" },
+      "konoha-testbench.service": { "slice": "konoha-qa.slice", "memory_max": "1200M", "cpu_quota": "150%", "restart": "on-failure", "concurrency": { "pool_size": 3, "max_pool_size": 3, "acquire_timeout_ms": 30000 } },
+      "telegram-bot.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" },
+      "telegram-bus.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" },
+      "telegram-context-packer.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" },
+      "telegram-event-bridge.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" },
+      "telegram-vision-packer.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" }
+    }
+  },
+  "disk_budgets": {
+    "npm_npx_cache": { "max_gib": 2 },
+    "npm_cache": { "max_gib": 3 },
+    "uv_cache": { "max_gib": 3 },
+    "bun_cache": { "max_gib": 2 },
+    "playwright_cache": { "max_gib": 2 },
+    "repo_node_modules": { "max_gib": 4 },
+    "template_node_modules": { "max_gib": 4 },
+    "journald": { "max_gib": 1, "retention_days": 14 },
+    "agent_runtime_logs": { "max_gib": 1, "retention_days": 30 }
+  },
+  "scale_out_policy": {
+    "move_to_second_vm_when": [
+      "prod-core reaches critical memory pressure twice in 24h after optional workers are stopped",
+      "TestBench requires pool_size > 3 or sustained QA runs overlap production smoke",
+      "Redis/PostgreSQL combined peak exceeds 75% of konoha-infra.slice budget",
+      "Disk pressure remains above 85% after retention cleanup",
+      "MCP server RSS remains critical after optional pack gates and stale workdir configs are regenerated"
+    ],
+    "first_services_to_move": ["konoha-testbench.service", "optional SDD/QA managed agents", "heavy MCP/debug packs"],
+    "do_not_move_first": ["konoha.service", "redis-server.service", "postgresql.service", "telegram ingress connectors"]
+  }
+}

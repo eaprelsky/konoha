@@ -4,6 +4,10 @@ Issue #760 adds a repeatable live resource report for Konoha runtime budgeting.
 Use it instead of ad hoc `ps` snapshots when deciding whether a service, agent,
 or MCP pack is inside its budget.
 
+Fallback service budgets and cache/artifact disk budgets come from
+`docs/resource-budgets.json`. Profile-level envelopes and scale-out policy are
+documented in `docs/resource-budget-policy.md`.
+
 ## Command
 
 ```bash

@@ -7,6 +7,9 @@ The machine-readable source of truth is `docs/service-profiles.json`.
 `scripts/healthcheck-system.py` and `scripts/agent-autostart.py` both read that
 catalog through `scripts/service_profiles.py`.
 
+Resource budgets for these profiles are defined separately in
+`docs/resource-budgets.json` and explained in `docs/resource-budget-policy.md`.
+
 ## Profiles
 
 | Profile | Purpose | Infra dependencies | Autostart agents | Enabled connectors | Enabled optional monitors |

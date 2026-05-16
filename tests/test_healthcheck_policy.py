@@ -391,4 +391,16 @@ def test_resource_inventory_budget_pressure_ok(monkeypatch):
     checks = healthcheck.check_resource_inventory_budget()
 
     assert checks[0].level == "OK"
-    assert "pressure=none" in checks[0].detail
+    assert "pressure={'groups': {}, 'services': {}, 'disk': {}}" in checks[0].detail
+
+
+def test_resource_inventory_service_budget_pressure_is_reported(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        return 0, '{"groups":{"core_konoha_api":{"rss_kib":100,"budget_pressure":"ok"}},"service_budgets":[{"unit":"konoha-testbench.service","budget_pressure":"critical"}],"disk":[]}', ""
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+
+    checks = healthcheck.check_resource_inventory_budget()
+
+    assert checks[0].level == "WARN"
+    assert "'konoha-testbench.service': 'critical'" in checks[0].detail

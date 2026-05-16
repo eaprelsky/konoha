@@ -13,69 +13,25 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from resource_budgets import disk_budget_kib_by_name, expected_memory_max_kib, systemd_budget_units
+
 DEFAULT_TOP = 12
 KIB = 1024
 MIB = 1024 * 1024
 
-SYSTEMD_BUDGET_UNITS = [
-    "konoha.slice",
-    "konoha-core.slice",
-    "konoha-connectors.slice",
-    "konoha-agents.slice",
-    "konoha-qa.slice",
-    "konoha-infra.slice",
-    "konoha.service",
-    "agent-naruto.service",
-    "agent-sasuke.service",
-    "agent-kiba.service",
-    "agent-kakashi.service",
-    "agent-watchdog-naruto.service",
-    "agent-watchdog-sasuke.service",
-    "agent-watchdog-kiba.service",
-    "agent-watchdog-kakashi.service",
-    "agent-watchdog-shikadai.service",
-    "agent-watchdog-lifecycle.service",
-    "akamaru.service",
-    "konoha-testbench.service",
-    "telegram-bot.service",
-    "telegram-bus.service",
-    "telegram-context-packer.service",
-    "telegram-event-bridge.service",
-    "telegram-vision-packer.service",
-]
-
-EXPECTED_MEMORY_MAX_KIB = {
-    "konoha.slice": 6500 * 1024,
-    "konoha-core.slice": 1200 * 1024,
-    "konoha-connectors.slice": 2200 * 1024,
-    "konoha-agents.slice": 1200 * 1024,
-    "konoha-qa.slice": 1800 * 1024,
-    "konoha-infra.slice": 2500 * 1024,
-    "konoha.service": 1200 * 1024,
-    "agent-naruto.service": 1200 * 1024,
-    "agent-sasuke.service": 1200 * 1024,
-    "agent-kiba.service": 900 * 1024,
-    "agent-kakashi.service": 900 * 1024,
-    "agent-watchdog-naruto.service": 384 * 1024,
-    "agent-watchdog-sasuke.service": 384 * 1024,
-    "agent-watchdog-kiba.service": 384 * 1024,
-    "agent-watchdog-kakashi.service": 384 * 1024,
-    "agent-watchdog-shikadai.service": 384 * 1024,
-    "agent-watchdog-lifecycle.service": 384 * 1024,
-    "akamaru.service": 384 * 1024,
-    "konoha-testbench.service": 1800 * 1024,
-    "telegram-bot.service": 512 * 1024,
-    "telegram-bus.service": 512 * 1024,
-    "telegram-context-packer.service": 512 * 1024,
-    "telegram-event-bridge.service": 512 * 1024,
-    "telegram-vision-packer.service": 512 * 1024,
-}
+SYSTEMD_BUDGET_UNITS = systemd_budget_units()
+EXPECTED_MEMORY_MAX_KIB = expected_memory_max_kib()
+DISK_BUDGET_KIB = disk_budget_kib_by_name()
 
 CACHE_TARGETS = [
     ("npm_npx_cache", Path("/home/ubuntu/.npm/_npx")),
@@ -434,12 +390,27 @@ def du_kib(path: Path) -> int | None:
 def collect_disk_inventory() -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for name, path in CACHE_TARGETS:
+        budget_kib = DISK_BUDGET_KIB.get(name)
         size = du_kib(path)
         if size is None:
             if path.exists():
-                entries.append({"name": name, "path": str(path), "size_kib": None, "status": "unavailable_or_timeout"})
+                entries.append({
+                    "name": name,
+                    "path": str(path),
+                    "size_kib": None,
+                    "budget_kib": budget_kib,
+                    "budget_pressure": "unknown",
+                    "status": "unavailable_or_timeout",
+                })
             continue
-        entries.append({"name": name, "path": str(path), "size_kib": size, "status": "ok"})
+        entries.append({
+            "name": name,
+            "path": str(path),
+            "size_kib": size,
+            "budget_kib": budget_kib,
+            "budget_pressure": pressure_for(size, None, budget_kib),
+            "status": "ok",
+        })
     return sorted(entries, key=lambda item: item["size_kib"] or -1, reverse=True)
 
 
@@ -501,7 +472,10 @@ def format_text(report: dict[str, Any]) -> str:
         lines.extend(["", "Cache/artifact disk usage:"])
         for entry in report["disk"]:
             status = entry.get("status", "ok")
-            lines.append(f"{entry['name']} {format_kib(entry['size_kib'])} status={status} {entry['path']}")
+            lines.append(
+                f"{entry['name']} {format_kib(entry['size_kib'])} budget={format_kib(entry.get('budget_kib'))} "
+                f"pressure={entry.get('budget_pressure', 'unknown')} status={status} {entry['path']}"
+            )
     if report.get("service_budgets"):
         lines.extend(["", "Service budgets:"])
         for entry in report["service_budgets"]:
