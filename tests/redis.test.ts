@@ -237,7 +237,7 @@ describe("listAgents", () => {
     const sql = postgres(getDatabaseUrl());
     await sql`
       UPDATE konoha_agents
-      SET last_heartbeat = ${Date.now() - 700_000}, status = 'online'
+      SET last_heartbeat = 0, status = 'online'
       WHERE id = ${agentId}
     `;
     await sql.end();
