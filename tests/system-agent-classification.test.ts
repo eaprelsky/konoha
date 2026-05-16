@@ -44,6 +44,16 @@ describe("seeded system agent classifications", () => {
     }
   });
 
+  test("Kakashi seed cannot revert the Codex runtime profile", () => {
+    expect(agent("kakashi")).toMatchObject({
+      runtime: "codex",
+      fallback_runtime: "claude",
+      model: "codex:gpt-5.5",
+      llm_client_profile: "codex-gpt-5.5",
+      fallback_llm_client_profile: "claude-deepseek-sonnet",
+    });
+  });
+
   test("legacy specialist aliases are not required seeded system agents", () => {
     expect(agent("mirai")).toMatchObject({
       seed_classification: "connector_owned",
