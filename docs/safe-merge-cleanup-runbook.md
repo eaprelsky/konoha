@@ -16,8 +16,8 @@ This protocol lets a delegated worker prepare branches for operator review witho
 
 Suggested labels:
 
-- `delegate:teamlead`: #794 bootstrap Developer/Kakashi delegation for one ready issue.
-- `delegate:done`: child issue completed with local commit report.
+- `state:ready-for-dev` + `agent:kakashi`: Developer/Kakashi intake for one ready issue.
+- `state:ready-for-review` + `agent:shikadai`: Reviewer/Shikadai handoff after a local commit report.
 - `merge:review-required`: local branch needs review.
 - `merge:ready`: reviewer approved merge.
 - `merge:discarded`: branch intentionally dropped.
@@ -58,7 +58,7 @@ The report includes branch, base, HEAD commit, ahead/behind counts, changed file
 2. Confirm the branch starts from current `origin/main` or report rebase/conflicts.
 3. Run targeted tests plus any package-level typecheck required by touched files.
 4. Generate a merge readiness report.
-5. Comment the child issue with the report and add `delegate:done`.
+5. Comment the child issue with the report and move it to `state:ready-for-review` + `agent:shikadai`.
 6. Operator reviews and decides `merge:ready` or `merge:discarded`.
 7. Only after the gate, perform merge/push or cleanup.
 

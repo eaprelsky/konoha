@@ -21,8 +21,8 @@ Each wrapper configures `watchdog_base.py` and adds only the source-specific beh
 **Unique features**:
 - Naruto: Telegram bot queue, reactions, owner-priority interrupt, Konoha echo dedup
 - Sasuke: Telegram Redis stream, reactions, mark-read commands, stuck-delivery monitor
-- Kakashi: Konoha SSE, GitHub issue scanner for one explicitly delegated `delegate:teamlead` issue, on-demand only; `kakashi-batch` is decommissioned; auto-push is opt-in with `KAKASHI_AUTO_PUSH_ENABLED=1` and does not restart `konoha.service` unless `AGENT_AUTO_PUSH_RESTART_UNIT` explicitly names a unit
-- Shikadai: Konoha SSE, GitHub issue scanner for `delegate:architect`, on-demand review/decomposition; approves before closure in the #794 Developer -> Reviewer flow
+- Kakashi: Konoha SSE, GitHub issue scanner for one `state:ready-for-dev`/`state:in-progress` + `agent:kakashi` issue, on-demand only; `kakashi-batch` is decommissioned; auto-push is opt-in with `KAKASHI_AUTO_PUSH_ENABLED=1` and does not restart `konoha.service` unless `AGENT_AUTO_PUSH_RESTART_UNIT` explicitly names a unit
+- Shikadai: Konoha SSE, GitHub issue scanner for `state:ready-for-review` + `agent:shikadai`; approves before closure in the #794 Developer -> Reviewer flow. Architecture decomposition uses a separate workflow route (`route:architecture-decomposition`), not the reviewer watchdog.
 - Kiba: Akamaru alert delivery, wake-on-demand, circuit breaker, git-push review poller
 
 ### 2. `watchdog_base.py` (shared library, 586 lines)

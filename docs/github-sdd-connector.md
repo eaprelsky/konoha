@@ -53,7 +53,7 @@ The normalized event payload includes `repo`, `issue_number`, `issue_title`,
   listeners, while keeping the existing Redis stream and watchdog path.
 - This slice does not implement auto-merge or replace the watchdog scanner.
 - `kakashi-batch` is not part of the #794 bootstrap flow.
-- `delegate:*`, `awaiting-test`, and `needs-testing` are legacy labels. Ordinary
+- Retired delegation labels, `awaiting-test`, and `needs-testing` are legacy labels. Ordinary
   work must not route through Shino/Hinata/Guy by default; Reviewer-requested
   specialist work is an explicit branch outside the default Developer ->
   Reviewer path.

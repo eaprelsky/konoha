@@ -44,7 +44,7 @@ Delivery watchdogs are adapters, not lifecycle owners:
 | `agent-watchdog-naruto.service` | Telegram bot queue + Konoha SSE delivery to Naruto |
 | `agent-watchdog-sasuke.service` | Telegram userbot Redis streams + Konoha SSE delivery to Sasuke |
 | `agent-watchdog-kakashi.service` | GitHub/Konoha delivery to Kakashi |
-| `agent-watchdog-shikadai.service` | GitHub/Konoha architecture delegation to Shikadai |
+| `agent-watchdog-shikadai.service` | GitHub/Konoha review handoff to Shikadai |
 | `agent-watchdog-kiba.service` | Akamaru/Konoha delivery to Kiba |
 | `agent-watchdog-lifecycle.service` | Generic delivery for on-demand lifecycle-managed agents |
 
@@ -66,8 +66,8 @@ explicit workflow branches or reviewer/developer escalation, not as a hardcoded
 default fleet.
 
 Mirai is connector-owned; Jiraiya/Ino/Inojin are deprecated. Shikadai is the
-default Reviewer for the architecture backlog path, while optional specialist
-agents remain on-demand compatibility runtimes.
+default Reviewer for the code-review path, while optional specialist agents
+remain on-demand compatibility runtimes.
 
 Start an on-demand agent through the Konoha lifecycle API:
 
@@ -108,12 +108,12 @@ Do not use it as the normal path. Each ordinary issue moves through:
 code, and required checks -> accept, request changes, or block -> close only
 after reviewer acceptance.
 
-GitHub is also Shikadai's compatibility intake for review and architecture
-decomposition. Use `state:ready-for-review` + `agent:shikadai` for Developer
-handoff review. Use `agent:shikadai` on an architecture-labelled issue when
-the expected output is a decomposition, sequencing recommendation, acceptance
-criteria, or risk review. Do not use reviewer routing for implementation tasks;
-those should go to Kakashi through `state:ready-for-dev` + `agent:kakashi`.
+GitHub is also Shikadai's compatibility intake for review. Use
+`state:ready-for-review` + `agent:shikadai` for Developer handoff review; both
+labels are required. Architecture decomposition is a separate route:
+`route:architecture-decomposition` + `type:architecture`. Do not use reviewer
+routing for decomposition-only or implementation tasks; implementation should
+go to Kakashi through `state:ready-for-dev` + `agent:kakashi`.
 
 Start the Shikadai reviewer path with:
 

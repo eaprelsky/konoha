@@ -79,6 +79,10 @@ echo "=== Risk ==="
 create_or_update "risk:critical"  "b60205" "Critical bug — potential data loss or outage"
 create_or_update "risk:regression" "e11d48" "Previously working behaviour broken"
 
+# ── Workflow route ──────────────────────────────────────────────────────
+echo "=== Route ==="
+create_or_update "route:architecture-decomposition" "5319e7" "Architecture decomposition workflow route"
+
 # ── Agent assignment ───────────────────────────────────────────────────
 echo "=== Agent ==="
 create_or_update "agent:kakashi"  "ededed" "Developer — implementation"

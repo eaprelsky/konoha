@@ -1,8 +1,7 @@
 # Konoha GitHub Label Taxonomy
 
-Canonical label system for the Konoha delivery workflow. Replaces ad-hoc labels
-and agent triggers (`delegate:teamlead`, `kakashi-ready`, etc.) with a stable,
-machine-readable contract.
+Canonical label system for the Konoha delivery workflow. Replaces older
+ad-hoc priority/state/agent triggers with a stable, machine-readable contract.
 
 Issue: [#793](https://github.com/eaprelsky/konoha/issues/793)
 
@@ -92,6 +91,21 @@ Optional — flags issues needing special attention.
 | `risk:critical` | Critical bug — potential data loss or outage | `#b60205` |
 | `risk:regression` | Previously working behaviour broken | `#e11d48` |
 
+### Workflow route — `route:<name>`
+
+Optional label for non-default workflow routes. Route labels do not replace
+`state:*` or `agent:*`; they select a specialist workflow branch.
+
+| Label | Description | Color |
+|---|---|---|
+| `route:architecture-decomposition` | Architecture decomposition before implementation/review handoff | `#5319e7` |
+
+Guardrails:
+- `route:architecture-decomposition` is separate from the Developer -> Reviewer
+  code-review handoff.
+- Do not use `state:ready-for-review` for decomposition-only work unless there
+  is an implementation commit ready for Reviewer acceptance.
+
 ### Agent assignment — `agent:<name>`
 
 Which agent is currently responsible. Informs routing but does NOT replace
@@ -108,6 +122,8 @@ workflow state — state labels drive the pipeline, agent labels drive dispatch.
 Guardrails:
 - `agent:kakashi` is appropriate for `state:ready-for-dev` and `state:in-progress`
 - `agent:shikadai` is appropriate for `state:ready-for-review`
+- Architecture decomposition uses `route:architecture-decomposition`; it is not
+  dispatched by the Shikadai reviewer watchdog.
 - `agent:shino` / `agent:hinata` require an explicit Reviewer QA request and
   must not be inserted into ordinary Developer → Reviewer delivery.
 
@@ -131,9 +147,6 @@ Required when `state:blocked` is set. Explains why work cannot proceed.
 | `P1`, `P1: high` | `priority:p1` | Replace |
 | `P2`, `P2: medium` | `priority:p2` | Replace |
 | `P3`, `P3: low` | `priority:p3` | Replace |
-| `delegate:teamlead` | (none) | **Remove** — priority now drives ordering |
-| `delegate:done` | `state:done` | Replace |
-| `delegate:architect` | `agent:shikadai` | Replace |
 | `kakashi-ready` | `state:ready-for-dev` | Replace |
 | `kakashi-batch` | (none) | **Remove** — batching is implementation detail |
 | `awaiting-test` | (none) | **Remove** — QA is reviewer-requested, not a default state |
@@ -179,7 +192,7 @@ How each agent interprets labels for dispatch decisions:
 | Kakashi (developer) | `state:ready-for-dev` + `agent:kakashi` | Take and implement |
 | Kakashi (developer) | `state:in-progress` + `agent:kakashi` | Continue / complete implementation |
 | Shikadai (reviewer) | `state:ready-for-review` + `agent:shikadai` | Review architecture/code/tests, approve, request changes, or block |
-| Shikadai (reviewer) | `agent:shikadai` + architecture-labelled open state | Architecture review / decomposition |
+| Architecture decomposition route | `route:architecture-decomposition` + `type:architecture` | Produce decomposition, sequencing, acceptance criteria, or risk review before implementation |
 | Shino / Hinata (optional QA) | Explicit Reviewer request, usually QA-heavy/release/regression scope | Plan/run specialist tests and report back to Reviewer |
 
 ## Automation guardrails
@@ -194,7 +207,7 @@ Rules enforced by the label application/migration scripts:
 6. **Done is terminal**: `state:done` cannot coexist with any other `state:*`
 7. **Agent matches state**: `agent:*` should be consistent with workflow state
 8. **Two-role default**: ordinary issues use Kakashi + Shikadai only; Shino/Hinata/Guy/Ibiki require explicit specialist scope
-9. **No legacy labels**: after migration, legacy labels (P0-P3, delegate:*, kakashi-*, awaiting-test, needs-testing, etc.) must not appear on open issues
+9. **No legacy labels**: after migration, legacy labels (old priority names, retired delegation labels, kakashi-* labels, awaiting-test, needs-testing, etc.) must not appear on open issues
 
 ## Files
 

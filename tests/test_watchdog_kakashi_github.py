@@ -12,6 +12,8 @@ SCRIPTS = ROOT / "scripts"
 
 def load_watchdog_kakashi():
     sys.path.insert(0, str(SCRIPTS))
+    for module_name in ("watchdog_kakashi", "github_delegation_watchdog"):
+        sys.modules.pop(module_name, None)
     spec = importlib.util.spec_from_file_location(
         "watchdog_kakashi", SCRIPTS / "watchdog-kakashi.py"
     )

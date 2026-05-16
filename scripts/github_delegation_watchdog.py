@@ -3,7 +3,8 @@
 
 Uses canonical label taxonomy (#793):
 - agent:kakashi + state:ready-for-dev routes one issue to Kakashi/Developer.
-- agent:shikadai routes review/decomposition to Shikadai/Reviewer.
+- agent:shikadai + state:ready-for-review routes one issue to Shikadai/Reviewer.
+- Architecture decomposition is a separate workflow route, not reviewer dispatch.
 - Batch redispatch labels are opt-in only.
 """
 
@@ -142,10 +143,11 @@ async def github_issues_scanner(raw_queue: asyncio.Queue) -> None:
     env = {**os.environ, "GH_TOKEN": GH_TOKEN}
     dispatched_ids, dispatch_times = load_dispatch_state()
     _b.log.info(
-        "GitHub delegation scanner enabled: agent=%s repo=%s labels=%s skip_labels=%s redispatch_labels=%s redispatch_interval=%ss dispatched=%d",
+        "GitHub delegation scanner enabled: agent=%s repo=%s labels=%s required_states=%s skip_labels=%s redispatch_labels=%s redispatch_interval=%ss dispatched=%d",
         AGENT_ID,
         GH_REPO,
         ",".join(sorted(DELEGATION_LABELS)),
+        ",".join(sorted(REQUIRED_STATES)),
         ",".join(sorted(SKIP_LABELS)),
         ",".join(sorted(REDISPATCH_LABELS)),
         REDISPATCH_INTERVAL_SEC,
