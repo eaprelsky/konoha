@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 752,
+  "program": {
+    "epic": 672,
+    "scope": "BPMS constructor-to-runtime reliability program",
+    "issue_range": { "from": 672, "to": 751 },
+    "blocked_extraction_issue": 618
+  },
+  "milestones": [
+    {
+      "id": "M0",
+      "name": "Lean Runtime And Execution Control Baseline",
+      "goal": "Keep the host stable before BPMS refactors increase event volume, browser load, or agent/MCP count.",
+      "issues": [752],
+      "follow_up_issues": [757, 760, 761, 762, 763, 768, 769, 771, 772, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 790, 791, 792, 794],
+      "depends_on": [],
+      "definition_of_done": [
+        "Budget/profile contract is machine-readable and reviewed.",
+        "Always-on agents and MCP packs are bounded.",
+        "Redis/event storms and live deployment drift are visible in healthcheck.",
+        "Two-role Developer -> Reviewer delivery policy is active."
+      ],
+      "implementation_owner": "Kakashi",
+      "review_owner": "Shikadai",
+      "test_owner": "Kiba",
+      "release_owner": "Naruto"
+    },
+    {
+      "id": "M1",
+      "name": "Environment Isolation And Release Controls",
+      "goal": "Make staging/test safe before workflow engine behavior changes.",
+      "issues": [682, 733, 734, 735, 736, 749, 750, 751, 686],
+      "follow_up_issues": [753, 756, 758, 786, 787],
+      "depends_on": ["M0"],
+      "definition_of_done": [
+        "Bun tests cannot write production Redis/PostgreSQL state.",
+        "Staging can run golden-path smoke without production connectors or the full agent fleet.",
+        "Release/preflight tiers and rollback runbooks exist.",
+        "Disaster-recovery restore drill is documented and scheduled before production signoff."
+      ],
+      "implementation_owner": "Kakashi",
+      "review_owner": "Shikadai",
+      "test_owner": "Hinata",
+      "release_owner": "Naruto"
+    },
+    {
+      "id": "M2",
+      "name": "Executable Workflow Lifecycle And Validation",
+      "goal": "Separate draft, deployable, deployed, and retired workflows and block unsafe case starts.",
+      "issues": [673, 674, 687, 688, 689, 690, 691, 692, 693, 694, 695, 696, 697],
+      "follow_up_issues": [789],
+      "depends_on": ["M1"],
+      "definition_of_done": [
+        "Workflow lifecycle schema is persisted and backward compatible.",
+        "case.start is impossible for non-executable workflow versions.",
+        "Validation taxonomy covers graph, gateway, trigger, adapter, document, role, and auth readiness.",
+        "Frontend shows lifecycle and blocking validation errors before deploy/run."
+      ],
+      "implementation_owner": "Kakashi",
+      "review_owner": "Shikadai",
+      "test_owner": "Shino",
+      "release_owner": "Naruto"
+    },
+    {
+      "id": "M3",
+      "name": "Durable Constructor Edit Path",
+      "goal": "Move assistant/editor mutations onto durable Action Spine executors.",
+      "issues": [675, 676, 698, 699, 700, 701, 702, 703, 704, 705, 706, 707, 708, 709],
+      "depends_on": ["M2"],
+      "definition_of_done": [
+        "Server-side workflow patch service is atomic and audited.",
+        "Assistant preview and durable commit modes are distinct.",
+        "element.*, flow.*, and trigger.* executors mutate persisted workflow state.",
+        "Client optimistic state reconciles with saved backend state and conflict detection exists."
+      ],
+      "implementation_owner": "Kakashi",
+      "review_owner": "Shikadai",
+      "test_owner": "Hinata",
+      "release_owner": "Naruto"
+    },
+    {
+      "id": "M4",
+      "name": "Deployment And Runtime Effects",
+      "goal": "Make deploy, subscription materialization, outbox effects, and real work dispatch explicit and recoverable.",
+      "issues": [677, 678, 679, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723, 724],
+      "follow_up_issues": [755, 786],
+      "depends_on": ["M2", "M3"],
+      "definition_of_done": [
+        "workflow.deploy is transactional and idempotent.",
+        "Start-event subscriptions are created only from deployed snapshots.",
+        "Side effects route through an outbox with retry/dead-letter/recovery semantics.",
+        "Role readiness and dispatch receipts prove a work item has a reachable target."
+      ],
+      "implementation_owner": "Kakashi",
+      "review_owner": "Shikadai",
+      "test_owner": "Shino",
+      "release_owner": "Naruto"
+    },
+    {
+      "id": "M5",
+      "name": "Runtime Correctness And Operations",
+      "goal": "Stabilize the state-machine core, persistence migration, observability, retry, audit, and retention.",
+      "issues": [680, 681, 683, 725, 726, 727, 728, 729, 730, 731, 732, 737, 738, 739, 740],
+      "follow_up_issues": [754, 787, 788, 789],
+      "depends_on": ["M4"],
+      "definition_of_done": [
+        "advanceCase has a deterministic transition planner and explicit effect boundary.",
+        "Gateway joins, subprocess spawning, and property-style transition fixtures are covered.",
+        "Operator timeline/monitor/recovery/audit views expose failed effects and waiting states.",
+        "PG_READ readiness is entity-scoped and backed by retention/consistency reports."
+      ],
+      "implementation_owner": "Kakashi",
+      "review_owner": "Shikadai",
+      "test_owner": "Kiba",
+      "release_owner": "Naruto"
+    },
+    {
+      "id": "M6",
+      "name": "Golden Path Acceptance And Action Spine Extraction",
+      "goal": "Prove constructor -> deploy -> run -> work item before extracting generic Action Spine packages.",
+      "issues": [684, 685, 741, 742, 743, 744, 745, 746, 747, 748],
+      "blocked_issue": 618,
+      "depends_on": ["M5"],
+      "definition_of_done": [
+        "Deterministic assistant fixture covers create/validate/deploy/run.",
+        "Backend and browser golden paths pass against durable persisted workflow state.",
+        "Negative tests cover invalid and non-executable workflows.",
+        "#618 extraction checklist is updated and remains blocked until semantics are stable."
+      ],
+      "implementation_owner": "Kakashi",
+      "review_owner": "Shikadai",
+      "test_owner": "Hinata",
+      "release_owner": "Naruto"
+    }
+  ],
+  "critical_path": [776, 757, 760, 761, 780, 781, 777, 778, 785, 753, 682, 673, 674, 675, 676, 677, 678, 679, 680, 681, 754, 683, 685, 684, 618],
+  "parallel_workstreams": [
+    {
+      "id": "runtime-diet",
+      "issues": [760, 761, 762, 763, 768, 774, 777, 778, 780, 781, 785, 790, 791, 792, 794],
+      "can_start_after": [],
+      "join_before": "M1"
+    },
+    {
+      "id": "test-isolation",
+      "issues": [682, 733, 734, 735, 736, 749, 750, 751],
+      "can_start_after": ["M0"],
+      "join_before": "M2"
+    },
+    {
+      "id": "lifecycle-validation",
+      "issues": [673, 674, 687, 688, 689, 690, 691, 692, 693, 694, 695, 696, 697],
+      "can_start_after": ["M1"],
+      "join_before": "M3"
+    },
+    {
+      "id": "durable-edits-action-spine",
+      "issues": [675, 676, 698, 699, 700, 701, 702, 703, 704, 705, 706, 707, 708, 709],
+      "can_start_after": ["M2"],
+      "join_before": "M4"
+    },
+    {
+      "id": "deploy-outbox-dispatch",
+      "issues": [677, 678, 679, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723, 724],
+      "can_start_after": ["M2", "M3"],
+      "join_before": "M5"
+    },
+    {
+      "id": "operations-persistence",
+      "issues": [680, 681, 683, 725, 726, 727, 728, 729, 730, 731, 732, 737, 738, 739, 740, 754, 787, 788, 789],
+      "can_start_after": ["M4"],
+      "join_before": "M6"
+    },
+    {
+      "id": "acceptance-extraction",
+      "issues": [684, 685, 741, 742, 743, 744, 745, 746, 747, 748, 618],
+      "can_start_after": ["M5"],
+      "join_before": "release"
+    }
+  ],
+  "issue_dependencies": {
+    "672": { "milestone": "program", "depends_on": [], "blocks": [673, 674, 675, 676, 677, 678, 679, 680, 681, 682, 683, 684, 685, 686] },
+    "673": { "milestone": "M2", "depends_on": [682, 733, 734, 735, 736], "blocks": [687, 688, 689, 690, 691, 677, 678, 679, 685] },
+    "674": { "milestone": "M2", "depends_on": [682, 733, 734, 735, 736], "blocks": [692, 693, 694, 695, 696, 697, 675, 676, 677, 685] },
+    "675": { "milestone": "M3", "depends_on": [674, 698, 703], "blocks": [699, 700, 701, 702, 685] },
+    "676": { "milestone": "M3", "depends_on": [674, 698, 703], "blocks": [704, 705, 706, 707, 708, 709, 675, 684] },
+    "677": { "milestone": "M4", "depends_on": [673, 674, 675, 676], "blocks": [710, 711, 712, 713, 714, 678, 685] },
+    "678": { "milestone": "M4", "depends_on": [677, 715], "blocks": [716, 717, 718, 719, 720, 681, 685] },
+    "679": { "milestone": "M4", "depends_on": [674, 678], "blocks": [721, 722, 723, 724, 685] },
+    "680": { "milestone": "M5", "depends_on": [677, 678], "blocks": [725, 726, 727, 728, 681, 683, 685] },
+    "681": { "milestone": "M5", "depends_on": [678, 680], "blocks": [729, 730, 731, 732, 686] },
+    "682": { "milestone": "M1", "depends_on": [757, 760, 761], "blocks": [733, 734, 735, 736, 673, 674, 685] },
+    "683": { "milestone": "M5", "depends_on": [680, 681], "blocks": [737, 738, 739, 740, 685, 686] },
+    "684": { "milestone": "M6", "depends_on": [685, 741, 742, 743], "blocks": [618, 744] },
+    "685": { "milestone": "M6", "depends_on": [673, 674, 675, 676, 677, 678, 679, 680, 681, 683], "blocks": [684, 686, 618] },
+    "686": { "milestone": "M1", "depends_on": [682, 685, 749, 750, 751, 787, 788, 789], "blocks": ["production-readiness"] },
+    "687": { "milestone": "M2", "depends_on": [673], "blocks": [688, 689, 690, 691] },
+    "688": { "milestone": "M2", "depends_on": [687, 674], "blocks": [685] },
+    "689": { "milestone": "M2", "depends_on": [687, 703], "blocks": [677, 710] },
+    "690": { "milestone": "M2", "depends_on": [687], "blocks": [685] },
+    "691": { "milestone": "M2", "depends_on": [687, 677], "blocks": [710, 711] },
+    "692": { "milestone": "M2", "depends_on": [674], "blocks": [693, 694, 695, 696, 697] },
+    "693": { "milestone": "M2", "depends_on": [692], "blocks": [688, 677] },
+    "694": { "milestone": "M2", "depends_on": [692], "blocks": [677] },
+    "695": { "milestone": "M2", "depends_on": [692], "blocks": [677, 712] },
+    "696": { "milestone": "M2", "depends_on": [692], "blocks": [677, 718] },
+    "697": { "milestone": "M2", "depends_on": [692, 693, 694, 695, 696], "blocks": [690, 685] },
+    "698": { "milestone": "M3", "depends_on": [674], "blocks": [699, 700, 701, 704, 705, 706, 707, 708] },
+    "699": { "milestone": "M3", "depends_on": [675, 698], "blocks": [685] },
+    "700": { "milestone": "M3", "depends_on": [675, 698], "blocks": [747] },
+    "701": { "milestone": "M3", "depends_on": [698, 700], "blocks": [702] },
+    "702": { "milestone": "M3", "depends_on": [675, 701], "blocks": [685] },
+    "703": { "milestone": "M3", "depends_on": [676], "blocks": [704, 705, 706, 707, 708, 709] },
+    "704": { "milestone": "M3", "depends_on": [698, 703], "blocks": [675, 746] },
+    "705": { "milestone": "M3", "depends_on": [698, 703], "blocks": [675, 746] },
+    "706": { "milestone": "M3", "depends_on": [698, 703], "blocks": [675, 746] },
+    "707": { "milestone": "M3", "depends_on": [698, 703], "blocks": [675, 746] },
+    "708": { "milestone": "M3", "depends_on": [698, 703, 695], "blocks": [677, 746] },
+    "709": { "milestone": "M3", "depends_on": [695, 703, 708], "blocks": [748] },
+    "710": { "milestone": "M4", "depends_on": [677, 689], "blocks": [711, 712, 713, 714] },
+    "711": { "milestone": "M4", "depends_on": [710, 691], "blocks": [712, 713] },
+    "712": { "milestone": "M4", "depends_on": [710, 711, 695], "blocks": [685] },
+    "713": { "milestone": "M4", "depends_on": [710, 711], "blocks": [714] },
+    "714": { "milestone": "M4", "depends_on": [710, 713], "blocks": [720] },
+    "715": { "milestone": "M4", "depends_on": [677], "blocks": [716, 717, 718, 719, 720] },
+    "716": { "milestone": "M4", "depends_on": [715], "blocks": [717, 718, 719, 720] },
+    "717": { "milestone": "M4", "depends_on": [716, 679], "blocks": [724, 729] },
+    "718": { "milestone": "M4", "depends_on": [716, 696], "blocks": [729] },
+    "719": { "milestone": "M4", "depends_on": [716, 712], "blocks": [729] },
+    "720": { "milestone": "M4", "depends_on": [716, 714], "blocks": [731] },
+    "721": { "milestone": "M4", "depends_on": [679, 692], "blocks": [722, 723, 724] },
+    "722": { "milestone": "M4", "depends_on": [721, 697], "blocks": [685] },
+    "723": { "milestone": "M4", "depends_on": [721, 703], "blocks": [685] },
+    "724": { "milestone": "M4", "depends_on": [717, 721], "blocks": [729, 685] },
+    "725": { "milestone": "M5", "depends_on": [680], "blocks": [726, 727, 728] },
+    "726": { "milestone": "M5", "depends_on": [725], "blocks": [727] },
+    "727": { "milestone": "M5", "depends_on": [725, 726], "blocks": [685, 788] },
+    "728": { "milestone": "M5", "depends_on": [725, 715], "blocks": [678, 729] },
+    "729": { "milestone": "M5", "depends_on": [717, 718, 719, 724], "blocks": [730, 731, 732] },
+    "730": { "milestone": "M5", "depends_on": [729], "blocks": [681] },
+    "731": { "milestone": "M5", "depends_on": [720, 729], "blocks": [681, 789] },
+    "732": { "milestone": "M5", "depends_on": [729, 730], "blocks": [686] },
+    "733": { "milestone": "M1", "depends_on": [682], "blocks": [735, 736] },
+    "734": { "milestone": "M1", "depends_on": [682], "blocks": [735, 736] },
+    "735": { "milestone": "M1", "depends_on": [733, 734], "blocks": [736, 685] },
+    "736": { "milestone": "M1", "depends_on": [733, 734, 735], "blocks": [685] },
+    "737": { "milestone": "M5", "depends_on": [683], "blocks": [739] },
+    "738": { "milestone": "M5", "depends_on": [683], "blocks": [739, 740] },
+    "739": { "milestone": "M5", "depends_on": [737, 738], "blocks": [740, 686] },
+    "740": { "milestone": "M5", "depends_on": [739], "blocks": [686] },
+    "741": { "milestone": "M6", "depends_on": [685], "blocks": [742, 743, 744] },
+    "742": { "milestone": "M6", "depends_on": [741], "blocks": [743, 744] },
+    "743": { "milestone": "M6", "depends_on": [741, 742], "blocks": [618, 744] },
+    "744": { "milestone": "M6", "depends_on": [684, 741, 742, 743], "blocks": [618] },
+    "745": { "milestone": "M6", "depends_on": [675, 676], "blocks": [746, 747, 748, 685] },
+    "746": { "milestone": "M6", "depends_on": [745, 677, 678, 679], "blocks": [685] },
+    "747": { "milestone": "M6", "depends_on": [745, 697, 700], "blocks": [685] },
+    "748": { "milestone": "M6", "depends_on": [745, 674, 688, 709], "blocks": [685] },
+    "749": { "milestone": "M1", "depends_on": [682], "blocks": [686] },
+    "750": { "milestone": "M1", "depends_on": [681, 720], "blocks": [686] },
+    "751": { "milestone": "M1", "depends_on": [749, 750], "blocks": [686] }
+  },
+  "role_ownership": {
+    "implementation": "Kakashi owns default implementation; optional helpers require explicit labels or commands.",
+    "architecture_review": "Shikadai reviews dependency, architecture, and acceptance risk before closure.",
+    "test_strategy": "Shino owns test-plan escalation; Hinata owns bounded TestBench/browser execution.",
+    "monitoring": "Kiba/Akamaru own runtime pressure, stuck-case, and service health signals.",
+    "release": "Naruto coordinates issue sequencing, closure requests, and release communication.",
+    "security": "Ibiki is optional escalation for #789 and audit/recovery boundary review."
+  },
+  "extraction_gate": {
+    "issue": 618,
+    "status": "blocked",
+    "blocked_until": [684, 685, 741, 742, 743, 744],
+    "reason": "Action Spine package extraction must wait until Konoha workflow lifecycle, durable edit semantics, deploy/outbox effects, golden-path tests, and port boundaries are stable."
+  }
+}

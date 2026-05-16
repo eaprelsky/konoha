@@ -3,6 +3,10 @@
 > Issue: #618 | Priority: P2 | Date: 2026-05-01 | Author: Kakashi
 > Status: Planning phase — ADR defines package boundary, dependency inversion, and extraction slices.
 
+Program dependency gate: #618 remains blocked by the BPMS milestone graph in
+`docs/bpms-program-dependency-graph.md`. Do not start package extraction until
+#684, #685, and #741-#744 are complete.
+
 ## 1. Context
 
 Action Spine guarantees one canonical contract per business operation across HTTP, MCP, CLI, and UI surfaces. Today it lives inside Konoha as a set of source modules with a mechanically enforced boundary (`tests/action-spine-boundary.test.ts`). The goal is to extract the generic core into a reusable npm package so other projects can depend on it without pulling Konoha.
