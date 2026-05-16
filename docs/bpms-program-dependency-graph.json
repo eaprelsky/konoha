@@ -30,14 +30,14 @@
       "id": "M1",
       "name": "Environment Isolation And Release Controls",
       "goal": "Make staging/test safe before workflow engine behavior changes.",
-      "issues": [682, 733, 734, 735, 736, 749, 750, 751, 686],
-      "follow_up_issues": [753, 756, 758, 786, 787],
+      "issues": [682, 733, 734, 735, 736, 749],
+      "follow_up_issues": [753, 756, 758],
       "depends_on": ["M0"],
       "definition_of_done": [
         "Bun tests cannot write production Redis/PostgreSQL state.",
         "Staging can run golden-path smoke without production connectors or the full agent fleet.",
-        "Release/preflight tiers and rollback runbooks exist.",
-        "Disaster-recovery restore drill is documented and scheduled before production signoff."
+        "Preflight scaffolding and rollback/runbook ownership exist.",
+        "Disaster-recovery restore drill is scheduled before production signoff."
       ],
       "implementation_owner": "Kakashi",
       "review_owner": "Shikadai",
@@ -49,7 +49,6 @@
       "name": "Executable Workflow Lifecycle And Validation",
       "goal": "Separate draft, deployable, deployed, and retired workflows and block unsafe case starts.",
       "issues": [673, 674, 687, 688, 689, 690, 691, 692, 693, 694, 695, 696, 697],
-      "follow_up_issues": [789],
       "depends_on": ["M1"],
       "definition_of_done": [
         "Workflow lifecycle schema is persisted and backward compatible.",
@@ -101,7 +100,7 @@
       "id": "M5",
       "name": "Runtime Correctness And Operations",
       "goal": "Stabilize the state-machine core, persistence migration, observability, retry, audit, and retention.",
-      "issues": [680, 681, 683, 725, 726, 727, 728, 729, 730, 731, 732, 737, 738, 739, 740],
+      "issues": [680, 681, 683, 725, 726, 727, 728, 729, 730, 731, 732, 737, 738, 739, 740, 750, 751],
       "follow_up_issues": [754, 787, 788, 789],
       "depends_on": ["M4"],
       "definition_of_done": [
@@ -119,7 +118,7 @@
       "id": "M6",
       "name": "Golden Path Acceptance And Action Spine Extraction",
       "goal": "Prove constructor -> deploy -> run -> work item before extracting generic Action Spine packages.",
-      "issues": [684, 685, 741, 742, 743, 744, 745, 746, 747, 748],
+      "issues": [684, 685, 686, 741, 742, 743, 744, 745, 746, 747, 748],
       "blocked_issue": 618,
       "depends_on": ["M5"],
       "definition_of_done": [
@@ -144,7 +143,7 @@
     },
     {
       "id": "test-isolation",
-      "issues": [682, 733, 734, 735, 736, 749, 750, 751],
+      "issues": [682, 733, 734, 735, 736, 749],
       "can_start_after": ["M0"],
       "join_before": "M2"
     },
@@ -168,13 +167,13 @@
     },
     {
       "id": "operations-persistence",
-      "issues": [680, 681, 683, 725, 726, 727, 728, 729, 730, 731, 732, 737, 738, 739, 740, 754, 787, 788, 789],
+      "issues": [680, 681, 683, 725, 726, 727, 728, 729, 730, 731, 732, 737, 738, 739, 740, 750, 751, 754, 787, 788, 789],
       "can_start_after": ["M4"],
       "join_before": "M6"
     },
     {
       "id": "acceptance-extraction",
-      "issues": [684, 685, 741, 742, 743, 744, 745, 746, 747, 748, 618],
+      "issues": [684, 685, 686, 741, 742, 743, 744, 745, 746, 747, 748, 618],
       "can_start_after": ["M5"],
       "join_before": "release"
     }
@@ -189,17 +188,17 @@
     "678": { "milestone": "M4", "depends_on": [677, 715], "blocks": [716, 717, 718, 719, 720, 681, 685] },
     "679": { "milestone": "M4", "depends_on": [674, 678], "blocks": [721, 722, 723, 724, 685] },
     "680": { "milestone": "M5", "depends_on": [677, 678], "blocks": [725, 726, 727, 728, 681, 683, 685] },
-    "681": { "milestone": "M5", "depends_on": [678, 680], "blocks": [729, 730, 731, 732, 686] },
+    "681": { "milestone": "M5", "depends_on": [678, 680], "blocks": [729, 730, 731, 732, 750] },
     "682": { "milestone": "M1", "depends_on": [757, 760, 761], "blocks": [733, 734, 735, 736, 673, 674, 685] },
     "683": { "milestone": "M5", "depends_on": [680, 681], "blocks": [737, 738, 739, 740, 685, 686] },
     "684": { "milestone": "M6", "depends_on": [685, 741, 742, 743], "blocks": [618, 744] },
     "685": { "milestone": "M6", "depends_on": [673, 674, 675, 676, 677, 678, 679, 680, 681, 683], "blocks": [684, 686, 618] },
-    "686": { "milestone": "M1", "depends_on": [682, 685, 749, 750, 751, 787, 788, 789], "blocks": ["production-readiness"] },
+    "686": { "milestone": "M6", "depends_on": [682, 685, 749, 750, 751, 787, 788, 789], "blocks": ["production-readiness"] },
     "687": { "milestone": "M2", "depends_on": [673], "blocks": [688, 689, 690, 691] },
     "688": { "milestone": "M2", "depends_on": [687, 674], "blocks": [685] },
-    "689": { "milestone": "M2", "depends_on": [687, 703], "blocks": [677, 710] },
+    "689": { "milestone": "M2", "depends_on": [687, 674], "blocks": [703, 677, 710] },
     "690": { "milestone": "M2", "depends_on": [687], "blocks": [685] },
-    "691": { "milestone": "M2", "depends_on": [687, 677], "blocks": [710, 711] },
+    "691": { "milestone": "M2", "depends_on": [687, 674], "blocks": [677, 710, 711] },
     "692": { "milestone": "M2", "depends_on": [674], "blocks": [693, 694, 695, 696, 697] },
     "693": { "milestone": "M2", "depends_on": [692], "blocks": [688, 677] },
     "694": { "milestone": "M2", "depends_on": [692], "blocks": [677] },
@@ -228,7 +227,7 @@
     "717": { "milestone": "M4", "depends_on": [716, 679], "blocks": [724, 729] },
     "718": { "milestone": "M4", "depends_on": [716, 696], "blocks": [729] },
     "719": { "milestone": "M4", "depends_on": [716, 712], "blocks": [729] },
-    "720": { "milestone": "M4", "depends_on": [716, 714], "blocks": [731] },
+    "720": { "milestone": "M4", "depends_on": [716, 714], "blocks": [731, 750] },
     "721": { "milestone": "M4", "depends_on": [679, 692], "blocks": [722, 723, 724] },
     "722": { "milestone": "M4", "depends_on": [721, 697], "blocks": [685] },
     "723": { "milestone": "M4", "depends_on": [721, 703], "blocks": [685] },
@@ -257,9 +256,9 @@
     "746": { "milestone": "M6", "depends_on": [745, 677, 678, 679], "blocks": [685] },
     "747": { "milestone": "M6", "depends_on": [745, 697, 700], "blocks": [685] },
     "748": { "milestone": "M6", "depends_on": [745, 674, 688, 709], "blocks": [685] },
-    "749": { "milestone": "M1", "depends_on": [682], "blocks": [686] },
-    "750": { "milestone": "M1", "depends_on": [681, 720], "blocks": [686] },
-    "751": { "milestone": "M1", "depends_on": [749, 750], "blocks": [686] }
+    "749": { "milestone": "M1", "depends_on": [682], "blocks": [750, 751, 686] },
+    "750": { "milestone": "M5", "depends_on": [681, 720], "blocks": [751, 686] },
+    "751": { "milestone": "M5", "depends_on": [749, 750], "blocks": [686] }
   },
   "role_ownership": {
     "implementation": "Kakashi owns default implementation; optional helpers require explicit labels or commands.",
