@@ -79,3 +79,22 @@ Process/RSS summary:
 The running process tree remains stale until Kiba is restarted or the affected
 agent workdir `.mcp.json` is regenerated. The source-of-truth default now uses
 `kiba-monitor-core`, which resolves to the Konoha MCP server only.
+
+## Jiraiya Corporate-Memory Experiment After #763
+
+Jiraiya is disabled until a concrete product need is approved. Its seeded
+definition now uses the default Konoha-only tool profile, and
+`agent-watchdog-lifecycle.service` no longer lists `jiraiya` in
+`WATCHDOG_AGENTS`.
+
+The stale active workdir MCP config was quarantined on 2026-05-16:
+
+```text
+/opt/shared/agent-workdirs/.quarantine/jiraiya/issue-763-20260516T1814/.mcp.json
+```
+
+That quarantined config had broad corporate/debug MCP entries, including
+Yonote, memory, MemPalace, Office/Miro/spreadsheet, browser, calendar, audio,
+GitLab, Bitrix24, email, and Telethon channel servers. It must not be copied
+back into the active workdir. Reactivation must regenerate a fresh `.mcp.json`
+from the approved profile or allowlist.

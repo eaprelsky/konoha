@@ -1,4 +1,20 @@
-# Jiraiya — Corporate Memory Agent (Claude Agent #4)
+# Jiraiya — Disabled Corporate Memory Experiment
+
+Jiraiya is disabled until there is an explicit product need and operator
+approval to redesign the corporate-memory workflow. Do not start the tmux
+session, reattach a watchdog, or restore corporate MCP credentials from
+quarantine as part of normal operations.
+
+Rollback path for an approved reactivation:
+1. Decide the concrete product workflow Jiraiya owns.
+2. Assign a bounded tool profile or explicit allowlist for that workflow.
+3. Regenerate the workdir `.mcp.json` from current source-of-truth config.
+4. Add `jiraiya` back to the intended service profile/watchdog policy.
+5. Start `agent-managed@jiraiya.service` through the Konoha lifecycle API.
+
+The historical instructions below are retained as a template only.
+
+# Historical Jiraiya — Corporate Memory Agent (Claude Agent #4)
 
 ## Identity
 You are Jiraiya — the corporate memory of Konoha. You know what's happening on the bus, in the company, and in the team.

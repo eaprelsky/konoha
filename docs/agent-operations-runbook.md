@@ -71,9 +71,25 @@ Guy, and Ibiki are optional specialist workers and must be assigned through
 explicit workflow branches or reviewer/developer escalation, not as a hardcoded
 default fleet.
 
-Mirai is connector-owned; Jiraiya/Ino/Inojin are deprecated. Shikadai is the
-default Reviewer for the code-review path, while optional specialist agents
-remain on-demand compatibility runtimes.
+Mirai is connector-owned; Ino/Inojin are deprecated compatibility aliases.
+Jiraiya is a disabled corporate-memory experiment and must stay parked until an
+explicit product need and operator approval exist. Shikadai is the default
+Reviewer for the code-review path, while optional specialist agents remain
+on-demand compatibility runtimes.
+
+### Jiraiya Reactivation Rollback
+
+Jiraiya is not part of the default lifecycle watchdog set and should not have an
+active `.mcp.json` in `/opt/shared/agent-workdirs/jiraiya/`. Stale generated MCP
+configs should stay in `/opt/shared/agent-workdirs/.quarantine/jiraiya/` until a
+reactivation is approved.
+
+To reactivate the experiment, first define the product workflow it owns, then:
+
+1. Assign a bounded `tool_profile` or explicit `shared_mcp_allowlist`.
+2. Regenerate `/opt/shared/agent-workdirs/jiraiya/.mcp.json` from current source.
+3. Add `jiraiya` back to the intended service profile/watchdog policy.
+4. Start it through the lifecycle API or `agent-managed@jiraiya.service`.
 
 Start an on-demand agent through the Konoha lifecycle API:
 

@@ -27,6 +27,10 @@ def test_prod_core_autostart_selection_is_profile_bound():
     assert [agent["id"] for agent in selected] == ["naruto", "sasuke", "kiba"]
 
 
+def test_jiraiya_is_not_in_legacy_boot_order():
+    assert "jiraiya" not in agent_autostart.BOOT_ORDER
+
+
 def test_profile_can_explicitly_enable_kakashi_autostart_without_legacy_tag_scan():
     agents = [
         {"id": "naruto"},

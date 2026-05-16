@@ -21,7 +21,7 @@ separate compatibility migration says to do so.
 | `hinata` | Optional QA executor with TestBench browser checks | `optional_on_demand` | `persistent_interactive` | Reviewer-requested QA | none | `konoha-qa.slice` via `agent-managed@.service` | `agent-managed@hinata.service` / `hinata` / `agent-watchdog-lifecycle.service` | on demand | Missing tmux is expected unless reviewer activates QA. |
 | `guy` | Optional mechanical developer helper | `optional_on_demand` | `persistent_interactive` | Kakashi explicit helper request | none | `konoha-qa.slice` via `agent-managed@.service` | `agent-managed@guy.service` / `guy` / `agent-watchdog-lifecycle.service` | on demand | Missing tmux is expected unless Kakashi activates the helper. |
 | `ibiki` | Optional security auditor | `optional_on_demand` | `persistent_interactive` | Security escalation | none | `konoha-qa.slice` via `agent-managed@.service` | `agent-managed@ibiki.service` / `ibiki` / `agent-watchdog-lifecycle.service` | on demand | Missing tmux is expected unless security review is active. |
-| `jiraiya` | Deprecated knowledge-curator compatibility alias | `deprecated` | `persistent_interactive` | Operator approval required | none | `konoha-qa.slice` only when temporarily enabled | `agent-managed@jiraiya.service` / `jiraiya` / `agent-watchdog-lifecycle.service` | suppressed | Keep parked unless the owner explicitly reactivates it. |
+| `jiraiya` | Disabled corporate-memory experiment / deprecated compatibility alias | `deprecated` | `persistent_interactive` | Operator approval required | none | `konoha-qa.slice` only when temporarily enabled | `agent-managed@jiraiya.service` / `jiraiya` / none | suppressed | Keep parked unless the owner explicitly reactivates it; stale MCP configs must stay quarantined. |
 | `ino` | Deprecated marketing-specialist compatibility alias | `deprecated` | `persistent_interactive` | Operator approval required | none | `konoha-qa.slice` only when temporarily enabled | `agent-managed@ino.service` / `ino` / `agent-watchdog-lifecycle.service` | suppressed | Keep parked unless the owner explicitly reactivates it. |
 | `inojin` | Deprecated editor compatibility alias | `deprecated` | `persistent_interactive` | Operator approval required | none | `konoha-qa.slice` only when temporarily enabled | `agent-managed@inojin.service` / `inojin` / `agent-watchdog-lifecycle.service` | suppressed | Keep parked unless the owner explicitly reactivates it. |
 | `itachi` | External remote operator on owner's machine | external | `manual_remote` | Owner machine | none | outside server budget | `agent-watchdog-itachi.service` / `itachi` / `agent-watchdog-itachi.service` | no | Server healthcheck does not alert on this runtime. |
@@ -33,8 +33,9 @@ separate compatibility migration says to do so.
 - Default Developer -> Reviewer flow is Kakashi as Developer, then Shikadai as
   Reviewer. Shino/Hinata/Guy/Ibiki are optional escalation workers only.
 - `agent-watchdog-lifecycle.service` watches only lifecycle-managed optional or
-  compatibility actors: Mirai, Jiraiya, Shino, Hinata, Ibiki, Ino, Inojin, and
-  Guy.
+  compatibility actors: Mirai, Shino, Hinata, Ibiki, Ino, Inojin, and Guy.
+  Jiraiya is excluded because the corporate-memory experiment is disabled until
+  an explicit product need and operator approval exist.
 - Kakashi, Shikadai, Kiba, Naruto, and Sasuke have dedicated watchdogs because
   their delivery filters are role-specific.
 - Kiba's default tool profile is `kiba-monitor-core`: Konoha health/action MCP

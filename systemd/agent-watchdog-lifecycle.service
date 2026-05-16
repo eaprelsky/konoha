@@ -8,8 +8,8 @@ Type=simple
 User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
 Environment=PYTHONUNBUFFERED=1
-# Optional workers only. Shikadai has a dedicated reviewer watchdog.
-Environment=WATCHDOG_AGENTS=mirai,jiraiya,shino,hinata,ibiki,ino,inojin,guy
+# Optional workers only. Shikadai has a dedicated reviewer watchdog; Jiraiya is disabled until explicit product need.
+Environment=WATCHDOG_AGENTS=mirai,shino,hinata,ibiki,ino,inojin,guy
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-lifecycle.py
 Restart=always
 Slice=konoha-qa.slice

@@ -85,6 +85,18 @@ describe("seeded system agent classifications", () => {
     });
   });
 
+  test("Jiraiya corporate-memory experiment is disabled by default", () => {
+    const seeded = agent("jiraiya");
+    const corporateMemoryMcp = new Set(["yonote", "memory", "mempalace"]);
+
+    expect(seeded.seed_classification).toBe("deprecated_compat");
+    expect(seeded.lifecycle_mode).toBe("deprecated");
+    expect(seeded.tool_profile).toBe("default");
+    expect(seeded.capabilities ?? []).toEqual(["deprecated-compat"]);
+    expect(resolveSharedMcpAllowlist(seeded.shared_mcp_allowlist, seeded.tool_profile)).toEqual(["konoha"]);
+    expect((seeded.shared_mcp_allowlist ?? []).some(server => corporateMemoryMcp.has(server))).toBe(false);
+  });
+
   test("system monitor is optional but may be enabled for this deployment", () => {
     expect(agent("kiba")).toMatchObject({
       name: "System monitor",

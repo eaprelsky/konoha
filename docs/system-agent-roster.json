@@ -223,7 +223,7 @@
       "resource_budget": "konoha-qa.slice via agent-managed@.service when temporarily enabled",
       "systemd": { "unit": "agent-managed@jiraiya.service", "slice": "konoha-qa.slice" },
       "tmux_session": "jiraiya",
-      "watchdog": { "service": "agent-watchdog-lifecycle.service", "route": "compatibility wake only" },
+      "watchdog": { "service": "none", "route": "disabled experiment; manual rollback only" },
       "health_policy": "suppressed_deprecated",
       "kiba_monitor": "suppressed",
       "paused_semantics": "Keep parked unless owner explicitly reactivates; paused-services may list the short id."

@@ -806,11 +806,13 @@ async def main():
                 ) as resp:
                     data = await resp.json()
                     all_agents = data if isinstance(data, list) else data.get("agents", [])
-                    # Dedicated watchdogs keep custom logic for a small set of agents.
-                    dedicated_ids = {"naruto", "sasuke", "kakashi", "kiba", "jiraiya"}
+                    # Dedicated watchdogs keep custom logic; disabled experiments must not be auto-discovered.
+                    dedicated_ids = {"naruto", "sasuke", "kakashi", "kiba"}
+                    disabled_experiment_ids = {"jiraiya"}
                     agents = [
                         a["id"] for a in all_agents
                         if a.get("id") and a["id"] not in dedicated_ids
+                        and a["id"] not in disabled_experiment_ids
                         and a.get("lifecycle", {}).get("status") == "running"
                     ]
         except Exception as e:

@@ -177,6 +177,12 @@ AGENT_HEALTH_TARGETS = {
     "hinata": {"classification": "optional_worker"},
     "guy": {"classification": "optional_worker"},
 }
+DISABLED_EXPERIMENT_AGENTS = {
+    "jiraiya": {
+        "service": "agent-managed@jiraiya.service",
+        "reason": "corporate-memory experiment disabled until explicit product need",
+    },
+}
 PERMANENT_AGENT_SERVICES = {
     agent: str(meta["service"])
     for agent, meta in AGENT_HEALTH_TARGETS.items()
@@ -941,6 +947,23 @@ def check_lifecycle_control_plane(policy: HealthcheckPolicy | None = None) -> li
     return checks
 
 
+def check_disabled_experiment_agents() -> list[Check]:
+    checks: list[Check] = []
+    for agent, meta in DISABLED_EXPERIMENT_AGENTS.items():
+        service = str(meta["service"])
+        reason = str(meta["reason"])
+        service_rc, service_stdout, _ = run(["systemctl", "is-active", service], timeout=5)
+        tmux_rc, _, _ = run(["tmux", "-L", agent, "has-session", "-t", agent], timeout=5)
+        service_state = service_stdout.strip() or ("active" if service_rc == 0 else "inactive")
+        tmux_state = "active" if tmux_rc == 0 else "absent"
+        detail = f"service={service_state} tmux={tmux_state} reason={reason}"
+        if service_rc == 0 or tmux_rc == 0:
+            checks.append(Check("WARN", f"disabled_experiment.{agent}", detail, f"Stop {service} and tmux -L {agent} kill-session -t {agent}"))
+        else:
+            checks.append(Check("OK", f"disabled_experiment.{agent}", detail))
+    return checks
+
+
 def check_shared_config() -> list[Check]:
     script = Path("/home/ubuntu/konoha/scripts/validate-shared-config.py")
     rc, stdout, stderr = run([sys.executable, str(script), "--require-credentials", "--require-trusted-users"], timeout=20)
@@ -1345,6 +1368,7 @@ def main() -> int:
     checks.extend(check_messenger_connector_health(policy))
     checks.extend(check_agents(policy))
     checks.extend(check_lifecycle_control_plane(policy))
+    checks.extend(check_disabled_experiment_agents())
     for fn in (check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_role_registry_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files, check_resource_inventory_budget):
         checks.extend(fn())
     return print_report(checks)

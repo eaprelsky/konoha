@@ -42,13 +42,15 @@ Module-level config pattern: per-agent scripts set `AGENT_ID`, `TMUX_SESSION`, e
 
 ### 3. `watchdog-lifecycle.py` (generic lifecycle watchdog, 691 lines)
 
-Independent implementation for lifecycle-managed agents. The active systemd unit passes the watched set through `WATCHDOG_AGENTS` (`mirai,jiraiya,shino,hinata,ibiki,ino,inojin,guy`). It uses aiohttp for SSE instead of curl.
+Independent implementation for lifecycle-managed agents. The active systemd unit passes the watched set through `WATCHDOG_AGENTS` (`mirai,shino,hinata,ibiki,ino,inojin,guy`). It uses aiohttp for SSE instead of curl.
 
 **Consumers**: All non-dedicated lifecycle-managed agents (shino, hinata, etc.).
 Shikadai is intentionally excluded because `agent-watchdog-shikadai.service`
 owns his Konoha SSE delivery and GitHub ready-for-review reviewer intake.
 Architecture decomposition uses the separate `route:architecture-decomposition`
 path and is not dispatched by the reviewer watchdog.
+Jiraiya is also excluded: the corporate-memory experiment is disabled until an
+explicit product need exists, so no watchdog should wake it by default.
 
 **Unique features**:
 - **Auto-discovery**: fetches agent list from API, filters to running lifecycle-managed agents

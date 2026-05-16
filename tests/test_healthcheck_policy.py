@@ -333,6 +333,41 @@ def test_disabled_lifecycle_managed_instance_absence_is_healthy():
     assert "managed_agent=shino policy=disabled" in check.detail
 
 
+def test_disabled_jiraiya_experiment_absence_is_healthy(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        if cmd[:2] == ["systemctl", "is-active"]:
+            assert cmd[2] == "agent-managed@jiraiya.service"
+            return 3, "inactive\n", ""
+        if cmd[:3] == ["tmux", "-L", "jiraiya"]:
+            return 1, "", "no session"
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+
+    checks = healthcheck.check_disabled_experiment_agents()
+
+    assert checks[0].level == "OK"
+    assert checks[0].name == "disabled_experiment.jiraiya"
+    assert "tmux=absent" in checks[0].detail
+
+
+def test_disabled_jiraiya_experiment_running_warns(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        if cmd[:2] == ["systemctl", "is-active"]:
+            return 0, "active\n", ""
+        if cmd[:3] == ["tmux", "-L", "jiraiya"]:
+            return 0, "", ""
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+
+    checks = healthcheck.check_disabled_experiment_agents()
+
+    assert checks[0].level == "WARN"
+    assert "service=active" in checks[0].detail
+    assert "tmux=active" in checks[0].detail
+
+
 def test_resource_inventory_budget_pressure_is_reported(monkeypatch):
     def fake_run(cmd, timeout=10):
         assert "resource-inventory.py" in cmd[1]

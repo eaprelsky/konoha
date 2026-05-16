@@ -133,6 +133,17 @@ describe("canonical system agent roster", () => {
     expect(fromUnit).toEqual(fromRoster);
   });
 
+  test("Jiraiya is parked outside lifecycle watchdog delivery", () => {
+    const unit = readFileSync(join(repoRoot, "systemd", "agent-watchdog-lifecycle.service"), "utf-8");
+    const jiraiya = rosterById().get("jiraiya");
+
+    expect(unit).not.toContain("WATCHDOG_AGENTS=mirai,jiraiya");
+    expect(unit).not.toContain(",jiraiya,");
+    expect(jiraiya?.watchdog.service).toBe("none");
+    expect(jiraiya?.health_policy).toBe("suppressed_deprecated");
+    expect(jiraiya?.kiba_monitor).toBe("suppressed");
+  });
+
   test("systemd unit references in roster point at committed compatibility units", () => {
     for (const agent of loadRoster().agents) {
       const unit = unitFileFor(agent.systemd.unit);
