@@ -5,32 +5,38 @@ receive tasks through watchdog services, and operate autonomously.
 
 ## Team Roster
 
+Canonical lifecycle, ownership, MCP allowlist, resource budget, systemd/tmux,
+watchdog, Kiba monitoring, and paused-service policy are defined in
+[`docs/system-agent-roster.md`](../docs/system-agent-roster.md). This README is
+a short operator-facing index.
+
 | # | Agent | Model | Role | tmux | Status |
 |---|-------|-------|------|------|--------|
-| 1 | [Naruto](naruto/AGENTS.md) | Sonnet | Main orchestrator, Telegram bot | `naruto` | Permanent |
-| 2 | [Sasuke](sasuke/AGENTS.md) | Sonnet | Telegram user account monitor | `sasuke` | Permanent |
-| 3 | [Mirai](mirai/AGENTS.md) | Haiku | Email and data processing | `mirai` | Permanent |
-| 4 | [Jiraiya](jiraiya/AGENTS.md) | Sonnet | Chronicler — classifies and archives events | `jiraiya` | Permanent |
-| 5 | [Shino](shino/AGENTS.md) | Sonnet | QA Lead — test plans, testing coordination | `shino` | On-demand |
-| 6 | [Hinata](hinata/AGENTS.md) | Haiku | QA Runner — runs tests, writes reports | `hinata` | On-demand |
-| 7 | [Kiba](kiba/AGENTS.md) | Sonnet | System guardian — monitoring, alerts | `kiba` | Permanent |
-| 8 | [Kakashi](kakashi/AGENTS.md) | Opus | Developer — implements fixes, submits to Reviewer | `kakashi` | Permanent |
-| 10 | [Guy](guy/AGENTS.md) | Haiku | Optional helper — docs/mechanical only, on explicit request | `guy` | On-demand |
-| 9 | [Shikadai](shikadai/AGENTS.md) | gpt-5.5 | Reviewer — reviews architecture, approves before closure | `shikadai` | On-demand |
-| 11 | [Ibiki](ibiki/AGENTS.md) | Sonnet | Security pentester — audits Konoha infrastructure | `ibiki` | On-demand |
-| 12 | [Ino](ino/AGENTS.md) | Sonnet | Nocturna marketing strategist — content, SEO/AIO, copywriting | `ino` | On-demand |
-| 13 | [Inojin](inojin/AGENTS.md) | Haiku | Ino's assistant — API calls, bulk generation, formatting | `inojin` | On-demand |
-| — | [Itachi](itachi/AGENTS.md) | Sonnet+ | Local WSL agent (on owner's machine) | `itachi` | Optional |
-| — | Shikamaru | Opus | Owner's advisor (Windows Claude Desktop, no tools) | — | External |
-| — | Akamaru | Python | Autonomous health monitoring (not Claude, a script) | — | Permanent |
+| 1 | [Naruto](naruto/AGENTS.md) | Sonnet | Telegram bot connector | `naruto` | Connector-owned |
+| 2 | [Sasuke](sasuke/AGENTS.md) | Sonnet | Telegram user-account connector | `sasuke` | Connector-owned |
+| 3 | [Mirai](mirai/AGENTS.md) | Haiku | External-source connector compatibility actor | `mirai` | Connector-owned on demand |
+| 4 | [Jiraiya](jiraiya/AGENTS.md) | Haiku | Deprecated knowledge-curator compatibility alias | `jiraiya` | Deprecated |
+| 5 | [Shino](shino/AGENTS.md) | Sonnet | Optional QA lead | `shino` | On demand |
+| 6 | [Hinata](hinata/AGENTS.md) | Haiku | Optional QA executor | `hinata` | On demand |
+| 7 | [Kiba](kiba/AGENTS.md) | Sonnet | System monitor | `kiba` | Optional, enabled by health policy |
+| 8 | [Kakashi](kakashi/AGENTS.md) | gpt-5.5 | Developer — implements fixes, submits to Reviewer | `kakashi` | Optional, enabled by health policy |
+| 9 | [Shikadai](shikadai/AGENTS.md) | gpt-5.5 | Reviewer / architecture-code review worker | `shikadai` | Optional, enabled by health policy |
+| 10 | [Guy](guy/AGENTS.md) | Haiku | Optional mechanical developer helper | `guy` | On demand |
+| 11 | [Ibiki](ibiki/AGENTS.md) | Sonnet | Optional security auditor | `ibiki` | On demand |
+| 12 | [Ino](ino/AGENTS.md) | Sonnet | Deprecated marketing-specialist compatibility alias | `ino` | Deprecated |
+| 13 | [Inojin](inojin/AGENTS.md) | Haiku | Deprecated editor compatibility alias | `inojin` | Deprecated |
+| — | [Itachi](itachi/AGENTS.md) | Sonnet+ | External remote operator on owner's machine | `itachi` | External |
+| — | Shikamaru | Opus | External owner advisor compatibility name | — | External |
+| — | Akamaru | Python | Autonomous health monitoring script | — | Optional monitor, enabled by health policy |
 
 ## Message Delivery Architecture
 
 ```
 Telegram Bot API ──► message-queue.jsonl ──► watchdog-naruto ──► tmux naruto
 Telegram Telethon ──► Redis telegram:incoming ──► watchdog-sasuke ──► tmux sasuke
-Konoha SSE ──► watchdog-{agent} ──► tmux {agent}
-GitHub Issues ──► watchdog-kakashi ──► tmux kakashi
+Konoha SSE ──► dedicated or lifecycle watchdog ──► tmux {agent}
+GitHub ready-for-dev Issues ──► watchdog-kakashi ──► tmux kakashi
+GitHub ready-for-review Issues ──► watchdog-shikadai ──► tmux shikadai
 Akamaru alerts ──► Konoha ──► watchdog-kiba ──► tmux kiba
 ```
 
@@ -63,6 +69,7 @@ Permanent agents use two services:
 Additionally: `akamaru.service` — autonomous system health monitoring.
 
 On-demand agents are started by `POST /agents/{id}/start` and receive messages through `agent-watchdog-lifecycle.service`.
+Kakashi, Shikadai, Kiba, Naruto, and Sasuke use dedicated watchdogs because their delivery filters are role-specific.
 
 ## Running Services
 

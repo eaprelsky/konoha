@@ -46,7 +46,9 @@ Independent implementation for lifecycle-managed agents. The active systemd unit
 
 **Consumers**: All non-dedicated lifecycle-managed agents (shino, hinata, etc.).
 Shikadai is intentionally excluded because `agent-watchdog-shikadai.service`
-owns his Konoha SSE delivery and GitHub architecture-delegation intake.
+owns his Konoha SSE delivery and GitHub ready-for-review reviewer intake.
+Architecture decomposition uses the separate `route:architecture-decomposition`
+path and is not dispatched by the reviewer watchdog.
 
 **Unique features**:
 - **Auto-discovery**: fetches agent list from API, filters to running lifecycle-managed agents

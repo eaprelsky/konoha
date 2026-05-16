@@ -131,7 +131,10 @@ If lifecycle is unavailable, manually start a Codex session in the Shikadai
 workdir, read `agents/shikadai/AGENTS.md`, review the pushed commit, and report
 the decision through Konoha.
 
-When an agent is intentionally parked, add its short id and any dedicated units to `/opt/shared/kiba/paused-services.txt` so Akamaru suppresses expected inactive-state alerts.
+When an agent is intentionally parked, follow the paused-service semantics in
+`docs/system-agent-roster.md`. Deprecated compatibility aliases can be listed by
+short id in `/opt/shared/kiba/paused-services.txt`; enabled connectors and
+default monitored agents should only be paused during explicit maintenance.
 
 ## Stop
 

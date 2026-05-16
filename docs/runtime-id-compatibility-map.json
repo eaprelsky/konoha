@@ -149,7 +149,7 @@
       "service_name": "agent-managed@shikadai.service",
       "tmux_session": "shikadai",
       "connector_role": "optional_worker",
-      "allowed_internal_surfaces": ["systemd template", "tmux", "Redis agent id"]
+      "allowed_internal_surfaces": ["systemd template", "tmux", "watchdog", "Redis agent id", "debug UI"]
     },
     {
       "runtime_id": "itachi",

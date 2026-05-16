@@ -40,7 +40,11 @@ WATCHED_SERVICES = [
     "agent-watchdog-lifecycle.service",
     "agent-watchdog-naruto.service",
     "agent-watchdog-sasuke.service",
+    "agent-kiba.service",
     "agent-watchdog-kiba.service",
+    "agent-kakashi.service",
+    "agent-watchdog-kakashi.service",
+    "agent-watchdog-shikadai.service",
 ]
 
 SAFE_RESTART_SERVICES = {

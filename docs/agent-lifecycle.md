@@ -348,7 +348,10 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3200/agents/kakashi/syst
 `seedSystemAgents()` still writes protected definitions for compatibility, but
 ADR-004 narrows the required product core to `tsunade` / `Советник` and optional
 `kiba` / `Системный монитор`. The seed metadata now makes the lifecycle mode
-explicit:
+explicit. The canonical roster, including launch strategy, owner, MCP allowlist,
+resource budget, systemd/tmux/watchdog surface, Kiba monitoring, and
+paused-service policy, lives in `docs/system-agent-roster.md` and
+`docs/system-agent-roster.json`:
 
 | Runtime id | Product-facing role | `seed_classification` | `lifecycle_mode` | Autostart expectation |
 |------------|---------------------|------------------------|------------------|----------------------|
@@ -356,8 +359,8 @@ explicit:
 | `sasuke` | Telegram user-account connector | `connector_owned` | `connector_owned` | connector deployment only |
 | `kiba` | Системный монитор | `optional_worker` | `optional_on_demand` | optional, enabled on deployments that need active monitoring |
 | `kakashi`, `guy`, `shino`, `hinata` | SDD workflow workers | `optional_worker` | `optional_on_demand` | no; started by assignment/policy |
-| `mirai` | External-source connector compatibility actor | `connector_owned` | `connector_owned` | no default autostart |
-| `shikadai` | Reviewer / architecture-code review worker | `optional_worker` | `optional_on_demand` | no; started by `state:ready-for-review` + `agent:shikadai` |
+| `mirai` | External-source connector compatibility actor | `connector_owned` | `connector_owned` | connector-owned on-demand compatibility actor |
+| `shikadai` | Reviewer / architecture-code review worker | `optional_worker` | `optional_on_demand` | no; reviewer watchdog requires `state:ready-for-review` + `agent:shikadai` |
 | `jiraiya`, `ino`, `inojin` | legacy specialist aliases | `deprecated_compat` | `deprecated` | no |
 | `ibiki` | optional security worker | `optional_worker` | `optional_on_demand` | no |
 

@@ -11,12 +11,29 @@ assert spec.loader is not None
 sys.modules[spec.name] = healthcheck
 spec.loader.exec_module(healthcheck)
 
+ROSTER_PATH = Path(__file__).resolve().parents[1] / "docs" / "system-agent-roster.json"
+
+
+def load_roster():
+    return json.loads(ROSTER_PATH.read_text(encoding="utf-8"))
+
 
 def test_default_policy_keeps_telegram_enabled():
     policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
 
     assert "telegram" in policy.enabled_connectors
     assert "akamaru" in policy.enabled_optional_monitors
+
+
+def test_default_optional_monitor_policy_follows_canonical_roster():
+    roster = load_roster()
+    expected = {
+        agent["id"]
+        for agent in roster["agents"]
+        if agent["health_policy"] == "optional_monitor_default"
+    }
+
+    assert healthcheck.DEFAULT_ENABLED_OPTIONAL_MONITORS == expected
 
 
 def test_env_can_disable_connector_checks_for_fresh_install():

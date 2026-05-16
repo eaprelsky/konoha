@@ -24,6 +24,27 @@ from typing import Any
 KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 ENV_FILES = [Path("/home/ubuntu/.agent-env"), Path("/opt/shared/.shared-credentials")]
+ROSTER_PATH = Path(__file__).resolve().parents[1] / "docs" / "system-agent-roster.json"
+
+
+def load_system_agent_roster(path: Path = ROSTER_PATH) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def default_enabled_optional_monitors_from_roster(path: Path = ROSTER_PATH) -> set[str]:
+    try:
+        roster = load_system_agent_roster(path)
+        defaults = {
+            str(agent["id"])
+            for agent in roster.get("agents", [])
+            if agent.get("health_policy") == "optional_monitor_default"
+        }
+        if defaults:
+            return defaults
+    except Exception:
+        pass
+    return {"akamaru", "kakashi", "kiba", "shikadai"}
 
 CORE_SERVICES = [
     "konoha",
@@ -138,7 +159,7 @@ CONNECTOR_AGENTS = {
     "sasuke": "telegram",
 }
 DEFAULT_ENABLED_CONNECTORS = {"telegram"}
-DEFAULT_ENABLED_OPTIONAL_MONITORS = {"akamaru", "kakashi", "kiba", "shikadai"}
+DEFAULT_ENABLED_OPTIONAL_MONITORS = default_enabled_optional_monitors_from_roster()
 PROXY_SERVICES = ["sing-box", "privoxy"]
 AGENT_HEALTH_TARGETS = {
     "naruto": {"classification": "connector_owned", "service": "agent-naruto.service"},

@@ -9,7 +9,8 @@ Do not rename services, tmux sessions, watchdog units, Redis keys, or runtime id
 These responsibilities remain infrastructure watchdog behavior:
 
 - `akamaru.service` polling systemd, Redis, Konoha HTTP health, disk, memory, agent heartbeats, and tmux sessions.
-- `agent-kiba.service` and `agent-watchdog-kiba.service` delivering Akamaru alerts to the optional system monitor runtime.
+- Dedicated default-monitored agent units from `docs/system-agent-roster.md`,
+  including Kiba, Kakashi, and Shikadai watchdog surfaces.
 - `scripts/healthcheck-system.py` checking production readiness before delegation or incident work.
 - paused/offline suppression files under `/opt/shared/kiba/`.
 - safe auto-remediation for explicitly allowlisted infrastructure services.
