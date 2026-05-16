@@ -662,6 +662,8 @@ async function executeAgentAction(action: string, args: Record<string, unknown>)
         "runtime",
         "fallback_runtime",
         "model",
+        "llm_client_profile",
+        "fallback_llm_client_profile",
         "reasoning_effort",
         "capabilities",
         "gender",
