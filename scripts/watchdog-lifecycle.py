@@ -14,10 +14,11 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ── Config ──────────────────────────────────────────────────────────────────
 KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
@@ -27,6 +28,9 @@ DEBOUNCE_WINDOW  = 2.0
 IDLE_POLL_SEC    = 2.0
 IDLE_TIMEOUT_SEC = 300
 SSE_MAX_BACKOFF  = 30
+SSE_MAX_REPLAY_AGE = 600
+SSE_DELIVERED_DEDUP_TTL_SEC = 7 * 86400
+SSE_DELIVERED_DEDUP_MAX_SIZE = 5000
 WAKE_TIMEOUT_SEC = 120  # max seconds to wait for on-demand agent to start
 
 KONOHA_REPO        = os.path.expanduser("~/konoha")
@@ -356,6 +360,105 @@ def build_prompt(events: list[dict]) -> str:
     return "\n".join(parts)
 
 
+_delivered_sse_ids: dict[str, dict[str, float]] = {}
+
+
+def _sse_dedup_path(agent_id: str) -> Path:
+    return Path(os.environ.get(
+        "WATCHDOG_LIFECYCLE_SSE_DEDUP_DIR",
+        os.path.expanduser("~/.cache/konoha"),
+    )) / f"{agent_id}-lifecycle-sse-delivered.json"
+
+
+def _load_delivered_sse_ids(agent_id: str) -> dict[str, float]:
+    if agent_id in _delivered_sse_ids:
+        return _delivered_sse_ids[agent_id]
+
+    now = time.time()
+    state: dict[str, float] = {}
+    try:
+        raw = json.loads(_sse_dedup_path(agent_id).read_text())
+        items = raw.get("ids", raw) if isinstance(raw, dict) else {}
+        if isinstance(items, dict):
+            for key, ts in items.items():
+                try:
+                    t = float(ts)
+                except (TypeError, ValueError):
+                    continue
+                if now - t <= SSE_DELIVERED_DEDUP_TTL_SEC:
+                    state[str(key)] = t
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        log.warning(f"[{agent_id}] could not load SSE dedup state: {e!r}")
+
+    _delivered_sse_ids[agent_id] = state
+    return state
+
+
+def _save_delivered_sse_ids(agent_id: str) -> None:
+    state = _load_delivered_sse_ids(agent_id)
+    now = time.time()
+    fresh = {key: ts for key, ts in state.items() if now - ts <= SSE_DELIVERED_DEDUP_TTL_SEC}
+    if len(fresh) > SSE_DELIVERED_DEDUP_MAX_SIZE:
+        fresh = dict(sorted(fresh.items(), key=lambda item: item[1])[-SSE_DELIVERED_DEDUP_MAX_SIZE:])
+    state.clear()
+    state.update(fresh)
+
+    path = _sse_dedup_path(agent_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps({"ids": state, "updated_at": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False))
+        tmp.replace(path)
+    except Exception as e:
+        log.warning(f"[{agent_id}] could not save SSE dedup state: {e!r}")
+
+
+def _sse_delivery_id(ev: dict) -> str:
+    if ev.get("source") != "sse":
+        return ""
+    data = ev.get("data", ev)
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("_sse_id") or data.get("id") or "")
+
+
+def filter_delivered_sse_events(agent_id: str, batch: list[dict], pending: list[dict]) -> list[dict]:
+    delivered = _load_delivered_sse_ids(agent_id)
+    pending_ids = {_sse_delivery_id(ev) for ev in pending}
+    seen_in_batch: set[str] = set()
+    fresh: list[dict] = []
+
+    for ev in batch:
+        msg_id = _sse_delivery_id(ev)
+        if not msg_id:
+            fresh.append(ev)
+            continue
+        if msg_id in delivered:
+            log.info(f"[{agent_id}] SSE delivered dedup: skipping already delivered message {msg_id}")
+            continue
+        if msg_id in pending_ids or msg_id in seen_in_batch:
+            log.info(f"[{agent_id}] SSE delivered dedup: skipping duplicate pending message {msg_id}")
+            continue
+        seen_in_batch.add(msg_id)
+        fresh.append(ev)
+    return fresh
+
+
+def mark_sse_events_delivered(agent_id: str, events: list[dict]) -> None:
+    ids = [_sse_delivery_id(ev) for ev in events]
+    ids = [msg_id for msg_id in ids if msg_id]
+    if not ids:
+        return
+    state = _load_delivered_sse_ids(agent_id)
+    now = time.time()
+    for msg_id in ids:
+        state[msg_id] = now
+    _save_delivered_sse_ids(agent_id)
+    log.info(f"[{agent_id}] SSE delivered dedup: marked {len(set(ids))} message id(s) delivered")
+
+
 # ── SSE watcher ───────────────────────────────────────────────────────────────
 
 async def sse_watcher(agent_id: str, raw_queue: asyncio.Queue) -> None:
@@ -363,13 +466,23 @@ async def sse_watcher(agent_id: str, raw_queue: asyncio.Queue) -> None:
     import aiohttp
 
     url = f"{KONOHA_URL}/messages/{agent_id}/stream"
-    headers = {"Authorization": f"Bearer {KONOHA_TOKEN}"}
     backoff = 1
+    last_event_id = ""
+    last_event_id_time = 0.0
 
     log.info(f"[{agent_id}] Starting SSE watcher")
 
     while True:
         try:
+            headers = {"Authorization": f"Bearer {KONOHA_TOKEN}"}
+            if last_event_id:
+                id_age = time.monotonic() - last_event_id_time if last_event_id_time else float("inf")
+                if id_age > SSE_MAX_REPLAY_AGE:
+                    log.warning(f"[{agent_id}] SSE Last-Event-ID is {int(id_age)}s old — clearing to avoid replay flood")
+                    last_event_id = ""
+                else:
+                    headers["Last-Event-ID"] = last_event_id
+                    log.info(f"[{agent_id}] SSE reconnecting with Last-Event-ID={last_event_id}")
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=None)) as resp:
                     if resp.status != 200:
@@ -383,7 +496,13 @@ async def sse_watcher(agent_id: str, raw_queue: asyncio.Queue) -> None:
 
                     async for line in resp.content:
                         text = line.decode("utf-8", errors="replace").strip()
-                        if not text or not text.startswith("data: "):
+                        if not text:
+                            continue
+                        if text.startswith("id:"):
+                            last_event_id = text[3:].strip()
+                            last_event_id_time = time.monotonic()
+                            continue
+                        if not text.startswith("data: "):
                             continue
                         try:
                             msg = json.loads(text[6:])
@@ -391,6 +510,8 @@ async def sse_watcher(agent_id: str, raw_queue: asyncio.Queue) -> None:
                             continue
                         if not msg.get("text"):
                             continue
+                        if last_event_id:
+                            msg["_sse_id"] = last_event_id
                         await raw_queue.put({"source": "sse", "data": msg})
 
         except asyncio.CancelledError:
@@ -496,7 +617,8 @@ async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
         try:
             timeout = DEBOUNCE_WINDOW if not pending else max(0.0, DEBOUNCE_WINDOW - (time.monotonic() - last_event_time))
             event = await asyncio.wait_for(raw_queue.get(), timeout=max(0.05, timeout))
-            pending.append(event)
+            fresh = filter_delivered_sse_events(agent_id, [event], pending)
+            pending.extend(fresh)
             last_event_time = time.monotonic()
             continue
         except asyncio.TimeoutError:
@@ -550,6 +672,7 @@ async def delivery_loop(agent_id: str, raw_queue: asyncio.Queue) -> None:
             ok = await tmux_send(agent_id, prompt)
             if ok:
                 log.info(f"[{agent_id}] delivered {len(pending)} event(s)")
+                mark_sse_events_delivered(agent_id, pending)
             else:
                 log.error(f"[{agent_id}] tmux_send failed")
             pending.clear()

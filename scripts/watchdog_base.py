@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import os
+from pathlib import Path
 import subprocess
 import time
 
@@ -49,6 +50,8 @@ IDLE_POLL_SEC    = 2.0
 IDLE_TIMEOUT_SEC = 600
 SSE_MAX_BACKOFF  = 60
 SSE_MAX_REPLAY_AGE = 600  # seconds — clear Last-Event-ID if older, to avoid massive replays (#521)
+SSE_DELIVERED_DEDUP_TTL_SEC = 7 * 86400  # defense-in-depth across watchdog restarts (#802)
+SSE_DELIVERED_DEDUP_MAX_SIZE = 5000
 
 # On-demand agent wake (0 = agent is always running, no wake needed)
 WAKE_TIMEOUT_SEC = 0
@@ -162,6 +165,110 @@ def format_batch(events: list[dict]) -> str:
 
 # ── Send loop ─────────────────────────────────────────────────────────────────
 
+_delivered_sse_ids: dict[str, float] | None = None
+
+
+def _sse_dedup_path() -> Path:
+    return Path(os.environ.get(
+        "AGENT_SSE_DEDUP_STATE",
+        os.path.expanduser(f"~/.cache/konoha/{AGENT_ID}-sse-delivered.json"),
+    ))
+
+
+def _load_delivered_sse_ids() -> dict[str, float]:
+    global _delivered_sse_ids
+    if _delivered_sse_ids is not None:
+        return _delivered_sse_ids
+
+    now = time.time()
+    state: dict[str, float] = {}
+    try:
+        raw = json.loads(_sse_dedup_path().read_text())
+        if isinstance(raw, dict):
+            items = raw.get("ids", raw)
+            if isinstance(items, dict):
+                for key, ts in items.items():
+                    try:
+                        t = float(ts)
+                    except (TypeError, ValueError):
+                        continue
+                    if now - t <= SSE_DELIVERED_DEDUP_TTL_SEC:
+                        state[str(key)] = t
+            elif isinstance(items, list):
+                for key in items:
+                    state[str(key)] = now
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        log.warning(f"Could not load SSE dedup state: {e!r}")
+
+    _delivered_sse_ids = state
+    return _delivered_sse_ids
+
+
+def _save_delivered_sse_ids() -> None:
+    state = _load_delivered_sse_ids()
+    now = time.time()
+    fresh = {key: ts for key, ts in state.items() if now - ts <= SSE_DELIVERED_DEDUP_TTL_SEC}
+    if len(fresh) > SSE_DELIVERED_DEDUP_MAX_SIZE:
+        fresh = dict(sorted(fresh.items(), key=lambda item: item[1])[-SSE_DELIVERED_DEDUP_MAX_SIZE:])
+    state.clear()
+    state.update(fresh)
+
+    path = _sse_dedup_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps({"ids": state, "updated_at": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False))
+        tmp.replace(path)
+    except Exception as e:
+        log.warning(f"Could not save SSE dedup state: {e!r}")
+
+
+def _sse_delivery_id(ev: dict) -> str:
+    if ev.get("source") not in {"konoha", "sse"}:
+        return ""
+    data = ev.get("data", ev)
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("_sse_id") or data.get("id") or "")
+
+
+def _filter_delivered_sse_events(batch: list[dict], pending: list[dict]) -> list[dict]:
+    delivered = _load_delivered_sse_ids()
+    pending_ids = {_sse_delivery_id(ev) for ev in pending}
+    seen_in_batch: set[str] = set()
+    fresh: list[dict] = []
+
+    for ev in batch:
+        msg_id = _sse_delivery_id(ev)
+        if not msg_id:
+            fresh.append(ev)
+            continue
+        if msg_id in delivered:
+            log.info(f"SSE delivered dedup: skipping already delivered message {msg_id}")
+            continue
+        if msg_id in pending_ids or msg_id in seen_in_batch:
+            log.info(f"SSE delivered dedup: skipping duplicate pending message {msg_id}")
+            continue
+        seen_in_batch.add(msg_id)
+        fresh.append(ev)
+    return fresh
+
+
+def _mark_sse_events_delivered(events: list[dict]) -> None:
+    ids = [_sse_delivery_id(ev) for ev in events]
+    ids = [msg_id for msg_id in ids if msg_id]
+    if not ids:
+        return
+    state = _load_delivered_sse_ids()
+    now = time.time()
+    for msg_id in ids:
+        state[msg_id] = now
+    _save_delivered_sse_ids()
+    log.info(f"SSE delivered dedup: marked {len(set(ids))} message id(s) delivered")
+
+
 async def send_loop(batched_queue: asyncio.Queue) -> None:
     pending: list[dict] = []
 
@@ -178,6 +285,7 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
         try:
             timeout = 1.0 if pending else None
             batch = await asyncio.wait_for(batched_queue.get(), timeout=timeout)
+            batch = _filter_delivered_sse_events(batch, pending)
             pending.extend(batch)
         except asyncio.TimeoutError:
             pass
@@ -241,11 +349,13 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 delivered = await tmux_send(TMUX_SESSION, prompt)
                 if delivered is True:
                     _set_retry_count(0)  # delivery succeeded — reset recovery budget (#544)
+                    _mark_sse_events_delivered(pending)
                     pending.clear()
                 elif delivered is False:
                     # Text sent to buffer but confirmation timed out.
                     # Clearing is safe: text is in agent's input buffer.
                     log.warning(f"tmux_send unconfirmed — clearing {len(pending)} msg(s)")
+                    _mark_sse_events_delivered(pending)
                     pending.clear()
                 else:
                     # delivered is None — text never reached buffer (session dead / send-keys failed)

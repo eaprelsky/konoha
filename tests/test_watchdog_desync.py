@@ -447,3 +447,62 @@ class TestSSEDedup:
             assert ids == ["msg-1", "msg-2", "msg-3"], f"unexpected order or duplicates: {ids}"
 
         asyncio.run(scenario())
+
+    def test_watchdog_base_persistent_sse_dedup_after_delivery(self, tmp_path, monkeypatch):
+        """Delivered SSE ids must be skipped across reconnect/restart replays (#802)."""
+        import watchdog_base as _b
+
+        state_path = tmp_path / "kakashi-sse-delivered.json"
+        monkeypatch.setenv("AGENT_SSE_DEDUP_STATE", str(state_path))
+        monkeypatch.setattr(_b, "AGENT_ID", "kakashi")
+        monkeypatch.setattr(_b, "_delivered_sse_ids", None)
+
+        delivered = {"source": "konoha", "data": {"_sse_id": "177-0", "text": "same task"}}
+        duplicate = {"source": "konoha", "data": {"_sse_id": "177-0", "text": "same task"}}
+        fresh = {"source": "konoha", "data": {"_sse_id": "178-0", "text": "new task"}}
+
+        assert _b._filter_delivered_sse_events([delivered], []) == [delivered]
+        _b._mark_sse_events_delivered([delivered])
+
+        monkeypatch.setattr(_b, "_delivered_sse_ids", None)  # simulate watchdog restart
+        assert _b._filter_delivered_sse_events([duplicate, fresh], []) == [fresh]
+
+    def test_watchdog_base_pending_sse_dedup_does_not_mark_before_delivery(self, tmp_path, monkeypatch):
+        """Duplicates in one replay burst are collapsed without losing retryability (#802)."""
+        import watchdog_base as _b
+
+        state_path = tmp_path / "kakashi-sse-delivered.json"
+        monkeypatch.setenv("AGENT_SSE_DEDUP_STATE", str(state_path))
+        monkeypatch.setattr(_b, "AGENT_ID", "kakashi")
+        monkeypatch.setattr(_b, "_delivered_sse_ids", None)
+
+        first = {"source": "konoha", "data": {"_sse_id": "179-0", "text": "task"}}
+        duplicate = {"source": "konoha", "data": {"_sse_id": "179-0", "text": "task"}}
+
+        assert _b._filter_delivered_sse_events([first, duplicate], []) == [first]
+        monkeypatch.setattr(_b, "_delivered_sse_ids", None)
+        assert _b._filter_delivered_sse_events([duplicate], []) == [duplicate]
+
+    def test_lifecycle_persistent_sse_dedup_after_delivery(self, tmp_path, monkeypatch):
+        """Lifecycle watchdog uses the same delivered-id contract for SSE replay (#802)."""
+        import importlib.util
+        import os
+
+        path = os.path.join(os.path.dirname(__file__), "..", "scripts", "watchdog-lifecycle.py")
+        spec = importlib.util.spec_from_file_location("watchdog_lifecycle_sse_dedup_test", path)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        monkeypatch.setenv("WATCHDOG_LIFECYCLE_SSE_DEDUP_DIR", str(tmp_path))
+        module._delivered_sse_ids.clear()
+
+        delivered = {"source": "sse", "data": {"_sse_id": "180-0", "text": "task"}}
+        duplicate = {"source": "sse", "data": {"_sse_id": "180-0", "text": "task"}}
+        fresh = {"source": "sse", "data": {"_sse_id": "181-0", "text": "new"}}
+
+        assert module.filter_delivered_sse_events("shino", [delivered], []) == [delivered]
+        module.mark_sse_events_delivered("shino", [delivered])
+        module._delivered_sse_ids.clear()
+
+        assert module.filter_delivered_sse_events("shino", [duplicate, fresh], []) == [fresh]
