@@ -3,6 +3,7 @@
  * Extracted from agent-lifecycle.ts (#509).
  */
 
+import { createHash } from "crypto";
 import { redis } from "../redis";
 import type { AgentDef, AgentRuntimeConfig, AgentTemplate } from "./types";
 import { runtimeConfigFromAgentDef, templateFromAgentDef } from "./view";
@@ -18,6 +19,24 @@ export interface AgentDefUpsertOptions {
 }
 
 const ORG_OWNED_DISPLAY_FIELDS = ["name", "display_alias", "avatar_url"] as const;
+
+export function sha256Text(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function withSystemPromptMetadata(def: AgentDef, previous: AgentDef | null, updatedBy: string): AgentDef {
+  const prompt = def.system_prompt ?? "";
+  const promptChanged = !previous || (previous.system_prompt ?? "") !== prompt;
+  return {
+    ...def,
+    system_prompt_hash: sha256Text(prompt),
+    system_prompt_updated_at: promptChanged ? def.updated_at : previous?.system_prompt_updated_at ?? def.updated_at,
+    system_prompt_updated_by: promptChanged ? updatedBy : previous?.system_prompt_updated_by ?? "legacy",
+    rendered_prompt_hash: def.rendered_prompt_hash ?? previous?.rendered_prompt_hash,
+    rendered_prompt_updated_at: def.rendered_prompt_updated_at ?? previous?.rendered_prompt_updated_at,
+    rendered_prompt_path: def.rendered_prompt_path ?? previous?.rendered_prompt_path,
+  };
+}
 
 // ── Audit helper (local, also used by process.ts) ────────────────────────────
 
@@ -63,7 +82,7 @@ async function getSplitAgentDef(id: string): Promise<AgentDef | null> {
 
 export async function createAgentDef(input: Omit<AgentDef, "created_at" | "updated_at">): Promise<AgentDef> {
   const now = new Date().toISOString();
-  const def: AgentDef = { ...input, created_at: now, updated_at: now };
+  const def: AgentDef = withSystemPromptMetadata({ ...input, created_at: now, updated_at: now }, null, "agent.create");
   await storeAgentDef(def);
   await audit(def.id, "created");
   return def;
@@ -75,7 +94,7 @@ export async function upsertAgentDef(
 ): Promise<{ def: AgentDef; created: boolean }> {
   const existing = await getAgentDef(input.id);
   const now = new Date().toISOString();
-  const def: AgentDef = existing
+  let def: AgentDef = existing
     ? { ...existing, ...input, id: input.id, created_at: existing.created_at, updated_at: now }
     : { ...input, created_at: now, updated_at: now };
   if (existing && options.preserveOrgDisplayFields) {
@@ -86,6 +105,7 @@ export async function upsertAgentDef(
       }
     }
   }
+  def = withSystemPromptMetadata(def, existing, existing ? "agent.upsert" : "agent.create");
   await storeAgentDef(def);
   await audit(def.id, existing ? "updated" : "created");
   return { def, created: !existing };
@@ -94,15 +114,30 @@ export async function upsertAgentDef(
 export async function updateAgentDef(id: string, updates: Partial<Omit<AgentDef, "id" | "created_at" | "updated_at">>): Promise<AgentDef | null> {
   const existing = await getAgentDef(id);
   if (!existing) return null;
-  const def: AgentDef = {
+  const def: AgentDef = withSystemPromptMetadata({
     ...existing,
     ...updates,
     id,
     created_at: existing.created_at,
     updated_at: new Date().toISOString(),
-  };
+  }, existing, "agent.update_profile");
   await storeAgentDef(def);
   await audit(id, "updated");
+  return def;
+}
+
+export async function recordRenderedPromptMirror(agentId: string, renderedPrompt: string, mirrorPath: string): Promise<AgentDef | null> {
+  const existing = await getAgentDef(agentId);
+  if (!existing) return null;
+  const def: AgentDef = withSystemPromptMetadata({
+    ...existing,
+    rendered_prompt_hash: sha256Text(renderedPrompt),
+    rendered_prompt_updated_at: new Date().toISOString(),
+    rendered_prompt_path: mirrorPath,
+    updated_at: new Date().toISOString(),
+  }, existing, existing.system_prompt_updated_by ?? "agent.prompt_mirror");
+  await storeAgentDef(def);
+  await audit(agentId, "prompt_mirror_written", mirrorPath);
   return def;
 }
 

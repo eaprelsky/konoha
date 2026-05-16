@@ -6,6 +6,7 @@
  */
 
 import { isTmuxRunning, getAgentState } from "./process";
+import { checkAgentPromptMirrorDrift, type PromptMirrorDriftResult } from "./prompt-drift";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
@@ -13,9 +14,10 @@ const execFileAsync = promisify(execFile);
 
 export interface HealthcheckResult {
   healthy: boolean;
-  signal?: "stuck_paste" | "compacting" | "rate_limit" | "permission_prompt" | "missing_tmux" | "pane_unreadable";
+  signal?: "stuck_paste" | "compacting" | "rate_limit" | "permission_prompt" | "missing_tmux" | "pane_unreadable" | "prompt_mirror_drift";
   detail: string;
   profile?: string;
+  prompt_mirror?: PromptMirrorDriftResult;
 }
 
 function paneIsIdle(content: string): boolean {
@@ -62,12 +64,14 @@ async function captureTmuxPane(agentId: string): Promise<string | null> {
 }
 
 export async function healthcheckAgent(agentId: string): Promise<HealthcheckResult> {
+  const promptMirror = await checkAgentPromptMirrorDrift(agentId).catch(() => undefined);
   const tmuxAlive = await isTmuxRunning(agentId);
   if (!tmuxAlive) {
     return {
       healthy: false,
       signal: "missing_tmux",
       detail: `tmux session ${agentId} not found`,
+      prompt_mirror: promptMirror,
     };
   }
 
@@ -77,6 +81,7 @@ export async function healthcheckAgent(agentId: string): Promise<HealthcheckResu
       healthy: false,
       signal: "pane_unreadable",
       detail: `failed to capture pane for ${agentId}`,
+      prompt_mirror: promptMirror,
     };
   }
 
@@ -86,6 +91,7 @@ export async function healthcheckAgent(agentId: string): Promise<HealthcheckResu
       healthy: false,
       signal: stuckSignal as HealthcheckResult["signal"],
       detail: `agent ${agentId} pane signal: ${stuckSignal}`,
+      prompt_mirror: promptMirror,
     };
   }
 
@@ -93,7 +99,11 @@ export async function healthcheckAgent(agentId: string): Promise<HealthcheckResu
   const state = await getAgentState(agentId);
 
   return {
-    healthy: true,
-    detail: `alive idle=${idle} pid=${state.pid ?? "?"} uptime=${state.uptime_seconds ?? "?"}s`,
+    healthy: !promptMirror || promptMirror.status === "ok",
+    signal: promptMirror && promptMirror.status !== "ok" ? "prompt_mirror_drift" : undefined,
+    detail: promptMirror && promptMirror.status !== "ok"
+      ? `agent ${agentId} prompt mirror ${promptMirror.status}`
+      : `alive idle=${idle} pid=${state.pid ?? "?"} uptime=${state.uptime_seconds ?? "?"}s`,
+    prompt_mirror: promptMirror,
   };
 }

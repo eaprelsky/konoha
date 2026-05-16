@@ -50,6 +50,7 @@ import {
 import { invokeAssistant } from "./assistant-invocation";
 import { sendConnectorMessage } from "./messenger-outbound";
 import { executeGithubIssueAction } from "./github-issue-actions";
+import { sendMessage } from "./redis";
 import { ServiceError } from "./errors";
 import {
   buildPgOnlyRetentionCleanupApply,
@@ -790,6 +791,28 @@ async function executeIssueAction(action: string, args: Record<string, unknown>)
   }
 }
 
+async function executeMessageAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "message.send": {
+      const invalid = validationFailure("message.send", args);
+      if (invalid) return invalid;
+      try {
+        const id = await sendMessage({
+          from: typeof args.from === "string" ? args.from : "workflow",
+          to: String(args.to),
+          type: typeof args.type === "string" ? args.type as any : "message",
+          text: String(args.text),
+        });
+        return { status: 200, data: { id } };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    default:
+      return null;
+  }
+}
+
 async function executeRetentionAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
   switch (action) {
     case "retention.report": {
@@ -868,6 +891,9 @@ export async function executeActionDirect(
   }
   if (action.startsWith("issue.")) {
     return executeIssueAction(action, args);
+  }
+  if (action.startsWith("message.")) {
+    return executeMessageAction(action, args);
   }
   if (action.startsWith("retention.")) {
     return executeRetentionAction(action, args);

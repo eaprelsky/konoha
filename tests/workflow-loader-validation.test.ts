@@ -210,17 +210,17 @@ describe("workflow-loader e2e: developer-reviewer GitHub issue workflow", () => 
   test("models Developer, Reviewer, close, request-changes, and blocked branches", () => {
     const functions = def.elements.filter(el => el.type === "function");
     expect(functions.map(el => ({ id: el.id, role: el.role }))).toEqual([
-      { id: "f_developer_implement", role: "developer" },
-      { id: "f_reviewer_review", role: "reviewer" },
-      { id: "f_close_issue", role: "workflow_controller" },
-      { id: "f_select_next_lane", role: "workflow_controller" },
-      { id: "f_rework_issue", role: "developer" },
-      { id: "f_escalate_blocked_review", role: "workflow_controller" },
+      { id: "f_developer_implement", role: "kakashi" },
+      { id: "f_reviewer_review", role: "shikadai" },
+      { id: "f_close_issue", role: "system" },
+      { id: "f_select_next_lane", role: "system" },
+      { id: "f_rework_issue", role: "kakashi" },
+      { id: "f_escalate_blocked_review", role: "system" },
     ]);
 
-    expect(def.flow).toContainEqual(["g_review_decision", "e_review_approved", "payload.decision === 'approved' && payload.closure_allowed === true"]);
-    expect(def.flow).toContainEqual(["g_review_decision", "e_changes_requested", "payload.decision === 'request_changes'"]);
-    expect(def.flow).toContainEqual(["g_review_decision", "e_review_blocked", "payload.decision === 'blocked' || payload.closure_allowed !== true"]);
+    expect(def.flow).toContainEqual(["g_review_decision", "e_review_approved", "payload.review_route === 'approved'"]);
+    expect(def.flow).toContainEqual(["g_review_decision", "e_changes_requested", "payload.review_route === 'request_changes'"]);
+    expect(def.flow).toContainEqual(["g_review_decision", "e_review_blocked", "payload.review_route === 'blocked'"]);
     expect(def.flow).toContainEqual(["e_rework_ready", "f_reviewer_review"]);
   });
 

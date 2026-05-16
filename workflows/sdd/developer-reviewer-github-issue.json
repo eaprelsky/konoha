@@ -2,7 +2,7 @@
   "id": "developer-reviewer-github-issue",
   "version": "0.1.0",
   "name": "Developer -> Reviewer GitHub issue delivery",
-  "description": "Shadow-run workflow for the Kakashi Developer -> Shikadai Reviewer lane. GitHub label events start a workflow case, Developer and Reviewer work items carry structured outputs, and GitHub label/comment/close side effects are represented as Action Spine system bindings.",
+  "description": "Shadow-run workflow for the Kakashi Developer -> Shikadai Reviewer lane. GitHub label events start a workflow case, Kakashi and Shikadai work items carry structured outputs, and GitHub label/comment/close side effects execute through Action Spine system bindings.",
   "documents": [
     {
       "doc_id": "sdd.github.developer-implementation",
@@ -14,13 +14,13 @@
       "doc_id": "sdd.github.reviewer-decision",
       "name": "Reviewer decision output contract",
       "type": "instruction",
-      "content": "Review the implementation and return decision='approved'|'request_changes'|'blocked', commit, findings, verification, closure_allowed:boolean, and reviewer_summary. Malformed or missing decisions must fail closed."
+      "content": "Review the implementation and return review_route='approved'|'request_changes'|'blocked', decision, commit, findings, verification, closure_allowed:boolean, and reviewer_summary. Malformed, missing, or closure_allowed=false decisions must use review_route='blocked' and fail closed."
     },
     {
       "doc_id": "sdd.github.close-issue",
       "name": "Reviewed close side effect contract",
       "type": "instruction",
-      "content": "Close the GitHub issue only when decision='approved' and closure_allowed=true. Comment with reviewed commit and verification, update canonical state labels if needed, close the issue, and preserve the Action Spine audit receipt."
+      "content": "Close the GitHub issue only when review_route='approved' and closure_allowed=true. Provide action_args keyed by issue.comment, issue.update_labels, and issue.close; preserve the Action Spine audit receipt."
     },
     {
       "doc_id": "sdd.github.request-changes",
@@ -32,13 +32,13 @@
       "doc_id": "sdd.github.blocked-escalation",
       "name": "Blocked review escalation contract",
       "type": "instruction",
-      "content": "Notify Naruto/operator with the blocked reason, issue URL, current commit, and required decision. Wait for explicit recovery or operator instruction."
+      "content": "Notify Naruto/operator with the blocked reason, issue URL, current commit, and required decision. Provide action_args['message.send']; wait for explicit recovery or operator instruction."
     },
     {
       "doc_id": "sdd.github.select-next-lane",
       "name": "Next lane selection contract",
       "type": "instruction",
-      "content": "After approved closure, scan the backlog by policy, select the next P0 lane, apply state:ready-for-dev and agent:kakashi where appropriate, and notify Naruto and Kakashi."
+      "content": "After approved closure, scan the backlog by policy, select the next P0 lane, apply state:ready-for-dev and agent:kakashi where appropriate, and notify Naruto and Kakashi. Provide action_args keyed by issue.list, issue.update_labels, and message.send."
     }
   ],
   "elements": [
@@ -60,7 +60,7 @@
       "id": "f_developer_implement",
       "type": "function",
       "label": "Implement delegated issue",
-      "role": "developer",
+      "role": "kakashi",
       "documents": ["sdd.github.developer-implementation"],
       "systems": [
         { "connector": "github", "operation": "issue.get" },
@@ -77,7 +77,7 @@
       "id": "f_reviewer_review",
       "type": "function",
       "label": "Review implementation",
-      "role": "reviewer",
+      "role": "shikadai",
       "documents": ["sdd.github.reviewer-decision"],
       "systems": [
         { "connector": "github", "operation": "issue.get" },
@@ -104,7 +104,7 @@
       "id": "f_close_issue",
       "type": "function",
       "label": "Close reviewed GitHub issue",
-      "role": "workflow_controller",
+      "role": "system",
       "documents": ["sdd.github.close-issue"],
       "systems": [
         { "connector": "action_spine", "operation": "issue.comment" },
@@ -121,7 +121,7 @@
       "id": "f_select_next_lane",
       "type": "function",
       "label": "Select next backlog lane",
-      "role": "workflow_controller",
+      "role": "system",
       "documents": ["sdd.github.select-next-lane"],
       "systems": [
         { "connector": "action_spine", "operation": "issue.list" },
@@ -143,7 +143,7 @@
       "id": "f_rework_issue",
       "type": "function",
       "label": "Rework issue from review findings",
-      "role": "developer",
+      "role": "kakashi",
       "documents": [
         "sdd.github.developer-implementation",
         "sdd.github.request-changes"
@@ -168,7 +168,7 @@
       "id": "f_escalate_blocked_review",
       "type": "function",
       "label": "Escalate blocked review",
-      "role": "workflow_controller",
+      "role": "system",
       "documents": ["sdd.github.blocked-escalation"],
       "systems": [
         { "connector": "action_spine", "operation": "message.send" }
@@ -186,16 +186,16 @@
     ["e_implementation_handoff", "f_reviewer_review"],
     ["f_reviewer_review", "e_review_recorded"],
     ["e_review_recorded", "g_review_decision"],
-    ["g_review_decision", "e_review_approved", "payload.decision === 'approved' && payload.closure_allowed === true"],
+    ["g_review_decision", "e_review_approved", "payload.review_route === 'approved'"],
     ["e_review_approved", "f_close_issue"],
     ["f_close_issue", "e_issue_closed"],
     ["e_issue_closed", "f_select_next_lane"],
     ["f_select_next_lane", "e_next_lane_selected"],
-    ["g_review_decision", "e_changes_requested", "payload.decision === 'request_changes'"],
+    ["g_review_decision", "e_changes_requested", "payload.review_route === 'request_changes'"],
     ["e_changes_requested", "f_rework_issue"],
     ["f_rework_issue", "e_rework_ready"],
     ["e_rework_ready", "f_reviewer_review"],
-    ["g_review_decision", "e_review_blocked", "payload.decision === 'blocked' || payload.closure_allowed !== true"],
+    ["g_review_decision", "e_review_blocked", "payload.review_route === 'blocked'"],
     ["e_review_blocked", "f_escalate_blocked_review"],
     ["f_escalate_blocked_review", "e_blocked_escalated"]
   ]

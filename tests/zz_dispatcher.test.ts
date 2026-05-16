@@ -56,22 +56,13 @@ mock.module("../src/people-directory", () => ({
   },
 }));
 
-mock.module("../src/system-agent", () => ({
-  isSystemRole(role: string) {
-    return state.systemRole && role === "System";
-  },
-  async executeSystemFunction(params: Record<string, unknown>) {
-    state.systemExecutions.push(params);
-  },
-}));
-
 mock.module("../src/runtime/roles", () => ({
   async loadRole() {
     return state.roleDef;
   },
 }));
 
-const { dispatchWorkItem, tgTransport } = await import("../src/dispatcher");
+const { dispatchWorkItem, dispatcherHooks, tgTransport } = await import("../src/dispatcher");
 
 // Patch tgTransport for test — Bun 1.3.11 mock.module does not intercept
 // Node.js built-in "child_process", so we replace the promisified wrapper directly.
@@ -94,6 +85,13 @@ function resetState() {
 }
 
 beforeEach(resetState);
+
+beforeEach(() => {
+  dispatcherHooks.isSystemRole = (role: string) => state.systemRole && role === "System";
+  dispatcherHooks.executeSystemFunction = async (params: any) => {
+    state.systemExecutions.push(params);
+  };
+});
 
 describe("dispatcher coverage", () => {
   test("dispatches to the least loaded agent for load-balancing roles", async () => {
@@ -287,10 +285,21 @@ describe("dispatcher coverage", () => {
       process_id: "proc-system",
       element_id: "fn_wait",
       docIds: [],
+      def: makeWorkflowDefinition({
+        elements: [
+          { id: "event_start", type: "event", label: "Started" },
+          { id: "fn_wait", type: "function", label: "Подождать 5 минут", role: "System", systems: [{ connector: "action_spine", operation: "issue.close" }] },
+          { id: "event_end", type: "event", label: "Done" },
+        ],
+        flow: [["event_start", "fn_wait"], ["fn_wait", "event_end"]],
+      }),
+      payload: { action_args: { "issue.close": { issue_number: 803, dry_run: true } } },
     });
 
     expect(state.systemExecutions).toHaveLength(1);
     expect(state.systemExecutions[0].work_item_id).toBe("wi-system");
+    expect(state.systemExecutions[0].systems).toEqual([{ connector: "action_spine", operation: "issue.close" }]);
+    expect(state.systemExecutions[0].payload).toEqual({ action_args: { "issue.close": { issue_number: 803, dry_run: true } } });
     expect(state.sentMessages).toHaveLength(0);
     expect(state.telegramExecs).toHaveLength(0);
   });

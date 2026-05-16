@@ -55,6 +55,12 @@ export interface AgentDef {
   /** Mutable instance-specific alias/callsign; canonical product name stays in name. */
   display_alias?: string;
   system_prompt?: string;
+  system_prompt_hash?: string;
+  system_prompt_updated_at?: string;
+  system_prompt_updated_by?: string;
+  rendered_prompt_hash?: string;
+  rendered_prompt_updated_at?: string;
+  rendered_prompt_path?: string;
   startup_sequence?: string[];
   runtime?: AgentProvider;
   fallback_runtime?: AgentProvider;
@@ -94,6 +100,12 @@ export interface AgentTemplate {
   name: string;
   display_alias?: string;
   system_prompt?: string;
+  system_prompt_hash?: string;
+  system_prompt_updated_at?: string;
+  system_prompt_updated_by?: string;
+  rendered_prompt_hash?: string;
+  rendered_prompt_updated_at?: string;
+  rendered_prompt_path?: string;
   tool_profile?: string;        // ToolProfile id (#571)
   sandbox_profile?: string;     // SandboxProfile id (#572), defaults to "tmux"
   tags?: string[];

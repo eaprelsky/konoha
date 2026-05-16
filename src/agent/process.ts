@@ -10,6 +10,7 @@ import { join } from "path";
 import { redis } from "../redis";
 import { silentCatch } from "../logger";
 import { buildSystemPrompt } from "./prompt";
+import { recordRenderedPromptMirror } from "./crud";
 import { buildMcpConfig, buildLaunchCommand, shellEscape, ensureCodexProjectTrusted, getLiveBitrixWebhook } from "./runtime";
 import { AGENT_WORKDIR_ROOT } from "./runtime";
 import { buildAgentSystemdScopeCommand, systemdScopesEnabled } from "./systemd-slices";
@@ -250,7 +251,9 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     mkdirSync(workdir, { recursive: true });
 
     const instructions = await buildSystemPrompt(id, def);
-    writeFileSync(join(workdir, INSTRUCTIONS_FILE), instructions, "utf-8");
+    const instructionsPath = join(workdir, INSTRUCTIONS_FILE);
+    writeFileSync(instructionsPath, instructions, "utf-8");
+    await recordRenderedPromptMirror(id, instructions, instructionsPath);
 
     // Build MCP configs for supported runtimes.
     const mcpConfig = await buildMcpConfig(

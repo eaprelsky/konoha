@@ -7,7 +7,6 @@ import { listAgents, sendMessage } from "./redis";
 import { loadInstructionText } from "./document-instructions";
 import { createLogger } from "./logger";
 import { findPersonById, findPersonByRole, type PersonRecord } from "./people-directory";
-import { isSystemRole, executeSystemFunction } from "./system-agent";
 import type { WorkflowDefinition } from "./workflow-loader";
 import { loadRole } from "./runtime/roles";
 import type { AssignmentStrategy } from "./runtime/roles";
@@ -19,6 +18,15 @@ export const tgTransport = {
 };
 const log = createLogger("dispatcher");
 const TG_SEND_SCRIPT = "/home/ubuntu/naruto-tg-send.py";
+const SYSTEM_ROLES = new Set(["Система", "System", "system", "система", "СИСТЕМА"]);
+
+export const dispatcherHooks = {
+  isSystemRole: (role: string) => SYSTEM_ROLES.has(role),
+  executeSystemFunction: async (params: import("./system-agent").SystemExecParams) => {
+    const { executeSystemFunction } = await import("./system-agent");
+    return executeSystemFunction(params);
+  },
+};
 
 export interface DispatchParams {
   role: string;
@@ -170,8 +178,18 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
   const { role, label, work_item_id, case_id, process_id, element_id, docIds } = params;
 
   // 0. System role → system-agent handles timers, doc gen, auto-execute
-  if (isSystemRole(role)) {
-    await executeSystemFunction({ label, work_item_id, case_id, process_id, element_id, docIds });
+  if (dispatcherHooks.isSystemRole(role)) {
+    const element = params.def?.elements.find(el => el.id === element_id);
+    await dispatcherHooks.executeSystemFunction({
+      label,
+      work_item_id,
+      case_id,
+      process_id,
+      element_id,
+      docIds,
+      systems: element?.systems ?? (element?.system ? [{ connector: element.system, operation: "default" }] : []),
+      payload: params.payload,
+    });
     return;
   }
 

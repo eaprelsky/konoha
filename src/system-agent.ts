@@ -13,8 +13,10 @@ import { config } from "./config";
 import { loadInstructionText } from "./document-instructions";
 import { generateText } from "./llm";
 import { createLogger } from "./logger";
-import { createReminder, completeWorkItem } from "./runtime";
+import { createReminder } from "./runtime/reminders";
+import { completeWorkItem, updateWorkItem } from "./runtime/work-items";
 import { createTimerWait } from "./runtime/event-waits";
+import type { SystemBinding } from "./workflow-loader";
 
 const execFileAsync = promisify(execFile);
 const log = createLogger("system-agent");
@@ -56,6 +58,86 @@ export interface SystemExecParams {
   process_id: string;
   element_id: string;
   docIds: string[];
+  systems?: SystemBinding[];
+  payload?: Record<string, unknown>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function actionArgsFor(operation: string, payload: Record<string, unknown> = {}): Record<string, unknown> | null {
+  const actionArgs = payload.action_args;
+  if (isRecord(actionArgs)) {
+    const scoped = actionArgs[operation];
+    if (isRecord(scoped)) return scoped;
+  }
+  return null;
+}
+
+async function failSystemWorkItem(work_item_id: string, output: Record<string, unknown>): Promise<void> {
+  await updateWorkItem(work_item_id, { status: "error", output }).catch(e =>
+    log.error("failed to mark system work item error", { work_item_id, error: e?.message }),
+  );
+}
+
+async function executeActionSpineBindings(params: SystemExecParams, systems: SystemBinding[]): Promise<boolean> {
+  const actionBindings = systems.filter(binding => binding.connector === "action_spine" && binding.operation);
+  if (actionBindings.length === 0) return false;
+
+  const receipts: Array<{ action: string; status: number; data: unknown }> = [];
+  const [{ executeAction }, { classifyAction }] = await Promise.all([
+    import("./act-envelope"),
+    import("./action-registry"),
+  ]);
+  for (const binding of actionBindings) {
+    const operation = binding.operation!;
+    const args = actionArgsFor(operation, params.payload);
+    if (!args) {
+      const output = {
+        system: "action_spine-error",
+        error: `missing action_args for ${operation}`,
+        action: operation,
+        work_item_id: params.work_item_id,
+      };
+      log.error("action_spine args missing", { work_item_id: params.work_item_id, operation });
+      await failSystemWorkItem(params.work_item_id, output);
+      return true;
+    }
+
+    const result = await executeAction({
+      action: operation,
+      category: classifyAction(operation),
+      args,
+      meta: {
+        session_id: `workflow:${params.work_item_id}`,
+        agent_chain: "workflow:system-agent",
+      },
+    }, {
+      session_id: `workflow:${params.work_item_id}`,
+      agent_chain: "workflow:system-agent",
+      skipAutonomy: true,
+    });
+
+    const status = result.status ?? (result.ok ? 200 : 500);
+    receipts.push({ action: operation, status, data: result.ok ? result.data : { error: result.error } });
+    if (!result.ok || status < 200 || status >= 300) {
+      const output = {
+        system: "action_spine-error",
+        action: operation,
+        status,
+        data: result.ok ? result.data : { error: result.error },
+        receipts,
+      };
+      log.error("action_spine action failed", { work_item_id: params.work_item_id, operation, status });
+      await failSystemWorkItem(params.work_item_id, output);
+      return true;
+    }
+  }
+
+  await completeWorkItem(params.work_item_id, { system: "action_spine", receipts });
+  log.info("action_spine completed work item", { work_item_id: params.work_item_id, actions: receipts.map(r => r.action) });
+  return true;
 }
 
 /**
@@ -64,6 +146,15 @@ export interface SystemExecParams {
  */
 export async function executeSystemFunction(params: SystemExecParams): Promise<void> {
   const { label, work_item_id, case_id, process_id, element_id, docIds } = params;
+
+  try {
+    const handled = await executeActionSpineBindings(params, params.systems ?? []);
+    if (handled) return;
+  } catch (e: any) {
+    log.error("action_spine execution crashed", { work_item_id, error: e.message });
+    await failSystemWorkItem(work_item_id, { system: "action_spine-error", error: e.message });
+    return;
+  }
 
   // 1. Timer: "Подождать N минут"
   const waitMinutes = parseWaitMinutes(label);
