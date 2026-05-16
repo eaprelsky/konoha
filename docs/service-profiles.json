@@ -8,6 +8,7 @@
       "enabled_optional_monitors": ["akamaru", "kiba"],
       "autostart_agents": ["naruto", "sasuke", "kiba"],
       "lifecycle_watchdog_agents": [],
+      "infra_dependencies": ["postgresql.service"],
       "required_services": [
         "konoha.service",
         "redis-server.service",
@@ -38,6 +39,7 @@
       "enabled_optional_monitors": ["akamaru", "kiba", "kakashi", "shikadai"],
       "autostart_agents": ["naruto", "sasuke", "kiba", "kakashi"],
       "lifecycle_watchdog_agents": [],
+      "infra_dependencies": ["postgresql.service"],
       "required_services": [
         "konoha.service",
         "redis-server.service",
@@ -68,6 +70,7 @@
       "enabled_optional_monitors": ["akamaru"],
       "autostart_agents": [],
       "lifecycle_watchdog_agents": [],
+      "infra_dependencies": ["postgresql.service"],
       "required_services": [
         "konoha.service",
         "redis-server.service",
@@ -94,6 +97,7 @@
       "enabled_optional_monitors": ["akamaru"],
       "autostart_agents": [],
       "lifecycle_watchdog_agents": ["shino", "hinata", "guy", "ibiki"],
+      "infra_dependencies": ["postgresql.service"],
       "required_services": [
         "konoha.service",
         "redis-server.service",

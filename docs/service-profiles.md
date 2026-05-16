@@ -9,12 +9,12 @@ catalog through `scripts/service_profiles.py`.
 
 ## Profiles
 
-| Profile | Purpose | Autostart agents | Enabled connectors | Enabled optional monitors |
-| --- | --- | --- | --- | --- |
-| `prod-core` | Lean production always-on runtime: API, Redis/Postgres, Telegram ingestion, Naruto/Sasuke, bounded Akamaru/Kiba monitoring. | `naruto`, `sasuke`, `kiba` | `telegram` | `akamaru`, `kiba` |
-| `prod-full` | Production with the SDD development/review lane enabled. Specialist workers remain on demand. | `naruto`, `sasuke`, `kiba`, `kakashi` | `telegram` | `akamaru`, `kiba`, `kakashi`, `shikadai` |
-| `staging-core` | Staging API core without external Telegram connector or worker fleet unless explicitly enabled. | none | none | `akamaru` |
-| `qa-on-demand` | QA/test profile where QA workers and TestBench are started manually for bounded sessions. | none | none | `akamaru` |
+| Profile | Purpose | Infra dependencies | Autostart agents | Enabled connectors | Enabled optional monitors |
+| --- | --- | --- | --- | --- | --- |
+| `prod-core` | Lean production always-on runtime: API, Redis/Postgres, Telegram ingestion, Naruto/Sasuke, bounded Akamaru/Kiba monitoring. | `postgresql.service` | `naruto`, `sasuke`, `kiba` | `telegram` | `akamaru`, `kiba` |
+| `prod-full` | Production with the SDD development/review lane enabled. Specialist workers remain on demand. | `postgresql.service` | `naruto`, `sasuke`, `kiba`, `kakashi` | `telegram` | `akamaru`, `kiba`, `kakashi`, `shikadai` |
+| `staging-core` | Staging API core without external Telegram connector or worker fleet unless explicitly enabled. | `postgresql.service` | none | none | `akamaru` |
+| `qa-on-demand` | QA/test profile where QA workers and TestBench are started manually for bounded sessions. | `postgresql.service` | none | none | `akamaru` |
 
 Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
 `prod-core`.
@@ -31,6 +31,10 @@ Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
 - `agent-watchdog-lifecycle.service` may listen for on-demand agents, but it is
   a delivery adapter. It is not an autostart policy and must not resurrect
   optional workers just because they are offline.
+- `infra_dependencies` lists required platform dependencies that the profile
+  expects but does not classify as Konoha-owned runtime services. PostgreSQL is
+  modeled there because deployments may provide it through a local
+  `postgresql.service`, a container, or an external managed database.
 - Heavy MCP/browser/Office/Miro/document packs remain outside always-on
   profiles. Use explicit TTL/debug profiles from
   `docs/mcp-optional-packs-policy.md`.
@@ -63,4 +67,6 @@ failed, because that is real runtime drift.
 This issue defines documented profiles rather than adding new `.target` units.
 The committed `.service` and `.slice` units remain the enforcement surface for
 budgeting and supervision. Profiles decide which of those units are expected for
-a deployment mode.
+a deployment mode. Infrastructure dependencies are documented separately from
+`required_services` so the profile can express PostgreSQL without requiring it
+to be supervised by the same systemd profile.

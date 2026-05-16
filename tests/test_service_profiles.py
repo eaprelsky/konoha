@@ -27,6 +27,7 @@ def test_prod_core_is_lean_always_on_profile():
     assert profile.enabled_connectors == frozenset({"telegram"})
     assert profile.enabled_optional_monitors == frozenset({"akamaru", "kiba"})
     assert profile.autostart_agents == ("naruto", "sasuke", "kiba")
+    assert profile.infra_dependencies == ("postgresql.service",)
     assert "agent-kakashi.service" in profile.optional_services
     assert "konoha-testbench.service" in profile.optional_services
 
@@ -55,8 +56,13 @@ def test_profile_catalog_json_has_no_duplicate_services():
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
     for profile_id, profile in raw["profiles"].items():
+        infra = profile["infra_dependencies"]
         required = profile["required_services"]
         optional = profile["optional_services"]
+        assert "postgresql.service" in infra, profile_id
+        assert len(infra) == len(set(infra)), profile_id
         assert len(required) == len(set(required)), profile_id
         assert len(optional) == len(set(optional)), profile_id
+        assert not (set(infra) & set(required)), profile_id
+        assert not (set(infra) & set(optional)), profile_id
         assert not (set(required) & set(optional)), profile_id
