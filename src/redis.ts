@@ -500,6 +500,7 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
         replyTo: obj.replyTo,
         timestamp: obj.timestamp,
         attachments,
+        village_id: obj.village_id || DEFAULT_VILLAGE,
       };
       if (isLifecycleNoiseMessage(msg)) return;
       onMessage(msg);

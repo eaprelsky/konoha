@@ -7,6 +7,7 @@ export interface SseMessageEvent {
 }
 
 const DEFAULT_MAX_KEYS = 1000;
+const DEFAULT_VILLAGE_ID = "comind.konoha";
 
 export function sseMessageDedupKey(msg: Partial<Message> | null | undefined): string | null {
   if (!msg) return null;
@@ -19,7 +20,7 @@ export function sseMessageDedupKey(msg: Partial<Message> | null | undefined): st
     msg.timestamp || "",
     msg.text || "",
     JSON.stringify(msg.attachments || []),
-    msg.village_id || "",
+    msg.village_id || DEFAULT_VILLAGE_ID,
   ];
   if (logicalParts.some(Boolean)) return `msg:${logicalParts.join("\x1f")}`;
   return msg.id ? `stream:${msg.id}` : null;

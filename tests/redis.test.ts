@@ -648,6 +648,38 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     expect(deduper.shouldDeliverEvent(buffered)).toBe(false);
   });
 
+  test("real pub/sub buffer overlap dedups against replay message", async () => {
+    const agentId = id("sse-real-overlap");
+    await registerAgent({ id: agentId, name: "SSE Real Overlap", capabilities: [], roles: [] });
+
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    const sinceId = await redis.xadd(streamKey, "*", "from", "src", "to", agentId, "type", "message", "text", "baseline", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+
+    const buffer: { id?: string; event: string; data: string }[] = [];
+    const sub = createSubscriber(agentId, (msg) => {
+      buffer.push({ id: msg.id, event: "message", data: JSON.stringify(msg) });
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+    const timestamp = new Date().toISOString();
+    await sendMessage({ to: agentId, from: "src", type: "message", text: "real-overlap", timestamp });
+    await new Promise(r => setTimeout(r, 100));
+
+    const deduper = createSseMessageDeduper();
+    const delivered = [];
+    for (const msg of await replayStream(agentId, sinceId!)) {
+      if (deduper.shouldDeliverMessage(msg)) delivered.push(msg);
+    }
+    for (const evt of buffer) {
+      if (deduper.shouldDeliverEvent(evt)) delivered.push(JSON.parse(evt.data));
+    }
+
+    expect(delivered.map((m: any) => m.text).filter((text: string) => text === "real-overlap")).toHaveLength(1);
+    expect(buffer.map(evt => JSON.parse(evt.data)).find((msg: any) => msg.text === "real-overlap")?.village_id).toBe("comind.konoha");
+
+    sub.close();
+  });
+
   test("live-tail delivers messages published after subscription", async () => {
     const agentId = id("sse-live");
     await registerAgent({ id: agentId, name: "SSE Live", capabilities: [], roles: [] });
