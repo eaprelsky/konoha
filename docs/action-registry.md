@@ -14,7 +14,7 @@ Every operation the system exposes — API, MCP, assistant, UI — is described 
 
 ## Version
 
-Current: **v10** (`ACTION_VERSION = 10`)
+Current: **v11** (`ACTION_VERSION = 11`)
 
 Bump the version when the vocabulary changes (new actions, renamed args, removed actions).
 
@@ -73,7 +73,7 @@ argument metadata.
 
 | Action | Description | Autonomy |
 |--------|-------------|----------|
-| `element.add` | Add element to workflow | confirm |
+| `element.add` | Add a validated event/function/gateway element to a workflow through the direct Action Spine executor | confirm |
 | `element.update` | Update element properties | confirm |
 | `element.remove` | Remove element + connected edges | confirm |
 

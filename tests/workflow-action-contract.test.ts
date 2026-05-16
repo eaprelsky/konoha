@@ -300,7 +300,6 @@ describe("workflow action contract validation", () => {
   it("every action has explicit surface metadata for GUI/API/MCP/testbench parity", () => {
     const surface = listActionSurface();
     const planned = new Set([
-      "element.add",
       "element.update",
       "element.remove",
       "flow.add",

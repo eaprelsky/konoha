@@ -19,7 +19,7 @@ Every API endpoint → action ID → autonomy level → audit status. Generated 
 
 | Endpoint | Action | Autonomy | Audited |
 |----------|--------|----------|---------|
-| `POST /workflows/:id/elements` | `element.add` | confirm | yes |
+| `/act` direct | `element.add` | confirm | yes |
 | `PATCH /workflows/:id/elements/:eid` | `element.update` | confirm | yes |
 | `DELETE /workflows/:id/elements/:eid` | `element.remove` | confirm | yes |
 

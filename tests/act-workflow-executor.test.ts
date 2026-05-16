@@ -53,6 +53,7 @@ beforeAll(async () => {
     "workflow.create",
     "workflow.update",
     "workflow.delete",
+    "element.add",
     "workitem.create",
     "workitem.update",
     "workitem.cancel",
@@ -223,6 +224,192 @@ describe("/act workflow executor", () => {
     expect(body.ok).toBe(true);
     expect(body.action).toBe("case.list");
     expect(Array.isArray(body.data.cases)).toBe(true);
+  });
+
+  test("executes element.add directly with collision and schema validation", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-element-add`;
+    const createWorkflowRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.create",
+        category: "act",
+        args: {
+          id: workflowId,
+          name: "Element add direct workflow",
+          elements: [],
+          flow: [],
+          draft: true,
+        },
+      }),
+    }));
+    expect(createWorkflowRes.status).toBe(201);
+
+    const addEvent = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.add",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "e_start",
+          type: "event",
+          label: "Request received",
+        },
+      }),
+    }));
+    const addedEvent = await addEvent.json();
+    expect(addEvent.status).toBe(200);
+    expect(addedEvent.ok).toBe(true);
+    expect(addedEvent.data.added_element).toEqual({
+      id: "e_start",
+      type: "event",
+      label: "Request received",
+    });
+    expect(addedEvent.data.lifecycle_state).toBe("draft");
+
+    const addFunction = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.add",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "f_review",
+          type: "function",
+          label: "Review request",
+          role: "reviewer",
+        },
+      }),
+    }));
+    expect(addFunction.status).toBe(200);
+
+    const addGateway = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.add",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "g_decide",
+          type: "gateway",
+          label: "Decide path",
+        },
+      }),
+    }));
+    const addedGateway = await addGateway.json();
+    expect(addGateway.status).toBe(200);
+    expect(addedGateway.data.added_element.operator).toBe("XOR");
+    expect(addedGateway.data.elements.map((el: any) => el.id)).toEqual(["e_start", "f_review", "g_decide"]);
+
+    const duplicate = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.add",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "e_start",
+          type: "event",
+          label: "Duplicate start",
+        },
+      }),
+    }));
+    const duplicateBody = await duplicate.json();
+    expect(duplicate.status).toBe(409);
+    expect(duplicateBody.error).toBe("Element ID already exists");
+    expect(duplicateBody.data).toMatchObject({
+      code: "ELEMENT_ID_EXISTS",
+      workflow_id: workflowId,
+      element_id: "e_start",
+    });
+
+    const invalidPayload = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.add",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "f_missing_role",
+          type: "function",
+          label: "Missing role",
+        },
+      }),
+    }));
+    const invalidPayloadBody = await invalidPayload.json();
+    expect(invalidPayload.status).toBe(400);
+    expect(invalidPayloadBody.error).toBe("Invalid element schema");
+    expect(invalidPayloadBody.data.details).toContain("function elements require role");
+  });
+
+  test("validates element.add against non-draft workflow schema before persistence", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-element-validated`;
+    const createWorkflowRes = await app.fetch(new Request("http://localhost/workflows", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        id: workflowId,
+        name: "Element add validated workflow",
+        elements: [
+          { id: "start", type: "event", label: "Start" },
+          { id: "review", type: "function", label: "Review", role: "reviewer" },
+          { id: "done", type: "event", label: "Done" },
+        ],
+        flow: [["start", "review"], ["review", "done"]],
+      }),
+    }));
+    expect(createWorkflowRes.status).toBe(201);
+
+    const invalidAddition = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.add",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "f_orphan",
+          type: "function",
+          label: "Orphan task",
+          role: "reviewer",
+        },
+      }),
+    }));
+    const invalidBody = await invalidAddition.json();
+    expect(invalidAddition.status).toBe(422);
+    expect(invalidBody.error).toBe("Validation failed");
+    expect(invalidBody.data).toMatchObject({
+      code: "WORKFLOW_VALIDATION_FAILED",
+      workflow_id: workflowId,
+      element_id: "f_orphan",
+    });
+
+    const validAddition = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.add",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "followup",
+          type: "event",
+          label: "Follow-up complete",
+        },
+      }),
+    }));
+    const validBody = await validAddition.json();
+    expect(validAddition.status).toBe(200);
+    expect(validBody.data.lifecycle_state).toBe("validated");
+    expect(validBody.data.last_deploy).toBeUndefined();
+    expect(validBody.data.elements.some((el: any) => el.id === "f_orphan")).toBe(false);
+    expect(validBody.data.elements.some((el: any) => el.id === "followup")).toBe(true);
   });
 
   test("executes workitem create/update/cancel directly through the action envelope", async () => {

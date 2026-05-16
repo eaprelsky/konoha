@@ -18,7 +18,7 @@ export type { ActionActorPolicy, ActionCategory, ActionSecurityPolicy } from "./
 
 // ── Version ─────────────────────────────────────────────────────────────────
 
-export const ACTION_VERSION = 10;
+export const ACTION_VERSION = 11;
 
 // ── Core types ──────────────────────────────────────────────────────────────
 

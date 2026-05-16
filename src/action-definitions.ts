@@ -109,7 +109,7 @@ export const ACTIONS: ActionDef[] = [
       { name: "role",        type: "string", required: false, description: "Assigned role (for functions)." },
       { name: "operator",    type: "string", required: false, description: "Gateway operator: AND | OR | XOR." },
     ],
-    implementation: { kind: "planned", note: "Intent decomposer emits this action; direct workflow patch executor is not wired yet." },
+    implementation: { kind: "direct", note: "Adds a validated element to a workflow through action-executor." },
     autonomy: "confirm",
     audited: true,
   },

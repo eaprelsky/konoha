@@ -9,6 +9,7 @@ import {
   isWorkflowExecutable,
   type WorkflowDefinition,
   type WorkflowElement,
+  type WorkflowLifecycleState,
 } from "./workflow-loader";
 import { normalizeElementNames } from "./normalizer";
 import { deleteCasesByProcess, createCase, getCase, listCases, forceCloseCase } from "./runtime";
@@ -93,6 +94,51 @@ function validationFailure(action: string, args: Record<string, unknown>): Actio
   const validation = validateActionArgs(action, args);
   if (validation.valid) return null;
   return { status: 400, data: { error: "Validation failed", details: validation.errors } };
+}
+
+const ELEMENT_TYPES = new Set(["event", "function", "gateway"]);
+const GATEWAY_OPERATORS = new Set(["AND", "OR", "XOR"]);
+
+function buildElementAddPayload(args: Record<string, unknown>): { element?: WorkflowElement; error?: ActionExecution } {
+  const invalid = validationFailure("element.add", args);
+  if (invalid) return { error: invalid };
+
+  const id = String(args.id).trim();
+  const label = String(args.label).trim();
+  const type = String(args.type);
+  const role = args.role !== undefined ? String(args.role).trim() : undefined;
+  const operator = args.operator !== undefined ? String(args.operator) : undefined;
+
+  if (!id) {
+    return { error: { status: 400, data: { error: "Invalid element schema", code: "INVALID_ELEMENT_SCHEMA", details: ["id must be a non-empty string"] } } };
+  }
+  if (!label) {
+    return { error: { status: 400, data: { error: "Invalid element schema", code: "INVALID_ELEMENT_SCHEMA", details: ["label must be a non-empty string"] } } };
+  }
+  if (!ELEMENT_TYPES.has(type)) {
+    return { error: { status: 400, data: { error: "Invalid element type", code: "INVALID_ELEMENT_TYPE", details: [`type must be one of: ${[...ELEMENT_TYPES].join(", ")}`] } } };
+  }
+  if (type === "function" && !role) {
+    return { error: { status: 400, data: { error: "Invalid element schema", code: "INVALID_ELEMENT_SCHEMA", details: ["function elements require role"] } } };
+  }
+  if (type !== "function" && role) {
+    return { error: { status: 400, data: { error: "Invalid element schema", code: "INVALID_ELEMENT_SCHEMA", details: ["role is only allowed for function elements"] } } };
+  }
+  if (type !== "gateway" && operator) {
+    return { error: { status: 400, data: { error: "Invalid element schema", code: "INVALID_ELEMENT_SCHEMA", details: ["operator is only allowed for gateway elements"] } } };
+  }
+  if (type === "gateway" && operator && !GATEWAY_OPERATORS.has(operator)) {
+    return { error: { status: 400, data: { error: "Invalid gateway operator", code: "INVALID_ELEMENT_SCHEMA", details: ["operator must be AND, OR, or XOR"] } } };
+  }
+
+  const element: WorkflowElement = {
+    id,
+    type: type as WorkflowElement["type"],
+    label,
+  };
+  if (type === "function" && role) element.role = role;
+  if (type === "gateway") element.operator = (operator ?? "XOR") as WorkflowElement["operator"];
+  return { element };
 }
 
 async function normalizeElementsIfNeeded(body: Record<string, unknown>): Promise<boolean> {
@@ -402,6 +448,60 @@ export async function executeWorkflowAction(
       const workflow = await getWorkflow(String(args.id));
       if (!workflow) return { status: 404, data: { error: "Workflow not found" } };
       return { status: 200, data: workflow };
+    }
+    default:
+      return null;
+  }
+}
+
+async function executeElementAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "element.add": {
+      const { element, error } = buildElementAddPayload(args);
+      if (error) return error;
+      if (!element) return { status: 400, data: { error: "Invalid element schema", code: "INVALID_ELEMENT_SCHEMA" } };
+
+      const workflowId = String(args.workflow_id);
+      const current = await getWorkflow(workflowId);
+      if (!current) {
+        return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
+      }
+      if ((current.elements ?? []).some(existing => existing.id === element.id)) {
+        return {
+          status: 409,
+          data: {
+            error: "Element ID already exists",
+            code: "ELEMENT_ID_EXISTS",
+            workflow_id: workflowId,
+            element_id: element.id,
+          },
+        };
+      }
+
+      const lifecycleState = getWorkflowLifecycleState(current);
+      const updateOpts: { draft?: boolean; lifecycleState?: WorkflowLifecycleState } =
+        lifecycleState === "draft" ? { draft: true } : { lifecycleState: "validated" };
+      const result = await updateWorkflow(workflowId, {
+        elements: [...(current.elements ?? []), element],
+      }, updateOpts);
+
+      if (result === null) {
+        return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
+      }
+      if (result.errors.length > 0) {
+        return {
+          status: 422,
+          data: {
+            error: "Validation failed",
+            code: "WORKFLOW_VALIDATION_FAILED",
+            workflow_id: workflowId,
+            element_id: element.id,
+            details: result.errors,
+          },
+        };
+      }
+
+      return { status: 200, data: { ...result.workflow, added_element: element } };
     }
     default:
       return null;
@@ -927,6 +1027,9 @@ export async function executeActionDirect(
 ): Promise<ActionExecution | null> {
   if (action.startsWith("workflow.")) {
     return executeWorkflowAction(action, args, opts);
+  }
+  if (action.startsWith("element.")) {
+    return executeElementAction(action, args);
   }
   if (action.startsWith("case.")) {
     return executeCaseAction(action, args);
