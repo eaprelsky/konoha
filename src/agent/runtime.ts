@@ -406,6 +406,7 @@ export function buildLaunchCommand(
     CLAUDE_WRAPPER_PATH,
     normalizeClaudeRuntimeModel(runtime.runtimeModel),
     "--dangerously-skip-permissions",
+    "--permission-mode", "bypassPermissions",
     "--mcp-config", mcpConfigPath,
   ];
   return { provider: runtime.provider, command: args.map(shellEscape).join(" ") };
