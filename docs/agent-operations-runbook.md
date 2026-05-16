@@ -89,7 +89,9 @@ To reactivate the experiment, first define the product workflow it owns, then:
 1. Assign a bounded `tool_profile` or explicit `shared_mcp_allowlist`.
 2. Regenerate `/opt/shared/agent-workdirs/jiraiya/.mcp.json` from current source.
 3. Add `jiraiya` back to the intended service profile/watchdog policy.
-4. Start it through the lifecycle API or `agent-managed@jiraiya.service`.
+4. Set `KONOHA_ENABLE_DISABLED_EXPERIMENT_AGENTS=jiraiya` on the lifecycle
+   watchdog if generic delivery is intentionally restored.
+5. Start it through the lifecycle API or `agent-managed@jiraiya.service`.
 
 Start an on-demand agent through the Konoha lifecycle API:
 

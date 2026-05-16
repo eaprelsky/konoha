@@ -85,7 +85,9 @@ agent workdir `.mcp.json` is regenerated. The source-of-truth default now uses
 Jiraiya is disabled until a concrete product need is approved. Its seeded
 definition now uses the default Konoha-only tool profile, and
 `agent-watchdog-lifecycle.service` no longer lists `jiraiya` in
-`WATCHDOG_AGENTS`.
+`WATCHDOG_AGENTS`. `watchdog-lifecycle.py` also rejects `jiraiya` from explicit
+argv or `WATCHDOG_AGENTS` delivery unless an approved rollback sets
+`KONOHA_ENABLE_DISABLED_EXPERIMENT_AGENTS=jiraiya`.
 
 The stale active workdir MCP config was quarantined on 2026-05-16:
 

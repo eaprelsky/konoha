@@ -37,6 +37,8 @@ KONOHA_REPO        = os.path.expanduser("~/konoha")
 AUTO_PUSH_INTERVAL = 300  # 5 minutes — push unpushed commits (#367)
 
 LOG_FILE = "/tmp/watchdog-lifecycle.log"
+DISABLED_EXPERIMENT_AGENTS = {"jiraiya"}
+DISABLED_EXPERIMENT_OVERRIDE_ENV = "KONOHA_ENABLE_DISABLED_EXPERIMENT_AGENTS"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,13 +51,39 @@ logging.basicConfig(
 log = logging.getLogger("watchdog-lifecycle")
 
 
+def parse_csv(raw: str) -> list[str]:
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def disabled_experiment_allowed(agent_id: str, environ: dict[str, str] | None = None) -> bool:
+    env = environ or os.environ
+    enabled = set(parse_csv(env.get(DISABLED_EXPERIMENT_OVERRIDE_ENV, "")))
+    return "all" in enabled or agent_id in enabled
+
+
+def filter_watch_agents(agent_ids: list[str], environ: dict[str, str] | None = None) -> list[str]:
+    env = environ or os.environ
+    filtered: list[str] = []
+    for agent_id in agent_ids:
+        if agent_id in DISABLED_EXPERIMENT_AGENTS and not disabled_experiment_allowed(agent_id, env):
+            log.warning(
+                "disabled experiment agent %s removed from lifecycle watch list; set %s=%s for approved rollback",
+                agent_id,
+                DISABLED_EXPERIMENT_OVERRIDE_ENV,
+                agent_id,
+            )
+            continue
+        filtered.append(agent_id)
+    return filtered
+
+
 def get_agents() -> list[str]:
     """Get list of agent IDs to watch."""
     if len(sys.argv) > 1:
-        return sys.argv[1:]
+        return filter_watch_agents(sys.argv[1:])
     env = os.environ.get("WATCHDOG_AGENTS", "")
     if env:
-        return [a.strip() for a in env.split(",") if a.strip()]
+        return filter_watch_agents(parse_csv(env))
     return []
 
 
@@ -808,13 +836,11 @@ async def main():
                     all_agents = data if isinstance(data, list) else data.get("agents", [])
                     # Dedicated watchdogs keep custom logic; disabled experiments must not be auto-discovered.
                     dedicated_ids = {"naruto", "sasuke", "kakashi", "kiba"}
-                    disabled_experiment_ids = {"jiraiya"}
-                    agents = [
+                    agents = filter_watch_agents([
                         a["id"] for a in all_agents
                         if a.get("id") and a["id"] not in dedicated_ids
-                        and a["id"] not in disabled_experiment_ids
                         and a.get("lifecycle", {}).get("status") == "running"
-                    ]
+                    ])
         except Exception as e:
             log.error(f"Auto-discover failed: {e}")
             return
