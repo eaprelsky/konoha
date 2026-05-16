@@ -137,6 +137,14 @@ export async function listAgents(onlineOnly = false): Promise<Agent[]> {
 }
 
 const NOTIFY_PREFIX = "konoha:notify:";
+const LIFECYCLE_NOISE_PREFIXES = ["SESSION_ONLINE:", "SESSION_OFFLINE:", "SESSION_READY:"];
+const LIFECYCLE_NOISE_CONTAINS = ["going offline (session end)"];
+
+export function isLifecycleNoiseMessage(msg: Pick<Message, "text">): boolean {
+  const text = msg.text || "";
+  return LIFECYCLE_NOISE_PREFIXES.some(prefix => text.startsWith(prefix))
+    || LIFECYCLE_NOISE_CONTAINS.some(part => text.includes(part));
+}
 
 export async function sendMessage(msg: Message): Promise<string> {
   const entry: Record<string, string> = {
@@ -406,7 +414,9 @@ export async function replayStream(agentId: string, sinceId: string, count = 50)
   const entries = await redis.xrevrange(stream, "+", `(${sinceId}`, "COUNT", count) as [string, string[]][];
   // Reverse to chronological order
   entries.reverse();
-  return entries.map(([id, fields]) => fieldsToMessage(id, fields));
+  return entries
+    .map(([id, fields]) => fieldsToMessage(id, fields))
+    .filter(msg => !isLifecycleNoiseMessage(msg));
 }
 
 export async function listChannels(): Promise<string[]> {
@@ -436,6 +446,7 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
         timestamp: obj.timestamp,
         attachments,
       };
+      if (isLifecycleNoiseMessage(msg)) return;
       onMessage(msg);
     } catch {}
   });

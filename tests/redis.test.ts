@@ -649,5 +649,31 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     const allTexts = allReplayed.map((m: any) => m.text);
     expect(allTexts).toEqual(["durable-1", "durable-2", "durable-3"]);
   });
+
+  test("SSE path filters lifecycle noise from replay and live-tail", async () => {
+    const agentId = id("sse-lifecycle-noise");
+    await registerAgent({ id: agentId, name: "SSE Lifecycle Noise", capabilities: [], roles: [] });
+
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    await redis.xadd(streamKey, "*", "from", "watchdog-kakashi", "to", agentId, "type", "event", "text", "SESSION_READY:kakashi", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    await redis.xadd(streamKey, "*", "from", "watchdog-kakashi", "to", agentId, "type", "event", "text", "SESSION_ONLINE:kakashi", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    await redis.xadd(streamKey, "*", "from", "src", "to", agentId, "type", "message", "text", "real-message", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+
+    const replayed = await replayStream(agentId, "0-0");
+    expect(replayed.map((m: any) => m.text)).toEqual(["real-message"]);
+
+    const received: any[] = [];
+    const sub = createSubscriber(agentId, (msg) => {
+      received.push(msg);
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+    await sendMessage({ to: agentId, from: "watchdog-kakashi", type: "event", text: "SESSION_READY:kakashi" });
+    await sendMessage({ to: agentId, from: "src", type: "message", text: "live-real-message" });
+    await new Promise(r => setTimeout(r, 100));
+
+    expect(received.map((m: any) => m.text)).toEqual(["live-real-message"]);
+    sub.close();
+  });
 });
 }
