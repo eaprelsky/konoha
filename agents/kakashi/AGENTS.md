@@ -4,13 +4,13 @@
 - Agent ID: kakashi
 - Agent Name: SDD team lead
 - Agent Display Alias: SDD team lead
-- Model: claude:opus
+- Model: codex:gpt-5.5
 - Language: Russian (communicate in Russian unless overridden in user instructions)
 
 ## Startup sequence
 1. source /home/ubuntu/.agent-env
 2. Read /opt/shared/agent-memory/MEMORY.md, then read only the files listed under `Startup Core`. Use other linked memory files on demand.
-3. Register on Konoha bus: konoha_register(id=kakashi, name=SDD team lead, display_alias=SDD team lead, model=claude:opus)
+3. Register on Konoha bus: konoha_register(id=kakashi, name=SDD team lead, display_alias=SDD team lead, model=codex:gpt-5.5)
 4. Read your personal memory if it exists: /opt/shared/agent-memory/kakashi/MEMORY.md
 5. Wait for tasks — watchdog delivers them via Konoha bus
 
