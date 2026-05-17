@@ -58,6 +58,16 @@ export interface RuntimeRetentionCleanupResult {
   deleted: RuntimeRetentionCandidate[];
 }
 
+export class InvalidRuntimeRetentionPolicyError extends Error {
+  readonly details: string[];
+
+  constructor(details: string[]) {
+    super("Invalid runtime retention policy");
+    this.name = "InvalidRuntimeRetentionPolicyError";
+    this.details = details;
+  }
+}
+
 interface CandidateContext {
   candidate: RuntimeRetentionCandidate;
   caseRecord: Case;
@@ -77,6 +87,36 @@ export function runtimeRetentionPolicyFromEnv(): RuntimeRetentionPolicy {
     completedWorkflowTtlHours: numberFromEnv("KONOHA_COMPLETED_WORKFLOW_TTL_HOURS", 24),
     maxDelete: Math.floor(numberFromEnv("KONOHA_RUNTIME_RETENTION_MAX_DELETE", 100)),
   };
+}
+
+function positiveNumberOrDefault(value: number | undefined, fallback: number, field: string, details: string[]): number {
+  if (value === undefined) return fallback;
+  if (!Number.isFinite(value) || value <= 0) {
+    details.push(`${field} must be a positive number`);
+    return fallback;
+  }
+  return value;
+}
+
+function positiveIntegerOrDefault(value: number | undefined, fallback: number, field: string, details: string[]): number {
+  if (value === undefined) return fallback;
+  if (!Number.isFinite(value) || value <= 0 || Math.floor(value) !== value) {
+    details.push(`${field} must be a positive integer`);
+    return fallback;
+  }
+  return value;
+}
+
+export function buildRuntimeRetentionPolicy(overrides: Partial<RuntimeRetentionPolicy> = {}): RuntimeRetentionPolicy {
+  const envPolicy = runtimeRetentionPolicyFromEnv();
+  const details: string[] = [];
+  const policy = {
+    stuckCaseTtlHours: positiveNumberOrDefault(overrides.stuckCaseTtlHours, envPolicy.stuckCaseTtlHours, "stuckCaseTtlHours", details),
+    completedWorkflowTtlHours: positiveNumberOrDefault(overrides.completedWorkflowTtlHours, envPolicy.completedWorkflowTtlHours, "completedWorkflowTtlHours", details),
+    maxDelete: positiveIntegerOrDefault(overrides.maxDelete, envPolicy.maxDelete, "maxDelete", details),
+  };
+  if (details.length > 0) throw new InvalidRuntimeRetentionPolicyError(details);
+  return policy;
 }
 
 function asDate(value: string | undefined): Date | null {
@@ -247,12 +287,7 @@ export async function cleanupExpiredRuntimeArtifacts(options: {
   onlineAgentIds?: Set<string>;
 } = {}): Promise<RuntimeRetentionCleanupResult> {
   const now = options.now ?? new Date();
-  const envPolicy = runtimeRetentionPolicyFromEnv();
-  const policy: RuntimeRetentionPolicy = {
-    stuckCaseTtlHours: options.policy?.stuckCaseTtlHours ?? envPolicy.stuckCaseTtlHours,
-    completedWorkflowTtlHours: options.policy?.completedWorkflowTtlHours ?? envPolicy.completedWorkflowTtlHours,
-    maxDelete: Math.max(0, Math.floor(options.policy?.maxDelete ?? envPolicy.maxDelete)),
-  };
+  const policy = buildRuntimeRetentionPolicy(options.policy);
   const onlineAgentIds = options.onlineAgentIds ?? new Set((await listAgents(true)).map(agent => agent.id));
   const { scanned, candidates: contexts } = await collectCandidates(policy, now, onlineAgentIds);
   const selected = contexts.slice(0, policy.maxDelete);

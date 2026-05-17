@@ -62,7 +62,7 @@ import {
   buildPgOnlyRetentionReport,
   retentionReportForAction,
 } from "./retention/report";
-import { cleanupExpiredRuntimeArtifacts } from "./retention/runtime-cleanup";
+import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "./retention/runtime-cleanup";
 
 export interface ActionExecution {
   status: number;
@@ -1037,6 +1037,9 @@ async function executeRetentionAction(action: string, args: Record<string, unkno
         });
         return { status: 200, data: result };
       } catch (e) {
+        if (e instanceof InvalidRuntimeRetentionPolicyError) {
+          return { status: 400, data: { error: e.message, code: "INVALID_RUNTIME_RETENTION_POLICY", details: e.details } };
+        }
         return serviceFailure(e);
       }
     }

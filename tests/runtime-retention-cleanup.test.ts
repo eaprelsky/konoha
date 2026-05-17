@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import Redis from "ioredis";
-import { cleanupExpiredRuntimeArtifacts } from "../src/retention/runtime-cleanup";
+import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "../src/retention/runtime-cleanup";
 import type { Case, WorkItem } from "../src/runtime/cases";
 
 const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0", 10) });
@@ -80,6 +80,37 @@ afterAll(async () => {
 });
 
 describe("runtime retention cleanup", () => {
+  test("rejects non-positive TTL policy overrides before scanning or deleting", async () => {
+    const freshCaseId = `prod-${RUN}-fresh-opt-in`;
+    await saveCase(kase(freshCaseId, "sales-lead", "done", 0, { retention: { auto_delete: true } }));
+
+    const run = cleanupExpiredRuntimeArtifacts({
+      dryRun: false,
+      now: new Date("2026-05-17T12:00:00Z"),
+      onlineAgentIds: new Set(),
+      policy: { completedWorkflowTtlHours: -1, stuckCaseTtlHours: 24, maxDelete: 10 },
+    });
+
+    await expect(run).rejects.toThrow(InvalidRuntimeRetentionPolicyError);
+    expect(await redis.get(`case:${freshCaseId}`)).not.toBeNull();
+  });
+
+  test("retention.runtime_cleanup rejects invalid action TTL args", async () => {
+    const { executeActionDirect } = await import("../src/action-executor");
+    const result = await executeActionDirect("retention.runtime_cleanup", {
+      dry_run: false,
+      completed_workflow_ttl_hours: -1,
+      stuck_case_ttl_hours: 24,
+      max_delete: 10,
+    });
+
+    expect(result?.status).toBe(400);
+    expect(result?.data).toMatchObject({
+      code: "INVALID_RUNTIME_RETENTION_POLICY",
+      details: ["completedWorkflowTtlHours must be a positive number"],
+    });
+  });
+
   test("deletes old completed generated workflow runs with terminated work items", async () => {
     const caseId = `${RUN}-completed`;
     const processId = `test-${RUN}`;
