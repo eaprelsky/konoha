@@ -103,6 +103,13 @@ export interface WorkflowDeployMetadata {
   details?: string[];
 }
 
+export interface WorkflowUpdateOptions {
+  draft?: boolean;
+  lifecycleState?: WorkflowLifecycleState;
+  deploy?: WorkflowDeployMetadata;
+  needsReview?: boolean;
+}
+
 // Flow edge: [from, to] or [from, to, condition]
 // condition is a JS expression evaluated against case payload (e.g. "payload.qualified === true")
 export type FlowEdge = [string, string] | [string, string, string];
@@ -533,6 +540,123 @@ export async function listWorkflows(): Promise<WorkflowDefinition[]> {
 
 const WORKFLOW_VERSION_KEY_PREFIX = "workflow:version:"; // workflow:{id}:v{N}
 const WORKFLOW_VERSION_CTR_PREFIX = "konoha:workflow:versionctr:"; // INCR counter per workflow id
+const WORKFLOW_CAS_MAX_RETRIES = 16;
+
+function prepareWorkflowUpdate(
+  id: string,
+  current: WorkflowDefinition,
+  patch: Partial<WorkflowDefinition>,
+  opts: WorkflowUpdateOptions = {},
+): { workflow: WorkflowDefinition; errors: ValidationError[]; persistable: boolean } {
+  const updated: WorkflowDefinition = { ...current, ...patch, id }; // id is immutable
+  const normalized = normalizeSystems(updated);
+
+  if (opts.draft) {
+    return {
+      workflow: withLifecycle(normalized, "draft", {
+        validation: validationMetadata([], "workflow.update", "skipped"),
+        clearDeploy: true,
+      }),
+      errors: [],
+      persistable: true,
+    };
+  }
+
+  const errors = validateWorkflow(normalized);
+  const validation = validationMetadata(errors, opts.lifecycleState === "executable" ? "workflow.deploy" : "workflow.update");
+  if (errors.length > 0) {
+    return { workflow: withLifecycle(normalized, "draft", { validation, clearDeploy: true }), errors, persistable: false };
+  }
+
+  const lifecycleState = opts.lifecycleState ?? "validated";
+  return {
+    workflow: withLifecycle(normalized, lifecycleState, {
+      validation,
+      deploy: opts.deploy,
+      needsReview: opts.needsReview,
+      clearDeploy: lifecycleState !== "executable" && !opts.deploy,
+    }),
+    errors: [],
+    persistable: true,
+  };
+}
+
+async function archiveWorkflowSnapshot(id: string, current: WorkflowDefinition): Promise<void> {
+  const versionNum = await redis.incr(WORKFLOW_VERSION_CTR_PREFIX + id);
+  const archived = { ...current, saved_at: new Date().toISOString() };
+  await redis.set(`${WORKFLOW_VERSION_KEY_PREFIX}${id}:v${versionNum}`, JSON.stringify(archived));
+  await pgSaveWorkflowSnapshot(id, Number(versionNum), archived as any);
+}
+
+async function afterWorkflowPersisted(
+  saved: WorkflowDefinition,
+  current: WorkflowDefinition,
+  options: { notifyReload?: boolean } = {},
+): Promise<void> {
+  await updateRoleWorkflowIndex(saved);
+  if (options.notifyReload !== false) {
+    redis.xadd("konoha:agent-reload", "*", "type", "workflow.updated", "workflow_id", saved.id, "timestamp", new Date().toISOString()).catch(silentCatch("workflow updated notification"));
+  }
+  await pgUpsertWorkflow(saved as any);
+  syncSchemaToRegistry(saved, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
+}
+
+export type AtomicWorkflowMutation<TMeta, TAbort = unknown> =
+  | { patch: Partial<WorkflowDefinition>; opts?: WorkflowUpdateOptions; meta: TMeta }
+  | { abort: TAbort };
+
+export type AtomicWorkflowMutationResult<TMeta, TAbort = unknown> =
+  | { status: "not_found" }
+  | { status: "conflict"; attempts: number }
+  | { status: "aborted"; meta: TAbort }
+  | { status: "updated"; workflow: WorkflowDefinition; errors: ValidationError[]; meta: TMeta };
+
+export async function mutateWorkflowAtomically<TMeta, TAbort = unknown>(
+  id: string,
+  mutate: (current: WorkflowDefinition) => AtomicWorkflowMutation<TMeta, TAbort>,
+): Promise<AtomicWorkflowMutationResult<TMeta, TAbort>> {
+  const key = WORKFLOW_KEY_PREFIX + id;
+
+  for (let attempt = 1; attempt <= WORKFLOW_CAS_MAX_RETRIES; attempt++) {
+    const raw = await redis.get(key);
+    if (!raw) return { status: "not_found" };
+
+    const current = normalizeSystems(JSON.parse(raw));
+    const mutation = mutate(current);
+    if ("abort" in mutation) return { status: "aborted", meta: mutation.abort };
+
+    const prepared = prepareWorkflowUpdate(id, current, mutation.patch, mutation.opts);
+    if (!prepared.persistable || prepared.errors.length > 0) {
+      return { status: "updated", workflow: prepared.workflow, errors: prepared.errors, meta: mutation.meta };
+    }
+
+    await syncWorkflowDocuments(prepared.workflow);
+    const applied = await redis.eval(
+      `
+      if redis.call("GET", KEYS[1]) ~= ARGV[1] then
+        return 0
+      end
+      redis.call("SET", KEYS[1], ARGV[2])
+      redis.call("SADD", KEYS[2], ARGV[3])
+      return 1
+      `,
+      2,
+      key,
+      WORKFLOW_INDEX_KEY,
+      raw,
+      JSON.stringify(prepared.workflow),
+      id,
+    );
+
+    if (applied === 1) {
+      await archiveWorkflowSnapshot(id, JSON.parse(raw));
+      await afterWorkflowPersisted(prepared.workflow, current, { notifyReload: mutation.opts?.draft !== true });
+      return { status: "updated", workflow: prepared.workflow, errors: [], meta: mutation.meta };
+    }
+  }
+
+  return { status: "conflict", attempts: WORKFLOW_CAS_MAX_RETRIES };
+}
 
 export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: boolean; lifecycleState?: WorkflowLifecycleState } = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] }> {
   def = normalizeSystems(def);
@@ -563,54 +687,22 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
   return { workflow: saved, errors: [] };
 }
 
-export async function updateWorkflow(id: string, patch: Partial<WorkflowDefinition>, opts: { draft?: boolean; lifecycleState?: WorkflowLifecycleState; deploy?: WorkflowDeployMetadata; needsReview?: boolean } = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] } | null> {
+export async function updateWorkflow(id: string, patch: Partial<WorkflowDefinition>, opts: WorkflowUpdateOptions = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] } | null> {
   const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
   if (!raw) return null;
 
   const current: WorkflowDefinition = JSON.parse(raw);
 
   // Archive current version before overwriting
-  const versionNum = await redis.incr(WORKFLOW_VERSION_CTR_PREFIX + id);
-  const archived = { ...JSON.parse(raw), saved_at: new Date().toISOString() };
-  await redis.set(`${WORKFLOW_VERSION_KEY_PREFIX}${id}:v${versionNum}`, JSON.stringify(archived));
-  await pgSaveWorkflowSnapshot(id, Number(versionNum), archived as any);
+  await archiveWorkflowSnapshot(id, JSON.parse(raw));
 
-  const updated: WorkflowDefinition = { ...current, ...patch, id }; // id is immutable
-  const normalized = normalizeSystems(updated);
+  const prepared = prepareWorkflowUpdate(id, current, patch, opts);
+  if (!prepared.persistable || prepared.errors.length > 0) return { workflow: prepared.workflow, errors: prepared.errors };
 
-  if (opts.draft) {
-    const saved = withLifecycle(normalized, "draft", {
-      validation: validationMetadata([], "workflow.update", "skipped"),
-      clearDeploy: true,
-    });
-    await syncWorkflowDocuments(saved);
-    await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
-    await updateRoleWorkflowIndex(saved);
-    await pgUpsertWorkflow(saved as any);
-    syncSchemaToRegistry(saved, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
-    return { workflow: saved, errors: [] };
-  }
-
-  const errors = validateWorkflow(normalized);
-  const validation = validationMetadata(errors, opts.lifecycleState === "executable" ? "workflow.deploy" : "workflow.update");
-  if (errors.length > 0) return { workflow: withLifecycle(normalized, "draft", { validation, clearDeploy: true }), errors };
-
-  const lifecycleState = opts.lifecycleState ?? "validated";
-  const saved = withLifecycle(normalized, lifecycleState, {
-    validation,
-    deploy: opts.deploy,
-    needsReview: opts.needsReview,
-    clearDeploy: lifecycleState !== "executable" && !opts.deploy,
-  });
-
-  await syncWorkflowDocuments(saved);
-  await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(saved));
-  await updateRoleWorkflowIndex(saved);
-  // Notify hot-reload listener: agents with roles in this workflow need AGENTS.md refresh
-  redis.xadd("konoha:agent-reload", "*", "type", "workflow.updated", "workflow_id", id, "timestamp", new Date().toISOString()).catch(silentCatch("workflow updated notification"));
-  await pgUpsertWorkflow(saved as any);
-  syncSchemaToRegistry(saved, current).catch(e => log.error("schema-sync update error", { error: e instanceof Error ? e.message : String(e) }));
-  return { workflow: saved, errors: [] };
+  await syncWorkflowDocuments(prepared.workflow);
+  await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(prepared.workflow));
+  await afterWorkflowPersisted(prepared.workflow, current, { notifyReload: opts.draft !== true });
+  return { workflow: prepared.workflow, errors: [] };
 }
 
 export async function archiveWorkflow(id: string): Promise<boolean> {

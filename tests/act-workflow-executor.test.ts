@@ -412,6 +412,48 @@ describe("/act workflow executor", () => {
     expect(validBody.data.elements.some((el: any) => el.id === "followup")).toBe(true);
   });
 
+  test("preserves concurrent element.add mutations on the same workflow", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-element-add-concurrent`;
+    const createWorkflowRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.create",
+        category: "act",
+        args: {
+          id: workflowId,
+          name: "Concurrent element add workflow",
+          elements: [],
+          flow: [],
+          draft: true,
+        },
+      }),
+    }));
+    expect(createWorkflowRes.status).toBe(201);
+
+    const { executeActionDirect } = await import("../src/action-executor");
+    const [first, second] = await Promise.all([
+      executeActionDirect("element.add", {
+        workflow_id: workflowId,
+        id: "e_parallel_a",
+        type: "event",
+        label: "Parallel A",
+      }),
+      executeActionDirect("element.add", {
+        workflow_id: workflowId,
+        id: "e_parallel_b",
+        type: "event",
+        label: "Parallel B",
+      }),
+    ]);
+
+    expect([first?.status, second?.status].sort()).toEqual([200, 200]);
+    const persisted = await executeActionDirect("workflow.get", { id: workflowId });
+    expect(persisted?.status).toBe(200);
+    const elementIds = ((persisted?.data as any).elements ?? []).map((el: any) => el.id).sort();
+    expect(elementIds).toEqual(["e_parallel_a", "e_parallel_b"]);
+  });
+
   test("executes workitem create/update/cancel directly through the action envelope", async () => {
     const createRes = await app.fetch(new Request("http://localhost/act", {
       method: "POST",

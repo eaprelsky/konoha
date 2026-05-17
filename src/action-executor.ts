@@ -7,6 +7,7 @@ import {
   archiveWorkflow,
   getWorkflowLifecycleState,
   isWorkflowExecutable,
+  mutateWorkflowAtomically,
   type WorkflowDefinition,
   type WorkflowElement,
   type WorkflowLifecycleState,
@@ -463,32 +464,38 @@ async function executeElementAction(action: string, args: Record<string, unknown
       if (!element) return { status: 400, data: { error: "Invalid element schema", code: "INVALID_ELEMENT_SCHEMA" } };
 
       const workflowId = String(args.workflow_id);
-      const current = await getWorkflow(workflowId);
-      if (!current) {
-        return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
-      }
-      if ((current.elements ?? []).some(existing => existing.id === element.id)) {
+      const result = await mutateWorkflowAtomically<{ added_element: WorkflowElement }, ActionExecution>(workflowId, current => {
+        if ((current.elements ?? []).some(existing => existing.id === element.id)) {
+          return {
+            abort: {
+              status: 409,
+              data: {
+                error: "Element ID already exists",
+                code: "ELEMENT_ID_EXISTS",
+                workflow_id: workflowId,
+                element_id: element.id,
+              },
+            },
+          };
+        }
+
+        const lifecycleState = getWorkflowLifecycleState(current);
+        const updateOpts: { draft?: boolean; lifecycleState?: WorkflowLifecycleState } =
+          lifecycleState === "draft" ? { draft: true } : { lifecycleState: "validated" };
         return {
-          status: 409,
-          data: {
-            error: "Element ID already exists",
-            code: "ELEMENT_ID_EXISTS",
-            workflow_id: workflowId,
-            element_id: element.id,
-          },
+          patch: { elements: [...(current.elements ?? []), element] },
+          opts: updateOpts,
+          meta: { added_element: element },
         };
-      }
+      });
 
-      const lifecycleState = getWorkflowLifecycleState(current);
-      const updateOpts: { draft?: boolean; lifecycleState?: WorkflowLifecycleState } =
-        lifecycleState === "draft" ? { draft: true } : { lifecycleState: "validated" };
-      const result = await updateWorkflow(workflowId, {
-        elements: [...(current.elements ?? []), element],
-      }, updateOpts);
-
-      if (result === null) {
+      if (result.status === "not_found") {
         return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
       }
+      if (result.status === "conflict") {
+        return { status: 409, data: { error: "Workflow mutation conflict", code: "WORKFLOW_MUTATION_CONFLICT", workflow_id: workflowId, attempts: result.attempts } };
+      }
+      if (result.status === "aborted") return result.meta;
       if (result.errors.length > 0) {
         return {
           status: 422,
@@ -502,7 +509,7 @@ async function executeElementAction(action: string, args: Record<string, unknown
         };
       }
 
-      return { status: 200, data: { ...result.workflow, added_element: element } };
+      return { status: 200, data: { ...result.workflow, added_element: result.meta.added_element } };
     }
     default:
       return null;
