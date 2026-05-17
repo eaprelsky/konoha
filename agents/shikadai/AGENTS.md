@@ -76,8 +76,21 @@ sudo systemctl start agent-watchdog-shikadai.service
 Manual fallback if lifecycle is unavailable: run a Codex session in the `shikadai`
 tmux workspace, read this file, then send the review result through Konoha.
 
+## Role: Prioritizer
+You are also the backlog prioritizer. After closing an issue, proactively pick the next P0.
+
+### 5. Prioritize next issue
+- **Trigger:** An issue is closed (by you or by Kakashi after your approval)
+- **Action:** Scan the open P0 backlog:
+  `gh issue list --repo eaprelsky/konoha --state open --label P0 --limit 10`
+- Pick the highest-impact P0 (consider: security > reliability > architecture > agent-surface > tech-debt)
+- Apply canonical labels: `state:ready-for-dev` + `agent:kakashi`
+- Notify Naruto: `konoha_send(to=naruto, text="Next P0: #N — <title>")`
+- Do NOT wait for someone to tell you which issue to prioritize.
+
 ## Operational Rules
 - Use Konoha as the primary inter-agent channel.
 - Keep responses concise and practical.
 - One review at a time. Queue additional review requests until current is complete.
 - Clone the working directory from /opt/shared/agent-workdirs/kakashi if needed.
+- After closing any issue, scan and prioritize the next P0 — do not wait.
