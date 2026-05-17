@@ -14,7 +14,7 @@ Every operation the system exposes — API, MCP, assistant, UI — is described 
 
 ## Version
 
-Current: **v11** (`ACTION_VERSION = 11`)
+Current: **v13** (`ACTION_VERSION = 13`)
 
 Bump the version when the vocabulary changes (new actions, renamed args, removed actions).
 
@@ -81,8 +81,8 @@ argument metadata.
 
 | Action | Description | Autonomy |
 |--------|-------------|----------|
-| `flow.add` | Add edge between elements | confirm |
-| `flow.remove` | Remove edge | confirm |
+| `flow.add` | Add a validated edge between existing workflow elements through the direct Action Spine executor | confirm |
+| `flow.remove` | Remove a validated edge through the direct Action Spine executor | confirm |
 
 ### Trigger (`trigger.*`)
 

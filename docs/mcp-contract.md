@@ -1,6 +1,6 @@
 # MCP Contract
 
-Date: 2026-04-29
+Date: 2026-05-17
 
 Every MCP tool → action ID → parameter mapping. The Konoha MCP server bridges Claude Code's tool-calling interface to the Konoha bus API.
 
@@ -39,7 +39,7 @@ that wrap one workflow directly:
 |-------|---------------------|-----|
 | workflow | workflow.create, workflow.update, workflow.delete, workflow.list, workflow.get | No workflow CRUD via MCP |
 | element | element.update, element.remove | `element.add` is available through the generic `konoha_action_*` bridge; no bespoke element editing MCP tools |
-| flow | flow.add, flow.remove | No flow editing via MCP |
+| flow | — | `flow.add` and `flow.remove` are available through the generic `konoha_action_*` bridge; no bespoke flow editing MCP tools |
 | trigger | trigger.set, trigger.resolve | No trigger config via MCP |
 | case | case.start, case.get, case.list, case.close | No case lifecycle via MCP |
 | workitem | workitem.create, workitem.update, workitem.list, workitem.cancel | Partial (only `workitem.complete` via `konoha_complete_task`) |

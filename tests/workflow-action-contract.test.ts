@@ -118,6 +118,20 @@ describe("workflow action contract validation", () => {
     expect(result.errors).toContain("Missing required argument: label");
   });
 
+  it("flow add/remove validates required fields", () => {
+    const add = validateActionArgs("flow.add", {});
+    expect(add.valid).toBe(false);
+    expect(add.errors).toContain("Missing required argument: workflow_id");
+    expect(add.errors).toContain("Missing required argument: from");
+    expect(add.errors).toContain("Missing required argument: to");
+
+    const remove = validateActionArgs("flow.remove", {});
+    expect(remove.valid).toBe(false);
+    expect(remove.errors).toContain("Missing required argument: workflow_id");
+    expect(remove.errors).toContain("Missing required argument: from");
+    expect(remove.errors).toContain("Missing required argument: to");
+  });
+
   it("classifies workflow edit and lifecycle verbs as mutations", () => {
     const byId = new Map(listActionSurface().map(action => [action.id, action]));
     for (const id of [
@@ -320,8 +334,6 @@ describe("workflow action contract validation", () => {
     const planned = new Set([
       "element.update",
       "element.remove",
-      "flow.add",
-      "flow.remove",
       "trigger.set",
       "trigger.resolve",
       "event.wait_list",

@@ -21,7 +21,7 @@ Current status legend:
 | Domain | HTTP surface | MCP surface | Action surface | Status | Follow-up |
 |---|---|---|---|---|---|
 | Workflow definitions | `/workflows` compatibility wrappers | `konoha_workflow_list/get/create/update` behind `process-tools` | `workflow.create/update/delete/list/get`, plus element/flow/trigger actions | Canonical action executor for HTTP and `/act`; MCP still HTTP-wrapper | #591: eEPC regression suite |
-| Workflow elements/flow/triggers | Coarse workflow update via `/workflows`; trigger resolver routes | No fine-grained MCP tools | `element.add/update/remove`, `flow.add/remove`, `trigger.resolve/subscribe/cancel` | Gap | #589: promote action executor; #590 follow-up if MCP fine-grained editing is needed |
+| Workflow elements/flow/triggers | Coarse workflow update via `/workflows`; `element.add` and `flow.add/remove` via `/act`; trigger resolver routes | Generic `konoha_action_*` bridge for implemented actions; no bespoke fine-grained MCP tools | `element.add`, `flow.add/remove` direct; `element.update/remove`, `trigger.resolve/subscribe/cancel` pending | Partial | #590 follow-up if bespoke MCP fine-grained editing is needed; remaining planned actions need direct executors |
 | Cases | `/cases` routes | `konoha_case_list/start/get` | `case.start/get/list/close`, `event.confirm`, `event.waiting.list` | Canonical executor for start/close/list/get; MCP still HTTP-wrapper | Runtime semantics covered by regression suite; add MCP wrappers only for stable agent workflows |
 | Work items | `/workitems` routes | `konoha_workitem_list/complete`, `konoha_complete_task` | `workitem.create/update/list/complete/cancel` | Canonical executor for create/update/complete/cancel/list; MCP still HTTP-wrapper | Convert MCP tools to action wrappers when agent workflows need receipts |
 | Roles | `/roles` CRUD | `konoha_role_list`, `konoha_role_assign` | `role.create/list/update/delete` | Canonical executor for CRUD; MCP still HTTP-wrapper | Convert MCP tools to action wrappers when agent workflows need receipts |
@@ -39,7 +39,7 @@ Current status legend:
 
 ## Immediate Decisions
 
-- Workflow definition mutations now converge on the action executor from `/act` and `/workflows`; MCP workflow tools are still HTTP wrappers and should become action wrappers when the MCP surface is revised.
+- Workflow definition mutations now converge on the action executor from `/act` and `/workflows`; `element.add` and `flow.add/remove` use direct action executors. MCP workflow tools are still HTTP wrappers and should become action wrappers when the MCP surface is revised.
 - Case start/close and work item create/update/complete/cancel HTTP routes now call the same direct action executor as `/act`; legacy routes remain compatibility wrappers without adding separate audit entries.
 - Role and reminder HTTP CRUD routes now also call the direct action executor; `reminder.update_status` is classified as a mutating action.
 - Agent lifecycle start/stop/restart routes now call direct action executor handlers. `agent.register` deliberately remains an invite-compatible bus registration endpoint, not a managed lifecycle mutation.
@@ -49,7 +49,7 @@ Current status legend:
 
 ## Coverage Gaps To Track
 
-- #589 — make `/act` the primary executor for workflow core actions. Closed for workflow definitions; element/flow/runtime operations remain scoped follow-ups.
+- #589 — make `/act` the primary executor for workflow core actions. Closed for workflow definitions and `element.add`/`flow.add`/`flow.remove`; remaining element/trigger/runtime operations are scoped follow-ups.
 - #591 — deterministic eEPC state-machine regression suite. Closed; suite is in preflight.
 - #592 — harden waits, joins, subprocesses, retries, and idempotency. Closed for current runtime boundary issues.
 - #593 — persistence/API/MCP contracts for artifacts, roles, reminders, and agents. Closed by `docs/entity-contracts.md`.

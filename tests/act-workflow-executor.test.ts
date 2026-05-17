@@ -454,6 +454,182 @@ describe("/act workflow executor", () => {
     expect(elementIds).toEqual(["e_parallel_a", "e_parallel_b"]);
   });
 
+  test("executes flow.add and flow.remove directly with duplicate and condition handling", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-flow-direct`;
+    const createWorkflowRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.create",
+        category: "act",
+        args: {
+          id: workflowId,
+          name: "Flow direct workflow",
+          elements: [
+            { id: "start", type: "event", label: "Start" },
+            { id: "review", type: "function", label: "Review", role: "reviewer" },
+            { id: "done", type: "event", label: "Done" },
+          ],
+          flow: [],
+          draft: true,
+        },
+      }),
+    }));
+    expect(createWorkflowRes.status).toBe(201);
+
+    const addPlain = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "flow.add",
+        category: "act",
+        args: { workflow_id: workflowId, from: "start", to: "review" },
+      }),
+    }));
+    const addPlainBody = await addPlain.json();
+    expect(addPlain.status).toBe(200);
+    expect(addPlainBody.data.added_edge).toEqual(["start", "review"]);
+
+    const addConditional = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "flow.add",
+        category: "act",
+        args: { workflow_id: workflowId, from: "review", to: "done", condition: "payload.approved === true" },
+      }),
+    }));
+    const addConditionalBody = await addConditional.json();
+    expect(addConditional.status).toBe(200);
+    expect(addConditionalBody.data.added_edge).toEqual(["review", "done", "payload.approved === true"]);
+    expect(addConditionalBody.data.flow).toEqual([
+      ["start", "review"],
+      ["review", "done", "payload.approved === true"],
+    ]);
+
+    const duplicate = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "flow.add",
+        category: "act",
+        args: { workflow_id: workflowId, from: "review", to: "done", condition: "payload.retry === true" },
+      }),
+    }));
+    const duplicateBody = await duplicate.json();
+    expect(duplicate.status).toBe(409);
+    expect(duplicateBody.data).toMatchObject({
+      code: "FLOW_EDGE_EXISTS",
+      workflow_id: workflowId,
+      from: "review",
+      to: "done",
+    });
+
+    const remove = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "flow.remove",
+        category: "act",
+        args: { workflow_id: workflowId, from: "review", to: "done" },
+      }),
+    }));
+    const removeBody = await remove.json();
+    expect(remove.status).toBe(200);
+    expect(removeBody.data.removed_edge).toEqual(["review", "done", "payload.approved === true"]);
+    expect(removeBody.data.flow).toEqual([["start", "review"]]);
+
+    const missing = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "flow.remove",
+        category: "act",
+        args: { workflow_id: workflowId, from: "review", to: "done" },
+      }),
+    }));
+    const missingBody = await missing.json();
+    expect(missing.status).toBe(404);
+    expect(missingBody.data.code).toBe("FLOW_EDGE_NOT_FOUND");
+  });
+
+  test("validates flow mutations against non-draft workflow graph before persistence", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-flow-validated`;
+    const createWorkflowRes = await app.fetch(new Request("http://localhost/workflows", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        id: workflowId,
+        name: "Flow validated workflow",
+        elements: [
+          { id: "start", type: "event", label: "Start" },
+          { id: "review", type: "function", label: "Review", role: "reviewer" },
+          { id: "done", type: "event", label: "Done" },
+        ],
+        flow: [["start", "review"], ["review", "done"]],
+      }),
+    }));
+    expect(createWorkflowRes.status).toBe(201);
+
+    const invalidAdd = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "flow.add",
+        category: "act",
+        args: { workflow_id: workflowId, from: "start", to: "done" },
+      }),
+    }));
+    const invalidAddBody = await invalidAdd.json();
+    expect(invalidAdd.status).toBe(422);
+    expect(invalidAddBody.data).toMatchObject({
+      code: "WORKFLOW_VALIDATION_FAILED",
+      workflow_id: workflowId,
+      edge: { from: "start", to: "done" },
+    });
+
+    const afterInvalidAdd = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ action: "workflow.get", category: "inspect", args: { id: workflowId } }),
+    }));
+    const afterInvalidAddBody = await afterInvalidAdd.json();
+    expect(afterInvalidAddBody.data.flow).toEqual([["start", "review"], ["review", "done"]]);
+
+    const invalidRemove = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "flow.remove",
+        category: "act",
+        args: { workflow_id: workflowId, from: "review", to: "done" },
+      }),
+    }));
+    const invalidRemoveBody = await invalidRemove.json();
+    expect(invalidRemove.status).toBe(422);
+    expect(invalidRemoveBody.data).toMatchObject({
+      code: "WORKFLOW_VALIDATION_FAILED",
+      workflow_id: workflowId,
+      edge: { from: "review", to: "done" },
+    });
+
+    const missingEndpoint = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "flow.add",
+        category: "act",
+        args: { workflow_id: workflowId, from: "missing", to: "done" },
+      }),
+    }));
+    const missingEndpointBody = await missingEndpoint.json();
+    expect(missingEndpoint.status).toBe(400);
+    expect(missingEndpointBody.data).toMatchObject({
+      code: "INVALID_FLOW_ENDPOINTS",
+      workflow_id: workflowId,
+    });
+  });
+
   test("executes workitem create/update/cancel directly through the action envelope", async () => {
     const createRes = await app.fetch(new Request("http://localhost/act", {
       method: "POST",

@@ -10,6 +10,7 @@ import {
   mutateWorkflowAtomically,
   type WorkflowDefinition,
   type WorkflowElement,
+  type FlowEdge,
   type WorkflowLifecycleState,
 } from "./workflow-loader";
 import { normalizeElementNames } from "./normalizer";
@@ -141,6 +142,41 @@ function buildElementAddPayload(args: Record<string, unknown>): { element?: Work
   if (type === "function" && role) element.role = role;
   if (type === "gateway") element.operator = (operator ?? "XOR") as WorkflowElement["operator"];
   return { element };
+}
+
+function edgeFromArgs(args: Record<string, unknown>): { from?: string; to?: string; condition?: string; error?: ActionExecution } {
+  const from = String(args.from ?? "").trim();
+  const to = String(args.to ?? "").trim();
+  const condition = args.condition !== undefined ? String(args.condition).trim() : undefined;
+  const details: string[] = [];
+
+  if (!from) details.push("from must be a non-empty string");
+  if (!to) details.push("to must be a non-empty string");
+  if (condition !== undefined && !condition) details.push("condition must be a non-empty string when provided");
+  if (details.length > 0) {
+    return { error: { status: 400, data: { error: "Invalid flow schema", code: "INVALID_FLOW_SCHEMA", details } } };
+  }
+  return { from, to, condition };
+}
+
+function flowEdge(from: string, to: string, condition?: string): FlowEdge {
+  return condition ? [from, to, condition] : [from, to];
+}
+
+function edgeEndpoints(edge: FlowEdge): [string, string] {
+  return [edge[0], edge[1]];
+}
+
+function hasEdge(flow: FlowEdge[] | undefined, from: string, to: string): boolean {
+  return (flow ?? []).some(edge => {
+    const [edgeFrom, edgeTo] = edgeEndpoints(edge);
+    return edgeFrom === from && edgeTo === to;
+  });
+}
+
+function lifecycleUpdateOpts(current: WorkflowDefinition): { draft?: boolean; lifecycleState?: WorkflowLifecycleState } {
+  const lifecycleState = getWorkflowLifecycleState(current);
+  return lifecycleState === "draft" ? { draft: true } : { lifecycleState: "validated" };
 }
 
 async function normalizeElementsIfNeeded(body: Record<string, unknown>): Promise<boolean> {
@@ -510,6 +546,104 @@ async function executeElementAction(action: string, args: Record<string, unknown
       }
 
       return { status: 200, data: { ...result.workflow, added_element: result.meta.added_element } };
+    }
+    default:
+      return null;
+  }
+}
+
+async function executeFlowAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "flow.add": {
+      const invalid = validationFailure("flow.add", args);
+      if (invalid) return invalid;
+      const { from, to, condition, error } = edgeFromArgs(args);
+      if (error) return error;
+      if (!from || !to) return { status: 400, data: { error: "Invalid flow schema", code: "INVALID_FLOW_SCHEMA" } };
+
+      const workflowId = String(args.workflow_id);
+      const result = await mutateWorkflowAtomically<{ added_edge: FlowEdge }, ActionExecution>(workflowId, current => {
+        const elementIds = new Set((current.elements ?? []).map(element => element.id));
+        const missing = [from, to].filter(id => !elementIds.has(id));
+        if (missing.length > 0) {
+          return {
+            abort: {
+              status: 400,
+              data: { error: "Invalid flow endpoints", code: "INVALID_FLOW_ENDPOINTS", workflow_id: workflowId, details: missing.map(id => `element not found: ${id}`) },
+            },
+          };
+        }
+        if (hasEdge(current.flow, from, to)) {
+          return {
+            abort: {
+              status: 409,
+              data: { error: "Flow edge already exists", code: "FLOW_EDGE_EXISTS", workflow_id: workflowId, from, to },
+            },
+          };
+        }
+        const edge = flowEdge(from, to, condition);
+        return {
+          patch: { flow: [...(current.flow ?? []), edge] },
+          opts: lifecycleUpdateOpts(current),
+          meta: { added_edge: edge },
+        };
+      });
+
+      if (result.status === "not_found") return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
+      if (result.status === "conflict") return { status: 409, data: { error: "Workflow mutation conflict", code: "WORKFLOW_MUTATION_CONFLICT", workflow_id: workflowId, attempts: result.attempts } };
+      if (result.status === "aborted") return result.meta;
+      if (result.errors.length > 0) {
+        return {
+          status: 422,
+          data: { error: "Validation failed", code: "WORKFLOW_VALIDATION_FAILED", workflow_id: workflowId, edge: { from, to }, details: result.errors },
+        };
+      }
+      return { status: 200, data: { ...result.workflow, added_edge: result.meta.added_edge } };
+    }
+    case "flow.remove": {
+      const invalid = validationFailure("flow.remove", args);
+      if (invalid) return invalid;
+      const { from, to, error } = edgeFromArgs(args);
+      if (error) return error;
+      if (!from || !to) return { status: 400, data: { error: "Invalid flow schema", code: "INVALID_FLOW_SCHEMA" } };
+
+      const workflowId = String(args.workflow_id);
+      const result = await mutateWorkflowAtomically<{ removed_edge: FlowEdge }, ActionExecution>(workflowId, current => {
+        const currentFlow = current.flow ?? [];
+        const removed = currentFlow.find(edge => {
+          const [edgeFrom, edgeTo] = edgeEndpoints(edge);
+          return edgeFrom === from && edgeTo === to;
+        });
+        if (!removed) {
+          return {
+            abort: {
+              status: 404,
+              data: { error: "Flow edge not found", code: "FLOW_EDGE_NOT_FOUND", workflow_id: workflowId, from, to },
+            },
+          };
+        }
+        return {
+          patch: {
+            flow: currentFlow.filter(edge => {
+              const [edgeFrom, edgeTo] = edgeEndpoints(edge);
+              return !(edgeFrom === from && edgeTo === to);
+            }),
+          },
+          opts: lifecycleUpdateOpts(current),
+          meta: { removed_edge: removed },
+        };
+      });
+
+      if (result.status === "not_found") return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
+      if (result.status === "conflict") return { status: 409, data: { error: "Workflow mutation conflict", code: "WORKFLOW_MUTATION_CONFLICT", workflow_id: workflowId, attempts: result.attempts } };
+      if (result.status === "aborted") return result.meta;
+      if (result.errors.length > 0) {
+        return {
+          status: 422,
+          data: { error: "Validation failed", code: "WORKFLOW_VALIDATION_FAILED", workflow_id: workflowId, edge: { from, to }, details: result.errors },
+        };
+      }
+      return { status: 200, data: { ...result.workflow, removed_edge: result.meta.removed_edge } };
     }
     default:
       return null;
@@ -1058,6 +1192,9 @@ export async function executeActionDirect(
   }
   if (action.startsWith("element.")) {
     return executeElementAction(action, args);
+  }
+  if (action.startsWith("flow.")) {
+    return executeFlowAction(action, args);
   }
   if (action.startsWith("case.")) {
     return executeCaseAction(action, args);

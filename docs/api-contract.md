@@ -1,6 +1,6 @@
 # API Contract
 
-Date: 2026-04-29
+Date: 2026-05-17
 
 Every API endpoint → action ID → autonomy level → audit status. Generated from the canonical action registry. The `/act` endpoint is the universal entry point for all actions.
 
@@ -27,8 +27,8 @@ Every API endpoint → action ID → autonomy level → audit status. Generated 
 
 | Endpoint | Action | Autonomy | Audited |
 |----------|--------|----------|---------|
-| `POST /workflows/:id/flow` | `flow.add` | confirm | yes |
-| `DELETE /workflows/:id/flow` | `flow.remove` | confirm | yes |
+| `/act` direct | `flow.add` | confirm | yes |
+| `/act` direct | `flow.remove` | confirm | yes |
 
 ## Trigger Actions
 
