@@ -358,6 +358,13 @@ export async function pgDeleteCasesByProcess(process_id: string): Promise<number
   }) ?? 0;
 }
 
+export async function pgDeleteCase(case_id: string): Promise<void> {
+  await pgWrite(async () => {
+    const sql = getSql();
+    await sql`DELETE FROM cases WHERE case_id = ${case_id}`;
+  });
+}
+
 // ── Work Items ────────────────────────────────────────────────────────────────
 
 export async function pgGetWorkItem(id: string): Promise<Record<string, unknown> | null> {

@@ -14,6 +14,7 @@ import { silentCatch, createLogger } from "./logger";
 const log = createLogger("tsunade");
 import { getBranding } from "./routes/audit";
 import { recoverStuckWorkItems } from "./runtime/work-items";
+import { cleanupExpiredRuntimeArtifacts } from "./retention/runtime-cleanup";
 
 const TSUNADE_ID = "tsunade";
 const TSUNADE_STREAM = `konoha:agent:${TSUNADE_ID}`;
@@ -139,6 +140,10 @@ async function startStreamPoller(pollRedis: Redis): Promise<void> {
 // ── Work item healthcheck ────────────────────────────────────────────────────
 
 const HEALTHCHECK_INTERVAL_MS = 30_000; // 30 seconds
+const configuredRuntimeRetentionIntervalMs = Number(process.env.KONOHA_RUNTIME_RETENTION_INTERVAL_MS);
+const RUNTIME_RETENTION_INTERVAL_MS = Number.isFinite(configuredRuntimeRetentionIntervalMs) && configuredRuntimeRetentionIntervalMs > 0
+  ? configuredRuntimeRetentionIntervalMs
+  : 60 * 60 * 1000;
 
 function startWorkItemHealthcheck(): void {
   // Polling storm detection (#780): track ensureGroup calls per interval.
@@ -146,6 +151,7 @@ function startWorkItemHealthcheck(): void {
   // but the poll loop is still too hot — stream pollers should not call ensureGroup
   // more than ~2-3 times per 30s interval (one per active agent stream).
   const POLL_STORM_THRESHOLD = 60; // ensureGroup calls per 30s interval
+  let lastRuntimeRetentionAt = 0;
   const check = async () => {
     try {
       const result = await recoverStuckWorkItems();
@@ -174,6 +180,22 @@ function startWorkItemHealthcheck(): void {
           ensureGroup_errors: m.errors,
           interval_s: HEALTHCHECK_INTERVAL_MS / 1000,
         });
+      }
+
+      const now = Date.now();
+      if (now - lastRuntimeRetentionAt >= RUNTIME_RETENTION_INTERVAL_MS) {
+        lastRuntimeRetentionAt = now;
+        const cleanup = await cleanupExpiredRuntimeArtifacts({ dryRun: false });
+        if (cleanup.deleted_count > 0) {
+          await sendMessage({
+            from: TSUNADE_ID,
+            to: "naruto",
+            type: "message",
+            text: `[Tsunade] Runtime retention deleted ${cleanup.deleted_count} expired cases/workflow runs.`,
+            timestamp: new Date().toISOString(),
+            village_id: "comind.konoha",
+          }).catch(silentCatch("tsunade runtime retention notification"));
+        }
       }
     } catch (e: any) {
       log.error("healthcheck error", { error: e.message });

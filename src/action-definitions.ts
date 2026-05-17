@@ -651,6 +651,20 @@ export const ACTIONS: ActionDef[] = [
     autonomy: "confirm",
     audited: true,
   },
+  {
+    id: "retention.runtime_cleanup",
+    description: "Clean up expired Redis-primary runtime cases and workflow runs that are safe for automatic deletion.",
+    scope: "retention",
+    args: [
+      { name: "dry_run", type: "boolean", required: false, description: "Preview without deleting. Defaults to true." },
+      { name: "stuck_case_ttl_hours", type: "number", required: false, description: "Minimum age for stuck running cases." },
+      { name: "completed_workflow_ttl_hours", type: "number", required: false, description: "Minimum age for completed workflow runs." },
+      { name: "max_delete", type: "number", required: false, description: "Maximum cases to delete in one run." },
+    ],
+    implementation: { kind: "direct", note: "Deletes only generated/test runtime cases or cases explicitly opted into auto-delete." },
+    autonomy: "auto",
+    audited: true,
+  },
 
   // ── Issue (GitHub) ────────────────────────────────────────────────────────
   {

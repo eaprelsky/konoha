@@ -26,6 +26,22 @@ Konoha stores active runtime data in Redis and shadows operational history into 
 - blocks the whole batch if any requested candidate is invalid, stale, duplicated, mismatched, or if Redis-only rows exist;
 - deletes from Postgres shadow/historical tables only.
 
+`retention.runtime_cleanup` is the automatic Redis-primary cleanup surface for live runtime bloat. It is narrower than operator-driven workflow deletion:
+
+- defaults to dry-run for direct Action Spine calls;
+- Tsunade runs it periodically with `dry_run=false`;
+- deletes only generated/test/debug runtime cases or cases that explicitly opt in with `payload.retention.auto_delete=true` or `payload.__retention.auto_delete=true`;
+- deletes terminal workflow runs only after all related work items are `done`, `cancelled`, or `error`;
+- deletes stuck running cases only after `KONOHA_STUCK_CASE_TTL_HOURS` and only when no active work item is assigned to an online agent;
+- removes Redis case/work item keys and indexes, cancels event waits/subscriptions, and best-effort deletes the Postgres shadow rows.
+
+Runtime cleanup defaults:
+
+- `KONOHA_STUCK_CASE_TTL_HOURS=24`
+- `KONOHA_COMPLETED_WORKFLOW_TTL_HOURS=24`
+- `KONOHA_RUNTIME_RETENTION_MAX_DELETE=100`
+- `KONOHA_RUNTIME_RETENTION_INTERVAL_MS=3600000`
+
 The script remains available for operations:
 
 ```bash
@@ -57,8 +73,10 @@ Safe cleanup must be implemented in stages:
 
 Default cleanup rules must not delete business artifacts. Only generated/test/debug artifacts or orphaned artifacts from archived/deleted workflows can become default cleanup candidates.
 
+Runtime auto-cleanup follows the same rule: production-looking workflows are retained by default even when their cases are terminal or stuck. They need an explicit per-case auto-delete opt-in before Tsunade can remove them.
+
 ## Non-Goals
 
-- Destructive cleanup is limited to exact PG-only `safe_candidate:*` rows via `retention.cleanup_apply`.
+- PG-only destructive cleanup is limited to exact `safe_candidate:*` rows via `retention.cleanup_apply`.
 - UI hidden-artifact filtering remains independent from retention.
 - Sales/business workflow runs are retained unless an operator chooses a narrower future policy.

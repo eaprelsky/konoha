@@ -18,7 +18,7 @@ const MUTATION_VERBS = new Set([
   "upsert_user", "remove_user", "add_group", "remove_group",
   "update_status", "update_profile",
   "comment", "update_labels",
-  "cleanup_apply",
+  "cleanup_apply", "runtime_cleanup",
 ]);
 
 const DRILL_VERBS = new Set([

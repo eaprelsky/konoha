@@ -61,6 +61,7 @@ import {
   buildPgOnlyRetentionReport,
   retentionReportForAction,
 } from "./retention/report";
+import { cleanupExpiredRuntimeArtifacts } from "./retention/runtime-cleanup";
 
 export interface ActionExecution {
   status: number;
@@ -1011,6 +1012,23 @@ async function executeRetentionAction(action: string, args: Record<string, unkno
           candidates: Array.isArray(args.candidates) ? args.candidates : [],
         });
         return { status: result.applied ? 200 : 409, data: result };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    case "retention.runtime_cleanup": {
+      const invalid = validationFailure("retention.runtime_cleanup", args);
+      if (invalid) return invalid;
+      try {
+        const result = await cleanupExpiredRuntimeArtifacts({
+          dryRun: args.dry_run !== false,
+          policy: {
+            ...(typeof args.stuck_case_ttl_hours === "number" ? { stuckCaseTtlHours: args.stuck_case_ttl_hours } : {}),
+            ...(typeof args.completed_workflow_ttl_hours === "number" ? { completedWorkflowTtlHours: args.completed_workflow_ttl_hours } : {}),
+            ...(typeof args.max_delete === "number" ? { maxDelete: args.max_delete } : {}),
+          },
+        });
+        return { status: 200, data: result };
       } catch (e) {
         return serviceFailure(e);
       }

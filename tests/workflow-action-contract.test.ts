@@ -238,6 +238,7 @@ describe("workflow action contract validation", () => {
     expect(isValidAction("retention.report")).toBe(true);
     expect(isValidAction("retention.cleanup_preview")).toBe(true);
     expect(isValidAction("retention.cleanup_apply")).toBe(true);
+    expect(isValidAction("retention.runtime_cleanup")).toBe(true);
 
     const valid = validateActionArgs("retention.report", { limit: 20 });
     expect(valid.valid).toBe(true);
@@ -255,6 +256,14 @@ describe("workflow action contract validation", () => {
       candidates: [{ entity: "cases", id: "case-1", candidate: "safe_candidate:old_completed_cases" }],
     });
     expect(applyValid.valid).toBe(true);
+
+    const runtimeCleanupValid = validateActionArgs("retention.runtime_cleanup", {
+      dry_run: true,
+      stuck_case_ttl_hours: 24,
+      completed_workflow_ttl_hours: 12,
+      max_delete: 50,
+    });
+    expect(runtimeCleanupValid.valid).toBe(true);
 
     const surface = listActionSurface().find(action => action.id === "retention.report");
     expect(surface).toMatchObject({
@@ -275,6 +284,15 @@ describe("workflow action contract validation", () => {
     const applySurface = listActionSurface().find(action => action.id === "retention.cleanup_apply");
     expect(applySurface).toMatchObject({
       id: "retention.cleanup_apply",
+      category: "act",
+      implemented: true,
+      security: { actor: "admin" },
+      audited: true,
+    });
+
+    const runtimeCleanupSurface = listActionSurface().find(action => action.id === "retention.runtime_cleanup");
+    expect(runtimeCleanupSurface).toMatchObject({
+      id: "retention.runtime_cleanup",
       category: "act",
       implemented: true,
       security: { actor: "admin" },
