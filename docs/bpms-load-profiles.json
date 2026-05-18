@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 788,
+  "description": "Reproducible BPMS load, soak, and resource regression profiles.",
+  "release_gate": {
+    "required_profiles": ["ci-bpms-regression", "release-gate-staging"],
+    "required_report": "bpms-load-regression-report.json",
+    "attach_to": "release gate"
+  },
+  "profiles": [
+    {
+      "id": "ci-bpms-regression",
+      "budget_profile": "ci-test",
+      "purpose": "Portable regression profile for BPMS load gates in CI and local preflight.",
+      "duration_sec": 120,
+      "workload": {
+        "process_instances": 600,
+        "telegram_events": 600,
+        "telegram_activation_chains": 60,
+        "redis_stream_messages": 1800,
+        "outbox_retry_attempts": 120,
+        "retention_cycles": 2,
+        "ui_compaction_case_window": 80
+      },
+      "thresholds": {
+        "redis_command_rate_per_sec": 2500,
+        "redis_write_rate_per_sec": 900,
+        "redis_memory_growth_mib": 64,
+        "process_rss_peak_mib": 1024,
+        "cpu_sustained_percent": 175,
+        "stream_pending_max": 0,
+        "outbox_retry_p95_ms": 2500,
+        "ui_compacted_case_window": 100,
+        "retention_unscanned_expired_cases": 0
+      }
+    },
+    {
+      "id": "release-gate-staging",
+      "budget_profile": "staging-core",
+      "purpose": "Short staging release gate before broad Workflow Engine changes.",
+      "duration_sec": 1800,
+      "workload": {
+        "process_instances": 5000,
+        "telegram_events": 5000,
+        "telegram_activation_chains": 1000,
+        "redis_stream_messages": 15000,
+        "outbox_retry_attempts": 1000,
+        "retention_cycles": 6,
+        "ui_compaction_case_window": 100
+      },
+      "thresholds": {
+        "redis_command_rate_per_sec": 1800,
+        "redis_write_rate_per_sec": 700,
+        "redis_memory_growth_mib": 128,
+        "process_rss_peak_mib": 1800,
+        "cpu_sustained_percent": 175,
+        "stream_pending_max": 0,
+        "outbox_retry_p95_ms": 3000,
+        "ui_compacted_case_window": 120,
+        "retention_unscanned_expired_cases": 0
+      }
+    },
+    {
+      "id": "staging-soak-8h",
+      "budget_profile": "staging-core",
+      "purpose": "Eight-hour staging soak for BPMS high-volume event and process-instance traffic.",
+      "duration_sec": 28800,
+      "workload": {
+        "process_instances": 25000,
+        "telegram_events": 25000,
+        "telegram_activation_chains": 5000,
+        "redis_stream_messages": 75000,
+        "outbox_retry_attempts": 5000,
+        "retention_cycles": 32,
+        "ui_compaction_case_window": 100
+      },
+      "thresholds": {
+        "redis_command_rate_per_sec": 1400,
+        "redis_write_rate_per_sec": 550,
+        "redis_memory_growth_mib": 192,
+        "process_rss_peak_mib": 2100,
+        "cpu_sustained_percent": 175,
+        "stream_pending_max": 0,
+        "outbox_retry_p95_ms": 3500,
+        "ui_compacted_case_window": 120,
+        "retention_unscanned_expired_cases": 0
+      }
+    }
+  ]
+}

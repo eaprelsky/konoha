@@ -8,6 +8,8 @@ scripts/preflight-portable.sh
 ```
 
 This is the GitHub Actions gate. It runs backend typecheck, the portable backend regression suite, frontend typecheck, frontend unit tests, and frontend build. It requires Redis and PostgreSQL, but does not require production systemd units, Telegram credentials, live agent tmux sessions, or production secrets.
+It also validates the BPMS load regression profile catalog and the portable
+`ci-bpms-regression` report fixture.
 
 ### Production preflight (server gate)
 ```bash
@@ -15,6 +17,11 @@ scripts/preflight.sh
 ```
 
 This is the release gate on `agent.eaprelsky.ru`. It includes the portable checks plus production-only system health, lifecycle/watchdog validation, Telegram smoke, and PostgreSQL shadow verification. Run this before large Workflow Engine changes or after changing lifecycle/runtime/watchdog/storage code.
+For broad BPMS changes, set `BPMS_LOAD_PROFILE=release-gate-staging` or
+`BPMS_LOAD_PROFILE=staging-soak-8h`, set `BPMS_LOAD_OBSERVATIONS` to the staging
+observation file, and keep `BPMS_LOAD_REPORT` at the default
+`/tmp/bpms-load-regression-report.json` unless the release record needs another
+path.
 
 As of 2026-04-30, PostgreSQL shadow verification can fail with bloat-only exit code `2` while still reporting `onlyInRedis=0`. That means Redis -> PG sync is complete, but PG-only historical retention is not yet governed. Treat `onlyInRedis` as a release blocker; treat bloat-only failures as data-retention debt until the retention report/cleanup policy is implemented.
 

@@ -1,0 +1,26 @@
+{
+  "profile_id": "ci-bpms-regression",
+  "run_id": "fixture-ci-pass",
+  "started_at": "2026-05-18T00:00:00.000Z",
+  "duration_sec": 125,
+  "workload": {
+    "process_instances": 600,
+    "telegram_events": 600,
+    "telegram_activation_chains": 60,
+    "redis_stream_messages": 1800,
+    "outbox_retry_attempts": 120,
+    "retention_cycles": 2,
+    "ui_compaction_case_window": 80
+  },
+  "metrics": {
+    "redis_command_rate_per_sec": 1200,
+    "redis_write_rate_per_sec": 360,
+    "redis_memory_growth_mib": 24,
+    "process_rss_peak_mib": 780,
+    "cpu_sustained_percent": 95,
+    "stream_pending_max": 0,
+    "outbox_retry_p95_ms": 800,
+    "ui_compacted_case_window": 80,
+    "retention_unscanned_expired_cases": 0
+  }
+}

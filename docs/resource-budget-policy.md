@@ -12,6 +12,8 @@ Runtime consumers:
 - `scripts/healthcheck-system.py` reads slice budget policy from the contract
   and reports group/service pressure through `resource_inventory.budget_pressure`.
 - `konoha-testbench` enforces the configured browser pool cap at runtime.
+- `scripts/bpms-load-regression.ts` validates BPMS load/soak observations
+  against profile thresholds that must stay within these resource budgets.
 
 ## Profile Budgets
 
@@ -77,6 +79,15 @@ python3 scripts/healthcheck-system.py | rg 'resource_inventory|slice.|service_sl
 The text report includes process groups, top RSS processes, service budgets, and
 cache/artifact disk pressure. JSON output omits raw process args and keeps only
 redacted args.
+
+## BPMS Load Regression
+
+`docs/bpms-load-profiles.json` defines the #788 load, release-gate staging, and
+eight-hour staging soak profiles. The profiles reuse `ci-test` and
+`staging-core`; no separate resource budget contract is allowed for BPMS load
+tests. Generate `bpms-load-regression-report.json` with
+`scripts/bpms-load-regression.ts` and attach it to the release gate before broad
+Workflow Engine changes.
 
 ## Scale-Out Policy
 

@@ -30,7 +30,8 @@ run_backend_tests() {
     tests/ai-chat-contract.test.ts \
     tests/operator-evals.test.ts \
     tests/workflow-action-contract.test.ts \
-    tests/assistant-autonomy-evals.test.ts
+    tests/assistant-autonomy-evals.test.ts \
+    tests/bpms-load-regression.test.ts
   )
 }
 
@@ -43,12 +44,24 @@ run_frontend() {
   )
 }
 
+run_bpms_load_report() {
+  (
+  cd "$ROOT"
+  local profile="${BPMS_LOAD_PROFILE:-ci-bpms-regression}"
+  local observations="${BPMS_LOAD_OBSERVATIONS:-tests/fixtures/bpms-load/ci-passing.json}"
+  local report="${BPMS_LOAD_REPORT:-/tmp/bpms-load-regression-report.json}"
+  bun run scripts/bpms-load-regression.ts --profile "$profile" --observations "$observations" --report "$report"
+  )
+}
+
 cd "$ROOT"
 run_step "backend typecheck" bun x tsc --noEmit
 run_step "backend tests" run_backend_tests
 run_step "frontend typecheck/test/build" run_frontend
 run_step "legacy enforcement" bash -c '! grep -r "/tsunade/chat\|/ai/process-chat" src/routes/ --include="*.ts" --include="*.tsx"'
 run_step "action coverage" bun run scripts/action-coverage.ts
+run_step "BPMS load profile contract" bun run scripts/bpms-load-regression.ts --check
+run_step "BPMS load regression report" run_bpms_load_report
 
 echo
 echo "portable preflight OK"
