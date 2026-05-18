@@ -177,6 +177,47 @@ def test_redis_polling_storm_ok_when_rates_are_low():
     assert "xreadgroup_rate=1.00/s" in checks[0].detail
 
 
+def test_telegram_packer_pressure_reports_lag_and_cpu():
+    policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
+    stream_state = {
+        "telegram:needs_context": {
+            "len": 120,
+            "groups": {"context-packer": {"pending": 2, "lag": 101, "consumers": 1}},
+        },
+        "telegram:vision_requests": {
+            "len": 5,
+            "groups": {"vision-packer": {"pending": 0, "lag": 0, "consumers": 1}},
+        },
+    }
+
+    checks = healthcheck.telegram_packer_pressure_checks(
+        stream_state,
+        {"telegram-context-packer.py": 31.5, "telegram-vision-packer.py": 0.2},
+        policy,
+    )
+
+    context = next(check for check in checks if check.name == "telegram.packer.context")
+    vision = next(check for check in checks if check.name == "telegram.packer.vision")
+    assert context.level == "WARN"
+    assert "lag=101" in context.detail
+    assert "cpu=31.5%" in context.detail
+    assert "batch=" in context.detail
+    assert vision.level == "OK"
+
+
+def test_telegram_packer_pressure_skips_when_connector_disabled():
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_HEALTH_ENABLED_CONNECTORS": "none"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
+
+    checks = healthcheck.telegram_packer_pressure_checks({}, {}, policy)
+
+    assert checks == [
+        healthcheck.Check("OK", "telegram.packer.pressure", "disabled by policy; packer pressure checks skipped")
+    ]
+
+
 def test_slice_policy_accepts_configured_core_budget():
     policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
     props = {

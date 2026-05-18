@@ -296,15 +296,41 @@ redis-cli XPENDING telegram:outgoing claude-agents
 sudo systemctl restart agent-watchdog-sasuke agent-watchdog-naruto telegram-bus telegram-context-packer telegram-vision-packer
 ```
 
+Telegram packer CPU or backlog pressure:
+```bash
+python3 scripts/healthcheck-system.py | grep 'telegram.packer'
+journalctl -u telegram-context-packer -u telegram-vision-packer -n 120 --no-pager | grep -E 'DIAG|BACKPRESSURE|REDIS ERR'
+python3 scripts/resource-inventory.py --json --no-disk
+ps -eo pcpu=,args= | grep -E 'telegram-(context|vision)-packer.py' | grep -v grep
+```
+
+Expected sustained CPU after the 5 second stream block has been in effect:
+
+| Load profile | Context packer | Vision packer | Notes |
+|--------------|----------------|---------------|-------|
+| Idle queues | < 1% sustained | < 1% sustained | Empty reads block for 5000 ms, then sleep for 0.25 s before the next loop |
+| Normal Telegram traffic | < 25% sustained | < 25% sustained | Short spikes are acceptable while OpenRouter calls or image encoding run |
+| Backed downstream `telegram:incoming/sasuke` | Packer pauses new reads | Packer pauses new reads | `BACKPRESSURE` journal lines include downstream pending/lag and sleep duration |
+
+The healthcheck emits `telegram.packer.context` and `telegram.packer.vision`
+with stream length, consumer count, pending, lag, process CPU, batch size, and
+block interval. Tune these knobs only with a matching healthcheck/runbook
+update:
+
+| Service | Batch | Blocking read | Idle sleep | Downstream pressure |
+|---------|-------|---------------|------------|---------------------|
+| `telegram-context-packer` | `TELEGRAM_CONTEXT_BATCH_SIZE` | `TELEGRAM_CONTEXT_BLOCK_MS` | `TELEGRAM_CONTEXT_IDLE_SLEEP_SEC`, `TELEGRAM_CONTEXT_ITEM_ERROR_BACKOFF_SEC` | `TELEGRAM_CONTEXT_DOWNSTREAM_WARN_LAG`, `TELEGRAM_CONTEXT_DOWNSTREAM_WARN_PENDING` |
+| `telegram-vision-packer` | `TELEGRAM_VISION_BATCH_SIZE` | `TELEGRAM_VISION_BLOCK_MS` | `TELEGRAM_VISION_IDLE_SLEEP_SEC`, `TELEGRAM_VISION_ITEM_ERROR_BACKOFF_SEC` | `TELEGRAM_VISION_DOWNSTREAM_WARN_LAG`, `TELEGRAM_VISION_DOWNSTREAM_WARN_PENDING` |
+
 Telegram stream ownership:
 
 | Stream | Group | Owner | Recovery behavior |
 |--------|-------|-------|-------------------|
 | `telegram:bot:incoming` | `naruto` | `agent-watchdog-naruto` | Reads pending on startup, acks after tmux delivery |
-| `telegram:incoming` | `sasuke` | `agent-watchdog-sasuke` | Reads pending on startup, acks after tmux delivery |
+| `telegram:incoming` | `sasuke` | `agent-watchdog-sasuke` | Reads pending on startup, acks after tmux delivery; packers pause new reads when this group is backed up |
 | `telegram:outgoing` | `claude-agents` | `telegram-bus` | Replays pending on startup; stale/poison sends go to `telegram:outgoing:dead_letter` |
-| `telegram:needs_context` | `context-packer` | `telegram-context-packer` | Dead letters invalid context packs |
-| `telegram:vision_requests` | `vision-packer` | `telegram-vision-packer` | Dead letters invalid vision packs |
+| `telegram:needs_context` | `context-packer` | `telegram-context-packer` | Drains own pending first, blocks on empty reads, dead letters invalid context packs |
+| `telegram:vision_requests` | `vision-packer` | `telegram-vision-packer` | Drains own pending first, blocks on empty reads, dead letters invalid vision packs |
 
 Optional/legacy groups:
 

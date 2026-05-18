@@ -13,6 +13,13 @@ UnsetEnvironment=http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 Environment=PYTHONUNBUFFERED=1
 Environment=TELEGRAM_VISION_MODEL=qwen/qwen3.5-flash
 Environment=TELEGRAM_VISION_TIMEOUT_SEC=20.0
+Environment=TELEGRAM_VISION_BATCH_SIZE=2
+Environment=TELEGRAM_VISION_BLOCK_MS=5000
+Environment=TELEGRAM_VISION_IDLE_SLEEP_SEC=0.25
+Environment=TELEGRAM_VISION_ITEM_ERROR_BACKOFF_SEC=0.5
+Environment=TELEGRAM_VISION_BACKPRESSURE_SLEEP_SEC=2.0
+Environment=TELEGRAM_VISION_DOWNSTREAM_WARN_LAG=100
+Environment=TELEGRAM_VISION_DOWNSTREAM_WARN_PENDING=10
 ExecStart=/usr/bin/python3 -u /home/ubuntu/konoha/scripts/telegram-vision-packer.py
 Restart=always
 Slice=konoha-connectors.slice

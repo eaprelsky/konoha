@@ -14,6 +14,13 @@ Environment=PYTHONUNBUFFERED=1
 Environment=TELEGRAM_CONTEXT_MODEL=google/gemini-2.0-flash-lite-001
 Environment=TELEGRAM_CONTEXT_MIN_CONFIDENCE=0.65
 Environment=TELEGRAM_CONTEXT_TIMEOUT_SEC=8.0
+Environment=TELEGRAM_CONTEXT_BATCH_SIZE=5
+Environment=TELEGRAM_CONTEXT_BLOCK_MS=5000
+Environment=TELEGRAM_CONTEXT_IDLE_SLEEP_SEC=0.25
+Environment=TELEGRAM_CONTEXT_ITEM_ERROR_BACKOFF_SEC=0.5
+Environment=TELEGRAM_CONTEXT_BACKPRESSURE_SLEEP_SEC=2.0
+Environment=TELEGRAM_CONTEXT_DOWNSTREAM_WARN_LAG=100
+Environment=TELEGRAM_CONTEXT_DOWNSTREAM_WARN_PENDING=10
 ExecStart=/usr/bin/python3 -u /home/ubuntu/konoha/scripts/telegram-context-packer.py
 Restart=always
 Slice=konoha-connectors.slice

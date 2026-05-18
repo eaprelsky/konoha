@@ -156,6 +156,30 @@ STREAM_GROUPS = {
     "telegram:vision_requests": ["vision-packer"],
     "telegram:outgoing": ["claude-agents"],
 }
+TELEGRAM_PACKER_DIAGNOSTICS = [
+    {
+        "id": "context",
+        "service": "telegram-context-packer.service",
+        "script": "telegram-context-packer.py",
+        "stream": "telegram:needs_context",
+        "group": "context-packer",
+        "batch_env": "TELEGRAM_CONTEXT_BATCH_SIZE",
+        "block_env": "TELEGRAM_CONTEXT_BLOCK_MS",
+        "default_batch": "5",
+        "default_block_ms": "5000",
+    },
+    {
+        "id": "vision",
+        "service": "telegram-vision-packer.service",
+        "script": "telegram-vision-packer.py",
+        "stream": "telegram:vision_requests",
+        "group": "vision-packer",
+        "batch_env": "TELEGRAM_VISION_BATCH_SIZE",
+        "block_env": "TELEGRAM_VISION_BLOCK_MS",
+        "default_batch": "2",
+        "default_block_ms": "5000",
+    },
+]
 DEAD_LETTER_STREAMS = [
     "telegram:needs_context:dead_letter",
     "telegram:event_bridge:dead_letter",
@@ -176,6 +200,7 @@ HEALTH_POLICY_FILE = Path(os.environ.get("KONOHA_HEALTH_POLICY_FILE", "/opt/shar
 REDIS_COMMANDSTATS_STATE_FILE = Path(os.environ.get("KONOHA_REDIS_COMMANDSTATS_STATE_FILE", "/tmp/konoha-healthcheck-redis-commandstats.json"))
 XREADGROUP_WARN_PER_SEC = float(os.environ.get("KONOHA_XREADGROUP_WARN_PER_SEC", "20"))
 XGROUP_WARN_PER_SEC = float(os.environ.get("KONOHA_XGROUP_WARN_PER_SEC", "1"))
+TELEGRAM_PACKER_CPU_WARN_PERCENT = float(os.environ.get("KONOHA_TELEGRAM_PACKER_CPU_WARN_PERCENT", "25"))
 
 
 @dataclass
@@ -503,6 +528,86 @@ def aggregate_commandstats(stats: dict[str, dict[str, float]], command: str) -> 
     return out
 
 
+def coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def collect_process_cpu_by_marker(markers: list[str]) -> dict[str, float]:
+    totals = {marker: 0.0 for marker in markers}
+    rc, stdout, _stderr = run(["ps", "-eo", "pcpu=,args="], timeout=8)
+    if rc != 0:
+        return {}
+    for line in stdout.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        raw_cpu, args = parts
+        try:
+            cpu = float(raw_cpu)
+        except ValueError:
+            continue
+        for marker in markers:
+            if marker in args:
+                totals[marker] += cpu
+    return totals
+
+
+def telegram_packer_pressure_checks(
+    stream_state: dict[str, dict[str, Any]],
+    cpu_by_script: dict[str, float],
+    policy: HealthcheckPolicy,
+) -> list[Check]:
+    if "telegram" not in policy.enabled_connectors:
+        return [Check("OK", "telegram.packer.pressure", "disabled by policy; packer pressure checks skipped")]
+
+    checks: list[Check] = []
+    for packer in TELEGRAM_PACKER_DIAGNOSTICS:
+        packer_id = str(packer["id"])
+        stream = str(packer["stream"])
+        group_name = str(packer["group"])
+        script = str(packer["script"])
+        state = stream_state.get(stream)
+        if state is None:
+            checks.append(Check("WARN", f"telegram.packer.{packer_id}", f"stream={stream} unavailable", f"Inspect: redis-cli XINFO GROUPS {stream}"))
+            continue
+
+        length = coerce_int(state.get("len"))
+        groups = state.get("groups") or {}
+        group = groups.get(group_name)
+        cpu = cpu_by_script.get(script)
+        cpu_detail = "unknown" if cpu is None else f"{cpu:.1f}%"
+        batch_env = os.environ.get(str(packer["batch_env"]), str(packer["default_batch"]))
+        block_env = os.environ.get(str(packer["block_env"]), str(packer["default_block_ms"]))
+
+        if group is None:
+            checks.append(Check(
+                "FAIL",
+                f"telegram.packer.{packer_id}",
+                f"service={packer['service']} stream={stream} group={group_name} missing len={length} cpu={cpu_detail} batch={batch_env} block_ms={block_env}",
+                f"Restart {packer['service']} or create consumer group for {stream}",
+            ))
+            continue
+
+        pending = coerce_int(group.get("pending"))
+        lag = coerce_int(group.get("lag"))
+        consumers = coerce_int(group.get("consumers"))
+        detail = (
+            f"service={packer['service']} stream={stream} group={group_name} len={length} "
+            f"consumers={consumers} pending={pending} lag={lag} cpu={cpu_detail} "
+            f"batch={batch_env} block_ms={block_env}"
+        )
+        if pending >= FAIL_PENDING:
+            checks.append(Check("FAIL", f"telegram.packer.{packer_id}", detail, f"Inspect: redis-cli XPENDING {stream} {group_name}"))
+        elif pending > WARN_PENDING or lag > WARN_LAG or (cpu is not None and cpu > TELEGRAM_PACKER_CPU_WARN_PERCENT):
+            checks.append(Check("WARN", f"telegram.packer.{packer_id}", detail, "Inspect packer journal, downstream Sasuke lag, and OpenRouter rate limits"))
+        else:
+            checks.append(Check("OK", f"telegram.packer.{packer_id}", detail))
+    return checks
+
+
 def redis_polling_storm_checks(
     current: dict[str, dict[str, float]],
     previous: dict[str, Any] | None,
@@ -717,6 +822,30 @@ def check_redis_streams(policy: HealthcheckPolicy | None = None) -> list[Check]:
         else:
             checks.append(Check("OK", f"redis.dead_letter.{stream}", "empty"))
     return checks
+
+
+def check_telegram_packer_pressure(policy: HealthcheckPolicy | None = None) -> list[Check]:
+    policy = policy or load_healthcheck_policy()
+    if "telegram" not in policy.enabled_connectors:
+        return [Check("OK", "telegram.packer.pressure", "disabled by policy; packer pressure checks skipped")]
+
+    stream_state: dict[str, dict[str, Any]] = {}
+    for packer in TELEGRAM_PACKER_DIAGNOSTICS:
+        stream = str(packer["stream"])
+        if stream in stream_state:
+            continue
+        try:
+            length = int(redis_json("XLEN", stream) or 0)
+            groups = redis_json("XINFO", "GROUPS", stream)
+        except Exception:
+            continue
+        stream_state[stream] = {
+            "len": length,
+            "groups": {str(group.get("name")): group for group in groups or []},
+        }
+
+    cpu_by_script = collect_process_cpu_by_marker([str(packer["script"]) for packer in TELEGRAM_PACKER_DIAGNOSTICS])
+    return telegram_packer_pressure_checks(stream_state, cpu_by_script, policy)
 
 
 def check_redis_polling_storm() -> list[Check]:
@@ -1325,6 +1454,7 @@ def main() -> int:
     checks.extend(check_systemd_slices(policy))
     checks.extend(check_api())
     checks.extend(check_redis_streams(policy))
+    checks.extend(check_telegram_packer_pressure(policy))
     checks.extend(check_redis_polling_storm())
     checks.extend(check_messenger_connector_health(policy))
     checks.extend(check_agents(policy))
