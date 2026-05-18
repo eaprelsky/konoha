@@ -6,6 +6,7 @@ import json
 import os
 import signal
 import time
+from datetime import datetime, timezone
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 
@@ -53,6 +54,7 @@ DIAGNOSTIC_INTERVAL_SEC = _env_float("TELEGRAM_CONTEXT_DIAGNOSTIC_INTERVAL_SEC",
 BACKPRESSURE_SLEEP_SEC = _env_float("TELEGRAM_CONTEXT_BACKPRESSURE_SLEEP_SEC", 2.0, minimum=0.1)
 DOWNSTREAM_WARN_LAG = _env_int("TELEGRAM_CONTEXT_DOWNSTREAM_WARN_LAG", 100)
 DOWNSTREAM_WARN_PENDING = _env_int("TELEGRAM_CONTEXT_DOWNSTREAM_WARN_PENDING", 10)
+MAX_EVENT_AGE_SEC = _env_int("TELEGRAM_CONTEXT_MAX_EVENT_AGE_SEC", 1800, minimum=0)
 
 STOP = False
 RETRYABLE_OPENROUTER_STATUS = {401, 402, 403, 408, 409, 429, 500, 502, 503, 504}
@@ -308,9 +310,64 @@ def _has_items(batches: list) -> bool:
     return any(items for _stream, items in batches or [])
 
 
+def _parse_event_timestamp(value: str) -> float | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def _stream_id_timestamp(entry_id: str) -> float | None:
+    try:
+        return int(str(entry_id).split("-", 1)[0]) / 1000
+    except (TypeError, ValueError):
+        return None
+
+
+def _event_age_sec(entry_id: str, event: dict, now: float | None = None) -> float | None:
+    now_ts = time.time() if now is None else now
+    event_ts = _parse_event_timestamp(str(event.get("timestamp", "")))
+    if event_ts is None:
+        event_ts = _stream_id_timestamp(entry_id)
+    if event_ts is None:
+        return None
+    return max(0.0, now_ts - event_ts)
+
+
+def _is_stale_event(entry_id: str, event: dict, now: float | None = None) -> tuple[bool, float | None]:
+    if MAX_EVENT_AGE_SEC <= 0:
+        return False, None
+    age_sec = _event_age_sec(entry_id, event, now=now)
+    return age_sec is not None and age_sec > MAX_EVENT_AGE_SEC, age_sec
+
+
 def _process_item(r: redis.Redis, entry_id: str, raw: dict) -> bool:
     event = _decode_fields(raw)
     try:
+        is_stale, age_sec = _is_stale_event(entry_id, event)
+        if is_stale:
+            audit = {
+                "original_id": entry_id,
+                "chat_id": event.get("chat_id", ""),
+                "msg_id": event.get("msg_id", ""),
+                "should_route": "0",
+                "confidence": "0.00",
+                "route": "none",
+                "reason": f"stale_context_event age_sec={int(age_sec or 0)} max_age_sec={MAX_EVENT_AGE_SEC}",
+            }
+            r.xadd(AUDIT_STREAM, audit, maxlen=5000, approximate=True)
+            r.xack(STREAM, GROUP, entry_id)
+            print(f"STALE {entry_id} age_sec={int(age_sec or 0)} max_age_sec={MAX_EVENT_AGE_SEC}", flush=True)
+            return True
+
         packed = _call_model(event, _load_history(event))
         confidence = float(packed.get("confidence", 0.0))
         should_route = _as_bool(packed.get("should_route")) and confidence >= MIN_CONFIDENCE
