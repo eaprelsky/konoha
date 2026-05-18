@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { createLogger } from "../logger";
 import { requireAuth } from "../middleware/auth";
 import { claimIdempotencyKey, finalizeIdempotencyClaim, publishEvent, type KonohaEvent } from "../redis";
-import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, handleEventFired, type Case, type HistoryEntry } from "../runtime";
+import { listEvents, processEventWithActivation, listCases, listWorkItems, getCase, getWorkItem, handleEventFired, type Case, type HistoryEntry } from "../runtime";
 import { getWorkflow, type WorkflowElement } from "../workflow-loader";
 import { getMessengerConnectorCatalog, resolveMessengerWorkflowIds, type MessengerChatType, type MessengerMessageType } from "../messenger-connectors";
 import { loadActiveWaitsForCase, resolveEventWaitForNode } from "../runtime/event-waits";
@@ -47,12 +47,17 @@ router.post("/", async (c) => {
   const workflowIds = resolveWorkflowScope(type, source, payload);
 
   // Trigger workflow runtime: find matching process definitions and create cases
-  const cases = await processEvent(type, source, payload, workflowIds ? { workflowIds } : undefined).catch((e) => {
+  const activation = await processEventWithActivation(type, source, payload, workflowIds ? { workflowIds } : undefined).catch((e) => {
     log.error("processEvent error", { error: e.message, event_type: type, source });
-    return [];
+    return { cases: [], decisions: [] };
   });
 
-  return c.json({ id, cases_created: cases.map((c: Case) => c.case_id), workflow_scope: workflowIds ?? null });
+  return c.json({
+    id,
+    cases_created: activation.cases.map((c: Case) => c.case_id),
+    workflow_scope: workflowIds ?? null,
+    activation_decisions: activation.decisions,
+  });
 });
 
 router.get("/log", async (c) => {

@@ -19,6 +19,9 @@ longer the same operation as deploying it for runtime execution.
 - `workflow.create` without `draft=true` validates and stores `validated`.
 - `workflow.update` stores `draft` or `validated` and clears old deploy metadata; editing an executable workflow requires a new deploy before it can start new cases.
 - `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, records deploy metadata, and marks the workflow `executable` when readiness passes.
+- Messenger-driven start triggers must include an activation policy covering
+  deduplication, throttling/backpressure, and inspectable suppressions; invalid
+  or missing policies block validation/deploy readiness.
 
 Workflow records persist:
 

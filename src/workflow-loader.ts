@@ -5,6 +5,7 @@ import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot, pgGetWorkfl
 import { syncSchemaToRegistry, cleanupWorkflowRefs } from "./sync/schema-registry-sync";
 import { silentCatch, createLogger } from "./logger";
 import { upsertDoc, type DocType } from "./runtime/documents";
+import type { WorkflowActivationPolicy } from "./event-activation-policy";
 
 const log = createLogger("workflow-loader");
 
@@ -64,6 +65,7 @@ export interface WorkflowElement {
     keyword?: string;
     event_type?: string;
     webhook_path?: string;
+    activation_policy?: WorkflowActivationPolicy;
   };
   // Sub-process: immutable boundary events locked to parent interface
   locked?: boolean;
@@ -76,6 +78,7 @@ export interface WorkflowElement {
 export interface WorkflowTrigger {
   event_type: string; // e.g. "lead.received"
   start_node: string; // element id to start from
+  activation_policy?: WorkflowActivationPolicy;
 }
 
 export interface WorkflowDocumentSeed {
@@ -333,6 +336,53 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
     for (const w of warnings) log.warn(w);
   }
 
+  const messengerSources = new Set(["telegram", "whatsapp", "email"]);
+  for (const trigger of def.triggers ?? []) {
+    const start = byId.get(trigger.start_node);
+    const startTrigger = start?.type === "event" ? start.trigger : undefined;
+    const isMessengerTrigger = (
+      (startTrigger?.kind === "message" && startTrigger.source && messengerSources.has(startTrigger.source)) ||
+      /^(telegram|whatsapp|email)\./.test(trigger.event_type)
+    );
+    const activationPolicy = trigger.activation_policy ?? startTrigger?.activation_policy;
+    if (isMessengerTrigger && !activationPolicy) {
+      errors.push({
+        rule: 7,
+        message: `Messenger start trigger "${trigger.start_node}" (${trigger.event_type}) must define activation_policy for dedup/rate/backpressure readiness`,
+      });
+      continue;
+    }
+    if (activationPolicy) {
+      errors.push(...validateActivationPolicy(activationPolicy, trigger.start_node));
+    }
+  }
+
+  return errors;
+}
+
+function validateActivationPolicy(policy: WorkflowActivationPolicy, startNode: string): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const prefix = `Activation policy for start trigger "${startNode}"`;
+  if (policy.min_confidence !== undefined && (typeof policy.min_confidence !== "number" || policy.min_confidence < 0 || policy.min_confidence > 1)) {
+    errors.push({ rule: 7, message: `${prefix} has invalid min_confidence; expected number between 0 and 1` });
+  }
+  if (policy.dedup_window_sec !== undefined && (!Number.isFinite(policy.dedup_window_sec) || policy.dedup_window_sec <= 0)) {
+    errors.push({ rule: 7, message: `${prefix} has invalid dedup_window_sec; expected positive seconds` });
+  }
+  if (policy.rate_limit) {
+    if (!Number.isFinite(policy.rate_limit.window_sec) || policy.rate_limit.window_sec <= 0) {
+      errors.push({ rule: 7, message: `${prefix} has invalid rate_limit.window_sec; expected positive seconds` });
+    }
+    if (!Number.isFinite(policy.rate_limit.max_events) || policy.rate_limit.max_events <= 0) {
+      errors.push({ rule: 7, message: `${prefix} has invalid rate_limit.max_events; expected positive count` });
+    }
+  }
+  if (policy.backpressure?.max_running_cases !== undefined && (!Number.isFinite(policy.backpressure.max_running_cases) || policy.backpressure.max_running_cases <= 0)) {
+    errors.push({ rule: 7, message: `${prefix} has invalid backpressure.max_running_cases; expected positive count` });
+  }
+  if (policy.sampling && (typeof policy.sampling.rate !== "number" || policy.sampling.rate < 0 || policy.sampling.rate > 1)) {
+    errors.push({ rule: 7, message: `${prefix} has invalid sampling.rate; expected number between 0 and 1` });
+  }
   return errors;
 }
 

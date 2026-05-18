@@ -51,6 +51,55 @@ This makes the migration compatibility-safe: the current sales process can keep
 matching `coMind Лиды` through its eEPC trigger filter, while dedicated chat
 bindings can progressively narrow events to specific workflows.
 
+## Activation Policy
+
+Messenger-driven workflow starts must declare an `activation_policy` on the
+workflow trigger or the start event trigger before `workflow.deploy` can mark
+the workflow executable. The policy is evaluated after the deterministic
+connector/workflow filters match and before a case is created.
+
+Supported controls:
+
+| Control | Purpose |
+|---|---|
+| `min_confidence` + `confidence_field` | Suppress low-confidence events before they create cases. |
+| `dedup_window_sec` + `dedup_fields` | Suppress duplicate provider deliveries using source-stable keys such as `connector_id`, `endpoint_id`, `chat_ref`, and `message_id`. |
+| `rate_limit` | Throttle bursts by workflow, connector, endpoint, chat, or source scope. |
+| `backpressure.max_running_cases` | Stop creating new cases when the target workflow already has too many running cases. |
+| `sampling.rate` | Deterministically sample noisy streams when full capture is not required. |
+| `inspect_suppressed` | Keep suppressed/throttled events inspectable. Defaults to enabled. |
+
+Structured reason codes are emitted for suppressed activations:
+`LOW_CONFIDENCE`, `DUPLICATE`, `RATE_LIMITED`, `BACKPRESSURE`,
+`SAMPLED_OUT`, `ACTIVATION_DISABLED`, and `UNMATCHED_TRIGGER`.
+Inspectable suppressions are stored in the capped Redis stream
+`konoha:workflow:event-activation:suppressed` with workflow id, event type,
+source, reason code, action, detail, payload snapshot, and timestamp. This keeps
+operator visibility without allowing noisy messenger streams to create
+unbounded cases or UI artifacts.
+
+Example:
+
+```json
+{
+  "event_type": "telegram.message.received",
+  "start_node": "e1",
+  "activation_policy": {
+    "min_confidence": 0.6,
+    "confidence_field": "router_confidence",
+    "dedup_window_sec": 3600,
+    "dedup_fields": ["connector_id", "endpoint_id", "chat_ref", "message_id"],
+    "rate_limit": {
+      "window_sec": 60,
+      "max_events": 30,
+      "scope": ["workflow", "connector", "chat"]
+    },
+    "backpressure": { "max_running_cases": 200 },
+    "inspect_suppressed": true
+  }
+}
+```
+
 ## Deterministic Router
 
 Before workflow scoping, Konoha applies a small deterministic classifier to the

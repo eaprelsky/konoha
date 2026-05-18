@@ -8,6 +8,11 @@ import { getWorkflow, isWorkflowExecutable, type WorkflowDefinition } from "../.
 import { pgDeleteCase, pgDeleteCasesByProcess, pgDeleteWorkItem } from "../../storage/pg";
 import { emitEvent } from "../event-log";
 import { cancelSubscriptionsByInstance } from "../../event-manager";
+import {
+  evaluateActivationPolicy,
+  recordActivationSuppression,
+  type ActivationDecision,
+} from "../../event-activation-policy";
 import { createLogger } from "../../logger";
 import { loadActiveWaitsForCase, cancelEventWaitsForCase, resolveEventWaitForNode } from "../event-waits";
 import {
@@ -192,11 +197,23 @@ export async function processEvent(
   payload: Record<string, unknown>,
   options: { workflowIds?: string[] } = {},
 ): Promise<Case[]> {
+  const result = await processEventWithActivation(eventType, source, payload, options);
+  return result.cases;
+}
+
+export async function processEventWithActivation(
+  eventType: string,
+  source: string,
+  payload: Record<string, unknown>,
+  options: { workflowIds?: string[] } = {},
+): Promise<{ cases: Case[]; decisions: ActivationDecision[] }> {
   const WORKFLOW_INDEX_KEY = "konoha:workflow:index";
   const WORKFLOW_KEY_PREFIX = "workflow:";
   const ids = await redis.smembers(WORKFLOW_INDEX_KEY);
   const workflowIdScope = options.workflowIds ? new Set(options.workflowIds) : null;
   const cases: Case[] = [];
+  const decisions: ActivationDecision[] = [];
+  let matchedTrigger = false;
 
   for (const id of ids) {
     if (workflowIdScope && !workflowIdScope.has(id)) continue;
@@ -211,6 +228,27 @@ export async function processEvent(
       const startNode = def.elements.find(el => el.id === trigger.start_node);
       const startTrigger = startNode?.type === "event" ? startNode.trigger : undefined;
       if (!eventMatchesStartTrigger(source, payload, startTrigger)) continue;
+      matchedTrigger = true;
+
+      const activationInput = {
+        workflow_id: def.id,
+        event_type: eventType,
+        source,
+        payload,
+        policy: trigger.activation_policy ?? startTrigger?.activation_policy,
+      };
+      const activation = await evaluateActivationPolicy(activationInput);
+      decisions.push(activation);
+      if (!activation.accepted) {
+        await recordActivationSuppression(activationInput, activation).catch(e =>
+          log.warn("processEvent: failed to record activation suppression", {
+            workflow_id: def.id,
+            reason_code: activation.reason_code,
+            error: e?.message,
+          }),
+        );
+        continue;
+      }
 
       const subject = eventSubject(source, payload);
       const kase = await createCase(def.id, subject, payload, trigger.start_node);
@@ -218,7 +256,32 @@ export async function processEvent(
     }
   }
 
-  return cases;
+  if (!matchedTrigger && isMessengerSource(source, eventType)) {
+    const activationInput = {
+      workflow_id: workflowIdScope ? [...workflowIdScope].join(",") : "*",
+      event_type: eventType,
+      source,
+      payload,
+      policy: { inspect_suppressed: true },
+    };
+    const unmatched: ActivationDecision = {
+      accepted: false,
+      reason_code: "UNMATCHED_TRIGGER",
+      action: "suppress",
+      inspectable: true,
+      detail: { workflow_scope: workflowIdScope ? [...workflowIdScope] : null },
+    };
+    decisions.push(unmatched);
+    await recordActivationSuppression(activationInput, unmatched).catch(e =>
+      log.warn("processEvent: failed to record unmatched activation", { event_type: eventType, source, error: e?.message }),
+    );
+  }
+
+  return { cases, decisions };
+}
+
+function isMessengerSource(source: string, eventType: string): boolean {
+  return ["telegram", "whatsapp", "email"].includes(source) || /^(telegram|whatsapp|email)\./.test(eventType);
 }
 
 function eventSubject(source: string, payload: Record<string, unknown>): string {

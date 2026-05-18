@@ -4,7 +4,25 @@
   "name": "Продажи: входящий лид",
   "description": "Human-in-the-loop процесс продаж для сигналов из Telegram-чата лидов. Специалист разбора лидов структурирует входящий сигнал, владелец продаж принимает решение, готовит содержательное предложение, запрашивает оценку и собирает КП/follow-up. Процесс заменяет захардкоженные напоминания явным состоянием workflow.",
   "triggers": [
-    { "event_type": "telegram.message.received", "start_node": "e1" }
+    {
+      "event_type": "telegram.message.received",
+      "start_node": "e1",
+      "activation_policy": {
+        "min_confidence": 0.6,
+        "confidence_field": "router_confidence",
+        "dedup_window_sec": 3600,
+        "dedup_fields": ["connector_id", "endpoint_id", "chat_ref", "chat_id", "message_id", "msg_id"],
+        "rate_limit": {
+          "window_sec": 60,
+          "max_events": 30,
+          "scope": ["workflow", "connector", "chat"]
+        },
+        "backpressure": {
+          "max_running_cases": 200
+        },
+        "inspect_suppressed": true
+      }
+    }
   ],
   "documents": [
     {
