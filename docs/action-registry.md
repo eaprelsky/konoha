@@ -14,7 +14,7 @@ Every operation the system exposes — API, MCP, assistant, UI — is described 
 
 ## Version
 
-Current: **v13** (`ACTION_VERSION = 13`)
+Current: **v14** (`ACTION_VERSION = 14`)
 
 Bump the version when the vocabulary changes (new actions, renamed args, removed actions).
 
@@ -99,6 +99,8 @@ argument metadata.
 | `case.get` | Get case by ID | auto |
 | `case.list` | List cases with filters | auto |
 | `case.close` | Force-close running case | confirm |
+| `case.cancel` | Cancel a stuck case and release runtime waits, subscriptions, and active work items | confirm |
+| `case.delete` | Delete a case and its related runtime work items | confirm |
 
 ### Work Item (`workitem.*`)
 

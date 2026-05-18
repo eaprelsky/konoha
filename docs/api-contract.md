@@ -1,6 +1,6 @@
 # API Contract
 
-Date: 2026-05-17
+Date: 2026-05-18
 
 Every API endpoint → action ID → autonomy level → audit status. Generated from the canonical action registry. The `/act` endpoint is the universal entry point for all actions.
 
@@ -44,7 +44,10 @@ Every API endpoint → action ID → autonomy level → audit status. Generated 
 | `POST /cases` | `case.start` | auto | yes |
 | `GET /cases/:id` | `case.get` | auto | no |
 | `GET /cases` | `case.list` | auto | no |
+| `GET /workflows/:id/cases` | `case.list` | auto | no |
 | `POST /cases/:id/close` | `case.close` | confirm | yes |
+| `POST /cases/:id/cancel` | `case.cancel` | confirm | yes |
+| `DELETE /cases/:id` | `case.delete` | confirm | yes |
 | `POST /events/mining/case/:id/confirm-event` | `event.confirm` | auto | yes |
 
 ## Work Item Actions

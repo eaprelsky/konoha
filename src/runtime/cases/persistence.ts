@@ -26,6 +26,7 @@ export const WORKITEMS_IDX_ALL = "konoha:workitems:all";
 export const CASES_IDX_ALL = "konoha:cases:all";
 export const CASES_IDX_STATUS = "konoha:cases:status:";
 export const CASES_IDX_PROCESS = "konoha:cases:process:";
+export const CASE_EVENTS_CHANNEL_PREFIX = "konoha:case-events:";
 
 // ── PG row converters ─────────────────────────────────────────────────────────
 
@@ -75,12 +76,13 @@ export async function saveCase(c: Case): Promise<void> {
   const pgPayload = c.active_branches ? { ...c.payload, __active_branches: c.active_branches } : c.payload;
   pgUpsertCase({ case_id: c.case_id, process_id: c.process_id, version: c.process_version, subject: c.subject, status: c.status, position: c.position, payload: pgPayload, history: c.history, created_at: c.created_at, updated_at: new Date().toISOString() });
   await redis.zadd(CASES_IDX_ALL, new Date(c.created_at).getTime(), c.case_id);
-  const allStatuses: CaseStatus[] = ["running", "done", "error"];
+  const allStatuses: CaseStatus[] = ["running", "done", "error", "cancelled"];
   for (const s of allStatuses) {
     if (s !== c.status) await redis.srem(CASES_IDX_STATUS + s, c.case_id);
   }
   await redis.sadd(CASES_IDX_STATUS + c.status, c.case_id);
   await redis.sadd(CASES_IDX_PROCESS + c.process_id, c.case_id);
+  await redis.publish(CASE_EVENTS_CHANNEL_PREFIX + c.case_id, JSON.stringify({ type: "case.updated", case: c })).catch(() => {});
 }
 
 export async function loadCase(case_id: string): Promise<Case | null> {

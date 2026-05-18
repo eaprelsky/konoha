@@ -10,6 +10,7 @@ import {
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { executeWorkflowAction } from "../../../../src/action-executor";
+import { listCases, type CaseStatus } from "../../../../src/runtime";
 
 const router = new Hono();
 
@@ -23,6 +24,17 @@ router.get("/:id{.+}/versions", requireAuth, async (c) => {
   const id = c.req.param("id")!;
   const versions = await listWorkflowVersions(id);
   return c.json(versions);
+});
+
+router.get("/:id{.+}/cases", requireAuth, async (c) => {
+  const id = c.req.param("id")!;
+  const wf = await getWorkflow(id);
+  if (!wf) return c.json({ error: "Workflow not found" }, 404);
+  const status = (c.req.query("status") || "running") as CaseStatus;
+  const limit = Math.min(parseInt(c.req.query("limit") || "50"), 2000);
+  const offset = parseInt(c.req.query("offset") || "0");
+  const result = await listCases({ process_id: id, status, limit, offset });
+  return c.json(result);
 });
 
 // :id{.+} captures slashes so IDs like "general/reflection" work correctly

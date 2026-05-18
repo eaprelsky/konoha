@@ -109,6 +109,16 @@ describe("workflow action contract validation", () => {
     expect(result.errors).toContain("Missing required argument: subject");
   });
 
+  it("case cancel/delete require id", () => {
+    const cancel = validateActionArgs("case.cancel", {});
+    expect(cancel.valid).toBe(false);
+    expect(cancel.errors).toContain("Missing required argument: id");
+
+    const deleteResult = validateActionArgs("case.delete", {});
+    expect(deleteResult.valid).toBe(false);
+    expect(deleteResult.errors).toContain("Missing required argument: id");
+  });
+
   it("element.add validates required fields", () => {
     const result = validateActionArgs("element.add", {});
     expect(result.valid).toBe(false);

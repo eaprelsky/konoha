@@ -1,8 +1,9 @@
 import { Hono, type Context } from "hono";
 import { requireAdmin } from "../../../../src/middleware/auth";
 import type { HonoEnv, CallerInfo } from "../../../../src/types";
-import { redis } from "../../../../src/redis";
+import { createRedis, redis } from "../../../../src/redis";
 import {
+  CASE_EVENTS_CHANNEL_PREFIX,
   getCase,
   listWorkItems,
   listCases,
@@ -88,6 +89,19 @@ casesRouter.post("/:id/close", requireAdmin, async (c) => {
   return actionJson(c, result!);
 });
 
+casesRouter.post("/:id/cancel", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json().catch(() => ({}));
+  const result = await executeActionDirect("case.cancel", { id, reason: body.reason });
+  return actionJson(c, result!);
+});
+
+casesRouter.delete("/:id", requireAdmin, async (c) => {
+  const id = c.req.param("id");
+  const result = await executeActionDirect("case.delete", { id });
+  return actionJson(c, result!);
+});
+
 // DELETE /cases?process_id=... — bulk delete cases for a process (admin cleanup)
 casesRouter.delete("/", requireAdmin, async (c) => {
   const process_id = c.req.query("process_id");
@@ -120,44 +134,78 @@ casesRouter.get("/:id/stream", async (c) => {
         return;
       }
 
-      // Poll for updates every 2s (Redis pub/sub alternative)
+      const subscriber = createRedis();
       let lastHistoryLen = initial.history?.length ?? 0;
       let lastPosition = initial.position ?? "";
       let lastStatus: CaseStatus = initial.status;
       let aborted = false;
+      let closed = false;
 
-      c.req.raw.signal?.addEventListener("abort", () => { aborted = true; });
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        subscriber.disconnect();
+        ctrl.close();
+      };
 
-      while (!aborted) {
-        await new Promise(r => setTimeout(r, 2000));
+      const sendCaseUpdate = (updated: Awaited<ReturnType<typeof getCase>>) => {
+        if (!updated || closed) return;
+        const newLen = updated.history?.length ?? 0;
+        const newPos = updated.position ?? "";
+        const newStatus = updated.status;
+        if (newLen !== lastHistoryLen || newPos !== lastPosition || newStatus !== lastStatus) {
+          ctrl.enqueue(sse("update", updated));
+          lastHistoryLen = newLen;
+          lastPosition = newPos;
+          lastStatus = newStatus;
+        }
+        if (newStatus !== "running") {
+          ctrl.enqueue(enc.encode(`event: done\ndata: {}\n\n`));
+          close();
+        }
+      };
+
+      subscriber.on("message", (_channel, raw) => {
+        if (closed) return;
+        try {
+          const message = JSON.parse(raw);
+          if (message.type === "case.deleted") {
+            ctrl.enqueue(sse("deleted", { case_id: id }));
+            ctrl.enqueue(enc.encode(`event: done\ndata: {}\n\n`));
+            close();
+            return;
+          }
+          sendCaseUpdate(message.case);
+        } catch {
+          // Ignore malformed pub/sub payloads; polling fallback below still protects stream state.
+        }
+      });
+      await subscriber.subscribe(CASE_EVENTS_CHANNEL_PREFIX + id);
+
+      c.req.raw.signal?.addEventListener("abort", () => {
+        aborted = true;
+        close();
+      });
+
+      while (!aborted && !closed) {
+        await new Promise(r => setTimeout(r, 10000));
         if (aborted) break;
         try {
           const updated = await getCase(id).catch(() => null);
-          if (!updated) break;
-
-          const newLen = updated.history?.length ?? 0;
-          const newPos = updated.position ?? "";
-          const newStatus = updated.status;
-
-          if (newLen !== lastHistoryLen || newPos !== lastPosition || newStatus !== lastStatus) {
-            ctrl.enqueue(sse("update", updated));
-            lastHistoryLen = newLen;
-            lastPosition = newPos;
-            lastStatus = newStatus;
-          }
-
-          // Push a heartbeat every 10s to keep connection alive
-          ctrl.enqueue(enc.encode(`: heartbeat\n\n`));
-
-          if (newStatus !== "running") {
+          if (!updated) {
+            ctrl.enqueue(sse("deleted", { case_id: id }));
             ctrl.enqueue(enc.encode(`event: done\ndata: {}\n\n`));
             break;
           }
+          sendCaseUpdate(updated);
+
+          // Push a heartbeat every 10s to keep connection alive
+          if (!closed) ctrl.enqueue(enc.encode(`: heartbeat\n\n`));
         } catch {
           break;
         }
       }
-      ctrl.close();
+      close();
     },
   });
 

@@ -3,7 +3,7 @@
  * Extracted from cases.ts (#507).
  */
 
-export type CaseStatus = "running" | "done" | "error";
+export type CaseStatus = "running" | "done" | "error" | "cancelled";
 export type WorkItemStatus = "pending" | "running" | "done" | "cancelled" | "error";
 
 export interface HistoryEntry {

@@ -52,6 +52,8 @@ const LEGACY_TO_CANONICAL_ACTION: Record<string, string> = {
   case_get: "case.get",
   case_list: "case.list",
   case_close: "case.close",
+  case_cancel: "case.cancel",
+  case_delete: "case.delete",
   event_confirm: "event.confirm",
 
   // Work item

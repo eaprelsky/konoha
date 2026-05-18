@@ -14,7 +14,7 @@ import {
   type WorkflowLifecycleState,
 } from "./workflow-loader";
 import { normalizeElementNames } from "./normalizer";
-import { deleteCasesByProcess, createCase, getCase, listCases, forceCloseCase } from "./runtime";
+import { deleteCasesByProcess, createCase, getCase, listCases, forceCloseCase, cancelCase, deleteCase } from "./runtime";
 import { resolveBatchProgrammatic, type ProcessContext } from "./trigger-resolver";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByProcessAndInstance, type TriggerDef } from "./event-manager";
 import { validateActionArgs } from "./action-registry";
@@ -707,6 +707,29 @@ async function executeCaseAction(action: string, args: Record<string, unknown>):
       const kase = await forceCloseCase(String(args.id));
       if (!kase) return { status: 404, data: { error: "Case not found" } };
       return { status: 200, data: kase };
+    }
+    case "case.cancel": {
+      const invalid = validationFailure("case.cancel", args);
+      if (invalid) return invalid;
+      const result = await cancelCase(String(args.id), args.reason ? String(args.reason) : undefined);
+      if (!result) return { status: 404, data: { error: "Case not found", code: "CASE_NOT_FOUND", id: String(args.id) } };
+      return { status: 200, data: { ...result.case, cancelled_work_items: result.cancelled_work_items } };
+    }
+    case "case.delete": {
+      const invalid = validationFailure("case.delete", args);
+      if (invalid) return invalid;
+      const result = await deleteCase(String(args.id));
+      if (!result) return { status: 404, data: { error: "Case not found", code: "CASE_NOT_FOUND", id: String(args.id) } };
+      return {
+        status: 200,
+        data: {
+          ok: true,
+          deleted: true,
+          case_id: result.case.case_id,
+          process_id: result.case.process_id,
+          deleted_work_items: result.deleted_work_items,
+        },
+      };
     }
     default:
       return null;

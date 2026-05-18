@@ -22,6 +22,8 @@ let wrapperWorkItemId: string | null = null;
 const ACT_PERSON_ID = `${RUN}-person`;
 const ACT_ROLE_ID = `${RUN}-role`;
 const WRAPPER_ROLE_ID = `${RUN}-wrapper-role`;
+const CANCEL_ROLE_ID = `${RUN}-cancel-role`;
+const SSE_CANCEL_ROLE_ID = `${RUN}-sse-cancel-role`;
 let actReminderId: string | null = null;
 let wrapperReminderId: string | null = null;
 const RBAC_AGENT_ID = `${RUN}-rbac-agent`;
@@ -72,7 +74,10 @@ afterAll(async () => {
   await cleanupWorkflow(ACT_WORKFLOW_ID);
   const ids = await redis.smembers("konoha:workflow:index");
   for (const id of ids) {
-    if (id.startsWith(HTTP_WORKFLOW_ID_PREFIX)) await cleanupWorkflow(id);
+    if (id.startsWith(HTTP_WORKFLOW_ID_PREFIX)) {
+      await deleteCasesByProcess(id);
+      await cleanupWorkflow(id);
+    }
   }
   await deleteCasesByProcess(`${HTTP_WORKFLOW_ID_PREFIX}-case`);
   if (actWorkItemId) {
@@ -93,6 +98,8 @@ afterAll(async () => {
   }
   await deleteRole(ACT_ROLE_ID).catch(() => {});
   await deleteRole(WRAPPER_ROLE_ID).catch(() => {});
+  await deleteRole(CANCEL_ROLE_ID).catch(() => {});
+  await deleteRole(SSE_CANCEL_ROLE_ID).catch(() => {});
   if (actReminderId) await deleteReminder(actReminderId).catch(() => {});
   if (wrapperReminderId) await deleteReminder(wrapperReminderId).catch(() => {});
   await redis.hdel("people:custom", ACT_PERSON_ID);
@@ -224,6 +231,158 @@ describe("/act workflow executor", () => {
     expect(body.ok).toBe(true);
     expect(body.action).toBe("case.list");
     expect(Array.isArray(body.data.cases)).toBe(true);
+  });
+
+  test("lists active workflow cases and cancels/deletes a stuck case through API wrappers", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-case-cancel`;
+    const roleRes = await app.fetch(new Request("http://localhost/roles", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ role_id: CANCEL_ROLE_ID, name: "Cancel Role", assignees: ["act-test"], strategy: "manual" }),
+    }));
+    expect(roleRes.status).toBe(201);
+    const workflowRes = await app.fetch(new Request("http://localhost/workflows", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        id: workflowId,
+        name: "Cancelable case workflow",
+        elements: [
+          { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+          { id: "review", type: "function", label: "Review", role: CANCEL_ROLE_ID },
+          { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
+        ],
+        flow: [["start", "review"], ["review", "done"]],
+      }),
+    }));
+    expect(workflowRes.status).toBe(201);
+
+    const deployRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ action: "workflow.deploy", category: "act", args: { id: workflowId } }),
+    }));
+    expect(deployRes.status).toBe(200);
+
+    const startRes = await app.fetch(new Request("http://localhost/cases", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ process_id: workflowId, subject: "Stuck case", payload: { source: "issue-805-test" } }),
+    }));
+    const started = await startRes.json();
+    expect(startRes.status).toBe(201);
+    expect(started.status).toBe("running");
+
+    const activeRes = await app.fetch(new Request(`http://localhost/workflows/${encodeURIComponent(workflowId)}/cases`, {
+      method: "GET",
+      headers: adminHeaders(),
+    }));
+    const activeBody = await activeRes.json();
+    expect(activeRes.status).toBe(200);
+    expect(activeBody.cases.map((kase: any) => kase.case_id)).toContain(started.case_id);
+
+    const cancelRes = await app.fetch(new Request(`http://localhost/cases/${started.case_id}/cancel`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ reason: "operator cleanup" }),
+    }));
+    const cancelled = await cancelRes.json();
+    expect(cancelRes.status).toBe(200);
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.payload.__cancel_reason).toBe("operator cleanup");
+    expect(cancelled.cancelled_work_items).toBeGreaterThanOrEqual(1);
+
+    const activeAfterCancel = await app.fetch(new Request(`http://localhost/workflows/${encodeURIComponent(workflowId)}/cases`, {
+      method: "GET",
+      headers: adminHeaders(),
+    }));
+    const activeAfterCancelBody = await activeAfterCancel.json();
+    expect(activeAfterCancel.status).toBe(200);
+    expect(activeAfterCancelBody.cases.map((kase: any) => kase.case_id)).not.toContain(started.case_id);
+
+    const deleteRes = await app.fetch(new Request(`http://localhost/cases/${started.case_id}`, {
+      method: "DELETE",
+      headers: adminHeaders(),
+    }));
+    const deleted = await deleteRes.json();
+    expect(deleteRes.status).toBe(200);
+    expect(deleted).toMatchObject({ ok: true, deleted: true, case_id: started.case_id, process_id: workflowId });
+
+    const missingRes = await app.fetch(new Request(`http://localhost/cases/${started.case_id}`, {
+      method: "GET",
+      headers: adminHeaders(),
+    }));
+    expect(missingRes.status).toBe(404);
+  });
+
+  test("case cancel pushes terminal SSE events without waiting for polling", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-case-sse-cancel`;
+    const roleRes = await app.fetch(new Request("http://localhost/roles", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ role_id: SSE_CANCEL_ROLE_ID, name: "SSE Cancel Role", assignees: ["act-test"], strategy: "manual" }),
+    }));
+    expect(roleRes.status).toBe(201);
+    const workflowRes = await app.fetch(new Request("http://localhost/workflows", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        id: workflowId,
+        name: "SSE cancel workflow",
+        elements: [
+          { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+          { id: "review", type: "function", label: "Review", role: SSE_CANCEL_ROLE_ID },
+          { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
+        ],
+        flow: [["start", "review"], ["review", "done"]],
+      }),
+    }));
+    expect(workflowRes.status).toBe(201);
+    const deployRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ action: "workflow.deploy", category: "act", args: { id: workflowId } }),
+    }));
+    expect(deployRes.status).toBe(200);
+    const startRes = await app.fetch(new Request("http://localhost/cases", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ process_id: workflowId, subject: "SSE stuck case", payload: {} }),
+    }));
+    const started = await startRes.json();
+    expect(started.status).toBe("running");
+
+    const streamRes = await app.fetch(new Request(`http://localhost/cases/${started.case_id}/stream`, {
+      method: "GET",
+      headers: adminHeaders(),
+    }));
+    expect(streamRes.status).toBe(200);
+    const reader = streamRes.body!.getReader();
+    const decoder = new TextDecoder();
+
+    const readChunk = async (): Promise<string> => {
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out waiting for SSE")), 1500)),
+      ]);
+      return decoder.decode(result.value);
+    };
+
+    expect(await readChunk()).toContain("event: snapshot");
+
+    const cancelRes = await app.fetch(new Request(`http://localhost/cases/${started.case_id}/cancel`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ reason: "sse cleanup" }),
+    }));
+    expect(cancelRes.status).toBe(200);
+
+    let payload = "";
+    for (let i = 0; i < 3 && !payload.includes("event: done"); i += 1) {
+      payload += await readChunk();
+    }
+    expect(payload).toContain("\"status\":\"cancelled\"");
+    expect(payload).toContain("event: done");
   });
 
   test("executes element.add directly with collision and schema validation", async () => {

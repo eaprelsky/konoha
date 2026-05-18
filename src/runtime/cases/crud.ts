@@ -5,12 +5,27 @@
 
 import { redis } from "../../redis";
 import { getWorkflow, isWorkflowExecutable, type WorkflowDefinition } from "../../workflow-loader";
-import { pgDeleteCasesByProcess } from "../../storage/pg";
+import { pgDeleteCase, pgDeleteCasesByProcess, pgDeleteWorkItem } from "../../storage/pg";
 import { emitEvent } from "../event-log";
 import { cancelSubscriptionsByInstance } from "../../event-manager";
 import { createLogger } from "../../logger";
 import { loadActiveWaitsForCase, cancelEventWaitsForCase, resolveEventWaitForNode } from "../event-waits";
-import { saveCase, loadCase, CASES_IDX_ALL, CASES_IDX_STATUS, CASES_IDX_PROCESS, CASE_KEY_PREFIX, WORKITEMS_IDX_CASE } from "./persistence";
+import {
+  saveCase,
+  saveWorkItem,
+  loadCase,
+  loadWorkItem,
+  CASES_IDX_ALL,
+  CASES_IDX_STATUS,
+  CASES_IDX_PROCESS,
+  CASE_KEY_PREFIX,
+  WORKITEM_KEY_PREFIX,
+  WORKITEMS_IDX_ALL,
+  WORKITEMS_IDX_ASSIGNEE,
+  WORKITEMS_IDX_CASE,
+  WORKITEMS_IDX_PROCESS,
+  WORKITEMS_IDX_STATUS,
+} from "./persistence";
 import { buildAdjacency, advanceCase } from "./advancement";
 import type { Case, CaseStatus } from "./types";
 
@@ -70,6 +85,105 @@ export async function forceCloseCase(case_id: string, _depth = 0): Promise<Case 
   cancelSubscriptionsByInstance(case_id).catch(e => log.warn("subscription cleanup on case complete", { case_id, error: e?.message }));
   cancelEventWaitsForCase(case_id).catch(e => log.warn("event wait cancel on case complete", { case_id, error: e?.message }));
   return kase;
+}
+
+async function cancelWorkItemsForCase(case_id: string): Promise<number> {
+  const wiIds = await redis.smembers(WORKITEMS_IDX_CASE + case_id).catch(() => [] as string[]);
+  let cancelled = 0;
+  for (const wiId of wiIds) {
+    const wi = await loadWorkItem(wiId);
+    if (!wi || ["done", "cancelled", "error"].includes(wi.status)) continue;
+    const prevStatus = wi.status;
+    wi.status = "cancelled";
+    wi.updated_at = new Date().toISOString();
+    await saveWorkItem(wi, prevStatus);
+    cancelled += 1;
+  }
+  return cancelled;
+}
+
+export async function cancelCase(case_id: string, reason?: string, _depth = 0): Promise<{ case: Case; cancelled_work_items: number } | null> {
+  if (_depth > 10) {
+    log.warn("cancelCase: maxDepth exceeded, stopping recursion", { case_id });
+    return null;
+  }
+  const kase = await loadCase(case_id);
+  if (!kase) return null;
+  if (kase.status === "cancelled") return { case: kase, cancelled_work_items: 0 };
+  if (kase.status !== "running") return { case: kase, cancelled_work_items: 0 };
+
+  const wiIds = await redis.smembers(WORKITEMS_IDX_CASE + case_id).catch(() => [] as string[]);
+  for (const wiId of wiIds) {
+    const wi = await loadWorkItem(wiId);
+    if (wi?.child_case_id) {
+      await cancelCase(wi.child_case_id, reason, _depth + 1);
+    }
+  }
+
+  const siblingIds = await redis.smembers(CASES_IDX_PROCESS + kase.process_id).catch(() => [] as string[]);
+  for (const siblingId of siblingIds) {
+    if (siblingId === case_id) continue;
+    const sibling = await loadCase(siblingId);
+    if (sibling?.parent_case_id === case_id && sibling.status === "running") {
+      await cancelCase(sibling.case_id, reason, _depth + 1);
+    }
+  }
+
+  const cancelledWorkItems = await cancelWorkItemsForCase(case_id);
+  kase.status = "cancelled";
+  kase.active_branches = undefined;
+  kase.payload = {
+    ...kase.payload,
+    __cancelled_at: new Date().toISOString(),
+    ...(reason ? { __cancel_reason: reason } : {}),
+  };
+  await saveCase(kase);
+  cancelSubscriptionsByInstance(case_id).catch(e => log.warn("subscription cleanup on case cancel", { case_id, error: e?.message }));
+  cancelEventWaitsForCase(case_id).catch(e => log.warn("event wait cancel on case cancel", { case_id, error: e?.message }));
+  await emitEvent({
+    type: "case.cancelled",
+    case_id,
+    process_id: kase.process_id,
+    timestamp: new Date().toISOString(),
+  }).catch(e => log.warn("case cancel event emit failed", { case_id, error: e?.message }));
+  return { case: kase, cancelled_work_items: cancelledWorkItems };
+}
+
+export async function deleteCase(case_id: string): Promise<{ case: Case; deleted_work_items: number } | null> {
+  const kase = await loadCase(case_id);
+  if (!kase) return null;
+
+  cancelSubscriptionsByInstance(case_id).catch(e => log.warn("subscription cleanup on case delete", { case_id, error: e?.message }));
+  cancelEventWaitsForCase(case_id).catch(e => log.warn("event wait cancel on case delete", { case_id, error: e?.message }));
+
+  const wiIds = await redis.smembers(WORKITEMS_IDX_CASE + case_id).catch(() => [] as string[]);
+  const workItems = await Promise.all(wiIds.map(id => loadWorkItem(id)));
+  const pipe = redis.pipeline();
+  for (let i = 0; i < wiIds.length; i += 1) {
+    const wiId = wiIds[i];
+    const wi = workItems[i];
+    pipe.del(WORKITEM_KEY_PREFIX + wiId);
+    pipe.zrem(WORKITEMS_IDX_ALL, wiId);
+    if (wi) {
+      pipe.srem(WORKITEMS_IDX_STATUS + wi.status, wiId);
+      pipe.srem(WORKITEMS_IDX_ASSIGNEE + wi.assignee, wiId);
+      if (wi.process_id) pipe.srem(WORKITEMS_IDX_PROCESS + wi.process_id, wiId);
+      if (wi.case_id) pipe.srem(WORKITEMS_IDX_CASE + wi.case_id, wiId);
+    }
+  }
+  pipe.del(WORKITEMS_IDX_CASE + case_id);
+  pipe.del(CASE_KEY_PREFIX + case_id);
+  pipe.zrem(CASES_IDX_ALL, case_id);
+  for (const status of ["running", "done", "error", "cancelled"]) {
+    pipe.srem(CASES_IDX_STATUS + status, case_id);
+  }
+  pipe.srem(CASES_IDX_PROCESS + kase.process_id, case_id);
+  await pipe.exec();
+
+  await Promise.all(wiIds.map(wiId => pgDeleteWorkItem(wiId).catch(() => {})));
+  await pgDeleteCase(case_id).catch(() => {});
+  await redis.publish(`konoha:case-events:${case_id}`, JSON.stringify({ type: "case.deleted", case_id, process_id: kase.process_id })).catch(() => {});
+  return { case: kase, deleted_work_items: wiIds.length };
 }
 
 export async function processEvent(
@@ -298,6 +412,8 @@ export async function deleteCasesByProcess(process_id: string): Promise<number> 
       }
       pipe.del(CASE_KEY_PREFIX + cid);
       pipe.zrem(CASES_IDX_ALL, cid);
+      pipe.srem(CASES_IDX_PROCESS + process_id, cid);
+      pipe.srem(CASES_IDX_STATUS + "cancelled", cid);
     }
     await pipe.exec();
     deleted += batch.length;

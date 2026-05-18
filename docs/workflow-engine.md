@@ -213,7 +213,7 @@ interface Case {
   process_id: string;
   process_version: string;
   subject: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "cancelled";
   position: string;            // current element_id
   active_branches?: ActiveBranch[];  // set during AND/OR split
   payload: Record<string, unknown>;  // carries data between steps
