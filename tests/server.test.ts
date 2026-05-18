@@ -588,6 +588,61 @@ describe("POST /messages", () => {
     expect(found).toBeDefined();
     expect(found.from).toBe(senderId);
   });
+
+  test("idempotency_key suppresses duplicate HTTP deliveries", async () => {
+    const targetId = id("msg-dedup-target");
+    const key = `telegram:message:${RUN}:chat:99`;
+    await req("POST", "/agents/register", { body: { id: targetId, name: "Dedup Target" } });
+
+    const first = await req("POST", "/messages", {
+      body: { from: "telegram", to: targetId, text: "same telegram message", type: "message", idempotency_key: key },
+    });
+    const second = await req("POST", "/messages", {
+      body: { from: "telegram", to: targetId, text: "same telegram message", type: "message", idempotency_key: key },
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+
+    const msgs = await req("GET", `/messages/${targetId}`, { });
+    const delivered = msgs.body.filter((m: any) => m.text === "same telegram message");
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0].idempotencyKey).toBe(key);
+  });
+});
+
+describe("POST /events", () => {
+  test("idempotency_key suppresses duplicate event bus deliveries", async () => {
+    const agentId = id("event-subscriber");
+    const key = `telegram:message:${RUN}:chat:123`;
+    await req("POST", "/agents/register", {
+      body: { id: agentId, name: "Event Subscriber", eventSubscriptions: ["telegram.message.received"] },
+    });
+
+    const payload = {
+      provider: "telegram",
+      chat_ref: "123",
+      message_id: "777",
+      text: "event duplicate",
+      idempotency_key: key,
+    };
+    const first = await req("POST", "/events", {
+      body: { type: "telegram.message.received", source: "telegram", payload, village_id: "comind.konoha" },
+    });
+    const second = await req("POST", "/events", {
+      body: { type: "telegram.message.received", source: "telegram", payload, village_id: "comind.konoha" },
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body.duplicate).toBe(true);
+    expect(second.body.id).toBe(first.body.id);
+
+    const msgs = await req("GET", `/messages/${agentId}`);
+    const delivered = msgs.body.filter((m: any) => m.idempotencyKey === key);
+    expect(delivered).toHaveLength(1);
+  });
 });
 
 // ── GET /messages/:agentId ────────────────────────────────────────────────────

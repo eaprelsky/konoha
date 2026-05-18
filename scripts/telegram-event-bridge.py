@@ -85,8 +85,15 @@ def first_present(fields: dict[str, str], *keys: str) -> str:
     return ""
 
 
+def idempotency_key(entry_id: str, fields: dict[str, str]) -> str:
+    chat = chat_ref(fields)
+    message = first_present(fields, "msg_id", "message_id") or entry_id
+    return f"telegram:{event_kind(fields)}:{endpoint_id(fields)}:{chat}:{message}"
+
+
 def event_payload(entry_id: str, fields: dict[str, str]) -> dict[str, Any]:
     kind = event_kind(fields)
+    key = idempotency_key(entry_id, fields)
     payload: dict[str, Any] = {
         **fields,
         "telegram_stream": STREAM,
@@ -101,6 +108,7 @@ def event_payload(entry_id: str, fields: dict[str, str]) -> dict[str, Any]:
         "sender_ref": first_present(fields, "sender_id", "from_id", "user_id"),
         "sender_name": first_present(fields, "sender_name", "from_name", "username"),
         "timestamp": first_present(fields, "timestamp", "ts"),
+        "idempotency_key": key,
     }
     if "text" in payload and payload["text"] is None:
         payload["text"] = ""
@@ -115,6 +123,7 @@ def publish_event(entry_id: str, fields: dict[str, str]) -> dict[str, Any]:
         "type": event_type(fields),
         "source": "telegram",
         "payload": event_payload(entry_id, fields),
+        "idempotency_key": idempotency_key(entry_id, fields),
         "village_id": VILLAGE_ID,
     }, ensure_ascii=False).encode("utf-8")
     req = urlrequest.Request(

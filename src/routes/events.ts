@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { createLogger } from "../logger";
 import { requireAuth } from "../middleware/auth";
-import { publishEvent, type KonohaEvent } from "../redis";
+import { claimIdempotencyKey, finalizeIdempotencyClaim, publishEvent, type KonohaEvent } from "../redis";
 import { listEvents, processEvent, listCases, listWorkItems, getCase, getWorkItem, handleEventFired, type Case, type HistoryEntry } from "../runtime";
 import { getWorkflow, type WorkflowElement } from "../workflow-loader";
 import { getMessengerConnectorCatalog, resolveMessengerWorkflowIds, type MessengerChatType, type MessengerMessageType } from "../messenger-connectors";
@@ -16,11 +16,21 @@ const router = new Hono();
 router.post("/", async (c) => {
   const body = await c.req.json();
   const { type, source, payload, timestamp, village_id } = body;
+  const rawIdempotencyKey = body.idempotency_key ?? payload?.idempotency_key;
 
   if (!type || typeof type !== "string") return c.json({ error: "type is required and must be a string" }, 400);
   if (!source || typeof source !== "string") return c.json({ error: "source is required and must be a string" }, 400);
   if (payload === undefined || typeof payload !== "object" || Array.isArray(payload)) return c.json({ error: "payload is required and must be an object" }, 400);
   if (!village_id || typeof village_id !== "string") return c.json({ error: "village_id is required and must be a string" }, 400);
+  if (rawIdempotencyKey !== undefined && typeof rawIdempotencyKey !== "string") {
+    return c.json({ error: "idempotency_key must be a string" }, 400);
+  }
+
+  const idempotencyKey = rawIdempotencyKey?.trim() || undefined;
+  const idempotencyClaim = await claimIdempotencyKey("event", idempotencyKey);
+  if (idempotencyClaim?.duplicate) {
+    return c.json({ id: idempotencyClaim.id, duplicate: true, cases_created: [], workflow_scope: null });
+  }
 
   const event: KonohaEvent = {
     type,
@@ -28,9 +38,11 @@ router.post("/", async (c) => {
     payload,
     timestamp: timestamp || new Date().toISOString(),
     village_id,
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   };
 
-  const id = await publishEvent(event);
+  const id = await publishEvent(event, { skipIdempotencyClaim: true });
+  await finalizeIdempotencyClaim(idempotencyClaim, id);
 
   const workflowIds = resolveWorkflowScope(type, source, payload);
 

@@ -11,6 +11,7 @@ const DEFAULT_VILLAGE_ID = "comind.konoha";
 
 export function sseMessageDedupKey(msg: Partial<Message> | null | undefined): string | null {
   if (!msg) return null;
+  if (msg.idempotencyKey) return `idempotency:${msg.idempotencyKey}`;
   const logicalParts = [
     msg.from || "",
     msg.to || "",

@@ -56,6 +56,17 @@ def test_builds_generic_message_event_payload():
     assert payload["chat_title"] == "coMind Лиды"
     assert payload["telegram_stream"] == "telegram:log"
     assert payload["telegram_stream_id"] == "171-0"
+    assert payload["idempotency_key"] == "telegram:message:telegram-user-sasuke:-1001:42"
+
+
+def test_idempotency_key_is_stable_across_stream_replays():
+    fields = {
+        "chat_id": "-1001",
+        "msg_id": "42",
+        "target_stream": "telegram:incoming",
+    }
+
+    assert bridge.idempotency_key("171-0", fields) == bridge.idempotency_key("172-0", fields)
 
 
 def test_builds_generic_reaction_event_type():
@@ -78,6 +89,7 @@ def test_infers_bot_endpoint_from_target_stream():
     assert payload["message_id"] == "99"
     assert payload["sender_ref"] == "200"
     assert payload["sender_name"] == "Owner"
+    assert payload["idempotency_key"] == "telegram:message:telegram-bot-naruto:1001:99"
 
 
 def test_process_entry_publishes_and_acks(monkeypatch):

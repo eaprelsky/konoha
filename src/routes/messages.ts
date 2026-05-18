@@ -33,10 +33,14 @@ router.post("/", async (c) => {
   const body = await c.req.json();
   const { to, type = "message", text, channel, replyTo, attachments, village_id } = body;
   const caller: { isAdmin: boolean; agentId: string | null } = c.get("caller");
+  const idempotencyKey = body.idempotency_key ?? body.idempotencyKey;
 
   // Determine sender: admin can specify from, agent token sets from automatically
   const from: string = caller.isAdmin ? (body.from || "admin") : caller.agentId!;
   if (!from || !to || !text) return c.json({ error: "from, to, text required" }, 400);
+  if (idempotencyKey !== undefined && typeof idempotencyKey !== "string") {
+    return c.json({ error: "idempotency_key must be a string" }, 400);
+  }
   if (typeof text === "string" && text.length > MAX_MESSAGE_TEXT_LENGTH) {
     return c.json({
       error: `Message text too long: ${text.length} chars (max ${MAX_MESSAGE_TEXT_LENGTH}). Use konoha_send with a shorter message or split into multiple messages.`,
@@ -57,7 +61,17 @@ router.post("/", async (c) => {
       }
     }
   }
-  const id = await sendMessage({ from, to, type, text, channel, replyTo, attachments: validAttachments.length > 0 ? validAttachments : undefined, ...(village_id ? { village_id } : {}) });
+  const id = await sendMessage({
+    from,
+    to,
+    type,
+    text,
+    channel,
+    replyTo,
+    attachments: validAttachments.length > 0 ? validAttachments : undefined,
+    ...(village_id ? { village_id } : {}),
+    ...(idempotencyKey?.trim() ? { idempotencyKey: idempotencyKey.trim() } : {}),
+  });
   return c.json({ id });
 });
 

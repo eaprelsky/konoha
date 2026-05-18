@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import { createHash, randomUUID } from "crypto";
 import { config } from "./config";
 import { createLogger, silentCatch } from "./logger";
 import {
@@ -43,6 +44,7 @@ export interface KonohaEvent {
   payload: Record<string, unknown>;
   timestamp: string;  // ISO 8601
   village_id: string; // e.g. "comind.konoha"
+  idempotencyKey?: string;
 }
 
 export interface Attachment {
@@ -63,6 +65,7 @@ export interface Message {
   timestamp?: string;
   attachments?: Attachment[];
   village_id?: string; // originating village; defaults to DEFAULT_VILLAGE
+  idempotencyKey?: string;
 }
 
 const REDIS_DB = Number.isFinite(config.storage.redisDb) ? config.storage.redisDb : 0;
@@ -139,6 +142,51 @@ export async function listAgents(onlineOnly = false): Promise<Agent[]> {
 const NOTIFY_PREFIX = "konoha:notify:";
 const LIFECYCLE_NOISE_PREFIXES = ["SESSION_ONLINE:", "SESSION_OFFLINE:", "SESSION_READY:"];
 const LIFECYCLE_NOISE_CONTAINS = ["going offline (session end)"];
+const IDEMPOTENCY_TTL_SEC = 24 * 60 * 60;
+const IDEMPOTENCY_PENDING_PREFIX = "pending:";
+
+type IdempotencyClaim =
+  | { duplicate: false; redisKey: string; token: string }
+  | { duplicate: true; id: string };
+
+function idempotencyRedisKey(namespace: "message" | "event", rawKey: string): string {
+  const digest = createHash("sha256").update(rawKey).digest("hex");
+  return `konoha:${namespace}-idempotency:${digest}`;
+}
+
+export async function claimIdempotencyKey(
+  namespace: "message" | "event",
+  rawKey?: string,
+): Promise<IdempotencyClaim | null> {
+  const trimmed = rawKey?.trim();
+  if (!trimmed) return null;
+
+  const redisKey = idempotencyRedisKey(namespace, trimmed);
+  const token = `${IDEMPOTENCY_PENDING_PREFIX}${randomUUID()}`;
+  const claimed = await redis.set(redisKey, token, "EX", IDEMPOTENCY_TTL_SEC, "NX");
+  if (claimed === "OK") return { duplicate: false, redisKey, token };
+
+  const existing = await redis.get(redisKey);
+  if (existing && !existing.startsWith(IDEMPOTENCY_PENDING_PREFIX)) {
+    return { duplicate: true, id: existing };
+  }
+  for (let i = 0; i < 10; i += 1) {
+    await new Promise(resolve => setTimeout(resolve, 25));
+    const settled = await redis.get(redisKey);
+    if (settled && !settled.startsWith(IDEMPOTENCY_PENDING_PREFIX)) {
+      return { duplicate: true, id: settled };
+    }
+  }
+  return { duplicate: true, id: `dedup-pending:${redisKey.slice(redisKey.lastIndexOf(":") + 1)}` };
+}
+
+export async function finalizeIdempotencyClaim(claim: IdempotencyClaim | null, id: string): Promise<void> {
+  if (!claim || claim.duplicate) return;
+  const current = await redis.get(claim.redisKey);
+  if (current === claim.token) {
+    await redis.set(claim.redisKey, id, "EX", IDEMPOTENCY_TTL_SEC);
+  }
+}
 
 export function isLifecycleNoiseMessage(msg: Pick<Message, "text">): boolean {
   const text = msg.text || "";
@@ -147,6 +195,9 @@ export function isLifecycleNoiseMessage(msg: Pick<Message, "text">): boolean {
 }
 
 export async function sendMessage(msg: Message): Promise<string> {
+  const idempotencyClaim = await claimIdempotencyKey("message", msg.idempotencyKey);
+  if (idempotencyClaim?.duplicate) return idempotencyClaim.id;
+
   const entry: Record<string, string> = {
     from: msg.from,
     to: msg.to,
@@ -160,6 +211,7 @@ export async function sendMessage(msg: Message): Promise<string> {
   if (msg.attachments && msg.attachments.length > 0) {
     entry.attachments = JSON.stringify(msg.attachments);
   }
+  if (msg.idempotencyKey) entry.idempotency_key = msg.idempotencyKey;
 
   // publish to bus stream (for broadcast/logging)
   const id = (await redis.xadd(BUS_STREAM, "*", ...Object.entries(entry).flat())) ?? "";
@@ -235,6 +287,7 @@ export async function sendMessage(msg: Message): Promise<string> {
     await redis.xadd(CHANNEL_STREAM_PREFIX + msg.channel, "*", ...Object.entries(entry).flat());
   }
 
+  await finalizeIdempotencyClaim(idempotencyClaim, id);
   return id;
 }
 
@@ -501,6 +554,7 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
         timestamp: obj.timestamp,
         attachments,
         village_id: obj.village_id || DEFAULT_VILLAGE,
+        idempotencyKey: obj.idempotency_key,
       };
       if (isLifecycleNoiseMessage(msg)) return;
       onMessage(msg);
@@ -514,7 +568,15 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
   };
 }
 
-export async function publishEvent(event: KonohaEvent): Promise<string> {
+export async function publishEvent(
+  event: KonohaEvent,
+  options: { skipIdempotencyClaim?: boolean } = {},
+): Promise<string> {
+  const idempotencyClaim = options.skipIdempotencyClaim
+    ? null
+    : await claimIdempotencyKey("event", event.idempotencyKey);
+  if (idempotencyClaim?.duplicate) return idempotencyClaim.id;
+
   const entry: Record<string, string> = {
     type: event.type,
     source: event.source,
@@ -522,6 +584,7 @@ export async function publishEvent(event: KonohaEvent): Promise<string> {
     timestamp: event.timestamp,
     village_id: event.village_id,
   };
+  if (event.idempotencyKey) entry.idempotency_key = event.idempotencyKey;
 
   // Write to global events stream
   const id = (await redis.xadd(EVENTS_STREAM, "*", ...Object.entries(entry).flat())) ?? "";
@@ -538,6 +601,7 @@ export async function publishEvent(event: KonohaEvent): Promise<string> {
         text: JSON.stringify(event),
         timestamp: event.timestamp,
       };
+      if (event.idempotencyKey) msgEntry.idempotency_key = event.idempotencyKey;
       const sid = await redis.xadd(AGENT_STREAM_PREFIX + agent.id, "MAXLEN", "~", "5000", "*", ...Object.entries(msgEntry).flat());
       await redis.publish(NOTIFY_PREFIX + agent.id, JSON.stringify({ ...msgEntry, _sid: sid }));
       await pgStoreMessage({
@@ -552,6 +616,7 @@ export async function publishEvent(event: KonohaEvent): Promise<string> {
     }
   }
 
+  await finalizeIdempotencyClaim(idempotencyClaim, id);
   return id;
 }
 
@@ -575,6 +640,7 @@ function fieldsToMessage(id: string, fields: string[]): Message {
     timestamp: obj.timestamp,
     attachments,
     village_id: obj.village_id || DEFAULT_VILLAGE,
+    idempotencyKey: obj.idempotency_key,
   };
 }
 function consumerGroupKey(stream: string, group: string): string {

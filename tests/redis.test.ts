@@ -288,6 +288,35 @@ describe("sendMessage / readMessages", () => {
     expect(leaked).toBeUndefined();
   });
 
+  test("idempotency key suppresses duplicate direct delivery", async () => {
+    const toId = id("dedup-direct");
+    const key = `telegram:message:${RUN}:chat:42`;
+    await registerAgent({ id: toId, name: "Dedup Direct", capabilities: [], roles: [] });
+
+    const first = await sendMessage({ from: "telegram", to: toId, type: "message", text: "dedup me", idempotencyKey: key });
+    const second = await sendMessage({ from: "telegram", to: toId, type: "message", text: "dedup me", idempotencyKey: key });
+
+    expect(second).toBe(first);
+    const msgs = await readMessages(toId, 10, "dedup-reader");
+    expect(msgs.filter(m => m.text === "dedup me")).toHaveLength(1);
+    expect(msgs.find(m => m.text === "dedup me")?.idempotencyKey).toBe(key);
+  });
+
+  test("idempotency key suppresses concurrent duplicate direct delivery", async () => {
+    const toId = id("dedup-concurrent");
+    const key = `telegram:message:${RUN}:chat:43`;
+    await registerAgent({ id: toId, name: "Dedup Concurrent", capabilities: [], roles: [] });
+
+    const ids = await Promise.all([
+      sendMessage({ from: "telegram", to: toId, type: "message", text: "dedup concurrent", idempotencyKey: key }),
+      sendMessage({ from: "telegram", to: toId, type: "message", text: "dedup concurrent", idempotencyKey: key }),
+    ]);
+
+    expect(new Set(ids).size).toBe(1);
+    const msgs = await readMessages(toId, 10, "dedup-concurrent-reader");
+    expect(msgs.filter(m => m.text === "dedup concurrent")).toHaveLength(1);
+  });
+
   test("fan-out: different consumers see same messages", async () => {
     const toId = id("fanout");
     await registerAgent({ id: toId, name: "Fanout", capabilities: [], roles: [] });

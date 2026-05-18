@@ -125,10 +125,11 @@ server.tool(
     type: z.enum(["message", "task", "result", "status", "event"]).optional().default("message"),
     channel: z.string().optional().describe("Optional topic channel name"),
     replyTo: z.string().optional().describe("Message ID this is a reply to"),
+    idempotency_key: z.string().optional().describe("Optional source-stable key to suppress duplicate deliveries"),
     village_id: z.string().optional().describe("Originating village (e.g. 'comind.konoha'); defaults to 'comind.konoha'"),
   },
-  async ({ from, to, text, type, channel, replyTo, village_id }) => {
-    const result = await agentApi<SendResult>("POST", "/messages", { from, to, text, type, channel, replyTo, village_id });
+  async ({ from, to, text, type, channel, replyTo, idempotency_key, village_id }) => {
+    const result = await agentApi<SendResult>("POST", "/messages", { from, to, text, type, channel, replyTo, idempotency_key, village_id });
     if (result.error || !result.id) {
       return { content: [{ type: "text", text: `Error sending message: ${result.error || JSON.stringify(result)}` }] };
     }
