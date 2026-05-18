@@ -1,0 +1,20 @@
+{
+  "drill_id": "fixture-staging-drill-pass",
+  "environment": "staging-core",
+  "started_at": "2026-05-18T00:00:00.000Z",
+  "completed_at": "2026-05-18T01:20:00.000Z",
+  "artifacts": {
+    "postgres": { "age_minutes": 25, "encrypted": true, "restored": true, "verified": true },
+    "redis": { "age_minutes": 20, "encrypted": true, "restored": true, "verified": true },
+    "workflow-runtime": { "age_minutes": 25, "encrypted": false, "restored": true, "verified": true },
+    "operational-config": { "age_minutes": 30, "encrypted": true, "restored": true, "verified": true }
+  },
+  "rto_minutes": 80,
+  "verification": {
+    "pg_verify_passed": true,
+    "redis_ping_passed": true,
+    "workflow_smoke_passed": true,
+    "shared_config_validated": true,
+    "secrets_inventory_checked": true
+  }
+}

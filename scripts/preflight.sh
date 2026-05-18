@@ -41,7 +41,8 @@ run_backend_tests() {
     tests/operator-evals.test.ts \
     tests/workflow-action-contract.test.ts \
     tests/assistant-autonomy-evals.test.ts \
-    tests/bpms-load-regression.test.ts
+    tests/bpms-load-regression.test.ts \
+    tests/data-store-drill.test.ts
   )
 }
 
@@ -55,12 +56,23 @@ run_bpms_load_report() {
   )
 }
 
+run_data_store_drill_report() {
+  (
+  cd "$ROOT"
+  local observations="${DATA_STORE_DRILL_OBSERVATIONS:-tests/fixtures/data-store-drill/staging-passing.json}"
+  local report="${DATA_STORE_DRILL_REPORT:-/tmp/konoha-data-store-drill-report.json}"
+  bun run scripts/data-store-drill.ts --observations "$observations" --report "$report"
+  )
+}
+
 cd "$ROOT"
 run_step "system health" python3 scripts/healthcheck-system.py
 run_step "backend typecheck" bun x tsc --noEmit
 run_step "action surface contract" bun run scripts/action-surface-report.ts --check
 run_step "BPMS load profile contract" bun run scripts/bpms-load-regression.ts --check
 run_step "BPMS load regression report" run_bpms_load_report
+run_step "data-store drill contract" bun run scripts/data-store-drill.ts --check
+run_step "data-store drill report" run_data_store_drill_report
 run_step "backend tests" run_backend_tests
 run_step "frontend typecheck/build" run_frontend
 

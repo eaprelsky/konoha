@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 787,
+  "description": "Backup, restore, and disaster-recovery drill contract for Konoha data stores.",
+  "default_report": "konoha-data-store-drill-report.json",
+  "global_targets": {
+    "rpo_minutes": 60,
+    "rto_minutes": 120,
+    "staging_restore_required": true,
+    "production_restore_requires_owner_approval": true
+  },
+  "owners": {
+    "primary": "platform_owner",
+    "secondary": "sdd_team_lead",
+    "reviewer": "shikadai",
+    "escalation": "naruto"
+  },
+  "data_stores": [
+    {
+      "id": "postgres",
+      "kind": "postgresql",
+      "criticality": "tier0",
+      "contains_secrets": true,
+      "rpo_minutes": 60,
+      "rto_minutes": 120,
+      "backup": {
+        "cadence": "daily plus pre-release",
+        "command": "pg_dump --format=custom --no-owner --no-acl \"$DATABASE_URL\" > \"$BACKUP_DIR/postgres.dump\"",
+        "artifact": "postgres.dump",
+        "retention_days": 7,
+        "encryption_required": true
+      },
+      "restore": {
+        "target": "staging",
+        "command": "pg_restore --clean --if-exists --no-owner --dbname \"$STAGING_DATABASE_URL\" \"$BACKUP_DIR/postgres.dump\""
+      },
+      "verification": [
+        "bun run scripts/pg-verify.ts",
+        "python3 scripts/validate-shared-config.py --require-credentials --require-trusted-users"
+      ]
+    },
+    {
+      "id": "redis",
+      "kind": "redis",
+      "criticality": "tier0",
+      "contains_secrets": true,
+      "rpo_minutes": 60,
+      "rto_minutes": 60,
+      "backup": {
+        "cadence": "hourly snapshot plus pre-release",
+        "command": "redis-cli --rdb \"$BACKUP_DIR/redis.rdb\"",
+        "artifact": "redis.rdb",
+        "retention_days": 7,
+        "encryption_required": true
+      },
+      "restore": {
+        "target": "staging",
+        "command": "install -m 0600 \"$BACKUP_DIR/redis.rdb\" \"$STAGING_REDIS_DIR/dump.rdb\""
+      },
+      "verification": [
+        "redis-cli PING",
+        "redis-cli --scan --pattern 'workflow:*' | head",
+        "redis-cli XINFO STREAM konoha:bus"
+      ]
+    },
+    {
+      "id": "workflow-runtime",
+      "kind": "redis_primary_shadowed_to_postgres",
+      "criticality": "tier0",
+      "contains_secrets": false,
+      "rpo_minutes": 60,
+      "rto_minutes": 120,
+      "backup": {
+        "cadence": "covered by postgres and redis backups",
+        "command": "bun run scripts/pg-verify.ts && redis-cli --scan --pattern 'workflow:*' > \"$BACKUP_DIR/workflow-keys.txt\"",
+        "artifact": "workflow-keys.txt",
+        "retention_days": 7,
+        "encryption_required": false
+      },
+      "restore": {
+        "target": "staging",
+        "command": "bun run scripts/pg-verify.ts"
+      },
+      "verification": [
+        "bun run scripts/pg-verify.ts",
+        "bun test --timeout 30000 tests/workflow-lifecycle-gate.test.ts tests/runtime-retention-cleanup.test.ts"
+      ]
+    },
+    {
+      "id": "operational-config",
+      "kind": "filesystem_config",
+      "criticality": "tier1",
+      "contains_secrets": true,
+      "rpo_minutes": 60,
+      "rto_minutes": 120,
+      "backup": {
+        "cadence": "daily plus before credential rotation",
+        "command": "tar --create --file \"$BACKUP_DIR/operational-config.tar\" --mode=go-rwx /home/ubuntu/.agent-env /opt/shared/.shared-credentials /opt/shared/.trusted-users.json /opt/shared/.dashboard-auth.json",
+        "artifact": "operational-config.tar",
+        "retention_days": 7,
+        "encryption_required": true
+      },
+      "restore": {
+        "target": "staging",
+        "command": "tar --extract --file \"$BACKUP_DIR/operational-config.tar\" --directory /"
+      },
+      "verification": [
+        "python3 scripts/validate-shared-config.py --require-credentials --require-trusted-users",
+        "bash scripts/check-mcp-secrets.sh"
+      ]
+    }
+  ],
+  "staging_restore_drill": {
+    "cadence": "monthly and before production-readiness signoff",
+    "required_environment": "staging-core",
+    "steps": [
+      "Create encrypted Postgres, Redis, workflow runtime, and operational config artifacts.",
+      "Restore artifacts into staging-core only; never overwrite production during drill.",
+      "Run schema and shadow verification.",
+      "Run runtime workflow smoke and retention cleanup dry-run.",
+      "Validate shared config and secret inventory without printing secret values.",
+      "Record RPO/RTO evidence and attach konoha-data-store-drill-report.json to release gate."
+    ],
+    "verification": [
+      "bun run scripts/data-store-drill.ts --check",
+      "bun run scripts/data-store-drill.ts --observations <drill-observations.json> --report <konoha-data-store-drill-report.json>",
+      "bun run scripts/pg-verify.ts",
+      "python3 scripts/validate-shared-config.py --require-credentials --require-trusted-users"
+    ]
+  }
+}

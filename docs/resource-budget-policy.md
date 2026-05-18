@@ -66,6 +66,10 @@ When they are local, use the budget contract recommendations:
 | `redis-server.service` | `konoha-infra.slice` | 768M | 100% | AOF `everysec`; noeviction unless explicitly changed |
 | `postgresql.service` | `konoha-infra.slice` | 1200M | 150% | At least 7 daily logical backups; prune shadow bloat through retention reports |
 
+Backup/restore readiness is governed by `docs/data-store-drill.json` and
+`docs/data-store-disaster-recovery.md`. Redis and PostgreSQL restore drills must
+run in `staging-core`; production restores require platform owner approval.
+
 ## Capacity Report
 
 Use the live inventory for incident-safe reporting:
