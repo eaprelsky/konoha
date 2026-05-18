@@ -14,7 +14,7 @@ Adapters in `src/adapters/` connect Konoha workflows to external services. Each 
 | Tracker | `tracker.ts` | Create and update issues in Yandex Tracker |
 | Yandex Tracker | `yandex-tracker.ts` | Yandex Tracker adapter (TRACKER_TOKEN, TRACKER_CLOUD_ORG_ID) |
 | Yonote | `yonote.ts` | Read/write pages in Yonote knowledge base |
-| Email | `email.ts` | Send email via SMTP |
+| Email | `email.ts` | Send email via SMTP; minimal runtime and shared host contract live in `docs/mail-integration-profile.md` |
 | Image | `image.ts` | Generate or process images |
 
 ## Configuration

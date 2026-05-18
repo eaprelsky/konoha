@@ -107,3 +107,11 @@ optional workers and stale MCP configs are stopped:
 Move first: TestBench, optional SDD/QA agents, and heavy MCP/debug packs. Keep
 `konoha.service`, Redis/PostgreSQL, and Telegram ingress together until a
 separate data-plane migration is designed.
+
+## Shared Mail Infrastructure
+
+`docs/mail-integration-profile.json` defines the minimal Konoha mail runtime and
+the shared mail host boundary. Mail is product-critical shared infrastructure,
+not optional Konoha runtime bloat: Lean Konoha cleanup may remove Office,
+document, spreadsheet, Miro, and browser MCP packs, but must not remove the mail
+stack or require those packs for mail delivery.

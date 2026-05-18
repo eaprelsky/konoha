@@ -26,6 +26,10 @@ path.
 Data-store disaster recovery is checked by `scripts/data-store-drill.ts`. For a
 real staging restore drill, set `DATA_STORE_DRILL_OBSERVATIONS` and attach the
 generated `konoha-data-store-drill-report.json` to the release gate.
+Mail integration reliability is checked by
+`scripts/mail-integration-profile.ts`; it keeps the shared mail host, tenant
+separation, DNS/auth posture, retry/dead-letter behavior, and optional MCP
+boundary under contract.
 
 As of 2026-04-30, PostgreSQL shadow verification can fail with bloat-only exit code `2` while still reporting `onlyInRedis=0`. That means Redis -> PG sync is complete, but PG-only historical retention is not yet governed. Treat `onlyInRedis` as a release blocker; treat bloat-only failures as data-retention debt until the retention report/cleanup policy is implemented.
 

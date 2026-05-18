@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 786,
+  "description": "Shared mail infrastructure and minimal Konoha mail runtime profile.",
+  "shared_mail_host": {
+    "service_name": "shared-mail.service",
+    "host": "mail.eaprelsky.ru",
+    "ownership": "shared_infrastructure",
+    "lifecycle_boundary": "Mail server lifecycle is independent from Konoha agents, MCP packs, and application deploys.",
+    "backup_contract": "docs/data-store-drill.json",
+    "resource_budget": {
+      "slice": "konoha-infra.slice",
+      "memory_max": "768M",
+      "cpu_quota": "100%",
+      "disk_budget_gib": 10
+    }
+  },
+  "minimal_konoha_runtime": {
+    "enabled_adapter": "src/adapters/email.ts",
+    "required_mcp_servers": [],
+    "forbidden_always_on_mcp_servers": ["excel", "word", "google-docs", "google-sheets", "miro", "miro-api", "puppeteer"],
+    "required_env": ["CHATBOT_SMTP_HOST", "CHATBOT_SMTP_PORT", "CHATBOT_SMTP_USER", "CHATBOT_SMTP_PASSWORD"],
+    "default_env": {
+      "CHATBOT_SMTP_HOST": "mail.eaprelsky.ru",
+      "CHATBOT_SMTP_PORT": "587"
+    },
+    "degradation_mode": {
+      "missing_credentials": "adapter healthcheck fails closed; workflows must surface a retryable mail delivery failure",
+      "mail_host_unavailable": "queue through outbox/recovery where available; do not start Office/document MCP packs as fallback",
+      "optional_tooling_unavailable": "mail delivery remains available; Office/document tooling is unrelated and disabled by default"
+    }
+  },
+  "tenants": [
+    {
+      "product": "konoha",
+      "domain": "eaprelsky.ru",
+      "mailboxes": ["konoha@eaprelsky.ru", "no-reply@eaprelsky.ru"],
+      "credential_scope": "konoha-mail-only",
+      "rate_limit_per_minute": 60,
+      "daily_quota": 5000,
+      "log_tag": "product=konoha"
+    },
+    {
+      "product": "moscowyachtservice",
+      "domain": "moscowyachtservice.ru",
+      "mailboxes": ["no-reply@moscowyachtservice.ru"],
+      "credential_scope": "moscowyachtservice-mail-only",
+      "rate_limit_per_minute": 30,
+      "daily_quota": 3000,
+      "log_tag": "product=moscowyachtservice"
+    }
+  ],
+  "dns_auth": {
+    "required_records": ["SPF", "DKIM", "DMARC", "MX"],
+    "per_domain_policy": true,
+    "bounce_handling": {
+      "required": true,
+      "mailbox": "postmaster",
+      "log_to": "mail:bounces"
+    }
+  },
+  "reliability": {
+    "runtime_effect_model": "outbox/recovery",
+    "retry": {
+      "max_attempts": 5,
+      "backoff": "exponential",
+      "initial_delay_sec": 60,
+      "max_delay_sec": 3600
+    },
+    "dead_letter": {
+      "stream": "mail:dead_letter",
+      "required_fields": ["tenant", "message_id", "recipient", "error", "attempts", "last_attempt_at"]
+    },
+    "idempotency": {
+      "required": true,
+      "key_fields": ["tenant", "workflow_case_id", "recipient", "template_id"]
+    }
+  },
+  "observability": {
+    "healthcheck": ["smtp_connect", "smtp_auth", "tenant_quota", "dead_letter_depth"],
+    "metrics": ["mail_send_attempts", "mail_send_success", "mail_send_failure", "mail_retry_count", "mail_dead_letter_count"],
+    "alerts": {
+      "dead_letter_depth": 1,
+      "consecutive_send_failures": 3,
+      "quota_used_percent": 80
+    },
+    "logs_must_include": ["tenant", "domain", "message_id", "outbox_id", "attempt"]
+  },
+  "migration_notes": [
+    "Application servers may use the shared mail host over authenticated SMTP without joining the Konoha lifecycle.",
+    "Do not remove the shared mail stack as part of Lean Konoha resource cleanup.",
+    "Office/document MCP packs are optional tooling and must not be required for mail delivery or ingestion."
+  ]
+}
