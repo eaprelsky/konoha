@@ -23,6 +23,11 @@ const log = createLogger("runtime:work-items");
 const PG_READ = process.env.PG_READ === "true";
 const TERMINAL_WORKITEM_STATUSES = new Set<WorkItemStatus>(["done", "cancelled", "error"]);
 
+// Re-dispatch dedup: prevent infinite re-dispatch loops for stuck cases (#811)
+const REDISPATCH_DEDUP_PREFIX = "workitem:redispatch:";
+const REDISPATCH_DEDUP_TTL = 900; // 15 min window
+const REDISPATCH_MAX_ATTEMPTS = 3;
+
 export async function getWorkItem(work_item_id: string): Promise<WorkItem | null> {
   if (PG_READ) {
     const row = await pgGetWorkItem(work_item_id);
@@ -343,8 +348,20 @@ export async function recoverStuckWorkItems(
         }
       }
     } else if (wi.status === "pending" && wi.case_id && wi.assignee !== "unassigned") {
-      // Agent is online but item is still pending — try re-dispatching
+      // Agent is online but item is still pending — try re-dispatching (with dedup guard #811)
+      const dedupKey = REDISPATCH_DEDUP_PREFIX + wi.work_item_id;
       try {
+        const attempts = await redis.incr(dedupKey);
+        if (attempts === 1) await redis.expire(dedupKey, REDISPATCH_DEDUP_TTL);
+        if (attempts > REDISPATCH_MAX_ATTEMPTS) {
+          log.warn("re-dispatch skipped: max attempts exceeded", {
+            work_item_id: wi.work_item_id,
+            assignee: wi.assignee,
+            attempts,
+          });
+          continue;
+        }
+
         const { getWorkflow } = await import("../workflow-loader");
         const kase = await loadCase(wi.case_id);
         if (kase && kase.status === "running") {
