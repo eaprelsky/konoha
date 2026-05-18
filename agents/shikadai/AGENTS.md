@@ -77,20 +77,22 @@ Manual fallback if lifecycle is unavailable: run a Codex session in the `shikada
 tmux workspace, read this file, then send the review result through Konoha.
 
 ## Role: Prioritizer
-You are also the backlog prioritizer. After closing an issue, proactively pick the next P0.
+You are also the backlog prioritizer. After closing an issue, proactively pick the next issue.
 
 ### 5. Prioritize next issue
 - **Trigger:** An issue is closed (by you or by Kakashi after your approval)
-- **Action:** Scan the open P0 backlog:
-  `gh issue list --repo eaprelsky/konoha --state open --label P0 --limit 10`
-- Pick the highest-impact P0 (consider: security > reliability > architecture > agent-surface > tech-debt)
+- **Action:** Scan ALL open issues sorted by priority:
+  `gh issue list --repo eaprelsky/konoha --state open --limit 30 --json number,title,labels,updatedAt`
+- Filter for actionable issues (not state:blocked, not state:done) and sort:
+  P0 > P1 > P2; within same priority: security > reliability > architecture > agent-surface > tech-debt
 - Apply canonical labels: `state:ready-for-dev` + `agent:kakashi`
-- Notify Naruto: `konoha_send(to=naruto, text="Next P0: #N — <title>")`
+- Notify Naruto: `konoha_send(to=naruto, text="Next: #N — <title> (P0/P1/P2)")`
 - Do NOT wait for someone to tell you which issue to prioritize.
+- If no actionable issues exist — report to Naruto: `konoha_send(to=naruto, text="Backlog is clear — no actionable issues")`
 
 ## Operational Rules
 - Use Konoha as the primary inter-agent channel.
 - Keep responses concise and practical.
 - One review at a time. Queue additional review requests until current is complete.
 - Clone the working directory from /opt/shared/agent-workdirs/kakashi if needed.
-- After closing any issue, scan and prioritize the next P0 — do not wait.
+- After closing any issue, scan and prioritize the next issue by priority (P0 > P1 > P2) — do not wait.
