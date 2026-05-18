@@ -114,9 +114,12 @@ export async function upsertAgentDef(
 export async function updateAgentDef(id: string, updates: Partial<Omit<AgentDef, "id" | "created_at" | "updated_at">>): Promise<AgentDef | null> {
   const existing = await getAgentDef(id);
   if (!existing) return null;
+  const providedUpdates = Object.fromEntries(
+    Object.entries(updates).filter(([, value]) => value !== undefined),
+  ) as Partial<Omit<AgentDef, "id" | "created_at" | "updated_at">>;
   const def: AgentDef = withSystemPromptMetadata({
     ...existing,
-    ...updates,
+    ...providedUpdates,
     id,
     created_at: existing.created_at,
     updated_at: new Date().toISOString(),

@@ -372,6 +372,42 @@ describe("PUT /agents/:id", () => {
     expect(found.display_alias).toBe("Sasuke");
   });
 
+  test("preserves runtime profile fields when updating only system_prompt", async () => {
+    const agentId = id("profile-prompt-only");
+    await req("POST", "/agents", {
+      body: {
+        id: agentId,
+        name: "Prompt Only Agent",
+        runtime: "codex",
+        fallback_runtime: "claude",
+        model: "codex:gpt-5.5",
+        llm_client_profile: "codex-gpt-5.5",
+        fallback_llm_client_profile: "claude-deepseek-sonnet",
+      },
+    });
+
+    const { status, body } = await req("PUT", `/agents/${agentId}`, {
+      body: { system_prompt: "Updated prompt only" },
+    });
+
+    expect(status).toBe(200);
+    expect(body.system_prompt).toBe("Updated prompt only");
+    expect(body.runtime).toBe("codex");
+    expect(body.fallback_runtime).toBe("claude");
+    expect(body.model).toBe("codex:gpt-5.5");
+    expect(body.llm_client_profile).toBe("codex-gpt-5.5");
+    expect(body.fallback_llm_client_profile).toBe("claude-deepseek-sonnet");
+
+    const updated = await req("GET", `/agents/${agentId}`);
+    expect(updated.body.runtime_config).toMatchObject({
+      runtime: "codex",
+      fallback_runtime: "claude",
+      model: "codex:gpt-5.5",
+      llm_client_profile: "codex-gpt-5.5",
+      fallback_llm_client_profile: "claude-deepseek-sonnet",
+    });
+  });
+
   test("rejects empty profile update", async () => {
     const agentId = id("profile-empty");
     await req("POST", "/agents", {
