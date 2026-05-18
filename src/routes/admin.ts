@@ -389,6 +389,7 @@ async function syncSystemAgent(ag: (typeof SYSTEM_AGENTS)[number]): Promise<"cre
     protected: true,
   }, {
     preserveOrgDisplayFields: true,
+    preserveRuntimeConfig: true,
   });
   return created ? "created" : "updated";
 }

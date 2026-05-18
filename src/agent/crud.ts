@@ -16,9 +16,31 @@ const AUDIT_STREAM    = "konoha:agent-audit";    // stream: lifecycle events
 
 export interface AgentDefUpsertOptions {
   preserveOrgDisplayFields?: boolean;
+  /** Preserve runtime-config fields (model, runtime, profiles, etc.)
+   *  from the existing definition when the agent already exists.
+   *  Prevents seed-agents from overwriting manually configured runtime settings. */
+  preserveRuntimeConfig?: boolean;
 }
 
 const ORG_OWNED_DISPLAY_FIELDS = ["name", "display_alias", "avatar_url"] as const;
+
+const RUNTIME_PRESERVED_FIELDS = [
+  "model",
+  "runtime",
+  "llm_client_profile",
+  "fallback_runtime",
+  "fallback_llm_client_profile",
+  "reasoning_effort",
+  "launch_strategy",
+  "startup_timeout_sec",
+  "env",
+  "tool_profile",
+  "sandbox_profile",
+  "shared_mcp_allowlist",
+  "codex_disable_features",
+  "active_runtime_profile",
+  "auto_runtime_fallback",
+] as const;
 
 export function sha256Text(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -102,6 +124,14 @@ export async function upsertAgentDef(
       const value = existing[field];
       if (value !== undefined) {
         def[field] = value;
+      }
+    }
+  }
+  if (existing && options.preserveRuntimeConfig) {
+    for (const field of RUNTIME_PRESERVED_FIELDS) {
+      const value = existing[field];
+      if (value !== undefined) {
+        (def as unknown as Record<string, unknown>)[field] = value;
       }
     }
   }
