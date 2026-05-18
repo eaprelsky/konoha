@@ -157,6 +157,9 @@ export const OPTIONAL_SHARED_MCP_PACKS = new Set([
   "miro-api",
   "puppeteer",
 ]);
+export const RETIRED_SHARED_MCP_PACKS = new Set([
+  "mempalace",
+]);
 const MCP_BIN_OVERRIDES = {
   bun: "/home/ubuntu/.bun/bin/bun",
   uv: "/home/ubuntu/.local/bin/uv",
@@ -252,6 +255,14 @@ function loadSharedMcpServers(
     try {
       const raw = JSON.parse(readFileSync(configPath, "utf-8")) as { mcpServers?: Record<string, RawMcpServerDef> };
       for (const [name, server] of Object.entries(raw.mcpServers ?? {})) {
+        if (RETIRED_SHARED_MCP_PACKS.has(name)) {
+          log.info("skipping retired shared MCP pack", {
+            server: name,
+            path: configPath,
+            reason: "retired from active Konoha runtime surface",
+          });
+          continue;
+        }
         if (allowed && !allowed.has(name)) continue;
         if (!allowed && OPTIONAL_SHARED_MCP_PACKS.has(name)) {
           log.info("skipping optional shared MCP pack", {

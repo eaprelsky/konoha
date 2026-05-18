@@ -35,7 +35,7 @@ The machine-readable deployment contract is split across these files:
 The lean production baseline is `prod-core`: Konoha API, Redis/PostgreSQL,
 Telegram ingestion, Naruto/Sasuke, Akamaru, and bounded Kiba monitoring.
 Kakashi, Shikadai, Shino, Hinata, Guy, Ibiki, Jiraiya, TestBench, browser MCP,
-Office/Miro/spreadsheet MCP, memory/mempalace, calendar, audio, and other broad
+Office/Miro/spreadsheet MCP, memory, retired MemPalace, calendar, audio, and other broad
 diagnostic packs are optional/on-demand.
 
 ## Measurement
@@ -83,7 +83,7 @@ The rollout may proceed only when:
 - Kakashi/Shikadai/Shino/Hinata/Guy/Ibiki/TestBench are absent or explicitly
   documented as temporary on-demand work;
 - Kiba has no non-monitoring MCP descendants;
-- Office/Miro/spreadsheet/browser/memory/mempalace/calendar/audio packs are not
+- Office/Miro/spreadsheet/browser/memory/retired MemPalace/calendar/audio packs are not
   present in the always-on process tree;
 - `resource_inventory.budget_pressure` has no unexplained critical rows for
   Konoha-owned services or slices.

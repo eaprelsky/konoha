@@ -1,14 +1,15 @@
-# Jiraiya — Disabled Corporate Memory Experiment
+# Jiraiya — Retired Corporate Memory Experiment
 
-Jiraiya is disabled until there is an explicit product need and operator
-approval to redesign the corporate-memory workflow. Do not start the tmux
-session, reattach a watchdog, or restore corporate MCP credentials from
-quarantine as part of normal operations.
+Jiraiya and MemPalace are retired from the active Konoha runtime surface. Do
+not start the tmux session, reattach a watchdog, restore corporate MCP
+credentials from quarantine, or regenerate a MemPalace MCP config as part of
+normal operations.
 
 Rollback path for an approved reactivation:
 1. Decide the concrete product workflow Jiraiya owns.
 2. Assign a bounded tool profile or explicit allowlist for that workflow.
-3. Regenerate the workdir `.mcp.json` from current source-of-truth config.
+3. Use current Konoha/wiki/document APIs only; MemPalace is not a supported
+   rollback dependency.
 4. Add `jiraiya` back to the intended service profile/watchdog policy.
 5. Start `agent-managed@jiraiya.service` through the Konoha lifecycle API.
 
@@ -23,9 +24,8 @@ Your mission: build a living, searchable corporate memory — digests, context, 
 ## First steps on startup
 1. `source /opt/shared/.owner-config`
 2. Read /opt/shared/agent-memory/MEMORY.md
-3. Load palace wake-up context: run `python3 -m mempalace --palace /opt/shared/mempalace/palace wake-up` (L0 + L1 layers, ~600–900 tokens) — this gives you critical facts about the team, projects, and recent decisions
-4. Register: `konoha_register(id=jiraiya, name=Дзирайя (Корпоративная память), roles=[chronicler,memory], capabilities=[digest,search,kb-authoring,classify], model=claude-haiku-4-5-20251001)`
-5. Wait for messages from watchdog — it delivers bus batches and digest triggers
+3. Register: `konoha_register(id=jiraiya, name=Дзирайя (Корпоративная память), roles=[chronicler,memory], capabilities=[digest,search,kb-authoring,classify], model=claude-haiku-4-5-20251001)`
+4. Wait for messages from watchdog — it delivers bus batches and digest triggers
 
 ## Core scenarios
 
@@ -122,42 +122,15 @@ On first startup (or when `jiraiya:rebuild-context` received):
 
 ## Tools
 - Konoha MCP: konoha_send, konoha_read, konoha_register
-- **MemPalace MCP**: 19 tools for structured memory (search, KG, diary, drawers)
-  - mempalace_status — palace overview
-  - mempalace_search — semantic search across all memory
-  - mempalace_add_drawer — file new knowledge (wing/room/content)
-  - mempalace_kg_query / mempalace_kg_add / mempalace_kg_invalidate — knowledge graph CRUD
-  - mempalace_diary_write / mempalace_diary_read — agent diary (AAAK format)
-  - mempalace_traverse / mempalace_find_tunnels — graph navigation
-  - Full list: mempalace_list_wings, mempalace_list_rooms, mempalace_get_taxonomy, mempalace_get_aaak_spec, mempalace_check_duplicate, mempalace_delete_drawer, mempalace_kg_timeline, mempalace_kg_stats, mempalace_graph_stats
 - Bash: git, find, grep for wiki search
 - Read/Write/Edit: for file manipulation
 
-## MemPalace — Structured Memory Backend
-Palace location: `/opt/shared/mempalace/palace` (shared between all agents)
-Knowledge Graph: `/opt/shared/mempalace/knowledge_graph.sqlite3`
-Identity: `/opt/shared/mempalace/identity.txt`
+## Retired MemPalace Backend
 
-### Palace Architecture
-- **Wings**: top-level divisions (per agent, project, person, or topic)
-- **Rooms**: specific subjects within a wing
-- **Halls**: memory-type corridors (facts, events, discoveries, preferences)
-- **Tunnels**: cross-wing connections (same room in multiple wings)
-- **Drawers**: verbatim content chunks (never summarized)
-- **Closets**: compressed AAAK summaries
-
-### Memory Stack (4 layers)
-- L0: Identity (~50 tokens, always loaded)
-- L1: Critical facts (~120 tokens, always loaded)
-- L2: Room recall (on demand when topic arises)
-- L3: Deep semantic search (on demand)
-
-### Your Role with MemPalace
-1. **Mine new content**: When processing bus events or conversations, file important facts as drawers
-2. **Maintain KG**: Add/update entity relationships, invalidate stale facts
-3. **Write diary**: Log your observations in AAAK format for continuity
-4. **Answer queries**: Use mempalace_search + mempalace_kg_query to answer agent questions
-5. **Generate digests**: Use palace data + bus logs for richer context
+MemPalace was removed from active Konoha runtime/project surface by #774. Do
+not add `mempalace` to agent MCP allowlists, generated `.mcp.json` files, or
+startup instructions. Historical data under `/opt/shared/mempalace/` may exist
+for archival inspection only and is not a supported product dependency.
 
 ## Important
 - Watchdog delivers DIGEST trigger every 3 hours — always process it

@@ -21,6 +21,11 @@ server name and source config path. An explicit `shared_mcp_allowlist` or
 time-boxed `tool_profile` can still include one of these servers for an
 on-demand session.
 
+`mempalace` is different: it is retired, not optional. `buildMcpConfig()` skips
+it even when a stale shared config or explicit allowlist still mentions it, and
+logs `skipping retired shared MCP pack`. Do not add MemPalace back to active
+agent profiles without a new product requirement and a new issue.
+
 ## Bounded and On-Demand Profiles
 
 - `kiba-monitor-core`: Kiba default profile; Konoha health/action tools only.
@@ -34,8 +39,9 @@ agents.
 
 `kiba-monitor-core` is the exception because it is the bounded default profile,
 not an on-demand expansion. Kiba must not carry GitLab, Yonote, Yandex Tracker,
-Miro, Office/document tools, browser/Puppeteer, memory/mempalace, spreadsheets,
-calendar, audio/transcription, or broad corporate operations MCPs by default.
+Miro, Office/document tools, browser/Puppeteer, memory, retired MemPalace,
+spreadsheets, calendar, audio/transcription, or broad corporate operations MCPs
+by default.
 
 ## Default GUI Path
 

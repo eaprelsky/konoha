@@ -730,17 +730,16 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
                                     f"kiba:alert agent={session} token_exhausted=true action=restart"
                                 )
 
-                    # Skip check when the agent is visibly doing active work (MCP calls, MemPalace
-                    # writes, etc.). False positives occur when tool output happens to contain
+                    # Skip check when the agent is visibly doing active work (MCP calls, tool
+                    # progress, etc.). False positives occur when tool output happens to contain
                     # prompt-like strings ("(Y/n)" in a document being written, for example).
-                    # "Doodling" = MemPalace in-progress indicator; spinner chars = MCP tool running.
+                    # Spinner chars indicate MCP/tool work is running.
                     #
                     # Known limitation: if a spinner char lingers in the tmux scroll-back buffer
                     # after an MCP call completes, and a real permission_prompt appears immediately
                     # after, is_actively_working may be True and the alert will be suppressed (false
                     # negative). Risk is low — the next 60s check will catch it once the buffer scrolls.
                     ACTIVE_WORK_INDICATORS = [
-                        "Doodling",                            # MemPalace write indicator
                         "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",  # spinner chars
                     ]
                     is_actively_working = any(
@@ -763,7 +762,7 @@ def check_tmux_sessions(paused: set[str] = frozenset()) -> list[str]:
 
 def is_permission_prompt_state(lines: list[str]) -> bool:
     """Return True only for real Claude Code permission prompts, not idle shortcut hints."""
-    status_bar_noise = ["bypass permissions", "shift+tab", "bypasspermissions", "doodling"]
+    status_bar_noise = ["bypass permissions", "shift+tab", "bypasspermissions"]
     prompt_lines = [l for l in lines if not any(noise in l.lower() for noise in status_bar_noise)]
     pane_text = "\n".join(prompt_lines)
     pane_text_lower = pane_text.lower()

@@ -4,9 +4,11 @@ import { join } from "path";
 import {
   getSandboxProfile,
   getToolProfile,
+  buildMcpConfig,
   listSandboxProfiles,
   listToolProfiles,
   OPTIONAL_SHARED_MCP_PACKS,
+  RETIRED_SHARED_MCP_PACKS,
   resolveSharedMcpAllowlist,
   toolProfileToMcpAllowlist,
 } from "../src/agent";
@@ -62,6 +64,26 @@ describe("tool and sandbox profiles", () => {
     ]);
     const runtimeSource = readFileSync(join(import.meta.dir, "..", "src", "agent", "runtime.ts"), "utf-8");
     expect(runtimeSource).toContain("skipping optional shared MCP pack");
+  });
+
+  test("retired Mempalace MCP is excluded from active runtime profiles", () => {
+    expect([...RETIRED_SHARED_MCP_PACKS]).toEqual(["mempalace"]);
+    for (const profile of listToolProfiles()) {
+      expect(profile.mcp_servers).not.toContain("mempalace");
+    }
+
+    const runtimeSource = readFileSync(join(import.meta.dir, "..", "src", "agent", "runtime.ts"), "utf-8");
+    expect(runtimeSource).toContain("skipping retired shared MCP pack");
+    expect(runtimeSource).toContain("retired from active Konoha runtime surface");
+  });
+
+  test("runtime ignores retired Mempalace even when a stale allowlist mentions it", async () => {
+    const config = await buildMcpConfig([], {
+      KONOHA_URL: "http://127.0.0.1:3200",
+      KONOHA_TOKEN: "test-token",
+    }, ["mempalace"]);
+
+    expect(Object.keys(config.mcpServers).sort()).toEqual(["konoha"]);
   });
 
   test("keeps sandbox profiles separate from runtime adapters", () => {

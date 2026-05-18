@@ -35,11 +35,15 @@ bun -e 'import { buildMcpConfig } from "./src/agent/runtime"; const cfg = await 
 
 The command logged `skipping optional shared MCP pack` for `puppeteer`,
 `google-sheets`, `miro`, `miro-api`, `excel`, `word`, and `google-docs`.
-The generated broad shared MCP key set was:
+Before #774, the generated broad shared MCP key set still included the retired
+MemPalace server:
 
 ```text
 bitrix24,caldav,email,filesystem,gitlab,konoha,memory,mempalace,openrouter-audio,sequential-thinking,telegram,telethon-channel,yandex-tracker,yonote
 ```
+
+After #774, `mempalace` is no longer part of active runtime generation. It is
+skipped even when a stale shared config or explicit allowlist mentions it.
 
 After affected agents restart and their `.mcp.json` files are regenerated:
 
@@ -66,7 +70,8 @@ pstree -p 711418
 
 Observed non-monitoring MCPs under the Kiba Claude process included GitLab,
 Yonote, memory, Puppeteer, CalDAV, sequential-thinking, openrouter-audio,
-Miro API, Bitrix24, Excel, Word, Telethon channel, email, and mempalace.
+Miro API, Bitrix24, Excel, Word, Telethon channel, email, and the now-retired
+MemPalace server.
 
 Process/RSS summary:
 
@@ -96,7 +101,8 @@ The stale active workdir MCP config was quarantined on 2026-05-16:
 ```
 
 That quarantined config had broad corporate/debug MCP entries, including
-Yonote, memory, MemPalace, Office/Miro/spreadsheet, browser, calendar, audio,
-GitLab, Bitrix24, email, and Telethon channel servers. It must not be copied
-back into the active workdir. Reactivation must regenerate a fresh `.mcp.json`
-from the approved profile or allowlist.
+Yonote, memory, the retired MemPalace server, Office/Miro/spreadsheet, browser,
+calendar, audio, GitLab, Bitrix24, email, and Telethon channel servers. It must
+not be copied back into the active workdir. Reactivation must regenerate a
+fresh `.mcp.json` from the approved profile or allowlist, and MemPalace must not
+be restored without a new product requirement and issue.

@@ -85,7 +85,7 @@ describe("seeded system agent classifications", () => {
     });
   });
 
-  test("Jiraiya corporate-memory experiment is disabled by default", () => {
+  test("Jiraiya corporate-memory experiment is retired by default", () => {
     const seeded = agent("jiraiya");
     const corporateMemoryMcp = new Set(["yonote", "memory", "mempalace"]);
 
@@ -166,6 +166,16 @@ describe("seeded system agent classifications", () => {
       expect(seeded.tool_profile).not.toBe("office-miro-debug-ttl");
       expect(seeded.tool_profile).not.toBe("full");
       expect((seeded.shared_mcp_allowlist ?? []).some(server => officeMiroSpreadsheet.has(server))).toBe(false);
+    }
+  });
+
+  test("always-on agents do not carry retired Mempalace MCP", () => {
+    const alwaysOnAgents = ["naruto", "sasuke", "kiba", "kakashi", "shikadai"];
+
+    for (const id of alwaysOnAgents) {
+      const seeded = agent(id);
+      expect(seeded.tool_profile).not.toBe("full");
+      expect(seeded.shared_mcp_allowlist ?? []).not.toContain("mempalace");
     }
   });
 

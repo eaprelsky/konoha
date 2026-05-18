@@ -57,7 +57,7 @@ const PROFILES: Record<string, ToolProfile> = {
     mcp_servers: ["konoha"],
     scopes: ["read", "write", "execute"],
     dangerous_tools: ["konoha-health-actions"],
-    notes: "Kiba default profile. Konoha health/action tools only; corporate, memory, browser, Office, Miro, calendar, audio, and document MCPs require explicit time-boxed diagnostic profiles.",
+    notes: "Kiba default profile. Konoha health/action tools only; corporate, memory, browser, Office, Miro, calendar, audio, and document MCPs require explicit time-boxed diagnostic profiles. MemPalace is retired and excluded from active runtime profiles.",
   },
   "browser-debug-ttl": {
     id: "browser-debug-ttl",
