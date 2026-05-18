@@ -23,7 +23,7 @@ const log = createLogger("retention:runtime-cleanup");
 const GENERATED_RUNTIME_RE = /^(act-wf|assistant-start|autonomy-eval|debug|eepc|operator-eval|or-gw|test|xor-gw)(?:-|\d|$)/;
 const ACTIVE_WORKITEM_STATUSES = new Set(["pending", "running"]);
 const TERMINAL_WORKITEM_STATUSES = new Set(["done", "cancelled", "error"]);
-const TERMINAL_CASE_STATUSES = new Set(["done", "error"]);
+const TERMINAL_CASE_STATUSES = new Set(["done", "error", "cancelled"]);
 
 export interface RuntimeRetentionPolicy {
   stuckCaseTtlHours: number;
@@ -268,7 +268,7 @@ async function deleteCaseRuntimeArtifacts(kase: Case, workItems: WorkItem[]): Pr
   pipe.del(WORKITEMS_IDX_CASE + kase.case_id);
   pipe.del(CASE_KEY_PREFIX + kase.case_id);
   pipe.zrem(CASES_IDX_ALL, kase.case_id);
-  for (const status of ["running", "done", "error"]) {
+  for (const status of ["running", "done", "error", "cancelled"]) {
     pipe.srem(CASES_IDX_STATUS + status, kase.case_id);
   }
   pipe.srem(CASES_IDX_PROCESS + kase.process_id, kase.case_id);

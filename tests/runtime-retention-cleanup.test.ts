@@ -64,6 +64,7 @@ async function cleanupRunKeys(): Promise<void> {
     await redis.srem("konoha:cases:status:running", id);
     await redis.srem("konoha:cases:status:done", id);
     await redis.srem("konoha:cases:status:error", id);
+    await redis.srem("konoha:cases:status:cancelled", id);
   }
   const wiIds = await redis.zrange("konoha:workitems:all", 0, -1);
   for (const id of wiIds.filter(id => id.includes(RUN))) {
@@ -130,6 +131,26 @@ describe("runtime retention cleanup", () => {
     expect(await redis.get(`workitem:${workItemId}`)).toBeNull();
     expect(await redis.zscore("konoha:cases:all", caseId)).toBeNull();
     expect(await redis.sismember(`konoha:workitems:case:${caseId}`, workItemId)).toBe(0);
+  });
+
+  test("deletes old cancelled generated workflow runs with terminated work items", async () => {
+    const caseId = `${RUN}-cancelled`;
+    const processId = `test-${RUN}`;
+    const workItemId = `${RUN}-cancelled-wi`;
+    await saveCase(kase(caseId, processId, "cancelled", 30));
+    await saveWorkItem(wi(workItemId, caseId, processId, "cancelled"));
+
+    const result = await cleanupExpiredRuntimeArtifacts({
+      dryRun: false,
+      now: new Date("2026-05-17T12:00:00Z"),
+      onlineAgentIds: new Set(),
+      policy: { completedWorkflowTtlHours: 24, stuckCaseTtlHours: 24, maxDelete: 10 },
+    });
+
+    expect(result.deleted.map(candidate => candidate.id)).toContain(caseId);
+    expect(await redis.get(`case:${caseId}`)).toBeNull();
+    expect(await redis.sismember("konoha:cases:status:cancelled", caseId)).toBe(0);
+    expect(await redis.get(`workitem:${workItemId}`)).toBeNull();
   });
 
   test("keeps production-looking completed cases unless explicitly opted in", async () => {

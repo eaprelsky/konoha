@@ -749,7 +749,7 @@ async function executeWorkItemAction(action: string, args: Record<string, unknow
         return { status: 200, data: result };
       } catch (e: any) {
         if (e.message?.includes("not found")) return { status: 404, data: { error: e.message } };
-        if (e.message?.includes("already done")) return { status: 409, data: { error: e.message } };
+        if (e.message?.includes("already")) return { status: 409, data: { error: e.message } };
         return { status: 400, data: { error: e.message } };
       }
     }

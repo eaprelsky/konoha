@@ -21,6 +21,7 @@ import { dispatchWorkItem } from "../dispatcher";
 const log = createLogger("runtime:work-items");
 
 const PG_READ = process.env.PG_READ === "true";
+const TERMINAL_WORKITEM_STATUSES = new Set<WorkItemStatus>(["done", "cancelled", "error"]);
 
 export async function getWorkItem(work_item_id: string): Promise<WorkItem | null> {
   if (PG_READ) {
@@ -83,7 +84,9 @@ export async function completeWorkItem(
 ): Promise<{ workItem: WorkItem; case: Case | null }> {
   const wi = await loadWorkItem(work_item_id);
   if (!wi) throw new Error(`Work item "${work_item_id}" not found`);
-  if (wi.status === "done") throw new Error(`Work item "${work_item_id}" is already done`);
+  if (TERMINAL_WORKITEM_STATUSES.has(wi.status)) {
+    throw new Error(`Work item "${work_item_id}" is already ${wi.status}`);
+  }
 
   const prevStatus = wi.status;
   wi.status = "done";

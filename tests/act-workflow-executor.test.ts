@@ -292,6 +292,35 @@ describe("/act workflow executor", () => {
     expect(cancelled.payload.__cancel_reason).toBe("operator cleanup");
     expect(cancelled.cancelled_work_items).toBeGreaterThanOrEqual(1);
 
+    const cancelledItemsRes = await app.fetch(new Request(
+      `http://localhost/workitems?process_id=${encodeURIComponent(workflowId)}&status=cancelled`,
+      {
+        method: "GET",
+        headers: adminHeaders(),
+      },
+    ));
+    const cancelledItems = await cancelledItemsRes.json();
+    expect(cancelledItemsRes.status).toBe(200);
+    expect(cancelledItems.items.length).toBeGreaterThanOrEqual(1);
+    const staleWorkItemId = cancelledItems.items[0].work_item_id;
+
+    const staleCompleteRes = await app.fetch(new Request(`http://localhost/workitems/${staleWorkItemId}/complete`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ output: { stale_completion: true } }),
+    }));
+    const staleComplete = await staleCompleteRes.json();
+    expect(staleCompleteRes.status).toBe(409);
+    expect(staleComplete.error).toContain("already cancelled");
+
+    const cancelledAfterStaleCompleteRes = await app.fetch(new Request(`http://localhost/cases/${started.case_id}`, {
+      method: "GET",
+      headers: adminHeaders(),
+    }));
+    const cancelledAfterStaleComplete = await cancelledAfterStaleCompleteRes.json();
+    expect(cancelledAfterStaleComplete.status).toBe("cancelled");
+    expect(cancelledAfterStaleComplete.payload.stale_completion).toBeUndefined();
+
     const activeAfterCancel = await app.fetch(new Request(`http://localhost/workflows/${encodeURIComponent(workflowId)}/cases`, {
       method: "GET",
       headers: adminHeaders(),

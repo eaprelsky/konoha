@@ -204,8 +204,8 @@ async function completeParentWorkItem(childCase: Case): Promise<void> {
 // ── Main advancement loop ────────────────────────────────────────────────────
 
 export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
-  // Idempotency guard: terminal states are not re-advanced
-  if (kase.status === "done" || kase.status === "error") return kase;
+  // Idempotency guard: only active cases may advance.
+  if (kase.status !== "running") return kase;
 
   const { outEdges, inEdges, byId, edgeConditions } = buildAdjacency(def);
 
