@@ -9,6 +9,8 @@ catalog through `scripts/service_profiles.py`.
 
 Resource budgets for these profiles are defined separately in
 `docs/resource-budgets.json` and explained in `docs/resource-budget-policy.md`.
+The rollout gate that makes the lean baseline a prerequisite for broad BPMS and
+staging work is `docs/lean-baseline-gate.md`.
 
 ## Profiles
 
@@ -41,6 +43,9 @@ Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
 - Heavy MCP/browser/Office/Miro/document packs remain outside always-on
   profiles. Use explicit TTL/debug profiles from
   `docs/mcp-optional-packs-policy.md`.
+- Broad BPMS refactors and the staging rollout in #753 must start from this
+  profile contract. They are blocked by `docs/lean-baseline-gate.md` until
+  `prod-core` is live-clean or a time-boxed waiver is recorded.
 
 ## Healthcheck Policy
 

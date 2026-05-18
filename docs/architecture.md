@@ -240,7 +240,7 @@ Production hardening is enforced by `scripts/preflight.sh`:
 - Telegram smoke
 - PostgreSQL shadow verification
 
-Current rule before larger Workflow Engine changes: run production preflight and review all non-zero checks before release. Known exception as of 2026-04-30: PostgreSQL shadow verification can return bloat-only exit code `2` even when sync is complete (`onlyInRedis=0`); treat that as retention debt, not a code regression, until the retention policy is implemented. CI runs the portable companion gate (`scripts/preflight-portable.sh`): the same typechecks/regression suites plus frontend tests/build, without production-only systemd, Telegram smoke, or live credential dependencies.
+Current rule before larger Workflow Engine changes: run production preflight and review all non-zero checks before release. Known exception as of 2026-04-30: PostgreSQL shadow verification can return bloat-only exit code `2` even when sync is complete (`onlyInRedis=0`); treat that as retention debt, not a code regression, until the retention policy is implemented. CI runs the portable companion gate (`scripts/preflight-portable.sh`): the same typechecks/regression suites plus frontend tests/build, without production-only systemd, Telegram smoke, or live credential dependencies. Broad BPMS refactors and the #753 staging rollout are additionally blocked by `docs/lean-baseline-gate.md` until the lean `prod-core` baseline is measured clean or Naruto records a time-boxed waiver.
 
 ## Key Design Rules
 
