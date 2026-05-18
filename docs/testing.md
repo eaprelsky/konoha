@@ -23,6 +23,11 @@ Before broad BPMS refactors or staging rollout work, also satisfy
 record a time-boxed waiver. The #753 staging plan must use `staging-core`, not
 the current full production profile.
 
+Workflow construction/runtime security changes must also satisfy
+`docs/workflow-security-boundary.md`. The release gate runs
+`action_security_boundary`, which checks the generated Action Spine surface and
+high-risk route authorization policy.
+
 ### Unit tests
 ```bash
 bun test

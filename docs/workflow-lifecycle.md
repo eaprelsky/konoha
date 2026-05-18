@@ -52,3 +52,7 @@ assistant paths should use `workflow.deploy` instead.
 The process editor shows the current lifecycle state. A saved draft or validated
 workflow is not presented as executable; the operator must run Deploy before
 starting new cases.
+
+Authorization, confirmation, audit, token handling, and admin recovery controls
+for workflow construction and runtime operations are defined in
+`docs/workflow-security-boundary.md`.

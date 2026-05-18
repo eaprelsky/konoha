@@ -101,6 +101,28 @@ def check_shared_config() -> tuple[bool, str]:
     return False, f"Shared config validation failed:\n{output[:700]}"
 
 
+def check_action_security_boundary() -> tuple[bool, str]:
+    """Check Action Spine security/audit surface and high-risk route auth guards."""
+    checks = [
+        (
+            "action surface",
+            [BUN_BIN, "run", "scripts/action-surface-report.ts", "--check"],
+        ),
+        (
+            "route auth policy",
+            [sys.executable, "scripts/check-route-auth-policy.py"],
+        ),
+    ]
+    details: list[str] = []
+    for label, cmd in checks:
+        rc, stdout, stderr = run(cmd, timeout=60)
+        output = (stdout + stderr).strip()
+        if rc != 0:
+            return False, f"{label} failed:\n{output[:700]}"
+        details.append(output.splitlines()[-1] if output else f"{label} OK")
+    return True, "Action security boundary: " + "; ".join(details)
+
+
 def check_file_sizes() -> tuple[bool, str]:
     """Check 3: no file in frontend/src/pages/ > 500 lines."""
     pages_dir = KONOHA_REPO / "frontend" / "src" / "pages"
@@ -226,6 +248,7 @@ CHECKS = [
     ("typecheck",      check_typecheck),
     ("tests",          check_tests),
     ("shared_config",  check_shared_config),
+    ("action_security_boundary", check_action_security_boundary),
     ("file_sizes",     check_file_sizes),
     ("runtime_size",   check_runtime_size),
     ("no_p0_issues",   check_no_p0_issues),

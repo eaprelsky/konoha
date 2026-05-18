@@ -11,6 +11,8 @@ handler or compatibility endpoint.
 The registry is the source of truth. The generated machine-readable surface is
 `docs/action-surface.json`; regenerate or check it with
 `bun run scripts/action-surface-report.ts --write|--check`.
+Workflow construction/runtime security, authorization, and audit semantics are
+defined in `docs/workflow-security-boundary.md`.
 
 ## Current Surface
 
