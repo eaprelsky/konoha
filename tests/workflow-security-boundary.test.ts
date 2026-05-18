@@ -62,13 +62,23 @@ describe("workflow security boundary", () => {
   });
 
   test("keeps runtime recovery and role-binding mutations admin-only and audited", () => {
-    for (const id of [
+    const confirmRequired = [
       "case.close",
       "case.cancel",
       "case.delete",
-      "event.confirm",
       "retention.cleanup_apply",
       "retention.runtime_cleanup",
+    ];
+
+    for (const id of confirmRequired) {
+      const surface = action(id);
+      expect(surface.security.actor).toBe("admin");
+      expect(surface.autonomy).toBe("confirm");
+      expect(surface.audited).toBe(true);
+    }
+
+    for (const id of [
+      "event.confirm",
       "role.create",
       "role.update",
       "role.delete",

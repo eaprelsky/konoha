@@ -320,6 +320,7 @@ describe("workflow action contract validation", () => {
       category: "act",
       implemented: true,
       security: { actor: "admin" },
+      autonomy: "confirm",
       audited: true,
     });
   });

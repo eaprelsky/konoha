@@ -687,7 +687,7 @@ export const ACTIONS: ActionDef[] = [
       { name: "max_delete", type: "number", required: false, description: "Maximum cases to delete in one run." },
     ],
     implementation: { kind: "direct", note: "Deletes only generated/test runtime cases or cases explicitly opted into auto-delete." },
-    autonomy: "auto",
+    autonomy: "confirm",
     audited: true,
   },
 
