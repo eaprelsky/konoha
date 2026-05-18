@@ -240,6 +240,10 @@ export async function sendMessage(msg: Message): Promise<string> {
 
   // route to recipients
   if (msg.to === "all") {
+    // Skip broadcast to agent streams for status/heartbeat and session messages (#812)
+    // These clog agent SSE streams and get picked up by watchdogs as fake tasks.
+    const isSystemStatus = entry.type === "status" || /^SESSION_/.test(msg.text);
+    if (!isSystemStatus) {
     // broadcast: write to each online agent's stream (except sender)
     // Test agents (rtest- prefix) are isolated from production agents in fanout
     const agents = await listAgents(true);
@@ -263,6 +267,7 @@ export async function sendMessage(msg: Message): Promise<string> {
         });
       }
     }
+    } // end if (!isSystemStatus)
   } else if (msg.to.startsWith("role:")) {
     // role-based routing
     const role = msg.to.slice(5);
