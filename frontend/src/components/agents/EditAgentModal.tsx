@@ -7,17 +7,75 @@ import { AgentMemoryTab } from './AgentMemoryTab';
 import { useI18n } from '../../context/I18nContext';
 
 interface EditAgentModalProps { agent: Agent; onClose: () => void; onSaved: () => void; }
+type EditableAgentSnapshot = {
+  name: string;
+  display_alias: string;
+  runtime: string;
+  fallback_runtime: string;
+  model: string;
+  reasoning_effort: string;
+  system_prompt: string;
+  capabilities: string[];
+  gender: 'male' | 'female' | 'neutral';
+};
+
+function snapshotFromAgent(agent: Agent): EditableAgentSnapshot {
+  return {
+    name: agent.name,
+    display_alias: agent.display_alias || '',
+    runtime: (agent as any).runtime || '',
+    fallback_runtime: (agent as any).fallback_runtime || '',
+    model: agent.model || '',
+    reasoning_effort: (agent as any).reasoning_effort || '',
+    system_prompt: (agent as any).system_prompt || '',
+    capabilities: [...((agent as any).capabilities || [])],
+    gender: (agent as any).gender || 'neutral',
+  };
+}
+
+function sameStringArray(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
+export function buildAgentUpdatePatch(initial: EditableAgentSnapshot, current: EditableAgentSnapshot) {
+  const patch: {
+    name?: string;
+    display_alias?: string;
+    runtime?: string;
+    fallback_runtime?: string;
+    model?: string;
+    reasoning_effort?: string;
+    system_prompt?: string;
+    capabilities?: string[];
+    gender?: string;
+  } = {};
+
+  const name = current.name.trim();
+  const displayAlias = current.display_alias.trim();
+  if (name !== initial.name) patch.name = name;
+  if (displayAlias !== initial.display_alias) patch.display_alias = displayAlias || undefined;
+  if (current.runtime !== initial.runtime) patch.runtime = current.runtime;
+  if (current.fallback_runtime !== initial.fallback_runtime) patch.fallback_runtime = current.fallback_runtime || undefined;
+  if (current.model !== initial.model) patch.model = current.model;
+  if (current.reasoning_effort !== initial.reasoning_effort) patch.reasoning_effort = current.reasoning_effort || undefined;
+  if (current.system_prompt !== initial.system_prompt) patch.system_prompt = current.system_prompt;
+  if (!sameStringArray(current.capabilities, initial.capabilities)) patch.capabilities = current.capabilities;
+  if (current.gender !== initial.gender) patch.gender = current.gender;
+  return patch;
+}
 
 export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps) {
   const { t } = useI18n();
+  const initialAgentSnapshot = snapshotFromAgent(agent);
   const [tab, setTab] = useState<'settings' | 'memory'>('settings');
-  const [name, setName] = useState(agent.name);
-  const [displayAlias, setDisplayAlias] = useState(agent.display_alias || '');
-  const [runtime, setRuntime] = useState((agent as any).runtime || ((agent.model || '').split(':')[0] || 'claude'));
-  const [fallbackRuntime, setFallbackRuntime] = useState((agent as any).fallback_runtime || 'codex');
-  const [model, setModel] = useState(agent.model || 'claude:claude-sonnet-4-6');
-  const [reasoningEffort, setReasoningEffort] = useState((agent as any).reasoning_effort || '');
-  const [prompt, setPrompt] = useState((agent as any).system_prompt || '');
+  const [name, setName] = useState(initialAgentSnapshot.name);
+  const [displayAlias, setDisplayAlias] = useState(initialAgentSnapshot.display_alias);
+  const [runtime, setRuntime] = useState(initialAgentSnapshot.runtime);
+  const [fallbackRuntime, setFallbackRuntime] = useState(initialAgentSnapshot.fallback_runtime);
+  const [model, setModel] = useState(initialAgentSnapshot.model);
+  const [reasoningEffort, setReasoningEffort] = useState(initialAgentSnapshot.reasoning_effort);
+  const [prompt, setPrompt] = useState(initialAgentSnapshot.system_prompt);
   const [sysTemplate, setSysTemplate] = useState<string | null>(null);
   const [sysExpanded, setSysExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -30,21 +88,24 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
   const [avatarPrompt, setAvatarPrompt] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
-  const [gender, setGender] = useState<'male' | 'female' | 'neutral'>((agent as any).gender || 'neutral');
+  const [gender, setGender] = useState<'male' | 'female' | 'neutral'>(initialAgentSnapshot.gender);
+  const initialSnapshotRef = useRef<EditableAgentSnapshot>(initialAgentSnapshot);
   const avatarFileRef = useRef<HTMLInputElement>(null);
   const avatarImg2ImgRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.agents.get(agent.id).then(d => {
-      setRuntime((d as any).runtime || ((d.model || '').split(':')[0] || 'claude'));
+      initialSnapshotRef.current = snapshotFromAgent(d);
+      setRuntime((d as any).runtime || '');
       setName(d.name);
       setDisplayAlias(d.display_alias || '');
-      setFallbackRuntime((d as any).fallback_runtime || 'codex');
-      setModel(d.model || 'claude:claude-sonnet-4-6');
+      setFallbackRuntime((d as any).fallback_runtime || '');
+      setModel(d.model || '');
       setReasoningEffort((d as any).reasoning_effort || '');
       setPrompt((d as any).system_prompt || '');
       setCapabilities((d as any).capabilities || []);
       setAvatarUrl((d as any).avatar_url);
+      setGender((d as any).gender || 'neutral');
     }).catch(() => {});
     api.agents.systemTemplate(agent.id).then(d => setSysTemplate(d.template)).catch(() => {});
     api.skills.list().then(setAllSkills).catch(() => {});
@@ -106,17 +167,20 @@ export function EditAgentModal({ agent, onClose, onSaved }: EditAgentModalProps)
     e.preventDefault();
     setSubmitting(true); setError(null);
     try {
-      await api.agents.update(agent.id, {
-        name: name.trim(),
-        display_alias: displayAlias.trim() || undefined,
+      const patch = buildAgentUpdatePatch(initialSnapshotRef.current, {
+        name,
+        display_alias: displayAlias,
         runtime,
-        fallback_runtime: fallbackRuntime || undefined,
+        fallback_runtime: fallbackRuntime,
         model,
-        reasoning_effort: reasoningEffort || undefined,
         system_prompt: prompt,
+        reasoning_effort: reasoningEffort,
         capabilities,
         gender,
       });
+      if (Object.keys(patch).length > 0) {
+        await api.agents.update(agent.id, patch);
+      }
       onSaved(); onClose();
     } catch (err: any) { setError(err.message); setSubmitting(false); }
   }
