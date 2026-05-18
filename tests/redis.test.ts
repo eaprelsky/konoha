@@ -29,6 +29,7 @@ import {
   replayStream,
   replayStreamBefore,
   createSubscriber,
+  isTerminalWorkflowCaseMessage,
   sampleEnsureGroupMetrics,
   AGENT_STREAM_PREFIX,
 } from "../src/redis";
@@ -53,6 +54,8 @@ async function cleanupTestData() {
   }
   const streamKeys = await redis.keys("konoha:agent:rtest-*");
   if (streamKeys.length) await redis.del(...streamKeys);
+  const caseKeys = await redis.keys("case:rtest-*");
+  if (caseKeys.length) await redis.del(...caseKeys);
 }
 
 beforeAll(cleanupTestData);
@@ -775,6 +778,55 @@ describe("SSE contract: durable-delivery (Stream replay) + live-tail (pub/sub)",
     await new Promise(r => setTimeout(r, 100));
 
     expect(received.map((m: any) => m.text)).toEqual(["live-real-message"]);
+    sub.close();
+  });
+
+  test("SSE replay filters messages from terminal workflow cases", async () => {
+    const agentId = id("sse-terminal-replay");
+    await registerAgent({ id: agentId, name: "SSE Terminal Replay", capabilities: [], roles: [] });
+
+    const terminalCaseId = id("case-terminal");
+    const runningCaseId = id("case-running");
+    await redis.set(`case:${terminalCaseId}`, JSON.stringify({ case_id: terminalCaseId, status: "completed" }));
+    await redis.set(`case:${runningCaseId}`, JSON.stringify({ case_id: runningCaseId, status: "running" }));
+
+    const streamKey = AGENT_STREAM_PREFIX + agentId;
+    const sinceId = await redis.xadd(streamKey, "*", "from", "src", "to", agentId, "type", "message", "text", "baseline", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    const terminalId = await redis.xadd(streamKey, "*", "from", "runtime", "to", agentId, "type", "task", "text", `[Задача от runtime]\nПрогон: ${terminalCaseId}\nwork_item_id: wi-terminal`, "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    await redis.xadd(streamKey, "*", "from", "runtime", "to", agentId, "type", "task", "text", `[Задача от runtime]\nКейс: ${runningCaseId}\nwork_item_id: wi-running`, "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+    await redis.xadd(streamKey, "*", "from", "src", "to", agentId, "type", "message", "text", "unrelated-message", "timestamp", new Date().toISOString(), "village_id", "comind.konoha");
+
+    const replayed = await replayStream(agentId, sinceId!);
+    expect(replayed.map((m: any) => m.text)).toEqual([
+      `[Задача от runtime]\nКейс: ${runningCaseId}\nwork_item_id: wi-running`,
+      "unrelated-message",
+    ]);
+
+    const lookbehind = await replayStreamBefore(agentId, terminalId!);
+    expect(lookbehind.map((m: any) => m.text)).not.toContain(`[Задача от runtime]\nПрогон: ${terminalCaseId}\nwork_item_id: wi-terminal`);
+    expect(await isTerminalWorkflowCaseMessage({ text: JSON.stringify({ payload: { case_id: terminalCaseId } }) })).toBe(true);
+  });
+
+  test("SSE live-tail filters messages from terminal workflow cases", async () => {
+    const agentId = id("sse-terminal-live");
+    await registerAgent({ id: agentId, name: "SSE Terminal Live", capabilities: [], roles: [] });
+
+    const terminalCaseId = id("case-live-terminal");
+    const runningCaseId = id("case-live-running");
+    await redis.set(`case:${terminalCaseId}`, JSON.stringify({ case_id: terminalCaseId, status: "cancelled" }));
+    await redis.set(`case:${runningCaseId}`, JSON.stringify({ case_id: runningCaseId, status: "running" }));
+
+    const received: any[] = [];
+    const sub = createSubscriber(agentId, (msg) => {
+      received.push(msg);
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+    await sendMessage({ to: agentId, from: "runtime", type: "task", text: `[Задача от runtime]\nКейс: ${terminalCaseId}\nwork_item_id: wi-terminal-live` });
+    await sendMessage({ to: agentId, from: "runtime", type: "task", text: `[Задача от runtime]\nКейс: ${runningCaseId}\nwork_item_id: wi-running-live` });
+    await new Promise(r => setTimeout(r, 150));
+
+    expect(received.map((m: any) => m.text)).toEqual([`[Задача от runtime]\nКейс: ${runningCaseId}\nwork_item_id: wi-running-live`]);
     sub.close();
   });
 

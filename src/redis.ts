@@ -14,6 +14,7 @@ import {
   pgReadHistory,
   pgListChannels,
 } from "./storage/pg-bus";
+import { extractWorkflowCaseIdFromMessage, isTerminalWorkflowCaseStatus } from "./sse-dedup";
 const log = createLogger("redis");
 
 const BUS_STREAM = "konoha:bus";
@@ -192,6 +193,27 @@ export function isLifecycleNoiseMessage(msg: Pick<Message, "text">): boolean {
   const text = msg.text || "";
   return LIFECYCLE_NOISE_PREFIXES.some(prefix => text.startsWith(prefix))
     || LIFECYCLE_NOISE_CONTAINS.some(part => text.includes(part));
+}
+
+export async function isTerminalWorkflowCaseMessage(msg: Partial<Message>): Promise<boolean> {
+  const caseId = extractWorkflowCaseIdFromMessage(msg);
+  if (!caseId) return false;
+
+  const raw = await redis.get(`case:${caseId}`).catch(() => null);
+  if (!raw) return false;
+
+  try {
+    const kase = JSON.parse(raw) as { status?: unknown };
+    return isTerminalWorkflowCaseStatus(kase.status);
+  } catch {
+    return false;
+  }
+}
+
+async function isReplayVisibleMessage(msg: Message): Promise<boolean> {
+  if (isLifecycleNoiseMessage(msg)) return false;
+  if (await isTerminalWorkflowCaseMessage(msg)) return false;
+  return true;
 }
 
 export async function sendMessage(msg: Message): Promise<string> {
@@ -485,7 +507,7 @@ export async function replayStream(agentId: string, sinceId: string, count = 50)
 
     for (const [id, fields] of entries) {
       const msg = fieldsToMessage(id, fields);
-      if (isLifecycleNoiseMessage(msg)) continue;
+      if (!(await isReplayVisibleMessage(msg))) continue;
       messagesNewestFirst.push(msg);
       if (messagesNewestFirst.length >= count) break;
     }
@@ -516,7 +538,7 @@ export async function replayStreamBefore(agentId: string, beforeOrAtId: string, 
 
     for (const [id, fields] of entries) {
       const msg = fieldsToMessage(id, fields);
-      if (isLifecycleNoiseMessage(msg)) continue;
+      if (!(await isReplayVisibleMessage(msg))) continue;
       messagesNewestFirst.push(msg);
       if (messagesNewestFirst.length >= count) break;
     }
@@ -556,8 +578,11 @@ export function createSubscriber(agentId: string, onMessage: (msg: Message) => v
         village_id: obj.village_id || DEFAULT_VILLAGE,
         idempotencyKey: obj.idempotency_key,
       };
-      if (isLifecycleNoiseMessage(msg)) return;
-      onMessage(msg);
+      void isReplayVisibleMessage(msg)
+        .then((visible) => {
+          if (visible) onMessage(msg);
+        })
+        .catch(silentCatch("sse live-tail visibility filter"));
     } catch {}
   });
   return {
