@@ -500,6 +500,9 @@ def remediate_alert(alert: str) -> str | None:
     service = extract_field(alert, "service")
     if service:
         if service.startswith("agent-watchdog-") or service in SAFE_RESTART_SERVICES:
+            if is_service_masked(service):
+                log.info(f"[suppressed] masked service {service} — skipping auto_restart")
+                return None
             ok, output = restart_service(service)
             return f"auto_restart_service={service} ok={int(ok)} detail={output[:160]!r}"
         return None
@@ -610,6 +613,30 @@ def check_pid_fresh(session: str) -> bool:
     return True
 
 
+def is_service_masked(service: str) -> bool:
+    """Return True if the systemd service is masked (intentionally disabled).
+
+    Checks both systemctl is-enabled and the unit file symlink to /dev/null.
+    """
+    try:
+        r = subprocess.run(
+            ["systemctl", "is-enabled", service],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.stdout.strip() == "masked":
+            return True
+    except Exception:
+        pass
+    # Fallback: check if unit file is a symlink to /dev/null
+    unit_path = f"/etc/systemd/system/{service}"
+    try:
+        if os.path.islink(unit_path) and os.readlink(unit_path) == "/dev/null":
+            return True
+    except OSError:
+        pass
+    return False
+
+
 def check_services(paused: set[str] = frozenset()) -> list[str]:
     alerts = []
     for svc in WATCHED_SERVICES:
@@ -627,6 +654,10 @@ def check_services(paused: set[str] = frozenset()) -> list[str]:
                 # On-demand agents stop after mission — inactive is expected, not a failure
                 if status in ("inactive", "deactivating") and short in ON_DEMAND_AGENTS:
                     log.debug(f"Skipping alert for on-demand agent service {svc} (inactive)")
+                    continue
+                # Suppress alerts for masked services — intentionally disabled (e.g. EEPC mitigation #812)
+                if status in ("inactive", "deactivating") and is_service_masked(svc):
+                    log.info(f"[suppressed] masked service {svc} is {status} — skipping alert")
                     continue
                 key = f"service:{svc}"
                 if should_alert(key):

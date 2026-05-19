@@ -44,6 +44,10 @@ KIBA_MIN_CREDIBLE_STUCK_SEC = int(os.environ.get("KIBA_MIN_CREDIBLE_STUCK_SEC", 
 KIBA_STORM_MAX_RESTARTS = int(os.environ.get("KIBA_STORM_MAX_RESTARTS", "3"))
 KIBA_STORM_WINDOW_SEC = int(os.environ.get("KIBA_STORM_WINDOW_SEC", "3600"))
 _storm_counter: dict[str, list[float]] = {}  # target -> list of restart timestamps
+# Agents excluded from deterministic recovery — set via KIBA_DETERMINISTIC_RECOVERY_BLOCKLIST (comma-separated)
+KIBA_RECOVERY_BLOCKLIST: set[str] = set(
+    name.strip() for name in os.environ.get("KIBA_DETERMINISTIC_RECOVERY_BLOCKLIST", "hinata,guy,shino").split(",") if name.strip()
+)
 
 
 def _get_claude_process_uptime(target: str) -> float | None:
@@ -184,6 +188,10 @@ def recovery_action_for_alert(text: str) -> tuple[str, str] | None:
     session = fields.get("session")
     target = agent or session
     if not target or not re.fullmatch(r"[A-Za-z0-9_-]+", target):
+        return None
+
+    # Blocklist: skip deterministic recovery for explicitly stopped/disabled agents
+    if target in KIBA_RECOVERY_BLOCKLIST:
         return None
 
     if fields.get("watchdog") == "dead" and fields.get("session") == "alive" and agent:
