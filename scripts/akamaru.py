@@ -20,7 +20,13 @@ import os
 import subprocess
 import time
 from datetime import datetime, timezone
-from kiba_monitor_profile import action_guard_reason, label_kiba_message, target_environment_from_env, target_url_from_env
+from kiba_monitor_profile import (
+    action_guard_reason,
+    label_kiba_message,
+    parse_kiba_fields,
+    target_environment_from_env,
+    target_url_from_env,
+)
 
 # ── Config ──────────────────────────────────────────────────────────────────
 KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
@@ -306,6 +312,9 @@ _fresh_pids: dict[str, tuple[int, float]] = {}
 FRESH_PID_GRACE_SEC = 600  # 10 min grace after PID change before stuck alerts fire
 
 LOG_FILE = "/tmp/akamaru.log"
+HEALTHCHECK_CHANNEL = os.environ.get("KIBA_HEALTHCHECK_CHANNEL", "ops")
+MONITOR_TARGET = os.environ.get("KIBA_MONITOR_TARGET", "role:monitor")
+HEALTHCHECK_ARCHIVE_TARGET = os.environ.get("KIBA_HEALTHCHECK_ARCHIVE_TARGET", "akamaru")
 
 class _FlushFileHandler(logging.FileHandler):
     def emit(self, record):
@@ -327,6 +336,8 @@ log = logging.getLogger(__name__)
 _alerted: dict[str, float] = {}
 ALERT_COOLDOWN = 300  # 5 min between repeat alerts for same issue
 
+BASELINE_HEALTHCHECK_AGENTS = {"shino", "tsunade", "mirai"}
+
 
 def should_alert(key: str) -> bool:
     now = time.time()
@@ -336,6 +347,71 @@ def should_alert(key: str) -> bool:
         _alerted[key] = now
         return True
     return False
+
+
+def _append_kiba_field(text: str, key: str, value: str) -> str:
+    if f"{key}=" in text:
+        return text
+    return f"{text} {key}={value}"
+
+
+def classify_healthcheck_signal(text: str) -> dict[str, str | bool]:
+    """Classify monitor output for routing and baseline suppression.
+
+    Known intentionally-stale/offline agents are retained in the ops channel as
+    baseline records instead of waking monitor agents. Unknown service failures,
+    transport failures, stuck/frozen agents, and resource criticals remain
+    incidents.
+    """
+    fields = parse_kiba_fields(text)
+    agent = fields.get("agent", "")
+    if text.startswith("kiba:healthcheck"):
+        return {"severity": "info", "actionable": False, "baseline_key": ""}
+    if agent in BASELINE_HEALTHCHECK_AGENTS and ("offline" in fields or "stale" in fields):
+        return {
+            "severity": "baseline",
+            "actionable": False,
+            "baseline_key": f"agent:{agent}:offline",
+        }
+    lowered = text.lower()
+    if "disk=warning" in lowered:
+        return {"severity": "warning-known", "actionable": False, "baseline_key": "disk:warning"}
+    if any(token in lowered for token in (
+        "critical",
+        "down",
+        "timeout",
+        "failed",
+        "status=inactive",
+        "status=failed",
+        "watchdog=dead",
+        "frozen",
+        "stuck",
+        "compacting_loop",
+        "token_exhausted",
+    )):
+        return {"severity": "incident", "actionable": True, "baseline_key": ""}
+    return {"severity": "warning-known", "actionable": False, "baseline_key": ""}
+
+
+def build_alert_payload(text: str) -> dict[str, str]:
+    """Build the Konoha bus payload for a monitor signal."""
+    text = label_kiba_message(text, KIBA_MONITOR_ENVIRONMENT)
+    classification = classify_healthcheck_signal(text)
+    severity = str(classification["severity"])
+    text = _append_kiba_field(text, "severity", severity)
+    baseline_key = str(classification.get("baseline_key") or "")
+    if baseline_key:
+        text = _append_kiba_field(text, "baseline_key", baseline_key)
+
+    actionable = bool(classification["actionable"])
+    return {
+        "from": "akamaru",
+        "to": MONITOR_TARGET if actionable or text.startswith("kiba:healthcheck") else HEALTHCHECK_ARCHIVE_TARGET,
+        "type": "task" if actionable else "status",
+        "channel": HEALTHCHECK_CHANNEL,
+        "text": text,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def is_alert_suppressed(alert: str, paused: set[str]) -> bool:
@@ -988,14 +1064,9 @@ async def check_konoha(paused: set[str] = frozenset()) -> list[str]:
 # ── Alert sender ──────────────────────────────────────────────────────────────
 
 async def send_alert(text: str) -> None:
-    """Send alert to Kiba via Konoha bus."""
-    text = label_kiba_message(text, KIBA_MONITOR_ENVIRONMENT)
-    payload = json.dumps({
-        "from": "akamaru",
-        "to": "kiba",
-        "text": text,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    """Send alert/status to the monitor role and ops channel via Konoha bus."""
+    payload_dict = build_alert_payload(text)
+    payload = json.dumps(payload_dict)
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -1009,7 +1080,10 @@ async def send_alert(text: str) -> None:
             env=env,
         )
         await asyncio.wait_for(proc.wait(), timeout=10)
-        log.info(f"Alert sent to kiba: {text}")
+        log.info(
+            f"Monitor signal sent to {payload_dict['to']} "
+            f"type={payload_dict['type']} channel={payload_dict['channel']}: {payload_dict['text']}"
+        )
     except Exception as e:
         log.error(f"Failed to send alert: {e}")
 

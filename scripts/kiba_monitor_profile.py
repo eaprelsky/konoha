@@ -87,7 +87,7 @@ def label_kiba_message(text: str, environment: str) -> str:
 
 
 def action_guard_reason(text: str, environ: dict[str, str] | None = None) -> str | None:
-    env = environ or os.environ
+    env = os.environ if environ is None else environ
     alert_env = alert_environment(text)
     if not alert_env:
         return "missing env label; deterministic admin action blocked"

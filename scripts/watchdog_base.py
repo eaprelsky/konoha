@@ -37,7 +37,7 @@ from watchdog_tmux import (
     tmux_run,
     tmux_send,
 )
-from watchdog_format import is_session_noise, sanitize_message_text
+from watchdog_format import classify_konoha_delivery, is_session_noise, sanitize_message_text
 from kiba_monitor_profile import label_kiba_message, target_environment_from_env
 
 # ── Config — set these in each agent script after import ─────────────────────
@@ -505,10 +505,6 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
                             if msg_id and msg_id in _seen_ids:
                                 log.debug(f"SSE dedup: skipping duplicate message {msg_id}")
                                 continue
-                            log.info(f"SSE event from {data.get('from','?')}: {data.get('text','')[:60]}")
-                            if is_session_noise(data):
-                                log.debug(f"Skipping SESSION noise: {data.get('text','')[:50]}")
-                                continue
                             if msg_id:
                                 _seen_ids[msg_id] = None
                                 if len(_seen_ids) > SSE_DEDUP_MAX_SIZE:
@@ -516,6 +512,16 @@ async def konoha_sse_watcher(raw_queue: asyncio.Queue) -> None:
                                     excess = len(_seen_ids) - SSE_DEDUP_MAX_SIZE // 2
                                     for _ in range(excess):
                                         _seen_ids.pop(next(iter(_seen_ids)))
+                            log.info(f"SSE event from {data.get('from','?')}: {data.get('text','')[:60]}")
+                            delivery = classify_konoha_delivery(data, AGENT_ID)
+                            if not delivery["deliver"]:
+                                log.info(
+                                    "SSE delivery suppressed: "
+                                    f"kind={delivery['kind']} reason={delivery['reason']} "
+                                    f"from={data.get('from','?')} type={data.get('type','message')} "
+                                    f"text={data.get('text','')[:80]!r}"
+                                )
+                                continue
                             data["_sse_id"] = last_event_id
                             await raw_queue.put({"source": "konoha", "data": data})
                         except json.JSONDecodeError:
@@ -686,8 +692,9 @@ async def _send_desync_audit(reason: str, detail: str = "") -> None:
         text += f" — {detail}"
     payload = json.dumps({
         "from": f"watchdog-{AGENT_ID}",
-        "to": "all",
+        "to": "role:monitor",
         "type": "event",
+        "channel": "ops",
         "text": text,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })

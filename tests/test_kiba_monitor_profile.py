@@ -66,6 +66,57 @@ def test_alert_and_healthcheck_messages_receive_environment_labels():
     assert kiba_profile.label_kiba_message("kiba:alert env=prod redis=down", "staging") == "kiba:alert env=prod redis=down"
 
 
+def load_akamaru_module(name: str = "akamaru_kiba_profile_test"):
+    root = Path(__file__).resolve().parents[1]
+    akamaru_path = root / "scripts" / "akamaru.py"
+    spec = importlib.util.spec_from_file_location(name, akamaru_path)
+    akamaru = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = akamaru
+    spec.loader.exec_module(akamaru)
+    return akamaru
+
+
+def test_akamaru_routes_healthcheck_to_monitor_role_and_ops_channel(monkeypatch):
+    monkeypatch.setenv("KIBA_MONITOR_ENVIRONMENT", "prod")
+    monkeypatch.setenv("KONOHA_TOKEN", "")
+    akamaru = load_akamaru_module("akamaru_healthcheck_routing_test")
+
+    payload = akamaru.build_alert_payload("kiba:healthcheck")
+
+    assert payload["to"] == "role:monitor"
+    assert payload["type"] == "status"
+    assert payload["channel"] == "ops"
+    assert payload["text"] == "kiba:healthcheck env=prod severity=info"
+
+
+def test_akamaru_keeps_known_baseline_in_ops_without_waking_monitor(monkeypatch):
+    monkeypatch.setenv("KIBA_MONITOR_ENVIRONMENT", "prod")
+    monkeypatch.setenv("KONOHA_TOKEN", "")
+    akamaru = load_akamaru_module("akamaru_baseline_routing_test")
+
+    payload = akamaru.build_alert_payload("kiba:alert agent=shino offline=42min")
+
+    assert payload["to"] == "akamaru"
+    assert payload["type"] == "status"
+    assert payload["channel"] == "ops"
+    assert "severity=baseline" in payload["text"]
+    assert "baseline_key=agent:shino:offline" in payload["text"]
+
+
+def test_akamaru_incident_alert_still_wakes_monitor(monkeypatch):
+    monkeypatch.setenv("KIBA_MONITOR_ENVIRONMENT", "prod")
+    monkeypatch.setenv("KONOHA_TOKEN", "")
+    akamaru = load_akamaru_module("akamaru_incident_routing_test")
+
+    payload = akamaru.build_alert_payload("kiba:alert redis=down")
+
+    assert payload["to"] == "role:monitor"
+    assert payload["type"] == "task"
+    assert payload["channel"] == "ops"
+    assert payload["text"] == "kiba:alert env=prod redis=down severity=incident"
+
+
 def test_target_url_uses_selected_environment_url():
     env = {
         "KIBA_MONITOR_ENVIRONMENT": "staging",

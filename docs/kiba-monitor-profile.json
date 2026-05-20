@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
-  "updated_for_issue": 772,
+  "updated_for_issue": 661,
+  "supersedes_issue": 772,
   "monitor_agent": "kiba",
   "mode": "single-shared-monitor",
   "default_environment": "prod",
@@ -34,5 +35,24 @@
   "alert_labels": {
     "required_fields": ["env"],
     "formats": ["kiba:alert env=<environment> ...", "kiba:healthcheck env=<environment>"]
+  },
+  "routing": {
+    "channel": "ops",
+    "incident_target": "role:monitor",
+    "archive_target": "akamaru",
+    "incident_delivery": {
+      "type": "task",
+      "severity": "incident",
+      "watchdog_tmux_delivery": true
+    },
+    "status_delivery": {
+      "types": ["status", "event", "result"],
+      "severities": ["info", "warning-known", "baseline"],
+      "watchdog_tmux_delivery": false
+    },
+    "baseline_suppression": {
+      "agents": ["shino", "tsunade", "mirai"],
+      "rule": "offline/stale records for known baseline agents are archived to ops without monitor wakeup"
+    }
   }
 }

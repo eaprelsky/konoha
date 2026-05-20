@@ -35,6 +35,20 @@ kiba:healthcheck env=prod
 messages to Kiba. `scripts/healthcheck-system.py` prints its summary with the
 selected monitor environment so copied summaries stay environment-scoped.
 
+## Healthcheck Routing
+
+Akamaru sends monitor output to the `ops` channel so healthcheck/audit history
+is readable without waking every agent. Actionable incidents are routed to
+`role:monitor` as `type=task` with `severity=incident`; Kiba receives these
+through its normal watchdog path.
+
+Routine healthcheck heartbeats use `type=status` and `severity=info`.
+Known baseline conditions for intentionally stale/offline agents (`shino`,
+`tsunade`, `mirai`) use `severity=baseline` and are archived to the ops channel
+without monitor tmux delivery. Watchdog delivery still keeps default direct
+messages actionable, but suppresses `status`, `event`, `result`, lifecycle,
+ack, and baseline healthcheck records from agent tmux sessions.
+
 ## Action Guard
 
 Deterministic Kiba recovery actions are admin actions. They require:

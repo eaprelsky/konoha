@@ -24,6 +24,85 @@ def is_session_noise(data: dict) -> bool:
     )
 
 
+# ── Delivery actionability ───────────────────────────────────────────────────
+
+NON_WORK_TYPES = {"status", "result", "event"}
+ACK_TEXT_MARKERS = (
+    "duplicate review delivery ignored",
+    "duplicate watchdog push delivery",
+    "duplicate delivery",
+    "already closed",
+    "already accepted",
+    "no new action needed",
+)
+WORK_TEXT_MARKERS = (
+    "github:",
+    "ready for dev:",
+    "ready-for-dev",
+    "state:ready-for-dev",
+    "state:in-progress",
+    "changes requested",
+    "review blocked",
+    "state:blocked",
+    "next dispatch",
+    "задание для",
+)
+
+
+def _field_value(text: str, field: str) -> str | None:
+    import re
+
+    match = re.search(rf"(?:^|\s){field}=([^\s]+)", text)
+    return match.group(1).rstrip(",.;") if match else None
+
+
+def classify_konoha_delivery(data: dict, agent_id: str = "") -> dict[str, str | bool]:
+    """Classify whether a Konoha bus message should be injected into tmux.
+
+    The watchdog is an execution surface, not a general event log. Status,
+    audit, ack, and known healthcheck baseline messages remain available in
+    Konoha history/channel streams, while actionable work and monitor incidents
+    still reach the agent session.
+    """
+    text = str(data.get("text") or "")
+    lowered = text.lower()
+    msg_type = str(data.get("type") or "message").lower()
+    sender = str(data.get("from") or "")
+
+    if is_session_noise(data):
+        return {"kind": "noise", "deliver": False, "reason": "session_lifecycle"}
+
+    if text.startswith("kiba:healthcheck"):
+        severity = _field_value(text, "severity") or "info"
+        if severity == "incident":
+            return {"kind": "work_item", "deliver": True, "reason": "monitor_incident_healthcheck"}
+        return {"kind": "status", "deliver": False, "reason": f"healthcheck_{severity}"}
+
+    if text.startswith("kiba:alert"):
+        severity = _field_value(text, "severity")
+        if severity in {"baseline", "warning-known", "info"}:
+            return {"kind": "status", "deliver": False, "reason": f"monitor_{severity}"}
+        if severity == "incident" or any(token in lowered for token in ("critical", "down", "timeout", "failed", "frozen", "stuck")):
+            return {"kind": "work_item", "deliver": True, "reason": "monitor_incident"}
+
+    if msg_type == "task":
+        return {"kind": "work_item", "deliver": True, "reason": "type_task"}
+
+    if any(marker in lowered for marker in WORK_TEXT_MARKERS):
+        return {"kind": "work_item", "deliver": True, "reason": "work_marker"}
+
+    if msg_type in NON_WORK_TYPES:
+        return {"kind": "audit" if msg_type == "event" else msg_type, "deliver": False, "reason": f"type_{msg_type}"}
+
+    if any(marker in lowered for marker in ACK_TEXT_MARKERS):
+        return {"kind": "ack", "deliver": False, "reason": "ack_marker"}
+
+    if sender.startswith("watchdog-") and ("desync detected" in lowered or "audit" in lowered):
+        return {"kind": "audit", "deliver": False, "reason": "watchdog_audit"}
+
+    return {"kind": "work_item", "deliver": True, "reason": "default_message"}
+
+
 # ── Text sanitization ──────────────────────────────────────────────────────────
 
 def sanitize_message_text(text: str) -> str:

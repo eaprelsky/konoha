@@ -120,6 +120,63 @@ class TestDesyncConfig:
         assert is_session_noise({"text": "kakashi:fix issue=505"}) is False
 
 
+class TestKonohaDeliveryActionability:
+    def test_healthcheck_status_is_not_injected_to_tmux(self):
+        from watchdog_base import classify_konoha_delivery
+
+        decision = classify_konoha_delivery({
+            "from": "akamaru",
+            "to": "role:monitor",
+            "type": "status",
+            "channel": "ops",
+            "text": "kiba:healthcheck env=prod severity=info",
+        }, "shikadai")
+
+        assert decision["kind"] == "status"
+        assert decision["deliver"] is False
+
+    def test_monitor_incident_still_reaches_tmux(self):
+        from watchdog_base import classify_konoha_delivery
+
+        decision = classify_konoha_delivery({
+            "from": "akamaru",
+            "to": "role:monitor",
+            "type": "task",
+            "channel": "ops",
+            "text": "kiba:alert env=prod severity=incident redis=down",
+        }, "kiba")
+
+        assert decision["kind"] == "work_item"
+        assert decision["deliver"] is True
+
+    def test_watchdog_audit_event_is_channel_log_only(self):
+        from watchdog_base import classify_konoha_delivery
+
+        decision = classify_konoha_delivery({
+            "from": "watchdog-kakashi",
+            "to": "role:monitor",
+            "type": "event",
+            "channel": "ops",
+            "text": "watchdog:kakashi desync detected: agent unresponsive",
+        }, "shikadai")
+
+        assert decision["kind"] == "audit"
+        assert decision["deliver"] is False
+
+    def test_delegated_github_issue_remains_actionable(self):
+        from watchdog_base import classify_konoha_delivery
+
+        decision = classify_konoha_delivery({
+            "from": "github",
+            "to": "kakashi",
+            "type": "message",
+            "text": "kakashi:fix issue=661 title=Healthcheck routing",
+        }, "kakashi")
+
+        assert decision["kind"] == "work_item"
+        assert decision["deliver"] is True
+
+
 class TestDirtyWorkdirGuard:
     def test_dirty_workdir_report_detects_uncommitted_files(self, tmp_path, monkeypatch):
         import subprocess
