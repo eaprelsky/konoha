@@ -3,6 +3,10 @@
 Issue #785 gates heavy collaboration MCP servers so they do not start in
 always-on or monitoring-oriented agent sessions.
 
+The cost catalog and default per-role allowlists are maintained in
+[`docs/mcp-cost-catalog.md`](mcp-cost-catalog.md) and
+`src/agent/mcp-cost-catalog.ts`.
+
 ## Default Shared MCP Load
 
 When an agent has broad shared MCP access, `buildMcpConfig()` skips these

@@ -9,6 +9,8 @@ import {
   listToolProfiles,
   OPTIONAL_SHARED_MCP_PACKS,
   RETIRED_SHARED_MCP_PACKS,
+  MCP_COST_CATALOG,
+  ROLE_DEFAULT_MCP_ALLOWLISTS,
   resolveSharedMcpAllowlist,
   toolProfileToMcpAllowlist,
 } from "../src/agent";
@@ -84,6 +86,86 @@ describe("tool and sandbox profiles", () => {
     }, ["mempalace"]);
 
     expect(Object.keys(config.mcpServers).sort()).toEqual(["konoha"]);
+  });
+
+  test("MCP cost catalog covers the lean-runtime measurement scope", () => {
+    const requiredServers = [
+      "konoha",
+      "telethon-channel",
+      "bitrix24",
+      "gitlab",
+      "yonote",
+      "yandex-tracker",
+      "memory",
+      "mempalace",
+      "puppeteer",
+      "sequential-thinking",
+      "caldav",
+      "google-sheets",
+      "google-docs",
+      "openrouter-audio",
+      "miro",
+      "miro-api",
+      "excel",
+      "word",
+      "email",
+    ];
+    const byServer = new Map(MCP_COST_CATALOG.map(entry => [entry.server, entry]));
+
+    expect(MCP_COST_CATALOG.map(entry => entry.server).sort()).toEqual([...requiredServers].sort());
+    for (const server of requiredServers) {
+      const entry = byServer.get(server);
+      expect(entry).toBeDefined();
+      expect(entry?.measurement.sampled_at).toMatch(/^2026-05-20T/);
+      expect(entry?.measurement.source).toContain("ps -eo");
+      expect(entry?.measurement.idle_process_count).toBeGreaterThanOrEqual(0);
+      expect(entry?.measurement.idle_rss_kib).toBeGreaterThanOrEqual(0);
+      expect(entry?.measurement.idle_cpu_pct).toBeGreaterThanOrEqual(0);
+      expect(entry?.notes.length ?? 0).toBeGreaterThan(10);
+    }
+  });
+
+  test("MCP cost catalog marks heavy and retired packs as non-default", () => {
+    const byServer = new Map(MCP_COST_CATALOG.map(entry => [entry.server, entry]));
+    const heavyOptIn = [
+      "gitlab",
+      "memory",
+      "puppeteer",
+      "sequential-thinking",
+    ];
+
+    for (const server of heavyOptIn) {
+      const entry = byServer.get(server);
+      expect(entry?.cost_band).toBe("heavy");
+      expect(entry?.opt_in_only).toBe(true);
+      expect(entry?.default_allowed_for_roles).toEqual([]);
+    }
+
+    expect(byServer.get("mempalace")).toMatchObject({
+      necessity: "retired",
+      retired: true,
+      default_allowed_for_roles: [],
+    });
+  });
+
+  test("role default MCP allowlists preserve critical Naruto and Sasuke flows", () => {
+    const byRole = new Map(ROLE_DEFAULT_MCP_ALLOWLISTS.map(entry => [entry.role, entry]));
+
+    expect(byRole.get("telegram-bot-connector")?.mcp_servers).toEqual(["konoha"]);
+    expect(byRole.get("telegram-user-connector")?.mcp_servers).toEqual(["konoha", "telethon-channel", "bitrix24"]);
+    expect(byRole.get("monitoring-only")?.mcp_servers).toEqual(["konoha"]);
+    expect(byRole.get("sdd-developer-reviewer")?.mcp_servers).toEqual(["konoha"]);
+
+    for (const entry of ROLE_DEFAULT_MCP_ALLOWLISTS) {
+      expect(entry.mcp_servers).not.toContain("mempalace");
+      expect(entry.mcp_servers).not.toContain("puppeteer");
+      expect(entry.mcp_servers).not.toContain("excel");
+      expect(entry.mcp_servers).not.toContain("word");
+      expect(entry.mcp_servers).not.toContain("google-docs");
+      expect(entry.mcp_servers).not.toContain("google-sheets");
+      expect(entry.mcp_servers).not.toContain("miro");
+      expect(entry.mcp_servers).not.toContain("miro-api");
+    }
   });
 
   test("keeps sandbox profiles separate from runtime adapters", () => {

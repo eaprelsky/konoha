@@ -2,6 +2,9 @@
 
 Snapshot for issue #785 on 2026-05-16, before deploying the optional-pack gate.
 
+For the issue #766 per-server cost catalog and default role allowlists, see
+[`docs/mcp-cost-catalog.md`](mcp-cost-catalog.md).
+
 ## Live Optional MCP Processes Before #785
 
 Command:

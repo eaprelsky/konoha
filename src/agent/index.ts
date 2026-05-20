@@ -14,6 +14,7 @@
 export * from "./types";
 export * from "./llm-client-profiles";
 export * from "./tool-profiles";
+export * from "./mcp-cost-catalog";
 export * from "./sandbox-profiles";
 export * from "./view";
 export * from "./runtime";
