@@ -51,6 +51,13 @@ Always-on required flows do not use `npx` or `uvx`: Naruto uses Konoha MCP
 only, and Sasuke uses Konoha plus pinned local `telethon-channel` and local
 Bitrix24 MCP commands.
 
+Connector MCPs have owner gates separate from lazy-pack gates:
+`telethon-channel` is only included through an explicit Telegram user connector
+allowlist, and `bitrix24` is only included through an explicit CRM/sales owner
+allowlist such as Sasuke, Mirai, or the `business-ops` tool profile. Broad
+non-owner startup skips both connector MCPs to avoid duplicate chat/CRM side
+effects.
+
 To attach the pack for a bounded task/session, build the task MCP config through
 the public task-mode entrypoint:
 

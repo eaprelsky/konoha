@@ -7,6 +7,7 @@ import {
   getToolProfile,
   buildMcpConfig,
   buildMcpConfigWithReceipt,
+  CONNECTOR_SCOPED_SHARED_MCP_PACKS,
   listSandboxProfiles,
   listToolProfiles,
   ON_DEMAND_SHARED_MCP_PACKS,
@@ -142,10 +143,9 @@ describe("tool and sandbox profiles", () => {
       KONOHA_SHARED_MCP_CONFIG_PATH: sharedConfig,
     }, undefined);
 
-    expect(Object.keys(startup.config.mcpServers).sort()).toEqual(["bitrix24", "konoha"]);
-    expect(startup.config.mcpServers.bitrix24).toMatchObject({ command: "/usr/bin/node" });
+    expect(Object.keys(startup.config.mcpServers).sort()).toEqual(["konoha"]);
     expect(startup.receipt.deferred_packs.map(pack => pack.server).sort()).toEqual(["gitlab", "sequential-thinking"]);
-    expect(startup.receipt.skipped_packs.map(pack => pack.server)).toContain("excel");
+    expect(startup.receipt.skipped_packs.map(pack => pack.server).sort()).toEqual(["bitrix24", "excel"]);
     const serialized = JSON.stringify(startup.config);
     expect(serialized).not.toContain('"command":"npx"');
     expect(serialized).not.toContain('"command":"uvx"');
@@ -206,6 +206,30 @@ describe("tool and sandbox profiles", () => {
     const serialized = JSON.stringify(config);
     expect(serialized).not.toContain('"command":"npx"');
     expect(serialized).not.toContain('"command":"uvx"');
+  });
+
+  test("connector-scoped Telethon and Bitrix are skipped from broad non-owner startup", async () => {
+    expect([...CONNECTOR_SCOPED_SHARED_MCP_PACKS.keys()].sort()).toEqual(["bitrix24", "telethon-channel"]);
+    const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-connector-scoped-"));
+    const sharedConfig = join(dir, ".mcp.json");
+    writeFileSync(sharedConfig, JSON.stringify({
+      mcpServers: {
+        bitrix24: { command: "node", args: ["mcp/bitrix24-mcp-server/build/index.js"] },
+        "telethon-channel": { command: "bun", args: ["/home/ubuntu/telethon-mcp/channel-server.ts"] },
+      },
+    }), "utf-8");
+
+    const result = await buildMcpConfigWithReceipt([], {
+      KONOHA_URL: "http://127.0.0.1:3200",
+      KONOHA_TOKEN: "test-token",
+      KONOHA_FEATURE_FLAGS_FILE: join(dir, "missing-feature-flags.json"),
+      KONOHA_SHARED_MCP_CONFIG_PATH: sharedConfig,
+    }, undefined);
+
+    expect(Object.keys(result.config.mcpServers).sort()).toEqual(["konoha"]);
+    expect(result.receipt.skipped_packs.map(pack => pack.server).sort()).toEqual(["bitrix24", "telethon-channel"]);
+    expect(result.receipt.skipped_packs.find(pack => pack.server === "telethon-channel")?.reason).toContain("Sasuke");
+    expect(result.receipt.skipped_packs.find(pack => pack.server === "bitrix24")?.reason).toContain("business-ops");
   });
 
   test("degrades gracefully when a requested on-demand MCP feature is disabled", async () => {
@@ -384,6 +408,13 @@ describe("tool and sandbox profiles", () => {
       expect(entry.mcp_servers).not.toContain("miro");
       expect(entry.mcp_servers).not.toContain("miro-api");
     }
+
+    const bitrixOwners = ROLE_DEFAULT_MCP_ALLOWLISTS
+      .filter(entry => entry.mcp_servers.includes("bitrix24"))
+      .map(entry => entry.role)
+      .sort();
+    expect(bitrixOwners).toEqual(["external-source-connector", "telegram-user-connector"]);
+    expect(getToolProfile("business-ops")?.mcp_servers).toEqual(["bitrix24"]);
   });
 
   test("keeps sandbox profiles separate from runtime adapters", () => {

@@ -162,6 +162,10 @@ export const OPTIONAL_SHARED_MCP_PACKS = new Set([
 export const RETIRED_SHARED_MCP_PACKS = new Set([
   "mempalace",
 ]);
+export const CONNECTOR_SCOPED_SHARED_MCP_PACKS: ReadonlyMap<string, string> = new Map([
+  ["telethon-channel", "requires explicit Telegram user connector owner; default owner is Sasuke"],
+  ["bitrix24", "requires explicit CRM/sales connector owner or business-ops profile; default owners are Sasuke and Mirai"],
+] as const);
 export const ON_DEMAND_SHARED_MCP_PACKS: ReadonlyMap<string, { feature: string; idle_timeout_sec: number; reason: string }> = new Map([
   ["gitlab", {
     feature: "",
@@ -412,6 +416,16 @@ function loadSharedMcpServers(
           continue;
         }
         if (allowed && !allowed.has(name)) continue;
+        const connectorScopedReason = CONNECTOR_SCOPED_SHARED_MCP_PACKS.get(name);
+        if (!allowed && connectorScopedReason) {
+          log.info("skipping connector-scoped shared MCP pack", {
+            server: name,
+            path: configPath,
+            reason: connectorScopedReason,
+          });
+          addReceipt(receipt, receiptEntry(name, "skipped", connectorScopedReason));
+          continue;
+        }
         if (!allowed && OPTIONAL_SHARED_MCP_PACKS.has(name)) {
           log.info("skipping optional shared MCP pack", {
             server: name,

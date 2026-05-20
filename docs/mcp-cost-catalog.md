@@ -26,6 +26,12 @@ Other MCPs are default only when the agent role owns that connector flow.
 | External-source connector | `mirai` | `konoha`, `bitrix24` | Connector-owned and on-demand; email uses the adapter runtime, not email MCP. |
 | Deprecated compatibility | `jiraiya`, `ino`, `inojin` | `konoha` | Parked by default; if temporarily enabled, regenerate to Konoha-only unless a new issue approves more. |
 
+Connector MCP ownership is explicit. `telethon-channel` is owned by the
+Telegram user connector (`sasuke`) only. `bitrix24` is owned by the Telegram
+user connector and the on-demand external-source/business-ops path (`mirai` or
+the `business-ops` tool profile). Broad non-owner startup profiles skip both
+connector MCPs even when shared catalogs define them.
+
 ## Cost Catalog
 
 RSS values are idle resident memory for the sampled process set. For MCPs with
@@ -92,3 +98,16 @@ OpenRouter audio, Miro API, Bitrix24, Excel, Telethon channel, and email.
 Source defaults already pin Kiba to `kiba-monitor-core` / Konoha-only; the
 remaining runtime action is to restart or regenerate Kiba's workdir config in a
 maintenance window.
+
+Issue #783 live sample before connector-scope gating found two Bitrix MCP
+processes and two Telethon MCP processes:
+
+| Set | Process count | RSS KiB |
+| --- | ---: | ---: |
+| Current live connector MCPs | 4 | 286,364 |
+| Expected owner set after non-owner regeneration | 2 | about 143,576 |
+| Expected duplicate reduction | 2 | about 142,788 |
+
+The exact split depends on which stale agent owns the second pair. Source
+generation now prevents broad non-owner profiles from creating the duplicate
+pair again.
