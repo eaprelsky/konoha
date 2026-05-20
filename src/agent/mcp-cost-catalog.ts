@@ -117,9 +117,9 @@ export const MCP_COST_CATALOG: readonly McpCostCatalogEntry[] = [
       idle_process_count: 2,
       idle_rss_kib: 24156,
       idle_cpu_pct: 0,
-      note: "Observed only under stale Kiba broad MCP config.",
+      note: "Observed under stale Kiba broad MCP config; #775 keeps Sasuke default delta at 0 and allows bounded task/session attachment only.",
     },
-    notes: "Potential narrow Sasuke knowledge lookup pack; keep out of defaults until a scoped Yonote issue enables it.",
+    notes: "Narrow Sasuke knowledge lookup pack. Keep out of always-on defaults; attach only through corporate-memory task/session mode for read/search context.",
   },
   {
     server: "yandex-tracker",

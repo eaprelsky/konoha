@@ -25,6 +25,7 @@ describe("tool and sandbox profiles", () => {
     const profiles = listToolProfiles();
     expect(profiles.map(p => p.id)).toContain("telegram-userbot");
     expect(getToolProfile("telegram-userbot")?.mcp_servers).toEqual(["telethon-channel", "bitrix24"]);
+    expect(getToolProfile("telegram-userbot-yonote-read")?.mcp_servers).toEqual(["telethon-channel", "bitrix24", "yonote"]);
     expect(getToolProfile("diagnostics")?.scopes).toContain("execute");
     expect(getToolProfile("kiba-monitor-core")?.mcp_servers).toEqual(["konoha"]);
     expect(getToolProfile("browser-debug-ttl")?.mcp_servers).toEqual(["puppeteer"]);
@@ -33,6 +34,7 @@ describe("tool and sandbox profiles", () => {
 
   test("maps tool profiles to MCP allowlists unless an explicit allowlist is present", () => {
     expect(toolProfileToMcpAllowlist("telegram-userbot")).toEqual(["telethon-channel", "bitrix24"]);
+    expect(toolProfileToMcpAllowlist("telegram-userbot-yonote-read")).toEqual(["telethon-channel", "bitrix24", "yonote"]);
     expect(toolProfileToMcpAllowlist("diagnostics")).toEqual(["konoha"]);
     expect(toolProfileToMcpAllowlist("kiba-monitor-core")).toEqual(["konoha"]);
     expect(toolProfileToMcpAllowlist("full")).toBeUndefined();
@@ -85,6 +87,7 @@ describe("tool and sandbox profiles", () => {
       "puppeteer",
       "sequential-thinking",
       "word",
+      "yonote",
     ]);
     const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-on-demand-"));
     const sharedConfig = join(dir, ".mcp.json");
@@ -234,6 +237,11 @@ describe("tool and sandbox profiles", () => {
       cpuQuota: "25%",
       tasksMax: 256,
     });
+    expect(mcpResourcePolicy("yonote")).toMatchObject({
+      memoryMax: "256M",
+      cpuQuota: "25%",
+      tasksMax: 256,
+    });
   });
 
   test("required Sasuke MCP flow resolves to pinned local commands", async () => {
@@ -288,6 +296,71 @@ describe("tool and sandbox profiles", () => {
     expect(result.receipt.skipped_packs.map(pack => pack.server).sort()).toEqual(["bitrix24", "telethon-channel"]);
     expect(result.receipt.skipped_packs.find(pack => pack.server === "telethon-channel")?.reason).toContain("Sasuke");
     expect(result.receipt.skipped_packs.find(pack => pack.server === "bitrix24")?.reason).toContain("business-ops");
+  });
+
+  test("Sasuke Yonote read context is on-demand and chat fallback stays intact", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-sasuke-yonote-"));
+    const sharedConfig = join(dir, "shared.mcp.json");
+    const localConfig = join(dir, "local.mcp.json");
+    const allowlist = ["telethon-channel", "bitrix24", "yonote"];
+    writeFileSync(sharedConfig, JSON.stringify({
+      mcpServers: {
+        bitrix24: { command: "node", args: ["mcp/bitrix24-mcp-server/build/index.js"] },
+        yonote: { command: "uv", args: ["--directory", "mcp/yonote-mcp", "run", "main.py"], timeout: 60000 },
+      },
+    }), "utf-8");
+    writeFileSync(localConfig, JSON.stringify({
+      mcpServers: {
+        "telethon-channel": { command: "bun", args: ["/home/ubuntu/telethon-mcp/channel-server.ts"] },
+      },
+    }), "utf-8");
+
+    const baseEnv = {
+      KONOHA_URL: "http://127.0.0.1:3200",
+      KONOHA_TOKEN: "test-token",
+      KONOHA_FEATURE_FLAGS_FILE: join(dir, "missing-feature-flags.json"),
+      KONOHA_SHARED_MCP_CONFIG_PATH: `${sharedConfig}:${localConfig}`,
+    };
+
+    const disabled = await buildMcpConfigWithReceipt([], baseEnv, allowlist);
+    expect(Object.keys(disabled.config.mcpServers).sort()).toEqual(["bitrix24", "konoha", "telethon-channel"]);
+    expect(disabled.receipt.skipped_packs).toMatchObject([
+      { server: "yonote", policy: "skipped", feature: "corporate-memory" },
+    ]);
+
+    const startup = await buildMcpConfigWithReceipt([], {
+      ...baseEnv,
+      KONOHA_ENABLED_FEATURES: "corporate-memory",
+      KONOHA_FEATURE_ENABLE_REASON: "bounded Sasuke Yonote read-context test",
+    }, allowlist);
+    expect(Object.keys(startup.config.mcpServers).sort()).toEqual(["bitrix24", "konoha", "telethon-channel"]);
+    expect(startup.receipt.deferred_packs).toMatchObject([
+      { server: "yonote", policy: "deferred", feature: "corporate-memory", idle_timeout_sec: 900 },
+    ]);
+    expect(startup.receipt.estimated_startup_rss_saved_kib).toBeGreaterThanOrEqual(24156);
+
+    const task = await buildMcpConfigWithReceipt([], {
+      ...baseEnv,
+      KONOHA_ENABLED_FEATURES: "corporate-memory",
+      KONOHA_FEATURE_ENABLE_REASON: "bounded Sasuke Yonote read-context test",
+      KONOHA_MCP_SESSION_PACKS: "yonote",
+    }, allowlist, { mode: "task" });
+    expect(Object.keys(task.config.mcpServers).sort()).toEqual(["bitrix24", "konoha", "telethon-channel", "yonote"]);
+    const yonoteServer = task.config.mcpServers.yonote as { command: string; args: string[] };
+    expect(yonoteServer.command).toBe("/home/ubuntu/.bun/bin/bun");
+    expect(yonoteServer.args).toContain("--scope-unit");
+    expect(yonoteServer.args).toContain("konoha-mcp-yonote");
+    expect(yonoteServer.args).toContain("--memory-max");
+    expect(yonoteServer.args).toContain("256M");
+    expect(yonoteServer.args).toContain("--cpu-quota");
+    expect(yonoteServer.args).toContain("25%");
+    expect(yonoteServer.args).toContain("/home/ubuntu/.local/bin/uv");
+    expect(yonoteServer.args).toContain("--directory");
+    expect(yonoteServer.args.some(arg => arg.endsWith("/mcp/yonote-mcp"))).toBe(true);
+    expect(yonoteServer.args).toContain("main.py");
+    expect(task.receipt.included_packs).toMatchObject([
+      { server: "yonote", policy: "included", feature: "corporate-memory", resource_limits: { memoryMax: "256M", cpuQuota: "25%" } },
+    ]);
   });
 
   test("degrades gracefully when a requested on-demand MCP feature is disabled", async () => {
@@ -458,6 +531,7 @@ describe("tool and sandbox profiles", () => {
 
     for (const entry of ROLE_DEFAULT_MCP_ALLOWLISTS) {
       expect(entry.mcp_servers).not.toContain("mempalace");
+      expect(entry.mcp_servers).not.toContain("yonote");
       expect(entry.mcp_servers).not.toContain("puppeteer");
       expect(entry.mcp_servers).not.toContain("excel");
       expect(entry.mcp_servers).not.toContain("word");

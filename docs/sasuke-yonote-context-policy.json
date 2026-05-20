@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "issue": 775,
+  "decision": "on-demand-only",
+  "agent_id": "sasuke",
+  "feature_flag": "corporate-memory",
+  "tool_profile_overlay": "telegram-userbot-yonote-read",
+  "default_mcp_allowlist": ["konoha", "telethon-channel", "bitrix24"],
+  "task_session_mcp_allowlist": ["konoha", "telethon-channel", "bitrix24", "yonote"],
+  "yonote_access": {
+    "mode": "read-search-only",
+    "allowed_operations": ["search", "read_page", "read_team_context"],
+    "forbidden_operations": ["write_page", "delete_page", "admin", "bulk_export"],
+    "context_limits": {
+      "max_documents": 3,
+      "max_chars": 6000,
+      "request_timeout_ms": 60000,
+      "idle_timeout_sec": 900
+    }
+  },
+  "fallback": {
+    "when": ["feature_disabled", "yonote_mcp_missing", "yonote_timeout", "yonote_error"],
+    "behavior": "continue Telegram user-account listening and CRM routing with konoha, telethon-channel, and bitrix24; answer without Yonote context or ask for clarification",
+    "must_not_block": ["telegram:incoming/sasuke", "telegram:reaction_updates/sasuke-reactions", "agent-watchdog-sasuke.service"]
+  },
+  "measurement": {
+    "sampled_at": "2026-05-20T22:53:00+03:00",
+    "source": "ps -eo pid=,ppid=,rss=,pcpu=comm=,args= for live yonote MCP descendants",
+    "live_owner": "stale Kiba broad MCP config",
+    "idle_process_count": 2,
+    "idle_rss_kib": 24156,
+    "idle_cpu_pct": 0,
+    "sasuke_default_process_delta": 0,
+    "sasuke_default_rss_delta_kib": 0,
+    "sasuke_task_session_process_delta": 2,
+    "sasuke_task_session_rss_delta_kib": 24156
+  },
+  "rollback": {
+    "command": "remove yonote from KONOHA_MCP_SESSION_PACKS and regenerate the task/session MCP config",
+    "persistent_startup_impact": "none; Sasuke default allowlist remains konoha + telethon-channel + bitrix24"
+  }
+}

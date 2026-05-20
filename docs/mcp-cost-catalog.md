@@ -19,7 +19,7 @@ Other MCPs are default only when the agent role owns that connector flow.
 | Role | Agents | Default MCP allowlist | Reason |
 |------|--------|-----------------------|--------|
 | Telegram bot connector | `naruto` | `konoha` | Keeps bot delegation and GitHub coordination intact; Naruto does not need Telethon, Bitrix24, browser, Office, or knowledge MCPs by default. |
-| Telegram user connector | `sasuke` | `konoha`, `telethon-channel`, `bitrix24` | Keeps user-account Telegram delivery and CRM routing intact. |
+| Telegram user connector | `sasuke` | `konoha`, `telethon-channel`, `bitrix24` | Keeps user-account Telegram delivery and CRM routing intact. Yonote is a task/session read-context overlay, not a default. |
 | Monitoring-only | `kiba` | `konoha` | Kiba is monitoring-only; no corporate, browser, Office, memory, calendar, audio, or document MCPs by default. |
 | SDD developer/reviewer | `kakashi`, `shikadai`, `guy` | `konoha` | SDD work uses local repo tools, `gh`, and Konoha handoff. |
 | QA | `shino`, `hinata` | `konoha` | QA defaults use Konoha plus TestBench capability, not direct Puppeteer MCP. |
@@ -45,7 +45,7 @@ scope but was not resident in the sampled runtime.
 | `telethon-channel` | default-critical | Telegram user connector | no | no | 1 | 89,676 | 0.0 | Required by Sasuke; an extra stale Kiba instance remains until Kiba regeneration. |
 | `bitrix24` | role-scoped | Sasuke, Mirai | no | no | 1 | 79,592 | 0.0 | Required where CRM routing is owned by the role; an extra stale Kiba instance remains. |
 | `gitlab` | optional-on-demand | none | yes | no | 3 | 109,992 | 0.0 | Observed only under stale Kiba broad MCP config. |
-| `yonote` | role-scoped | none | yes | no | 2 | 24,156 | 0.0 | Candidate for future narrow Sasuke knowledge lookup, not a default. |
+| `yonote` | role-scoped | none | yes | no | 2 | 24,156 | 0.0 | #775 approves bounded Sasuke read/search context only through task/session mode; persistent default delta is 0. |
 | `yandex-tracker` | optional-on-demand | none | yes | no | 0 | 0 | 0.0 | Configured but not resident in the sample. |
 | `memory` | optional-on-demand | none | yes | no | 3 | 106,656 | 0.0 | Duplicates Konoha/shared-memory workflows. |
 | `mempalace` | retired | none | no | yes | 0 | 0 | 0.0 | Removal candidate; runtime skips stale references. |
@@ -70,10 +70,12 @@ role responsibility and TTL:
 - Office/collaboration/debug packs: `excel`, `word`, `google-docs`, `google-sheets`, `miro`, `miro-api`
 - Other non-default connectors: `yonote`, `yandex-tracker`, `caldav`, `openrouter-audio`, `email`
 
-`puppeteer` is additionally lazy-gated: persistent agent startup defers it even
-when a debug profile allowlists it. A task/session must request
-`KONOHA_MCP_SESSION_PACKS=puppeteer`, and the stdio process is wrapped with an
-idle timeout.
+`puppeteer` and `yonote` are additionally lazy-gated: persistent agent startup
+defers them even when a debug/profile overlay allowlists them. A task/session
+must request `KONOHA_MCP_SESSION_PACKS=puppeteer` or
+`KONOHA_MCP_SESSION_PACKS=yonote`, and the stdio process is wrapped with an
+idle timeout. For Sasuke, Yonote is read/search-only policy; see
+`docs/adr-008-sasuke-yonote-read-context.md`.
 
 All shared catalog packs that still launch through `npx -y` or `uvx` are
 treated the same way after #782: they are excluded from persistent startup and

@@ -183,6 +183,11 @@ export const ON_DEMAND_SHARED_MCP_PACKS: ReadonlyMap<string, { feature: string; 
     idle_timeout_sec: 900,
     reason: "Generic memory MCP is rare corporate-memory tooling and must not spawn through npx during persistent startup",
   }],
+  ["yonote", {
+    feature: "corporate-memory",
+    idle_timeout_sec: 900,
+    reason: "Yonote context is a bounded Sasuke read-context pack and must be requested for a task/session",
+  }],
   ["puppeteer", {
     feature: "direct-browser-mcp",
     idle_timeout_sec: 900,

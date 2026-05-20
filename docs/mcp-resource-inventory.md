@@ -59,6 +59,26 @@ The shared catalog can still contain these server definitions for explicit
 on-demand sessions. Startup profiles skip them by default and log each skipped
 optional pack.
 
+## Sasuke Yonote Context Decision After #775
+
+Yonote is not added to Sasuke persistent startup. The approved path is a
+task/session read-context overlay gated by `corporate-memory` and
+`KONOHA_MCP_SESSION_PACKS=yonote`; see
+`docs/adr-008-sasuke-yonote-read-context.md` and
+`docs/sasuke-yonote-context-policy.json`.
+
+Live sample on 2026-05-20 22:53 MSK still found Yonote under stale Kiba broad
+MCP config:
+
+| Owner | Process count | RSS KiB | Notes |
+| --- | ---: | ---: | --- |
+| Stale Kiba Yonote MCP | 2 | 24,156 | `uv --directory .../yonote-mcp run main.py` plus Python child |
+| Sasuke persistent default delta | 0 | 0 | Default remains `konoha`, `telethon-channel`, `bitrix24` |
+| Sasuke task/session overlay delta | 2 | 24,156 | Only while the bounded session requests `yonote` |
+
+If Yonote is disabled or unavailable, Sasuke must continue user-account
+listening and CRM routing without Yonote context.
+
 ## Kiba MCP Surface Before #762
 
 Snapshot on 2026-05-16 before applying the `kiba-monitor-core` profile. The
