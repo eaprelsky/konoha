@@ -29,10 +29,12 @@ from feature_flags import resolve_feature_flags
 
 
 KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
+TESTBENCH_URL = os.environ.get("TESTBENCH_URL", "http://127.0.0.1:3203").rstrip("/")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 ENV_FILES = [Path("/home/ubuntu/.agent-env"), Path("/opt/shared/.shared-credentials")]
 ROSTER_PATH = Path(__file__).resolve().parents[1] / "docs" / "system-agent-roster.json"
 RESOURCE_INVENTORY_SCRIPT = SCRIPT_DIR / "resource-inventory.py"
+TESTBENCH_SERVICE = "konoha-testbench.service"
 
 
 def load_system_agent_roster(path: Path = ROSTER_PATH) -> dict[str, Any]:
@@ -654,6 +656,15 @@ def api_get(path: str) -> Any:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     req = urllib.request.Request(f"{base_url}{path}", headers=headers)
     with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def testbench_api_get(path: str) -> Any:
+    token = os.environ.get("KONOHA_TOKEN") or KONOHA_TOKEN
+    base_url = (os.environ.get("TESTBENCH_URL") or TESTBENCH_URL).rstrip("/")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    req = urllib.request.Request(f"{base_url}{path}", headers=headers)
+    with urllib.request.urlopen(req, timeout=5) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -1460,20 +1471,23 @@ def check_large_source_files() -> list[Check]:
     )]
 
 
-def check_resource_inventory_budget() -> list[Check]:
+def load_resource_inventory_report() -> tuple[dict[str, Any] | None, Check | None]:
     if not RESOURCE_INVENTORY_SCRIPT.exists():
-        return [Check("WARN", "resource_inventory.report", "script missing", "Restore scripts/resource-inventory.py")]
+        return None, Check("WARN", "resource_inventory.report", "script missing", "Restore scripts/resource-inventory.py")
     try:
         rc, stdout, stderr = run([sys.executable, str(RESOURCE_INVENTORY_SCRIPT), "--json", "--no-disk"], timeout=20)
     except Exception as exc:
-        return [Check("WARN", "resource_inventory.report", str(exc), "Run: python3 scripts/resource-inventory.py --json")]
+        return None, Check("WARN", "resource_inventory.report", str(exc), "Run: python3 scripts/resource-inventory.py --json")
     if rc != 0:
-        return [Check("WARN", "resource_inventory.report", (stderr or stdout)[:240], "Run: python3 scripts/resource-inventory.py")]
+        return None, Check("WARN", "resource_inventory.report", (stderr or stdout)[:240], "Run: python3 scripts/resource-inventory.py")
     try:
         report = json.loads(stdout)
     except Exception as exc:
-        return [Check("WARN", "resource_inventory.report", f"invalid JSON: {exc}", "Run: python3 scripts/resource-inventory.py --json --no-disk")]
+        return None, Check("WARN", "resource_inventory.report", f"invalid JSON: {exc}", "Run: python3 scripts/resource-inventory.py --json --no-disk")
+    return report, None
 
+
+def resource_inventory_pressure(report: dict[str, Any]) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     groups = report.get("groups") or {}
     group_pressure = {
         name: group.get("budget_pressure")
@@ -1490,6 +1504,63 @@ def check_resource_inventory_budget() -> list[Check]:
         for row in report.get("disk", [])
         if row.get("budget_pressure") in {"warning", "critical"}
     }
+    return group_pressure, service_pressure, disk_pressure
+
+
+def check_testbench_pool(policy: HealthcheckPolicy | None = None) -> list[Check]:
+    policy = policy or load_healthcheck_policy()
+    rc, stdout, _ = run(["systemctl", "is-active", TESTBENCH_SERVICE], timeout=5)
+    state = stdout.strip() or ("active" if rc == 0 else "inactive")
+    enabled = "testbench" in policy.enabled_features
+    policy_detail = f"profile={policy.service_profile} feature={'enabled' if enabled else 'disabled'} service={state}"
+
+    if rc != 0:
+        return [Check("OK", "testbench.pool", f"{policy_detail} mode=on-demand inactive")]
+
+    try:
+        status = testbench_api_get("/testbench/status")
+    except Exception as exc:
+        return [Check("WARN", "testbench.pool", f"{policy_detail} status_error={exc}", "Check konoha-testbench.service logs or stop it if not needed")]
+
+    total = int(status.get("total") or 0)
+    free = int(status.get("free") or 0)
+    waiting = int(status.get("waiting") or 0)
+    busy = int(status.get("busy") or max(total - free, 0))
+    limits = status.get("limits") or {}
+    mode = status.get("mode") or "unknown"
+    detail = (
+        f"{policy_detail} mode={mode} total={total} free={free} "
+        f"busy={busy} waiting={waiting} limits={limits}"
+    )
+
+    if not enabled:
+        return [Check("WARN", "testbench.pool", detail, "Stop konoha-testbench.service or enable the testbench feature for this profile")]
+
+    configured_max_pool = int(limits.get("max_pool_size") or total)
+    configured_max_jobs = int(limits.get("max_concurrent_jobs") or configured_max_pool)
+    if total > 2 or configured_max_pool > 2 or configured_max_jobs > 2:
+        return [Check("WARN", "testbench.pool", f"{detail} exceeds_budget=true", "Reload the bounded TestBench unit or reduce TESTBENCH_POOL_SIZE/TESTBENCH_MAX_POOL_SIZE")]
+
+    report, report_check = load_resource_inventory_report()
+    if report_check:
+        return [Check("WARN", "testbench.pool", f"{detail} resource_inventory={report_check.detail}", report_check.hint)]
+
+    group_pressure, service_pressure, _ = resource_inventory_pressure(report or {})
+    testbench_pressure = service_pressure.get(TESTBENCH_SERVICE) or group_pressure.get("testbench_browser")
+    idle_pool = total > 0 and free == total and waiting == 0 and busy == 0
+    if idle_pool and testbench_pressure in {"warning", "critical"}:
+        return [Check("WARN", "testbench.pool", f"{detail} idle_pool=true pressure={testbench_pressure}", "Stop TestBench or reduce TESTBENCH_POOL_SIZE under memory pressure")]
+    return [Check("OK", "testbench.pool", detail)]
+
+
+def check_resource_inventory_budget() -> list[Check]:
+    report, report_check = load_resource_inventory_report()
+    if report_check:
+        return [report_check]
+
+    assert report is not None
+    groups = report.get("groups") or {}
+    group_pressure, service_pressure, disk_pressure = resource_inventory_pressure(report)
     total_rss_kib = sum(int(group.get("rss_kib") or 0) for group in groups.values())
     pressure = {"groups": group_pressure, "services": service_pressure, "disk": disk_pressure}
     detail = f"groups={len(groups)} total_rss_kib={total_rss_kib} pressure={pressure}"
@@ -1520,6 +1591,7 @@ def main() -> int:
     checks.extend(check_lifecycle_control_plane(policy))
     checks.extend(check_experimental_feature_flags())
     checks.extend(check_disabled_experiment_agents())
+    checks.extend(check_testbench_pool(policy))
     for fn in (check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_role_registry_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files, check_resource_inventory_budget):
         checks.extend(fn())
     return print_report(checks)

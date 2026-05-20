@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_for_issue": 757,
+  "updated_for_issue": 758,
   "default_budget_profile": "prod-core",
   "budget_profiles": {
     "prod-core": {
@@ -18,7 +18,7 @@
       "memory_max_mib": 6500,
       "cpu_quota_percent": 600,
       "disk_budget_gib": 40,
-      "testbench": { "default": "on-demand", "pool_size": 1, "max_pool_size": 3 },
+      "testbench": { "default": "on-demand", "pool_size": 1, "max_pool_size": 2 },
       "scale_out_at": { "memory_pressure": "critical", "disk_used_percent": 85, "sustained_cpu_percent": 450 }
     },
     "staging-core": {
@@ -27,7 +27,7 @@
       "memory_max_mib": 2600,
       "cpu_quota_percent": 250,
       "disk_budget_gib": 12,
-      "testbench": { "default": "on-demand", "pool_size": 1, "max_pool_size": 1 },
+      "testbench": { "default": "disabled", "pool_size": 0, "max_pool_size": 0 },
       "scale_out_at": { "memory_pressure": "warning", "disk_used_percent": 80, "sustained_cpu_percent": 175 }
     },
     "qa-on-demand": {
@@ -119,7 +119,7 @@
       "agent-watchdog-shikadai.service": { "slice": "konoha-qa.slice", "memory_max": "384M", "cpu_quota": "50%", "restart": "always" },
       "agent-watchdog-lifecycle.service": { "slice": "konoha-qa.slice", "memory_max": "384M", "cpu_quota": "50%", "restart": "always" },
       "akamaru.service": { "slice": "konoha-agents.slice", "memory_max": "384M", "cpu_quota": "50%", "restart": "always" },
-      "konoha-testbench.service": { "slice": "konoha-qa.slice", "memory_max": "1200M", "cpu_quota": "150%", "restart": "on-failure", "concurrency": { "pool_size": 3, "max_pool_size": 3, "acquire_timeout_ms": 30000 } },
+      "konoha-testbench.service": { "slice": "konoha-qa.slice", "memory_max": "768M", "cpu_quota": "100%", "restart": "on-failure", "concurrency": { "mode": "on-demand", "pool_size": 1, "max_pool_size": 2, "max_concurrent_jobs": 2, "acquire_timeout_ms": 20000, "request_timeout_ms": 30000, "session_ttl_ms": 300000 } },
       "telegram-bot.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" },
       "telegram-bus.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" },
       "telegram-context-packer.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" },

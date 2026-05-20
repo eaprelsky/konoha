@@ -43,17 +43,24 @@ agent fleet, no persistent TestBench pool, and no Office/Miro/browser MCP pack.
 
 ## TestBench Bounds
 
-`konoha-testbench.service` is capped in `konoha-qa.slice`:
+`konoha-testbench.service` is an on-demand service capped in
+`konoha-qa.slice`:
 
-- `MemoryMax=1200M`
-- `CPUQuota=150%`
-- `TasksMax=2048`
-- `TESTBENCH_POOL_SIZE=3`
-- `TESTBENCH_MAX_POOL_SIZE=3`
+- `MemoryMax=768M`
+- `CPUQuota=100%`
+- `TasksMax=1024`
+- `TESTBENCH_MODE=on-demand`
+- `TESTBENCH_POOL_SIZE=1`
+- `TESTBENCH_MAX_POOL_SIZE=2`
+- `TESTBENCH_MAX_CONCURRENT_JOBS=2`
+- `TESTBENCH_SESSION_TTL_MS=300000`
 
 The service code clamps requested pool size to `TESTBENCH_MAX_POOL_SIZE`, so an
-accidental environment override cannot create an unbounded Chromium pool. For
-staging and CI-like runs, set `TESTBENCH_POOL_SIZE=1` and keep the same max cap.
+accidental environment override cannot create an unbounded Chromium pool. Core
+production and staging profiles keep TestBench disabled until `testbench` is
+explicitly enabled for an on-demand QA or golden-path browser run. Healthcheck
+reports the live pool limits and warns when an idle browser pool remains active
+while TestBench or `testbench_browser` memory pressure is warning/critical.
 
 ## Redis And PostgreSQL
 

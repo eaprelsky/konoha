@@ -48,8 +48,12 @@ Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
   `postgresql.service`, a container, or an external managed database.
 - Heavy MCP/browser/Office/Miro/document packs remain outside always-on
   profiles. Use explicit TTL/debug profiles from
-  `docs/mcp-optional-packs-policy.md` and enable the matching feature flag
-  with a recorded owner/reason.
+  `docs/browser-testing-policy.md` and `docs/mcp-optional-packs-policy.md`, and
+  enable the matching feature flag with a recorded owner/reason.
+- TestBench is optional in every core profile. `qa-on-demand` enables the
+  `testbench` feature for bounded browser sessions; `prod-core` and
+  `staging-core` keep browser routes, UI surfaces, and the Chromium service off
+  unless an operator explicitly enables them for a golden-path run.
 - Experimental product surfaces are default-off in `prod-core` and
   `staging-core`. The machine-readable feature catalog is
   `docs/feature-flags.json`; route/API/UI/MCP gates read the selected service

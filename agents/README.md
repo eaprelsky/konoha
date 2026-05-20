@@ -75,7 +75,7 @@ Kakashi, Shikadai, Kiba, Naruto, and Sasuke use dedicated watchdogs because thei
 
 | Service | Purpose |
 |---------|---------|
-| `konoha-testbench` | Persistent Chromium service (port 3203), Playwright BrowserContext pool (3 sessions), used by Hinata for GUI testing. systemd: konoha-testbench.service |
+| `konoha-testbench` | On-demand bounded Chromium service (port 3203), default Playwright BrowserContext pool 1 / max 2, used by Hinata for GUI testing. systemd: konoha-testbench.service |
 
 Browser/UI checks should use TestBench by default. Direct browser MCP servers
 such as Puppeteer are reserved for explicit time-boxed QA/debug sessions; see

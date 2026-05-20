@@ -1,7 +1,9 @@
 [Unit]
-Description=Konoha TestBench — Persistent Chromium service for agent-driven GUI testing
+Description=Konoha TestBench — bounded on-demand Chromium service for GUI testing
 After=network.target konoha.service
-Requires=konoha.service
+Wants=konoha.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -9,19 +11,23 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/konoha/konoha-testbench
 EnvironmentFile=-/home/ubuntu/.agent-env
 Environment=TESTBENCH_PORT=3203
-Environment=TESTBENCH_POOL_SIZE=3
-Environment=TESTBENCH_MAX_POOL_SIZE=3
-Environment=TESTBENCH_ACQUIRE_TIMEOUT_MS=30000
+Environment=TESTBENCH_MODE=on-demand
+Environment=TESTBENCH_POOL_SIZE=1
+Environment=TESTBENCH_MAX_POOL_SIZE=2
+Environment=TESTBENCH_ACQUIRE_TIMEOUT_MS=20000
+Environment=TESTBENCH_REQUEST_TIMEOUT_MS=30000
+Environment=TESTBENCH_SESSION_TTL_MS=300000
+Environment=TESTBENCH_MAX_CONCURRENT_JOBS=2
 Environment=DISPLAY=:99
 ExecStart=/home/ubuntu/.bun/bin/bun src/server.ts
 Restart=on-failure
 Slice=konoha-qa.slice
-MemoryHigh=900M
-MemoryMax=1200M
+MemoryHigh=512M
+MemoryMax=768M
 CPUWeight=100
-CPUQuota=150%
-TasksMax=2048
-RestartSec=5s
+CPUQuota=100%
+TasksMax=1024
+RestartSec=30s
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=konoha-testbench

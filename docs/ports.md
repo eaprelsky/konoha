@@ -9,7 +9,7 @@
 | 3200 | Konoha bus (HTTP + MCP) | `KONOHA_PUBLIC_URL` | Inter-agent message bus, SSE stream |
 | 3201 | konoha-dashboard | n/a | Monitoring UI — DO NOT use for E2E tests |
 | 3202 | E2E test backend | `KONOHA_PORT=3202` | Playwright webServer; isolated instance, reuseExistingServer: false |
-| 3203 | konoha-testbench | `TESTBENCH_PORT` | Persistent Chromium testbench API |
+| 3203 | konoha-testbench | `TESTBENCH_PORT` | On-demand bounded Chromium testbench API |
 
 ## Rules
 

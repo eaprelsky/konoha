@@ -433,6 +433,115 @@ def test_disabled_jiraiya_experiment_running_warns(monkeypatch):
     assert "tmux=active" in checks[0].detail
 
 
+def test_testbench_inactive_is_ok_when_feature_disabled(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        assert cmd == ["systemctl", "is-active", "konoha-testbench.service"]
+        return 3, "inactive\n", ""
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_SERVICE_PROFILE": "prod-core", "KONOHA_FEATURE_FLAGS_FILE": "/tmp/nonexistent-konoha-feature-flags.json"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
+
+    checks = healthcheck.check_testbench_pool(policy)
+
+    assert checks[0].level == "OK"
+    assert "feature=disabled" in checks[0].detail
+    assert "mode=on-demand inactive" in checks[0].detail
+
+
+def test_testbench_status_reports_bounded_pool(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, timeout=10):
+        calls.append(cmd)
+        if cmd == ["systemctl", "is-active", "konoha-testbench.service"]:
+            return 0, "active\n", ""
+        assert "resource-inventory.py" in cmd[1]
+        return 0, '{"groups":{"testbench_browser":{"rss_kib":100,"budget_pressure":"ok"}},"service_budgets":[],"disk":[]}', ""
+
+    def fake_testbench_api_get(path):
+        assert path == "/testbench/status"
+        return {
+            "ok": True,
+            "mode": "on-demand",
+            "total": 1,
+            "free": 1,
+            "busy": 0,
+            "waiting": 0,
+            "limits": {"max_pool_size": 2, "max_concurrent_jobs": 2, "session_ttl_ms": 300000},
+        }
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+    monkeypatch.setattr(healthcheck, "testbench_api_get", fake_testbench_api_get)
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_SERVICE_PROFILE": "qa-on-demand", "KONOHA_FEATURE_FLAGS_FILE": "/tmp/nonexistent-konoha-feature-flags.json"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
+
+    checks = healthcheck.check_testbench_pool(policy)
+
+    assert checks[0].level == "OK"
+    assert "mode=on-demand" in checks[0].detail
+    assert "total=1" in checks[0].detail
+    assert "'session_ttl_ms': 300000" in checks[0].detail
+    assert calls[0] == ["systemctl", "is-active", "konoha-testbench.service"]
+
+
+def test_testbench_idle_pool_under_memory_pressure_warns(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        if cmd == ["systemctl", "is-active", "konoha-testbench.service"]:
+            return 0, "active\n", ""
+        assert "resource-inventory.py" in cmd[1]
+        return 0, '{"groups":{"testbench_browser":{"rss_kib":900,"budget_pressure":"critical"}},"service_budgets":[{"unit":"konoha-testbench.service","budget_pressure":"critical"}],"disk":[]}', ""
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+    monkeypatch.setattr(healthcheck, "testbench_api_get", lambda path: {
+        "mode": "on-demand",
+        "total": 1,
+        "free": 1,
+        "busy": 0,
+        "waiting": 0,
+        "limits": {"max_pool_size": 2},
+    })
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_SERVICE_PROFILE": "qa-on-demand", "KONOHA_FEATURE_FLAGS_FILE": "/tmp/nonexistent-konoha-feature-flags.json"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
+
+    checks = healthcheck.check_testbench_pool(policy)
+
+    assert checks[0].level == "WARN"
+    assert "idle_pool=true" in checks[0].detail
+    assert "pressure=critical" in checks[0].detail
+
+
+def test_testbench_stale_oversized_pool_warns(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        assert cmd == ["systemctl", "is-active", "konoha-testbench.service"]
+        return 0, "active\n", ""
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+    monkeypatch.setattr(healthcheck, "testbench_api_get", lambda path: {
+        "mode": "unknown",
+        "total": 3,
+        "free": 3,
+        "busy": 0,
+        "waiting": 0,
+        "limits": {"max_pool_size": 3, "acquire_timeout_ms": 30000},
+    })
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_SERVICE_PROFILE": "qa-on-demand", "KONOHA_FEATURE_FLAGS_FILE": "/tmp/nonexistent-konoha-feature-flags.json"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
+
+    checks = healthcheck.check_testbench_pool(policy)
+
+    assert checks[0].level == "WARN"
+    assert "exceeds_budget=true" in checks[0].detail
+
+
 def test_resource_inventory_budget_pressure_is_reported(monkeypatch):
     def fake_run(cmd, timeout=10):
         assert "resource-inventory.py" in cmd[1]

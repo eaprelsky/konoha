@@ -40,12 +40,17 @@ describe("resource budget contract", () => {
     const unit = parseUnit("konoha-testbench/konoha-testbench.service");
     const pool = read("konoha-testbench/src/pool.ts");
 
-    expect(unit.Environment).toContain("TESTBENCH_POOL_SIZE=3");
-    expect(unit.Environment).toContain("TESTBENCH_MAX_POOL_SIZE=3");
+    expect(unit.Environment).toContain("TESTBENCH_MODE=on-demand");
+    expect(unit.Environment).toContain("TESTBENCH_POOL_SIZE=1");
+    expect(unit.Environment).toContain("TESTBENCH_MAX_POOL_SIZE=2");
+    expect(unit.Environment).toContain("TESTBENCH_MAX_CONCURRENT_JOBS=2");
+    expect(unit.Environment).toContain("TESTBENCH_SESSION_TTL_MS=300000");
     expect(unit.MemoryMax).toContain(raw.systemd.units["konoha-testbench.service"].memory_max);
     expect(unit.CPUQuota).toContain(raw.systemd.units["konoha-testbench.service"].cpu_quota);
-    expect(unit.TasksMax).toContain("2048");
+    expect(unit.TasksMax).toContain("1024");
     expect(pool).toContain("Math.min(requestedPoolSize, MAX_POOL_SIZE)");
+    expect(pool).toContain("TESTBENCH_MAX_CONCURRENT_JOBS");
+    expect(pool).toContain("TESTBENCH_SESSION_TTL_MS");
   });
 
   test("committed slice files match the resource budget contract", () => {

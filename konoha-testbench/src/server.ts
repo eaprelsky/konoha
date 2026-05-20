@@ -1,5 +1,5 @@
 /**
- * konoha-testbench — Persistent Chromium service with HTTP API for agent-driven GUI testing.
+ * konoha-testbench — Bounded Chromium service with HTTP API for agent-driven GUI testing.
  * Agents call simple actions ("navigate", "click", "type") and receive snapshots
  * (screenshot + a11y tree + console log + network log + bounding boxes).
  *
@@ -7,7 +7,7 @@
  */
 
 import { Hono } from "hono";
-import { initPool, acquireSession, acquireSessionById, releaseSession, poolStatus, closePool, POOL_SIZE, type Session } from "./pool";
+import { initPool, acquireSession, acquireSessionById, releaseSession, poolStatus, closePool, POOL_SIZE, REQUEST_TIMEOUT_MS, type Session } from "./pool";
 import {
   slugify, saveBaseline, hasBaseline, compareWithBaseline, listBaselines,
   DIFF_THRESHOLD,
@@ -87,11 +87,11 @@ app.post("/testbench/login", async (c) => {
     let session: Session | null = null;
     try {
       session = await acquireSessionById(sid);
-      await session.page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await session.page.goto(url, { waitUntil: "domcontentloaded", timeout: REQUEST_TIMEOUT_MS });
       await session.page.fill(username_selector, username, { timeout: 5_000 });
       await session.page.fill(password_selector, password, { timeout: 5_000 });
       await session.page.click(submit_selector, { timeout: 5_000 });
-      await session.page.waitForLoadState("domcontentloaded", { timeout: 10_000 }).catch(() => {});
+      await session.page.waitForLoadState("domcontentloaded", { timeout: Math.min(REQUEST_TIMEOUT_MS, 10_000) }).catch(() => {});
       await session.page.evaluate(() => { localStorage.setItem(DASH_AUTH_KEY, "1"); }).catch(() => {});
       results.push({ session_id: sid, ok: true, url: session.page.url() });
     } catch (e: any) {
@@ -113,7 +113,7 @@ app.post("/testbench/navigate", async (c) => {
 
   const session = await (session_id !== undefined ? acquireSessionById(Number(session_id)) : acquireSession()).catch((e) => { throw e; });
   try {
-    await session.page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await session.page.goto(url, { waitUntil: "domcontentloaded", timeout: REQUEST_TIMEOUT_MS });
     // Inject dashboard auth token so Playwright sessions bypass the login wall (#463).
     // localStorage is per-origin; this is a no-op on pages that don't use this key.
     await session.page.evaluate(() => {
@@ -323,7 +323,7 @@ app.post("/testbench/baseline", async (c) => {
 
   const session = await acquireSession().catch((e) => { throw e; });
   try {
-    await session.page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+    await session.page.goto(url, { waitUntil: "networkidle", timeout: REQUEST_TIMEOUT_MS });
     const buf = await session.page.screenshot({ type: "png", fullPage: true });
     const ts = saveBaseline(slug, buf as Buffer);
     return c.json({ ok: true, page: slug, baseline_ts: ts, screenshot_bytes: buf.length });
@@ -355,7 +355,7 @@ app.post("/testbench/update-baseline", async (c) => {
     if (session.error) { results.push({ page: slug, ok: false, error: session.error }); continue; }
 
     try {
-      await (session as Session).page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+      await (session as Session).page.goto(url, { waitUntil: "networkidle", timeout: REQUEST_TIMEOUT_MS });
       const buf = await (session as Session).page.screenshot({ type: "png", fullPage: true });
       const ts = saveBaseline(slug, buf as Buffer);
       results.push({ page: slug, ok: true, baseline_ts: ts });
@@ -398,7 +398,7 @@ app.post("/testbench/visual-regression", async (c) => {
     if (session.error) { results.push({ page: slug, error: session.error }); continue; }
 
     try {
-      await (session as Session).page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+      await (session as Session).page.goto(url, { waitUntil: "networkidle", timeout: REQUEST_TIMEOUT_MS });
       const buf = await (session as Session).page.screenshot({ type: "png", fullPage: true });
 
       if (!hasBaseline(slug)) {

@@ -103,7 +103,14 @@ Allowed duplicate keys are documented in the validator: `SERVICE_ACCOUNT_PATH` a
 |---|---|---|
 | `KONOHA_AGENT_TOKEN` | — | Per-agent token (set by the lifecycle manager on agent startup). Identifies the agent to the server. |
 | `KONOHA_SKILLS` | — | Comma-separated list of skill IDs enabled for this MCP client instance. |
-| `TESTBENCH_URL` | `http://127.0.0.1:3201` | URL of the TestBench Chromium service. Used by the `testbench-proxy` route and MCP tools. |
+| `TESTBENCH_URL` | `http://127.0.0.1:3203` | URL of the TestBench Chromium service. Used by the `testbench-proxy` route and MCP tools. |
+| `TESTBENCH_MODE` | `on-demand` | TestBench lifecycle mode reported in `/testbench/status`; persistent debug use must be explicit. |
+| `TESTBENCH_POOL_SIZE` | `1` | Number of warmed BrowserContext sessions for the bounded TestBench service. |
+| `TESTBENCH_MAX_POOL_SIZE` | `2` | Hard cap for BrowserContext sessions; the service clamps requested pool size to this value. |
+| `TESTBENCH_MAX_CONCURRENT_JOBS` | `2` | Maximum active plus queued TestBench jobs before the service rejects new work. |
+| `TESTBENCH_ACQUIRE_TIMEOUT_MS` | `20000` | Maximum wait for a free TestBench session. |
+| `TESTBENCH_REQUEST_TIMEOUT_MS` | `30000` | Default browser navigation/request timeout for TestBench actions. |
+| `TESTBENCH_SESSION_TTL_MS` | `300000` | Idle BrowserContext TTL before TestBench recreates the session on next acquire. |
 | `KONOHA_MCP_SESSION_PACKS` | — | Comma-separated on-demand MCP packs to attach through `scripts/build-mcp-session-config.ts`. Persistent startup always uses startup mode and still defers lazy packs. |
 | `KONOHA_MCP_ON_DEMAND_IDLE_TIMEOUT_SEC` | `900` | Idle timeout for stdio on-demand MCP wrappers such as `puppeteer`. |
 | `KONOHA_SHARED_MCP_CONFIG_PATH` | `/opt/shared/comind-template/.mcp.json:/home/ubuntu/.mcp.json` | Optional colon-separated override for shared MCP config resolution, mainly for tests/diagnostics. |

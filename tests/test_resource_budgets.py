@@ -29,10 +29,18 @@ def test_budget_contract_models_testbench_bounds_and_scale_out():
     raw = resource_budgets.load_resource_budgets(CATALOG_PATH)
 
     testbench = raw["systemd"]["units"]["konoha-testbench.service"]
-    assert testbench["memory_max"] == "1200M"
-    assert testbench["cpu_quota"] == "150%"
-    assert testbench["concurrency"] == {"pool_size": 3, "max_pool_size": 3, "acquire_timeout_ms": 30000}
-    assert raw["budget_profiles"]["staging-core"]["testbench"]["max_pool_size"] == 1
+    assert testbench["memory_max"] == "768M"
+    assert testbench["cpu_quota"] == "100%"
+    assert testbench["concurrency"] == {
+        "mode": "on-demand",
+        "pool_size": 1,
+        "max_pool_size": 2,
+        "max_concurrent_jobs": 2,
+        "acquire_timeout_ms": 20000,
+        "request_timeout_ms": 30000,
+        "session_ttl_ms": 300000,
+    }
+    assert raw["budget_profiles"]["staging-core"]["testbench"]["default"] == "disabled"
     assert "konoha-testbench.service" in raw["scale_out_policy"]["first_services_to_move"]
 
 
@@ -43,6 +51,6 @@ def test_systemd_budget_helpers_include_infra_and_disk_budgets():
 
     assert "redis-server.service" in units
     assert "postgresql.service" in units
-    assert memory["konoha-testbench.service"] == 1200 * 1024
+    assert memory["konoha-testbench.service"] == 768 * 1024
     assert memory["redis-server.service"] == 768 * 1024
     assert disk["playwright_cache"] == 2 * 1024 * 1024

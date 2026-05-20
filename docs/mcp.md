@@ -130,7 +130,7 @@ konoha_listen(agentId: "bot-agent", seconds: 30)
 ### skill: testbench
 
 Activate: add "testbench" to KONOHA_SKILLS  
-Service: konoha-testbench.service (port 3203)
+Service: konoha-testbench.service (port 3203, on-demand bounded pool)
 
 This is the default browser verification path for agents. Do not add direct
 Puppeteer/browser MCP to always-on or monitoring-only agents; see
