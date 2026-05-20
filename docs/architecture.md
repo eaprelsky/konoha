@@ -6,6 +6,11 @@ This document is the high-level map. Entity-level ownership rules live in `docs/
 
 The target product architecture is intentionally workflow-first and keeps the
 mandatory system-agent footprint small. See `docs/adr-004-minimal-system-agents.md`.
+Packaging and deployment boundaries are decided in
+`docs/adr-006-konoha-packaging-and-deployment-boundaries.md`: Konoha remains a
+monorepo, moves toward multiple deployable services over time, and keeps the
+current production server as a modular monolith until accepted boundary slices
+are implemented.
 
 ## Current Shape
 
