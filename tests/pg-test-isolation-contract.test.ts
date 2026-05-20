@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from "fs";
 import { join, relative } from "path";
 import {
   DESTRUCTIVE_INTEGRATION_ENV,
+  DESTRUCTIVE_INTEGRATION_REASON_ENV,
+  DESTRUCTIVE_INTEGRATION_TARGET_ENV,
   TEST_PG_SCHEMA_ENV,
   TEST_STORAGE_ENV,
   withPgSearchPath,
@@ -60,7 +62,15 @@ describe("Bun PostgreSQL test isolation contract", () => {
   });
 
   test("destructive integration override is explicit and auditable", () => {
-    const env = { [DESTRUCTIVE_INTEGRATION_ENV]: "1", [TEST_PG_SCHEMA_ENV]: "public" };
+    expect(() => getTestPgSchema({ [DESTRUCTIVE_INTEGRATION_ENV]: "1", [TEST_PG_SCHEMA_ENV]: "public" })).toThrow(
+      "requires KONOHA_DESTRUCTIVE_INTEGRATION_TARGET",
+    );
+    const env = {
+      [DESTRUCTIVE_INTEGRATION_ENV]: "1",
+      [DESTRUCTIVE_INTEGRATION_TARGET_ENV]: "local-public-schema",
+      [DESTRUCTIVE_INTEGRATION_REASON_ENV]: "manual rollback rehearsal",
+      [TEST_PG_SCHEMA_ENV]: "public",
+    };
     expect(getTestPgSchema(env)).toBe("public");
     expect(assertTestDatabaseUrl("postgres://test:test@127.0.0.1:5432/konoha", env)).toBe(
       "postgres://test:test@127.0.0.1:5432/konoha",

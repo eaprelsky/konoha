@@ -4,6 +4,7 @@ import {
   DESTRUCTIVE_INTEGRATION_ENV,
   TEST_PG_SCHEMA_ENV,
   TEST_STORAGE_ENV,
+  assertDestructiveIntegrationAudit,
   assertSafeTestPgSchema,
   destructiveIntegrationOverride,
   testPgSchema,
@@ -13,7 +14,10 @@ type TestPostgresOptions = NonNullable<Parameters<typeof postgres>[1]>;
 
 export function getTestPgSchema(env: NodeJS.ProcessEnv = process.env): string {
   const schema = testPgSchema(env);
-  if (destructiveIntegrationOverride(env)) return schema;
+  if (destructiveIntegrationOverride(env)) {
+    assertDestructiveIntegrationAudit(env);
+    return schema;
+  }
 
   if (env[TEST_STORAGE_ENV] !== "1") {
     throw new Error(
@@ -27,7 +31,10 @@ export function getTestPgSchema(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export function assertTestDatabaseUrl(databaseUrl: string, env: NodeJS.ProcessEnv = process.env): string {
-  if (destructiveIntegrationOverride(env)) return databaseUrl;
+  if (destructiveIntegrationOverride(env)) {
+    assertDestructiveIntegrationAudit(env);
+    return databaseUrl;
+  }
 
   const schema = getTestPgSchema(env);
   const options = new URL(databaseUrl).searchParams.get("options") || "";

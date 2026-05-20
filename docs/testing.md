@@ -59,6 +59,9 @@ storage by default:
   `src/storage/schema.sql`.
 - Runtime storage code fails fast when `KONOHA_TEST_STORAGE=1` would use Redis
   DB `0` or a PostgreSQL schema that does not start with `konoha_test`.
+- `tests/test-storage-guardrails.test.ts` is included in preflight and verifies
+  the preload contract before any test client can touch Redis DB `0` or the
+  PostgreSQL `public` schema.
 - Bun tests that need Redis directly must use `tests/redis-test-utils.ts`
   (`createTestRedis` / `getTestRedisDb`) instead of constructing `ioredis`
   clients inline. `tests/redis-test-isolation-contract.test.ts` audits this so
@@ -70,14 +73,20 @@ storage by default:
 
 Do not point normal unit/integration tests at production Redis DB `0` or the
 production PostgreSQL `public` schema. For a deliberate destructive integration
-run, set `KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS=1` and document the target
-environment in the review notes. Roll back to the safe default by unsetting
-`KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS`, `KONOHA_TEST_REDIS_DB`, and
-`KONOHA_TEST_PG_SCHEMA`; if a non-production Redis DB or PostgreSQL schema was
-used for a destructive run, clean them explicitly with
-`redis-cli -n <db> FLUSHDB` and `DROP SCHEMA <schema> CASCADE`. Production/runtime
-scripts that intentionally use Redis DB `0` or the production PostgreSQL path
-are outside the Bun test isolation contract.
+run, set all of:
+
+- `KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS=1`
+- `KONOHA_DESTRUCTIVE_INTEGRATION_TARGET=<host/db/schema>`
+- `KONOHA_DESTRUCTIVE_INTEGRATION_REASON=<ticket or operator reason>`
+
+The preload logs this metadata before constructing storage clients. Roll back to
+the safe default by unsetting `KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS`,
+`KONOHA_DESTRUCTIVE_INTEGRATION_TARGET`, `KONOHA_DESTRUCTIVE_INTEGRATION_REASON`,
+`KONOHA_TEST_REDIS_DB`, and `KONOHA_TEST_PG_SCHEMA`; if a non-production Redis DB
+or PostgreSQL schema was used for a destructive run, clean them explicitly with
+`redis-cli -n <db> FLUSHDB` and `DROP SCHEMA <schema> CASCADE`.
+Production/runtime scripts that intentionally use Redis DB `0` or the production
+PostgreSQL path are outside the Bun test isolation contract.
 
 ### E2E tests (Playwright)
 ```bash

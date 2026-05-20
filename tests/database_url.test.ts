@@ -7,6 +7,8 @@ const DEFAULT_TEST_STORAGE = process.env.KONOHA_TEST_STORAGE;
 const DEFAULT_REDIS_DB = process.env.REDIS_DB;
 const DEFAULT_TEST_PG_SCHEMA = process.env.KONOHA_TEST_PG_SCHEMA;
 const DEFAULT_DESTRUCTIVE_OVERRIDE = process.env.KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS;
+const DEFAULT_DESTRUCTIVE_TARGET = process.env.KONOHA_DESTRUCTIVE_INTEGRATION_TARGET;
+const DEFAULT_DESTRUCTIVE_REASON = process.env.KONOHA_DESTRUCTIVE_INTEGRATION_REASON;
 
 function cleanupFile(path: string) {
   try {
@@ -34,6 +36,10 @@ afterEach(() => {
   else process.env.KONOHA_TEST_PG_SCHEMA = DEFAULT_TEST_PG_SCHEMA;
   if (DEFAULT_DESTRUCTIVE_OVERRIDE === undefined) delete process.env.KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS;
   else process.env.KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS = DEFAULT_DESTRUCTIVE_OVERRIDE;
+  if (DEFAULT_DESTRUCTIVE_TARGET === undefined) delete process.env.KONOHA_DESTRUCTIVE_INTEGRATION_TARGET;
+  else process.env.KONOHA_DESTRUCTIVE_INTEGRATION_TARGET = DEFAULT_DESTRUCTIVE_TARGET;
+  if (DEFAULT_DESTRUCTIVE_REASON === undefined) delete process.env.KONOHA_DESTRUCTIVE_INTEGRATION_REASON;
+  else process.env.KONOHA_DESTRUCTIVE_INTEGRATION_REASON = DEFAULT_DESTRUCTIVE_REASON;
   cleanupFile(REPO_ENV);
 });
 
@@ -105,5 +111,16 @@ describe("database-url credential discovery", () => {
     process.env.DATABASE_URL = "postgres://env-user:env-pass@db.local:5432/app";
 
     expect(() => getDatabaseUrl()).toThrow("must start with konoha_test");
+  });
+
+  test("destructive integration database URL override requires audit metadata", () => {
+    process.env.KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS = "1";
+    process.env.DATABASE_URL = "postgres://env-user:env-pass@db.local:5432/app";
+
+    expect(() => getDatabaseUrl()).toThrow("requires KONOHA_DESTRUCTIVE_INTEGRATION_TARGET");
+
+    process.env.KONOHA_DESTRUCTIVE_INTEGRATION_TARGET = "local-public-schema";
+    process.env.KONOHA_DESTRUCTIVE_INTEGRATION_REASON = "manual destructive integration smoke";
+    expect(getDatabaseUrl()).toBe("postgres://env-user:env-pass@db.local:5432/app");
   });
 });

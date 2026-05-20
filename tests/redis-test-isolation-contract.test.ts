@@ -3,6 +3,8 @@ import { readdirSync, readFileSync } from "fs";
 import { join, relative } from "path";
 import {
   DESTRUCTIVE_INTEGRATION_ENV,
+  DESTRUCTIVE_INTEGRATION_REASON_ENV,
+  DESTRUCTIVE_INTEGRATION_TARGET_ENV,
   TEST_STORAGE_ENV,
 } from "../src/storage/test-isolation";
 import { getTestRedisDb } from "./redis-test-utils";
@@ -42,6 +44,16 @@ describe("Bun Redis test isolation contract", () => {
   });
 
   test("destructive integration override is explicit and auditable", () => {
-    expect(getTestRedisDb({ [DESTRUCTIVE_INTEGRATION_ENV]: "1", REDIS_DB: "0" })).toBe(0);
+    expect(() => getTestRedisDb({ [DESTRUCTIVE_INTEGRATION_ENV]: "1", REDIS_DB: "0" })).toThrow(
+      "requires KONOHA_DESTRUCTIVE_INTEGRATION_TARGET",
+    );
+    expect(
+      getTestRedisDb({
+        [DESTRUCTIVE_INTEGRATION_ENV]: "1",
+        [DESTRUCTIVE_INTEGRATION_TARGET_ENV]: "local-dev-db0",
+        [DESTRUCTIVE_INTEGRATION_REASON_ENV]: "manual rollback rehearsal",
+        REDIS_DB: "0",
+      }),
+    ).toBe(0);
   });
 });

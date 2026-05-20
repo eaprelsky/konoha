@@ -1,10 +1,18 @@
 // Test environment setup — runs before all test files via bunfig.toml preload.
 // Default tests must not touch production Redis DB 0 or the production PG schema.
-const destructiveIntegration = process.env.KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS === "1";
-if (!destructiveIntegration) {
-  process.env.KONOHA_TEST_STORAGE = "1";
-  process.env.REDIS_DB = process.env.KONOHA_TEST_REDIS_DB || "1";
-  process.env.KONOHA_TEST_PG_SCHEMA = process.env.KONOHA_TEST_PG_SCHEMA || `konoha_test_${process.pid}`;
+import {
+  applyBunTestStorageDefaults,
+  destructiveIntegrationAudit,
+  destructiveIntegrationOverride,
+} from "../src/storage/test-isolation";
+
+applyBunTestStorageDefaults(process.env, process.pid);
+const destructiveIntegration = destructiveIntegrationOverride(process.env);
+if (destructiveIntegration) {
+  const audit = destructiveIntegrationAudit(process.env);
+  console.warn(
+    `[test-storage] destructive integration override enabled target=${audit.target} reason=${audit.reason}`,
+  );
 }
 // Disable PG reads in tests: all CRUD is validated through isolated Redis.
 // pgUpsert* calls are fire-and-forget and may not settle before assertions.

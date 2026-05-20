@@ -2,6 +2,7 @@ import Redis, { type RedisOptions } from "ioredis";
 import {
   DESTRUCTIVE_INTEGRATION_ENV,
   TEST_STORAGE_ENV,
+  assertDestructiveIntegrationAudit,
   assertSafeTestRedis,
   destructiveIntegrationOverride,
 } from "../src/storage/test-isolation";
@@ -14,7 +15,10 @@ export function getTestRedisDb(env: NodeJS.ProcessEnv = process.env): number {
     throw new Error(`Invalid test Redis DB: REDIS_DB must be a non-negative integer; got ${env.REDIS_DB}`);
   }
 
-  if (destructiveIntegrationOverride(env)) return redisDb;
+  if (destructiveIntegrationOverride(env)) {
+    assertDestructiveIntegrationAudit(env);
+    return redisDb;
+  }
 
   if (env[TEST_STORAGE_ENV] !== "1") {
     throw new Error(
