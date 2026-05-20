@@ -27,10 +27,29 @@ marked on-demand are not attached to persistent startup configs.
 
 ## Lazy / On-Demand Packs
 
-`puppeteer` is the first heavy pack moved to lazy mode. Even when
-`browser-debug-ttl` or an explicit allowlist requests it, persistent agent
-startup defers the pack and records the decision in
-`/opt/shared/agent-workdirs/<agent>/mcp-pack-receipt.json`.
+`puppeteer` was the first heavy pack moved to lazy mode. Issue #782 extends the
+same startup policy to every shared MCP pack that still uses `npx -y` or `uvx`
+in the shared catalog. Even when a time-boxed profile or explicit allowlist
+requests one of these packs, persistent agent startup defers the pack and
+records the decision in `/opt/shared/agent-workdirs/<agent>/mcp-pack-receipt.json`.
+
+Inventory:
+
+| Pack | Catalog launcher | Runtime policy |
+| --- | --- | --- |
+| `gitlab` | `npx -y @zereight/mcp-gitlab` | task/session on-demand |
+| `filesystem` | `npx -y @modelcontextprotocol/server-filesystem` | task/session on-demand |
+| `memory` | `npx -y @modelcontextprotocol/server-memory` | task/session on-demand behind `corporate-memory` |
+| `puppeteer` | `npx -y @modelcontextprotocol/server-puppeteer` | task/session on-demand behind `direct-browser-mcp` |
+| `sequential-thinking` | `npx -y @modelcontextprotocol/server-sequential-thinking` | task/session on-demand |
+| `google-sheets` | `uvx mcp-google-sheets@latest` | task/session on-demand behind `office-miro-mcp` |
+| `excel` | `uvx excel-mcp-server stdio` | task/session on-demand behind `office-miro-mcp` |
+| `word` | `uvx --from office-word-mcp-server word_mcp_server` | task/session on-demand behind `office-miro-mcp` |
+| `google-docs` | `npx -y google-docs-mcp` | task/session on-demand behind `office-miro-mcp` |
+
+Always-on required flows do not use `npx` or `uvx`: Naruto uses Konoha MCP
+only, and Sasuke uses Konoha plus pinned local `telethon-channel` and local
+Bitrix24 MCP commands.
 
 To attach the pack for a bounded task/session, build the task MCP config through
 the public task-mode entrypoint:
@@ -58,6 +77,19 @@ Receipts include:
   startup, with estimated idle RSS saved from the cost catalog.
 - `skipped_packs`: packs omitted because they are not allowlisted or their
   feature flag is disabled.
+
+## Cache Cleanup After Conversion
+
+After agents are regenerated and no stale task sessions need the old launcher
+caches, clean package-runner caches during a maintenance window:
+
+```bash
+rm -rf ~/.npm/_npx ~/.cache/uv/archive-v0 ~/.cache/uv/sdists-v9 ~/.cache/uv/wheels-v5
+```
+
+Do not delete shared local MCP source directories under
+`/opt/shared/comind-template/mcp/`; required local installs such as Bitrix24 and
+Telethon depend on those paths.
 
 `mempalace` is different: it is retired, not optional. `buildMcpConfig()` skips
 it even when a stale shared config or explicit allowlist still mentions it, and

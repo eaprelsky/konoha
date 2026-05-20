@@ -163,14 +163,55 @@ export const RETIRED_SHARED_MCP_PACKS = new Set([
   "mempalace",
 ]);
 export const ON_DEMAND_SHARED_MCP_PACKS: ReadonlyMap<string, { feature: string; idle_timeout_sec: number; reason: string }> = new Map([
+  ["gitlab", {
+    feature: "",
+    idle_timeout_sec: 900,
+    reason: "GitLab MCP is a rare repository/debug pack and must not spawn through npx during persistent startup",
+  }],
+  ["filesystem", {
+    feature: "",
+    idle_timeout_sec: 900,
+    reason: "Filesystem MCP overlaps local tools and must not spawn through npx during persistent startup",
+  }],
+  ["memory", {
+    feature: "corporate-memory",
+    idle_timeout_sec: 900,
+    reason: "Generic memory MCP is rare corporate-memory tooling and must not spawn through npx during persistent startup",
+  }],
   ["puppeteer", {
     feature: "direct-browser-mcp",
     idle_timeout_sec: 900,
     reason: "direct browser MCP is a heavy debug pack; default GUI checks use TestBench",
   }],
+  ["sequential-thinking", {
+    feature: "",
+    idle_timeout_sec: 900,
+    reason: "Sequential-thinking MCP is an analysis helper and must not spawn through npx during persistent startup",
+  }],
+  ["google-sheets", {
+    feature: "office-miro-mcp",
+    idle_timeout_sec: 900,
+    reason: "Google Sheets MCP is office tooling and must not spawn through uvx during persistent startup",
+  }],
+  ["excel", {
+    feature: "office-miro-mcp",
+    idle_timeout_sec: 900,
+    reason: "Excel MCP is office tooling and must not spawn through uvx during persistent startup",
+  }],
+  ["word", {
+    feature: "office-miro-mcp",
+    idle_timeout_sec: 900,
+    reason: "Word MCP is office tooling and must not spawn through uvx during persistent startup",
+  }],
+  ["google-docs", {
+    feature: "office-miro-mcp",
+    idle_timeout_sec: 900,
+    reason: "Google Docs MCP is office tooling and must not spawn through npx during persistent startup",
+  }],
 ] as const);
 const MCP_BIN_OVERRIDES = {
   bun: "/home/ubuntu/.bun/bin/bun",
+  node: "/usr/bin/node",
   uv: "/home/ubuntu/.local/bin/uv",
   uvx: "/home/ubuntu/.local/bin/uvx",
   "mcp-email-server": "/home/ubuntu/.local/bin/mcp-email-server",
@@ -402,7 +443,7 @@ function loadSharedMcpServers(
             reason: onDemand.reason,
           });
           addReceipt(receipt, receiptEntry(name, "deferred", onDemand.reason, {
-            feature: onDemand.feature,
+            ...(onDemand.feature ? { feature: onDemand.feature } : {}),
             idle_timeout_sec: timeoutSec,
           }));
           continue;
@@ -430,7 +471,7 @@ function loadSharedMcpServers(
           merged[name] = onDemand ? wrapOnDemandServer(resolvedServer, onDemandIdleTimeoutSec(name, vars)) : resolvedServer;
           if (onDemand) {
             addReceipt(receipt, receiptEntry(name, "included", "on-demand pack requested for this task/session", {
-              feature: onDemand.feature,
+              ...(onDemand.feature ? { feature: onDemand.feature } : {}),
               idle_timeout_sec: onDemandIdleTimeoutSec(name, vars),
             }));
           }
@@ -449,7 +490,7 @@ function loadSharedMcpServers(
         merged[name] = onDemand ? wrapOnDemandServer(resolvedServer, onDemandIdleTimeoutSec(name, vars)) : resolvedServer;
         if (onDemand) {
           addReceipt(receipt, receiptEntry(name, "included", "on-demand pack requested for this task/session", {
-            feature: onDemand.feature,
+            ...(onDemand.feature ? { feature: onDemand.feature } : {}),
             idle_timeout_sec: onDemandIdleTimeoutSec(name, vars),
           }));
         }

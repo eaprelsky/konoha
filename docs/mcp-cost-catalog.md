@@ -69,6 +69,12 @@ when a debug profile allowlists it. A task/session must request
 `KONOHA_MCP_SESSION_PACKS=puppeteer`, and the stdio process is wrapped with an
 idle timeout.
 
+All shared catalog packs that still launch through `npx -y` or `uvx` are
+treated the same way after #782: they are excluded from persistent startup and
+can only be attached through the task/session MCP entrypoint with an idle
+timeout. This keeps always-on Naruto/Sasuke/Kiba/SDD startup deterministic and
+offline-safe.
+
 `mempalace` is retired, not optional. Do not preserve it in active profiles,
 generated `.mcp.json` files, or role defaults.
 

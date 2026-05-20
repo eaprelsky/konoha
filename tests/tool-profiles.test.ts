@@ -73,7 +73,17 @@ describe("tool and sandbox profiles", () => {
   });
 
   test("moves direct browser MCP to lazy on-demand mode", async () => {
-    expect([...ON_DEMAND_SHARED_MCP_PACKS.keys()]).toEqual(["puppeteer"]);
+    expect([...ON_DEMAND_SHARED_MCP_PACKS.keys()].sort()).toEqual([
+      "excel",
+      "filesystem",
+      "gitlab",
+      "google-docs",
+      "google-sheets",
+      "memory",
+      "puppeteer",
+      "sequential-thinking",
+      "word",
+    ]);
     const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-on-demand-"));
     const sharedConfig = join(dir, ".mcp.json");
     writeFileSync(sharedConfig, JSON.stringify({
@@ -104,11 +114,98 @@ describe("tool and sandbox profiles", () => {
     expect(Object.keys(task.config.mcpServers).sort()).toEqual(["konoha", "puppeteer"]);
     expect(task.config.mcpServers.puppeteer).toMatchObject({
       command: "/home/ubuntu/.bun/bin/bun",
-      args: ["run", "/home/ubuntu/konoha/scripts/mcp-idle-wrapper.ts", "--timeout-sec", "900", "--", "node", "puppeteer-mcp.js"],
+      args: ["run", "/home/ubuntu/konoha/scripts/mcp-idle-wrapper.ts", "--timeout-sec", "900", "--", "/usr/bin/node", "puppeteer-mcp.js"],
     });
     expect(task.receipt.included_packs).toMatchObject([
       { server: "puppeteer", policy: "included", feature: "direct-browser-mcp", idle_timeout_sec: 900 },
     ]);
+  });
+
+  test("defers npx and uvx shared MCP packs during persistent startup", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-npx-uvx-"));
+    const sharedConfig = join(dir, ".mcp.json");
+    writeFileSync(sharedConfig, JSON.stringify({
+      mcpServers: {
+        gitlab: { command: "npx", args: ["-y", "@zereight/mcp-gitlab"] },
+        "sequential-thinking": { command: "npx", args: ["-y", "@modelcontextprotocol/server-sequential-thinking"] },
+        excel: { command: "uvx", args: ["excel-mcp-server", "stdio"] },
+        bitrix24: { command: "node", args: ["mcp/bitrix24-mcp-server/build/index.js"] },
+      },
+    }), "utf-8");
+
+    const startup = await buildMcpConfigWithReceipt([], {
+      KONOHA_URL: "http://127.0.0.1:3200",
+      KONOHA_TOKEN: "test-token",
+      KONOHA_ENABLED_FEATURES: "office-miro-mcp",
+      KONOHA_FEATURE_ENABLE_REASON: "test",
+      KONOHA_FEATURE_FLAGS_FILE: join(dir, "missing-feature-flags.json"),
+      KONOHA_SHARED_MCP_CONFIG_PATH: sharedConfig,
+    }, undefined);
+
+    expect(Object.keys(startup.config.mcpServers).sort()).toEqual(["bitrix24", "konoha"]);
+    expect(startup.config.mcpServers.bitrix24).toMatchObject({ command: "/usr/bin/node" });
+    expect(startup.receipt.deferred_packs.map(pack => pack.server).sort()).toEqual(["gitlab", "sequential-thinking"]);
+    expect(startup.receipt.skipped_packs.map(pack => pack.server)).toContain("excel");
+    const serialized = JSON.stringify(startup.config);
+    expect(serialized).not.toContain('"command":"npx"');
+    expect(serialized).not.toContain('"command":"uvx"');
+  });
+
+  test("task entrypoint wraps rare npx MCP packs instead of startup spawning them", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-task-npx-"));
+    const sharedConfig = join(dir, ".mcp.json");
+    writeFileSync(sharedConfig, JSON.stringify({
+      mcpServers: {
+        gitlab: { command: "npx", args: ["-y", "@zereight/mcp-gitlab"] },
+      },
+    }), "utf-8");
+
+    const task = await buildMcpConfigWithReceipt([], {
+      KONOHA_URL: "http://127.0.0.1:3200",
+      KONOHA_TOKEN: "test-token",
+      KONOHA_FEATURE_FLAGS_FILE: join(dir, "missing-feature-flags.json"),
+      KONOHA_SHARED_MCP_CONFIG_PATH: sharedConfig,
+      KONOHA_MCP_SESSION_PACKS: "gitlab",
+    }, ["gitlab"], { mode: "task" });
+
+    expect(Object.keys(task.config.mcpServers).sort()).toEqual(["gitlab", "konoha"]);
+    expect(task.config.mcpServers.gitlab).toMatchObject({
+      command: "/home/ubuntu/.bun/bin/bun",
+      args: ["run", "/home/ubuntu/konoha/scripts/mcp-idle-wrapper.ts", "--timeout-sec", "900", "--", "npx", "-y", "@zereight/mcp-gitlab"],
+    });
+    expect(task.receipt.included_packs).toMatchObject([
+      { server: "gitlab", policy: "included", idle_timeout_sec: 900 },
+    ]);
+  });
+
+  test("required Sasuke MCP flow resolves to pinned local commands", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-sasuke-"));
+    const sharedConfig = join(dir, "shared.mcp.json");
+    const localConfig = join(dir, "local.mcp.json");
+    writeFileSync(sharedConfig, JSON.stringify({
+      mcpServers: {
+        bitrix24: { command: "node", args: ["mcp/bitrix24-mcp-server/build/index.js"] },
+      },
+    }), "utf-8");
+    writeFileSync(localConfig, JSON.stringify({
+      mcpServers: {
+        "telethon-channel": { command: "bun", args: ["/home/ubuntu/telethon-mcp/channel-server.ts"] },
+      },
+    }), "utf-8");
+
+    const config = await buildMcpConfig([], {
+      KONOHA_URL: "http://127.0.0.1:3200",
+      KONOHA_TOKEN: "test-token",
+      KONOHA_FEATURE_FLAGS_FILE: join(dir, "missing-feature-flags.json"),
+      KONOHA_SHARED_MCP_CONFIG_PATH: `${sharedConfig}:${localConfig}`,
+    }, ["telethon-channel", "bitrix24"]);
+
+    expect(Object.keys(config.mcpServers).sort()).toEqual(["bitrix24", "konoha", "telethon-channel"]);
+    expect(config.mcpServers.bitrix24).toMatchObject({ command: "/usr/bin/node" });
+    expect(config.mcpServers["telethon-channel"]).toMatchObject({ command: "/home/ubuntu/.bun/bin/bun" });
+    const serialized = JSON.stringify(config);
+    expect(serialized).not.toContain('"command":"npx"');
+    expect(serialized).not.toContain('"command":"uvx"');
   });
 
   test("degrades gracefully when a requested on-demand MCP feature is disabled", async () => {
