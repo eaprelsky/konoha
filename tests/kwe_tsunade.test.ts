@@ -6,7 +6,7 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
 // Read the token from env (server.ts captures it at module-load time;
@@ -17,9 +17,7 @@ process.env.KONOHA_PORT = "0";
 
 const { app, tsunadeReady } = await import("../core/src/server");
 
-// Use the same Redis DB as the server (set via REDIS_DB env in tests/setup.ts)
-const REDIS_DB = parseInt(process.env.REDIS_DB ?? "0", 10);
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: REDIS_DB });
+const redis = createTestRedis();
 
 function adminHeaders() {
   return { Authorization: `Bearer ${TEST_TOKEN}`, "Content-Type": "application/json" };

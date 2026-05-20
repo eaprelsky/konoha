@@ -6,11 +6,11 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { createCase, completeWorkItem, getCase, listWorkItems } from "../src/runtime";
 import type { WorkflowDefinition } from "../src/workflow-loader";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 
 // Unique suffix per test run to avoid key collisions
 const RUN = `gw${Date.now()}`;

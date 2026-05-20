@@ -22,11 +22,10 @@ import { readFileSync, rmSync } from "fs";
 rmSync(process.env.KONOHA_DASHBOARD_AUTH_FILE, { force: true });
 rmSync(process.env.KONOHA_SETUP_FILE, { force: true });
 
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import postgres from "postgres";
 
-const redisDb = parseInt(process.env.REDIS_DB ?? "0", 10);
-const flushRedis = new Redis({ db: redisDb, lazyConnect: true });
+const flushRedis = createTestRedis({ lazyConnect: true });
 
 // Flush the isolated Redis DB before each test run to ensure clean slate.
 // Per-file isolation is the responsibility of each test file's afterAll hook.

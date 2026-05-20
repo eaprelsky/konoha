@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { loadInstructionText } from "../src/document-instructions";
 import { findPersonById, findPersonByRole } from "../src/people-directory";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0", 10) });
+const redis = createTestRedis();
 const DOC_ID = `doc-test-${Date.now()}`;
 const PERSON_ID = `person-test-${Date.now()}`;
 

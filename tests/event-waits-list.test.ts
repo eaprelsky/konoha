@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import {
   createEventWait,
   listEventWaits,
@@ -7,7 +7,7 @@ import {
   type EventWait,
 } from "../src/runtime/event-waits";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 const RUN = `ew${Date.now()}`;
 const ALL_STATUSES = ["active", "fired", "cancelled", "overdue", "escalated"] as const;
 const createdWaits: EventWait[] = [];

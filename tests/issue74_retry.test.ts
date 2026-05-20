@@ -3,15 +3,14 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
 process.env.KONOHA_PORT = "0";
 const TEST_ADMIN_TOKEN = process.env.KONOHA_TOKEN || "konoha-dev-token";
-const REDIS_DB = parseInt(process.env.REDIS_DB ?? "0", 10);
 
 const { app } = await import("../core/src/server");
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: REDIS_DB });
+const redis = createTestRedis();
 
 const RUN = `t${Date.now()}`;
 function id(name: string) { return `test-${name}-${RUN}`; }

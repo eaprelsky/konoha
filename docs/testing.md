@@ -59,11 +59,19 @@ storage by default:
   `src/storage/schema.sql`.
 - Runtime storage code fails fast when `KONOHA_TEST_STORAGE=1` would use Redis
   DB `0` or a PostgreSQL schema that does not start with `konoha_test`.
+- Bun tests that need Redis directly must use `tests/redis-test-utils.ts`
+  (`createTestRedis` / `getTestRedisDb`) instead of constructing `ioredis`
+  clients inline. `tests/redis-test-isolation-contract.test.ts` audits this so
+  new direct clients cannot silently fall back to DB `0`.
 
 Do not point normal unit/integration tests at production Redis DB `0` or the
 production PostgreSQL `public` schema. For a deliberate destructive integration
 run, set `KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS=1` and document the target
-environment in the review notes.
+environment in the review notes. Roll back to the safe default by unsetting
+`KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS` and `KONOHA_TEST_REDIS_DB`; if a
+non-production Redis DB was used for a destructive run, clean it explicitly with
+`redis-cli -n <db> FLUSHDB`. Production/runtime scripts that intentionally use
+Redis DB `0` are outside the Bun test isolation contract.
 
 ### E2E tests (Playwright)
 ```bash

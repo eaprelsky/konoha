@@ -31,7 +31,7 @@ All configuration is done through environment variables. In production they are 
 | Variable | Default | Description |
 |---|---|---|
 | `DATABASE_URL` | `postgresql://...` (local) | PostgreSQL connection string. |
-| `REDIS_DB` | `0` | Redis database index. Tests use DB 1 to avoid polluting production data. |
+| `REDIS_DB` | `0` | Redis database index. Runtime defaults to DB 0; Bun tests set an isolated non-zero DB through `tests/setup.ts`. |
 | `PG_READ` | `false` | Set to `true` to enable Phase 2 migration: read cases/work-items from PostgreSQL instead of Redis. |
 
 ---

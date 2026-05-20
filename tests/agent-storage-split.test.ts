@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import {
   createAgentDef,
   deleteAgentDef,
@@ -9,7 +9,7 @@ import {
 } from "../src/agent";
 import type { AgentDef } from "../src/agent";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 const RUN = `t${Date.now()}`;
 const agentId = `test-agent-storage-${RUN}`;
 

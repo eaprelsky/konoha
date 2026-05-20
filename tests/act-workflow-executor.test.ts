@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { AUDIT_STREAM, AUTONOMY_KEY } from "../src/assistant-actions";
 import { unregisterAgent } from "../src/redis";
 import { deleteCasesByProcess } from "../src/runtime/cases/crud";
@@ -12,7 +12,7 @@ process.env.ANTHROPIC_API_KEY ||= "test-anthropic-key";
 
 const TEST_ADMIN_TOKEN = process.env.KONOHA_TOKEN || "test-admin-token-preload";
 const { app } = await import("../core/src/server");
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 
 const RUN = `act-wf-${Date.now()}`;
 const ACT_WORKFLOW_ID = `${RUN}-direct`;

@@ -1,9 +1,9 @@
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import postgres from "postgres";
 import { getDatabaseUrl } from "../src/storage/database-url";
 
 export async function cleanupGeneratedTestAgents(): Promise<void> {
-  const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0", 10) });
+  const redis = createTestRedis();
   const sql = postgres(getDatabaseUrl(), {
     max: 2,
     idle_timeout: 10,

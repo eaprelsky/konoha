@@ -10,14 +10,14 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { createCase } from "../src/runtime";
 import { createWorkflow } from "../src/workflow-loader";
 import { pgUpsertWorkflow, pgDeleteWorkflow } from "../src/storage/pg";
 import type { WorkflowDefinition } from "../src/workflow-loader";
 
 // Test redis on the isolated DB (DB 1 set by tests/setup.ts preload)
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 
 const RUN = `cu${Date.now()}`;
 function wfId(name: string) { return `${name}-${RUN}`; }

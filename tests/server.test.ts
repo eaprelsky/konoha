@@ -6,7 +6,7 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { rmSync, writeFileSync } from "fs";
 import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
 
@@ -19,7 +19,7 @@ const { app } = await import("../core/src/server");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 
 function adminHeaders(extra: Record<string, string> = {}) {
   return { Authorization: `Bearer ${TEST_ADMIN_TOKEN}`, "Content-Type": "application/json", ...extra };

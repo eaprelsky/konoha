@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { executeAction } from "../src/act-envelope";
 import { executeActionDirect } from "../src/action-executor";
 import { deleteCasesByProcess } from "../src/runtime";
@@ -7,7 +7,7 @@ import { createWorkflow } from "../src/workflow-loader";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import type { WorkflowDefinition } from "../src/workflow-loader";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 const RUN = `lifecycle-${Date.now()}`;
 const touched = new Set<string>();
 

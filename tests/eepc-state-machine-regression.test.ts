@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { createCase, deleteCasesByProcess, handleEventFired, loadCase, processEvent } from "../src/runtime";
 import { completeWorkItem } from "../src/runtime/work-items";
 import { loadActiveWaitsForCase } from "../src/runtime/event-waits";
@@ -13,7 +13,7 @@ import { cancelSubscriptionsByInstance } from "../src/event-manager";
 import { normalizeTelegramStreamEvent, routeMessengerEventToWorkflows } from "../src/messenger-event-router";
 import type { WorkflowDefinition } from "../src/workflow-loader";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 const RUN = `eepc-${Date.now()}`;
 
 function wfId(name: string) {

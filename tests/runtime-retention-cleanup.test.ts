@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "../src/retention/runtime-cleanup";
 import type { Case, WorkItem } from "../src/runtime/cases";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0", 10) });
+const redis = createTestRedis();
 const RUN = `test-retention-${Date.now()}`;
 
 function iso(hoursAgo: number): string {

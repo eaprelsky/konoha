@@ -561,7 +561,7 @@ export async function listChannels(): Promise<string[]> {
 }
 
 export function createSubscriber(agentId: string, onMessage: (msg: Message) => void): { close: () => void } {
-  const sub = new Redis({ host: "127.0.0.1", port: 6379, maxRetriesPerRequest: 3 });
+  const sub = new Redis({ ...REDIS_CONNECTION_OPTS, maxRetriesPerRequest: 3 });
   sub.on("error", () => {}); // swallow errors, subscriber is disposable
   const channel = NOTIFY_PREFIX + agentId;
   sub.subscribe(channel).catch(silentCatch("redis subscribe"));

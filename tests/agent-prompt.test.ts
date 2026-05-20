@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { buildRoleBlocks, renderSystemTemplate } from "../src/agent/prompt";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 const RUN = `t${Date.now()}`;
 const staleRoleId = `prompt-stale-role-${RUN}`;
 const activeRoleId = `prompt-active-role-${RUN}`;

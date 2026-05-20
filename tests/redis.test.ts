@@ -6,7 +6,7 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { hasDatabaseCredentials } from "../src/storage/database-url";
 import { getDatabaseUrl } from "../src/storage/database-url";
 import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
@@ -35,7 +35,7 @@ import {
 } from "../src/redis";
 import { createSseMessageDeduper } from "../src/sse-dedup";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 const RUN = `r${Date.now()}`;
 function id(name: string) { return `rtest-${name}-${RUN}`; }
 const HAS_DATABASE_CREDENTIALS = hasDatabaseCredentials();

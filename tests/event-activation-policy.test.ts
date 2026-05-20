@@ -1,11 +1,11 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import Redis from "ioredis";
+import { createTestRedis } from "./redis-test-utils";
 import { deleteCasesByProcess, processEventWithActivation } from "../src/runtime";
 import { createWorkflow, validateWorkflow, type WorkflowDefinition } from "../src/workflow-loader";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import { ACTIVATION_SUPPRESSIONS_STREAM, type WorkflowActivationPolicy } from "../src/event-activation-policy";
 
-const redis = new Redis({ host: "127.0.0.1", port: 6379, db: parseInt(process.env.REDIS_DB ?? "0") });
+const redis = createTestRedis();
 const RUN = `activation-${Date.now()}`;
 const touched = new Set<string>();
 
