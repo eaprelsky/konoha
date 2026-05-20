@@ -1476,7 +1476,7 @@ def load_resource_inventory_report() -> tuple[dict[str, Any] | None, Check | Non
     if not RESOURCE_INVENTORY_SCRIPT.exists():
         return None, Check("WARN", "resource_inventory.report", "script missing", "Restore scripts/resource-inventory.py")
     try:
-        rc, stdout, stderr = run([sys.executable, str(RESOURCE_INVENTORY_SCRIPT), "--json", "--no-disk"], timeout=20)
+        rc, stdout, stderr = run([sys.executable, str(RESOURCE_INVENTORY_SCRIPT), "--json"], timeout=30)
     except Exception as exc:
         return None, Check("WARN", "resource_inventory.report", str(exc), "Run: python3 scripts/resource-inventory.py --json")
     if rc != 0:
@@ -1484,7 +1484,7 @@ def load_resource_inventory_report() -> tuple[dict[str, Any] | None, Check | Non
     try:
         report = json.loads(stdout)
     except Exception as exc:
-        return None, Check("WARN", "resource_inventory.report", f"invalid JSON: {exc}", "Run: python3 scripts/resource-inventory.py --json --no-disk")
+        return None, Check("WARN", "resource_inventory.report", f"invalid JSON: {exc}", "Run: python3 scripts/resource-inventory.py --json")
     return report, None
 
 

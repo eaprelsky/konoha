@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_for_issue": 779,
+  "updated_for_issue": 769,
   "default_budget_profile": "prod-core",
   "budget_profiles": {
     "prod-core": {
@@ -261,15 +261,81 @@
     }
   },
   "disk_budgets": {
-    "npm_npx_cache": { "max_gib": 2 },
-    "npm_cache": { "max_gib": 3 },
-    "uv_cache": { "max_gib": 3 },
-    "bun_cache": { "max_gib": 2 },
-    "playwright_cache": { "max_gib": 2 },
-    "repo_node_modules": { "max_gib": 4 },
-    "template_node_modules": { "max_gib": 4 },
-    "journald": { "max_gib": 1, "retention_days": 14 },
-    "agent_runtime_logs": { "max_gib": 1, "retention_days": 30 }
+    "npm_npx_cache": {
+      "path": "/home/ubuntu/.npm/_npx",
+      "owner": "ephemeral npx tool/MCP executions",
+      "max_gib": 2,
+      "retention_days": 7,
+      "cleanup": { "automated": true, "mode": "delete_stale_children", "never_delete_active_refs": true, "script": "scripts/cache-retention-cleanup.py --target npm_npx_cache" }
+    },
+    "npm_cache": {
+      "path": "/home/ubuntu/.npm",
+      "owner": "npm package cache and npx cache parent",
+      "max_gib": 3,
+      "retention_days": 30,
+      "cleanup": { "automated": false, "dry_run": "npm cache verify", "apply": "npm cache clean --force after npx stale-child cleanup and no active npm install" }
+    },
+    "uv_cache": {
+      "path": "/home/ubuntu/.cache/uv",
+      "owner": "uv package/archive cache used by Python MCP tools",
+      "max_gib": 3,
+      "retention_days": 30,
+      "cleanup": { "automated": false, "dry_run": "uv cache dir && uv cache prune --dry-run where supported", "apply": "uv cache prune after confirming no active uv/uvx process requires the cache" }
+    },
+    "bun_cache": {
+      "path": "/home/ubuntu/.bun/install/cache",
+      "owner": "Bun package cache",
+      "max_gib": 2,
+      "retention_days": 30,
+      "cleanup": { "automated": false, "apply": "bun pm cache rm during maintenance window only" }
+    },
+    "playwright_cache": {
+      "path": "/home/ubuntu/.cache/ms-playwright",
+      "owner": "Playwright/TestBench browser revisions",
+      "max_gib": 2,
+      "retention_days": 60,
+      "cleanup": { "automated": false, "policy": "never delete while chromium/playwright/konoha-testbench processes reference the path; remove only old unused revisions after reinstall smoke" }
+    },
+    "puppeteer_cache": {
+      "path": "/home/ubuntu/.cache/puppeteer",
+      "owner": "Puppeteer MCP/browser debug cache",
+      "max_gib": 2,
+      "retention_days": 60,
+      "cleanup": { "automated": false, "policy": "never delete while puppeteer/chrome processes reference the path; prefer disabling direct-browser-mcp over deleting active browsers" }
+    },
+    "local_tooling": {
+      "path": "/home/ubuntu/.local",
+      "owner": "uv binaries, local Python tools, and operator executables",
+      "max_gib": 4,
+      "retention_days": 90,
+      "cleanup": { "automated": false, "policy": "inventory only; never delete active venvs or binaries used by services" }
+    },
+    "repo_node_modules": {
+      "path": "/home/ubuntu/konoha/node_modules",
+      "owner": "repository development dependencies",
+      "max_gib": 4,
+      "cleanup": { "automated": false, "apply": "remove and reinstall only in an isolated maintenance/developer workflow" }
+    },
+    "template_node_modules": {
+      "path": "/opt/shared/comind-template/node_modules",
+      "owner": "template development dependencies",
+      "max_gib": 4,
+      "cleanup": { "automated": false, "apply": "remove and reinstall only in an isolated maintenance/developer workflow" }
+    },
+    "journald": {
+      "path": "/var/log/journal",
+      "owner": "systemd journal",
+      "max_gib": 1,
+      "retention_days": 14,
+      "cleanup": { "automated": true, "script": "scripts/konoha-agent-log-retention.sh", "apply": "journalctl --vacuum-size=1G --vacuum-time=14d" }
+    },
+    "agent_runtime_logs": {
+      "path": "/opt/shared/kiba/logs",
+      "owner": "agent/watchdog operational logs",
+      "max_gib": 1,
+      "retention_days": 30,
+      "cleanup": { "automated": true, "script": "scripts/konoha-agent-log-retention.sh" }
+    }
   },
   "scale_out_policy": {
     "move_to_second_vm_when": [

@@ -9,8 +9,11 @@ Runtime consumers:
 
 - `scripts/resource-inventory.py` reads expected service budgets and disk cache
   budgets from the contract.
+- `scripts/cache-retention-cleanup.py` reads allowlisted cache retention targets
+  from the contract and defaults to dry-run.
 - `scripts/healthcheck-system.py` reads slice budget policy from the contract
-  and reports group/service pressure through `resource_inventory.budget_pressure`.
+  and reports group/service/disk pressure through
+  `resource_inventory.budget_pressure`.
 - `konoha-testbench` enforces the configured browser pool cap at runtime.
 - `src/agent/systemd-slices.ts` starts managed optional agents in bounded
   transient scopes.
@@ -193,6 +196,21 @@ python3 scripts/healthcheck-system.py | rg 'resource_inventory|slice.|service_sl
 The text report includes process groups, top RSS processes, service budgets,
 OOM/restart state, memory-limit hits, and cache/artifact disk pressure. JSON
 output omits raw process args and keeps only redacted args.
+
+## Cache Retention
+
+`docs/cache-retention-policy.md` defines the #769 cache cleanup runbook. The
+safe automated path is:
+
+```bash
+python3 scripts/cache-retention-cleanup.py --target npm_npx_cache
+python3 scripts/cache-retention-cleanup.py --target npm_npx_cache --apply
+```
+
+The script deletes only stale child directories under `/home/ubuntu/.npm/_npx`
+and skips paths referenced by active processes. Playwright, Puppeteer, uv,
+Bun, `.local`, and `node_modules` are inventory/manual-maintenance targets so
+active venvs, browsers, MCP tools, and service dependencies are not removed.
 
 ## BPMS Load Regression
 

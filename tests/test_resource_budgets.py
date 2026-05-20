@@ -18,7 +18,7 @@ CATALOG_PATH = Path(__file__).resolve().parents[1] / "docs" / "resource-budgets.
 def test_required_budget_profiles_exist_and_map_to_service_profiles():
     raw = resource_budgets.load_resource_budgets(CATALOG_PATH)
 
-    assert raw["updated_for_issue"] == 779
+    assert raw["updated_for_issue"] == 769
     assert raw["default_budget_profile"] == "prod-core"
     assert set(raw["budget_profiles"]) == {"prod-core", "prod-full", "staging-core", "qa-on-demand", "ci-test"}
     assert raw["budget_profiles"]["prod-core"]["service_profile"] == "prod-core"
@@ -55,6 +55,10 @@ def test_systemd_budget_helpers_include_infra_and_disk_budgets():
     assert memory["konoha-testbench.service"] == 768 * 1024
     assert memory["redis-server.service"] == 768 * 1024
     assert disk["playwright_cache"] == 2 * 1024 * 1024
+    targets = dict(resource_budgets.disk_budget_targets(CATALOG_PATH))
+    assert targets["npm_npx_cache"].as_posix() == "/home/ubuntu/.npm/_npx"
+    assert targets["puppeteer_cache"].as_posix() == "/home/ubuntu/.cache/puppeteer"
+    assert targets["local_tooling"].as_posix() == "/home/ubuntu/.local"
 
 
 def test_transient_scope_and_staging_dropin_policies_are_modeled():

@@ -23,7 +23,7 @@ describe("resource budget contract", () => {
   test("defines production, staging, QA, and CI budget profiles", () => {
     const raw = JSON.parse(read("docs/resource-budgets.json"));
 
-    expect(raw.updated_for_issue).toBe(779);
+    expect(raw.updated_for_issue).toBe(769);
     expect(raw.default_budget_profile).toBe("prod-core");
     expect(Object.keys(raw.budget_profiles).sort()).toEqual([
       "ci-test",
@@ -95,6 +95,24 @@ describe("resource budget contract", () => {
     ]);
   });
 
+  test("defines cache retention inventory and an automated safe cleanup path", () => {
+    const raw = JSON.parse(read("docs/resource-budgets.json"));
+    const disk = raw.disk_budgets;
+
+    expect(disk.npm_npx_cache.path).toBe("/home/ubuntu/.npm/_npx");
+    expect(disk.npm_npx_cache.cleanup).toMatchObject({
+      automated: true,
+      mode: "delete_stale_children",
+      never_delete_active_refs: true,
+      script: "scripts/cache-retention-cleanup.py --target npm_npx_cache",
+    });
+    expect(disk.npm_cache.cleanup.dry_run).toContain("npm cache verify");
+    expect(disk.uv_cache.cleanup.apply).toContain("uv cache prune");
+    expect(disk.playwright_cache.cleanup.policy).toContain("never delete while");
+    expect(disk.puppeteer_cache.path).toBe("/home/ubuntu/.cache/puppeteer");
+    expect(disk.local_tooling.cleanup.policy).toContain("never delete active venvs");
+  });
+
   test("TestBench service and code enforce bounded Chromium pool", () => {
     const raw = JSON.parse(read("docs/resource-budgets.json"));
     const unit = parseUnit("konoha-testbench/konoha-testbench.service");
@@ -152,6 +170,8 @@ describe("resource budget contract", () => {
 
     expect(policy).toContain("Host-Level Reserve");
     expect(policy).toContain("Host Service Audit");
+    expect(policy).toContain("Cache Retention");
+    expect(read("docs/cache-retention-policy.md")).toContain("scripts/cache-retention-cleanup.py --target npm_npx_cache --apply");
     expect(policy).toContain("python3 scripts/host-service-audit.py --json");
     expect(policy).toContain("sudo systemctl enable --now ModemManager.service");
     expect(policy).toContain("Shared mail stack");

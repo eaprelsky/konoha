@@ -118,3 +118,17 @@ def disk_budget_kib_by_name(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, int
         if max_gib is not None:
             result[name] = int(float(max_gib) * 1024 * 1024)
     return result
+
+
+def disk_budget_entries(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, dict[str, Any]]:
+    raw = load_resource_budgets(path)
+    return {name: dict(budget) for name, budget in raw.get("disk_budgets", {}).items()}
+
+
+def disk_budget_targets(path: Path = RESOURCE_BUDGETS_PATH) -> list[tuple[str, Path]]:
+    entries = disk_budget_entries(path)
+    return [
+        (name, Path(str(budget["path"])))
+        for name, budget in entries.items()
+        if budget.get("path")
+    ]

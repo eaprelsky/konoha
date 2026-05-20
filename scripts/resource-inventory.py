@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
-from resource_budgets import disk_budget_kib_by_name, expected_memory_max_kib, systemd_budget_units
+from resource_budgets import disk_budget_kib_by_name, disk_budget_targets, expected_memory_max_kib, systemd_budget_units
 
 DEFAULT_TOP = 12
 KIB = 1024
@@ -33,15 +33,7 @@ SYSTEMD_BUDGET_UNITS = systemd_budget_units()
 EXPECTED_MEMORY_MAX_KIB = expected_memory_max_kib()
 DISK_BUDGET_KIB = disk_budget_kib_by_name()
 
-CACHE_TARGETS = [
-    ("npm_npx_cache", Path("/home/ubuntu/.npm/_npx")),
-    ("npm_cache", Path("/home/ubuntu/.npm")),
-    ("uv_cache", Path("/home/ubuntu/.cache/uv")),
-    ("bun_cache", Path("/home/ubuntu/.bun/install/cache")),
-    ("playwright_cache", Path("/home/ubuntu/.cache/ms-playwright")),
-    ("repo_node_modules", REPO_ROOT / "node_modules"),
-    ("template_node_modules", Path("/opt/shared/comind-template/node_modules")),
-]
+CACHE_TARGETS = disk_budget_targets()
 
 MCP_PATTERNS: list[tuple[str, str]] = [
     ("konoha", r"(^|\s)(/home/ubuntu/\.bun/bin/)?bun\s+run\s+/home/ubuntu/konoha/src/mcp\.ts"),

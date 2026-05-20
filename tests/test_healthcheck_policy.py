@@ -555,6 +555,7 @@ def test_testbench_stale_oversized_pool_warns(monkeypatch):
 def test_resource_inventory_budget_pressure_is_reported(monkeypatch):
     def fake_run(cmd, timeout=10):
         assert "resource-inventory.py" in cmd[1]
+        assert "--no-disk" not in cmd
         return 0, '{"groups":{"core_konoha_api":{"rss_kib":100,"budget_pressure":"ok"},"mcp_server":{"rss_kib":900,"budget_pressure":"warning"}}}', ""
 
     monkeypatch.setattr(healthcheck, "run", fake_run)
@@ -591,6 +592,20 @@ def test_resource_inventory_service_budget_pressure_is_reported(monkeypatch):
 
     assert checks[0].level == "WARN"
     assert "'konoha-testbench.service': 'critical'" in checks[0].detail
+
+
+def test_resource_inventory_disk_budget_pressure_is_reported(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        assert "--no-disk" not in cmd
+        return 0, '{"groups":{"core_konoha_api":{"rss_kib":100,"budget_pressure":"ok"}},"service_budgets":[],"disk":[{"name":"npm_cache","budget_pressure":"critical"}]}', ""
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+
+    checks = healthcheck.check_resource_inventory_budget()
+
+    assert checks[0].level == "WARN"
+    assert checks[0].name == "resource_inventory.budget_pressure"
+    assert "'npm_cache': 'critical'" in checks[0].detail
 
 
 def test_resource_inventory_memory_limit_hit_is_reported(monkeypatch):
