@@ -15,6 +15,12 @@ Kiba keeps the `kiba-monitor-core` tool profile and the `konoha` MCP allowlist
 for both targets. Staging is a monitor target, not a reason to start another
 Kiba agent or another broad MCP pack.
 
+`KONOHA_URL` remains the Konoha bus/control-plane URL for the single shared
+Kiba runtime. Akamaru resolves the monitored `/health` and `/agents` URL from
+the selected target's `konoha_url_env`; for example,
+`KIBA_MONITOR_ENVIRONMENT=staging` checks `KONOHA_STAGING_URL`, not the
+production bus URL.
+
 ## Environment Labels
 
 All Kiba alert and healthcheck messages must carry `env=<environment>`:

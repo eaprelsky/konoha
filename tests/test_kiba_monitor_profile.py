@@ -1,6 +1,9 @@
 import importlib.util
+import asyncio
 import json
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
@@ -12,6 +15,36 @@ sys.modules[spec.name] = kiba_profile
 spec.loader.exec_module(kiba_profile)
 
 PROFILE_PATH = Path(__file__).resolve().parents[1] / "docs" / "kiba-monitor-profile.json"
+
+
+class RecordingKonohaHandler(BaseHTTPRequestHandler):
+    requests: list[str] = []
+
+    def do_GET(self):
+        self.__class__.requests.append(self.path)
+        if self.path == "/health":
+            payload = {"ok": True}
+        elif self.path == "/agents":
+            payload = {"agents": []}
+        else:
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(payload).encode("utf-8"))
+
+    def log_message(self, format, *args):
+        return
+
+
+def start_server():
+    handler = type("RecordingKonohaHandlerInstance", (RecordingKonohaHandler,), {"requests": []})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread, handler
 
 
 def test_profile_defines_single_shared_kiba_for_prod_and_staging():
@@ -31,6 +64,16 @@ def test_alert_and_healthcheck_messages_receive_environment_labels():
     )
     assert kiba_profile.label_kiba_message("kiba:healthcheck", "staging") == "kiba:healthcheck env=staging"
     assert kiba_profile.label_kiba_message("kiba:alert env=prod redis=down", "staging") == "kiba:alert env=prod redis=down"
+
+
+def test_target_url_uses_selected_environment_url():
+    env = {
+        "KIBA_MONITOR_ENVIRONMENT": "staging",
+        "KONOHA_URL": "http://prod.example:3200",
+        "KONOHA_STAGING_URL": "http://staging.example:3200/",
+    }
+
+    assert kiba_profile.target_url_from_env(env) == "http://staging.example:3200"
 
 
 def test_action_guard_requires_explicit_matching_target_environment():
@@ -79,3 +122,44 @@ def test_akamaru_remediation_blocks_cross_environment_actions(monkeypatch):
     assert result is not None
     assert "auto_remediation_blocked" in result
     assert "env=staging" in result
+
+
+def test_akamaru_staging_monitor_checks_staging_url_not_bus_url(monkeypatch):
+    import importlib.util
+
+    prod_server, prod_thread, prod_handler = start_server()
+    staging_server, staging_thread, staging_handler = start_server()
+    try:
+        monkeypatch.setenv("KIBA_MONITOR_ENVIRONMENT", "staging")
+        monkeypatch.setenv("KONOHA_URL", f"http://127.0.0.1:{prod_server.server_port}")
+        monkeypatch.setenv("KONOHA_STAGING_URL", f"http://127.0.0.1:{staging_server.server_port}")
+        monkeypatch.setenv("KIBA_ACTION_TARGET_ENV", "staging")
+        monkeypatch.setenv("KONOHA_TOKEN", "")
+
+        root = Path(__file__).resolve().parents[1]
+        akamaru_path = root / "scripts" / "akamaru.py"
+        spec = importlib.util.spec_from_file_location("akamaru_kiba_staging_url_test", akamaru_path)
+        akamaru = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        sys.modules[spec.name] = akamaru
+        spec.loader.exec_module(akamaru)
+
+        alerts = asyncio.run(akamaru.check_konoha())
+
+        assert alerts == []
+        assert akamaru.KONOHA_URL == f"http://127.0.0.1:{prod_server.server_port}"
+        assert akamaru.MONITORED_KONOHA_URL == f"http://127.0.0.1:{staging_server.server_port}"
+        assert prod_handler.requests == []
+        assert staging_handler.requests == ["/health", "/agents"]
+        monkeypatch.setattr(akamaru, "is_service_masked", lambda service: False)
+        monkeypatch.setattr(akamaru, "restart_service", lambda service: (True, "ok"))
+        remediation = akamaru.remediate_alert("kiba:alert env=staging service=telegram-bot.service status=failed")
+        assert remediation is not None
+        assert "auto_restart_service=telegram-bot.service ok=1" in remediation
+    finally:
+        prod_server.shutdown()
+        staging_server.shutdown()
+        prod_server.server_close()
+        staging_server.server_close()
+        prod_thread.join(timeout=5)
+        staging_thread.join(timeout=5)

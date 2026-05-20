@@ -31,6 +31,14 @@ def known_environments(profile: dict[str, Any] | None = None) -> set[str]:
     return {str(target["environment"]) for target in raw["targets"]}
 
 
+def target_for_environment(environment: str, profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    raw = profile or load_kiba_monitor_profile()
+    for target in raw["targets"]:
+        if target["environment"] == environment:
+            return target
+    raise ValueError(f"Unknown Kiba monitor environment: {environment}")
+
+
 def target_environment_from_env(environ: dict[str, str] | None = None, profile: dict[str, Any] | None = None) -> str:
     env = environ or os.environ
     raw = profile or load_kiba_monitor_profile()
@@ -38,6 +46,20 @@ def target_environment_from_env(environ: dict[str, str] | None = None, profile: 
     if selected not in known_environments(raw):
         raise ValueError(f"Unknown Kiba monitor environment: {selected}")
     return selected
+
+
+def target_url_from_env(environ: dict[str, str] | None = None, profile: dict[str, Any] | None = None) -> str:
+    env = environ or os.environ
+    raw = profile or load_kiba_monitor_profile()
+    environment = target_environment_from_env(env, raw)
+    target = target_for_environment(environment, raw)
+    url_env = str(target["konoha_url_env"])
+    url = (env.get(url_env) or "").strip()
+    if not url and url_env == "KONOHA_URL":
+        url = "http://127.0.0.1:3200"
+    if not url:
+        raise ValueError(f"Kiba monitor environment {environment} requires {url_env}")
+    return url.rstrip("/")
 
 
 def parse_kiba_fields(text: str) -> dict[str, str]:

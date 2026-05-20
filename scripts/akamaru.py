@@ -20,13 +20,14 @@ import os
 import subprocess
 import time
 from datetime import datetime, timezone
-from kiba_monitor_profile import action_guard_reason, label_kiba_message, target_environment_from_env
+from kiba_monitor_profile import action_guard_reason, label_kiba_message, target_environment_from_env, target_url_from_env
 
 # ── Config ──────────────────────────────────────────────────────────────────
-KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
+KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 AUTO_REMEDIATE = os.environ.get("AKAMARU_AUTO_REMEDIATE", "1") == "1"
 KIBA_MONITOR_ENVIRONMENT = target_environment_from_env()
+MONITORED_KONOHA_URL = target_url_from_env()
 
 CHECK_INTERVAL  = 60   # seconds between full checks
 HEARTBEAT_ALERT = 600  # seconds (10 min) without heartbeat → alert
@@ -923,7 +924,7 @@ async def check_konoha(paused: set[str] = frozenset()) -> list[str]:
         health_proc = await asyncio.create_subprocess_exec(
             "curl", "-s", "--max-time", "5",
             "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
-            f"{KONOHA_URL}/health",
+            f"{MONITORED_KONOHA_URL}/health",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             env=env,
@@ -938,7 +939,7 @@ async def check_konoha(paused: set[str] = frozenset()) -> list[str]:
         proc = await asyncio.create_subprocess_exec(
             "curl", "-s", "--max-time", "10",
             "-H", f"Authorization: Bearer {KONOHA_TOKEN}",
-            f"{KONOHA_URL}/agents",
+            f"{MONITORED_KONOHA_URL}/agents",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             env=env,
