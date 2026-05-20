@@ -23,7 +23,6 @@ rmSync(process.env.KONOHA_DASHBOARD_AUTH_FILE, { force: true });
 rmSync(process.env.KONOHA_SETUP_FILE, { force: true });
 
 import { createTestRedis } from "./redis-test-utils";
-import postgres from "postgres";
 
 const flushRedis = createTestRedis({ lazyConnect: true });
 
@@ -34,10 +33,9 @@ await flushRedis.flushdb();
 await flushRedis.quit();
 
 if (!destructiveIntegration) {
-  const { getDatabaseUrl } = await import("../src/storage/database-url");
-  const { testPgSchema } = await import("../src/storage/test-isolation");
-  const schema = testPgSchema();
-  const sql = postgres(getDatabaseUrl(), {
+  const { createTestPostgres, getTestPgSchema } = await import("./pg-test-utils");
+  const schema = getTestPgSchema();
+  const sql = createTestPostgres({
     max: 1,
     idle_timeout: 5,
     connect_timeout: 5,

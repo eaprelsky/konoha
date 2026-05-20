@@ -1,10 +1,9 @@
 import { createTestRedis } from "./redis-test-utils";
-import postgres from "postgres";
-import { getDatabaseUrl } from "../src/storage/database-url";
+import { createTestPostgres } from "./pg-test-utils";
 
 export async function cleanupGeneratedTestAgents(): Promise<void> {
   const redis = createTestRedis();
-  const sql = postgres(getDatabaseUrl(), {
+  const sql = createTestPostgres({
     max: 2,
     idle_timeout: 10,
     connect_timeout: 5,

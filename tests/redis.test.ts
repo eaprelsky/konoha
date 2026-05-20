@@ -8,8 +8,8 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { createTestRedis } from "./redis-test-utils";
 import { hasDatabaseCredentials } from "../src/storage/database-url";
-import { getDatabaseUrl } from "../src/storage/database-url";
 import { cleanupGeneratedTestAgents } from "./agent-registry-cleanup";
+import { createTestPostgres } from "./pg-test-utils";
 
 // Import functions under test
 import {
@@ -236,8 +236,7 @@ describe("listAgents", () => {
   test("marks stale agents as offline", async () => {
     const agentId = id("stale");
     await registerAgent({ id: agentId, name: "Stale Agent", capabilities: [], roles: [] });
-    const postgres = (await import("postgres")).default;
-    const sql = postgres(getDatabaseUrl());
+    const sql = createTestPostgres();
     await sql`
       UPDATE konoha_agents
       SET last_heartbeat = 0, status = 'online'
