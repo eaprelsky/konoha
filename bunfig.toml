@@ -2,5 +2,5 @@
 # Exclude Playwright E2E specs — they require `bun x playwright test`, not bun runner.
 # E2E specs live in e2e/ at root; unit tests are in tests/*.test.ts
 pathIgnorePatterns = ["e2e/**", "tests/e2e/**", "frontend/src/__tests__/**"]
-# Preload runs before any test file is imported — sets REDIS_DB=1 to isolate tests from production DB 0
+# Preload runs before any test file is imported — isolates Redis DB and PG schema from production storage.
 preload = ["./tests/setup.ts"]

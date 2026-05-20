@@ -35,6 +35,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://konoha:konoha@127.0.0.1:5432/konoha
+      KONOHA_TEST_PG_SCHEMA: konoha_test_ci
       KONOHA_TOKEN: konoha-ci-token
       ANTHROPIC_API_KEY: ci-placeholder
     steps:

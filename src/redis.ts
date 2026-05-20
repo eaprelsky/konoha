@@ -2,6 +2,7 @@ import Redis from "ioredis";
 import { createHash, randomUUID } from "crypto";
 import { config } from "./config";
 import { createLogger, silentCatch } from "./logger";
+import { assertSafeTestRedis } from "./storage/test-isolation";
 import {
   pgRegisterAgent,
   pgGetAgentIdByToken,
@@ -70,6 +71,7 @@ export interface Message {
 }
 
 const REDIS_DB = Number.isFinite(config.storage.redisDb) ? config.storage.redisDb : 0;
+assertSafeTestRedis();
 
 export function createRedis(): Redis {
   const r = new Redis({ host: "127.0.0.1", port: 6379, db: REDIS_DB, maxRetriesPerRequest: 3, lazyConnect: false });

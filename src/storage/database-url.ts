@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { existsSync, readFileSync } from "fs";
+import { resolveTestDatabaseUrl } from "./test-isolation";
 
 export const credentialConfig = {
   sources: [
@@ -51,7 +52,8 @@ function buildDatabaseUrlFromParts(env: Record<string, string>): string | null {
 
 export function getDatabaseUrl(): string {
   const safeEnv = resolveCredentialEnv();
-  return process.env.DATABASE_URL || safeEnv.DATABASE_URL || buildDatabaseUrlFromParts({ ...safeEnv, ...process.env as Record<string, string> }) || config.storage.databaseUrl;
+  const databaseUrl = process.env.DATABASE_URL || safeEnv.DATABASE_URL || buildDatabaseUrlFromParts({ ...safeEnv, ...process.env as Record<string, string> }) || config.storage.databaseUrl;
+  return resolveTestDatabaseUrl(databaseUrl);
 }
 
 export function hasDatabaseCredentials(): boolean {

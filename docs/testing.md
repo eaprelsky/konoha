@@ -48,6 +48,23 @@ high-risk route authorization policy.
 bun test
 ```
 
+`bun test` uses the root `bunfig.toml` preload (`tests/setup.ts`) to isolate
+storage by default:
+
+- Redis uses `REDIS_DB=1` (or `KONOHA_TEST_REDIS_DB`) and the preload flushes
+  only that DB before the run.
+- PostgreSQL uses a disposable schema named `konoha_test_<pid>` (or
+  `KONOHA_TEST_PG_SCHEMA`) by adding `search_path=<schema>,public` to the test
+  connection URL. The preload drops/recreates that schema and loads
+  `src/storage/schema.sql`.
+- Runtime storage code fails fast when `KONOHA_TEST_STORAGE=1` would use Redis
+  DB `0` or a PostgreSQL schema that does not start with `konoha_test`.
+
+Do not point normal unit/integration tests at production Redis DB `0` or the
+production PostgreSQL `public` schema. For a deliberate destructive integration
+run, set `KONOHA_ALLOW_DESTRUCTIVE_INTEGRATION_TESTS=1` and document the target
+environment in the review notes.
+
 ### E2E tests (Playwright)
 ```bash
 # Requires KONOHA_TOKEN env var (or uses 'konoha-dev-token' fallback)
