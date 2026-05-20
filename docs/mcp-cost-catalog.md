@@ -43,7 +43,7 @@ scope but was not resident in the sampled runtime.
 | `yandex-tracker` | optional-on-demand | none | yes | no | 0 | 0 | 0.0 | Configured but not resident in the sample. |
 | `memory` | optional-on-demand | none | yes | no | 3 | 106,656 | 0.0 | Duplicates Konoha/shared-memory workflows. |
 | `mempalace` | retired | none | no | yes | 0 | 0 | 0.0 | Removal candidate; runtime skips stale references. |
-| `puppeteer` | optional-on-demand | none | yes | no | 3 | 105,648 | 0.0 | MCP only; browser child processes add memory when used. |
+| `puppeteer` | optional-on-demand | none | yes | no | 3 | 105,648 | 0.0 | Moved to lazy task/session mode in #767; browser child processes add memory only when the on-demand session is active. |
 | `sequential-thinking` | optional-on-demand | none | yes | no | 3 | 101,256 | 0.0 | Analysis helper, not always-on runtime. |
 | `caldav` | optional-on-demand | none | yes | no | 2 | 26,744 | 0.0 | Calendar access is not a default responsibility. |
 | `google-sheets` | optional-on-demand | none | yes | no | 0 | 0 | 0.0 | Optional-pack gate keeps it out of broad defaults. |
@@ -63,6 +63,11 @@ role responsibility and TTL:
 - Heavy local process packs: `gitlab`, `memory`, `puppeteer`, `sequential-thinking`
 - Office/collaboration/debug packs: `excel`, `word`, `google-docs`, `google-sheets`, `miro`, `miro-api`
 - Other non-default connectors: `yonote`, `yandex-tracker`, `caldav`, `openrouter-audio`, `email`
+
+`puppeteer` is additionally lazy-gated: persistent agent startup defers it even
+when a debug profile allowlists it. A task/session must request
+`KONOHA_MCP_SESSION_PACKS=puppeteer`, and the stdio process is wrapped with an
+idle timeout.
 
 `mempalace` is retired, not optional. Do not preserve it in active profiles,
 generated `.mcp.json` files, or role defaults.

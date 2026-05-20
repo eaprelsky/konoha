@@ -11,7 +11,7 @@ import { redis } from "../redis";
 import { silentCatch } from "../logger";
 import { buildSystemPrompt } from "./prompt";
 import { recordRenderedPromptMirror } from "./crud";
-import { buildMcpConfig, buildLaunchCommand, shellEscape, ensureCodexProjectTrusted, getLiveBitrixWebhook } from "./runtime";
+import { buildMcpConfigWithReceipt, buildLaunchCommand, shellEscape, ensureCodexProjectTrusted, getLiveBitrixWebhook } from "./runtime";
 import { AGENT_WORKDIR_ROOT } from "./runtime";
 import { buildAgentSystemdScopeCommand, systemdScopesEnabled } from "./systemd-slices";
 import { assertCodexEgressProxy } from "./proxy-policy";
@@ -257,7 +257,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     await recordRenderedPromptMirror(id, instructions, instructionsPath);
 
     // Build MCP configs for supported runtimes.
-    const mcpConfig = await buildMcpConfig(
+    const { config: mcpConfig, receipt: mcpReceipt } = await buildMcpConfigWithReceipt(
       def.capabilities ?? [],
       def.env ?? {},
       resolveSharedMcpAllowlist(def.shared_mcp_allowlist, def.tool_profile),
@@ -269,6 +269,7 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     }
     const mcpConfigPath = join(workdir, ".mcp.json");
     writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), "utf-8");
+    writeFileSync(join(workdir, "mcp-pack-receipt.json"), JSON.stringify(mcpReceipt, null, 2), "utf-8");
 
     const cursorConfigDir = join(workdir, ".cursor");
     mkdirSync(cursorConfigDir, { recursive: true });

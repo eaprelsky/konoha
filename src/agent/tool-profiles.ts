@@ -19,7 +19,7 @@ const PROFILES: Record<string, ToolProfile> = {
     name: "Full access (all shared MCPs)",
     mcp_servers: [], // empty = broad shared MCPs minus runtime-gated optional packs
     scopes: ["read", "write", "execute"],
-    notes: "Manual/debug profile only. Office/Miro/spreadsheet/browser packs still require explicit TTL profiles.",
+    notes: "Manual/debug profile only. Office/Miro/spreadsheet/browser packs still require explicit TTL profiles; direct browser MCP is task/session on-demand only.",
   },
   readonly: {
     id: "readonly",
@@ -65,7 +65,7 @@ const PROFILES: Record<string, ToolProfile> = {
     mcp_servers: ["puppeteer"],
     scopes: ["read", "write", "execute"],
     dangerous_tools: ["browser-automation"],
-    notes: "Not for always-on agents. Requires direct-browser-mcp feature flag plus operator-approved TTL and resource limits; default GUI checks use TestBench.",
+    notes: "Not for always-on agents. Requires direct-browser-mcp feature flag and KONOHA_MCP_SESSION_PACKS=puppeteer for a task/session; the pack is wrapped with an idle timeout.",
   },
   "office-miro-debug-ttl": {
     id: "office-miro-debug-ttl",

@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import {
   getSandboxProfile,
   getToolProfile,
   buildMcpConfig,
+  buildMcpConfigWithReceipt,
   listSandboxProfiles,
   listToolProfiles,
+  ON_DEMAND_SHARED_MCP_PACKS,
   OPTIONAL_SHARED_MCP_PACKS,
   RETIRED_SHARED_MCP_PACKS,
   MCP_COST_CATALOG,
@@ -67,6 +70,68 @@ describe("tool and sandbox profiles", () => {
     const runtimeSource = readFileSync(join(import.meta.dir, "..", "src", "agent", "runtime.ts"), "utf-8");
     expect(runtimeSource).toContain("skipping optional shared MCP pack");
     expect(runtimeSource).toContain("skipping disabled experimental MCP pack");
+  });
+
+  test("moves direct browser MCP to lazy on-demand mode", async () => {
+    expect([...ON_DEMAND_SHARED_MCP_PACKS.keys()]).toEqual(["puppeteer"]);
+    const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-on-demand-"));
+    const sharedConfig = join(dir, ".mcp.json");
+    writeFileSync(sharedConfig, JSON.stringify({
+      mcpServers: {
+        puppeteer: { command: "node", args: ["puppeteer-mcp.js"] },
+      },
+    }), "utf-8");
+    const env = {
+      KONOHA_URL: "http://127.0.0.1:3200",
+      KONOHA_TOKEN: "test-token",
+      KONOHA_ENABLED_FEATURES: "direct-browser-mcp",
+      KONOHA_FEATURE_ENABLE_REASON: "test",
+      KONOHA_FEATURE_FLAGS_FILE: join(dir, "missing-feature-flags.json"),
+      KONOHA_SHARED_MCP_CONFIG_PATH: sharedConfig,
+    };
+
+    const startup = await buildMcpConfigWithReceipt([], env, ["puppeteer"]);
+    expect(Object.keys(startup.config.mcpServers).sort()).toEqual(["konoha"]);
+    expect(startup.receipt.deferred_packs).toMatchObject([
+      { server: "puppeteer", policy: "deferred", feature: "direct-browser-mcp", idle_timeout_sec: 900 },
+    ]);
+    expect(startup.receipt.estimated_startup_rss_saved_kib).toBeGreaterThanOrEqual(105648);
+
+    const task = await buildMcpConfigWithReceipt([], {
+      ...env,
+      KONOHA_MCP_SESSION_PACKS: "puppeteer",
+    }, ["puppeteer"], { mode: "task" });
+    expect(Object.keys(task.config.mcpServers).sort()).toEqual(["konoha", "puppeteer"]);
+    expect(task.config.mcpServers.puppeteer).toMatchObject({
+      command: "/home/ubuntu/.bun/bin/bun",
+      args: ["run", "/home/ubuntu/konoha/scripts/mcp-idle-wrapper.ts", "--timeout-sec", "900", "--", "node", "puppeteer-mcp.js"],
+    });
+    expect(task.receipt.included_packs).toMatchObject([
+      { server: "puppeteer", policy: "included", feature: "direct-browser-mcp", idle_timeout_sec: 900 },
+    ]);
+  });
+
+  test("degrades gracefully when a requested on-demand MCP feature is disabled", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-disabled-"));
+    const sharedConfig = join(dir, ".mcp.json");
+    writeFileSync(sharedConfig, JSON.stringify({
+      mcpServers: {
+        puppeteer: { command: "node", args: ["puppeteer-mcp.js"] },
+      },
+    }), "utf-8");
+
+    const result = await buildMcpConfigWithReceipt([], {
+      KONOHA_URL: "http://127.0.0.1:3200",
+      KONOHA_TOKEN: "test-token",
+      KONOHA_FEATURE_FLAGS_FILE: join(dir, "missing-feature-flags.json"),
+      KONOHA_SHARED_MCP_CONFIG_PATH: sharedConfig,
+      KONOHA_MCP_SESSION_PACKS: "puppeteer",
+    }, ["puppeteer"], { mode: "task" });
+
+    expect(Object.keys(result.config.mcpServers).sort()).toEqual(["konoha"]);
+    expect(result.receipt.skipped_packs).toMatchObject([
+      { server: "puppeteer", policy: "skipped", feature: "direct-browser-mcp" },
+    ]);
   });
 
   test("retired Mempalace MCP is excluded from active runtime profiles", () => {

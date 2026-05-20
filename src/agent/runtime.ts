@@ -9,6 +9,7 @@ import type { AgentProvider, AgentDef } from "./types";
 import { createLogger } from "../logger";
 import { featureForMcpPack, isFeatureEnabled } from "../feature-flags";
 import { profileAgentProvider, resolveLLMClientProfile } from "./llm-client-profiles";
+import { getMcpCostCatalogEntry } from "./mcp-cost-catalog";
 
 const log = createLogger("agent:runtime");
 
@@ -161,6 +162,13 @@ export const OPTIONAL_SHARED_MCP_PACKS = new Set([
 export const RETIRED_SHARED_MCP_PACKS = new Set([
   "mempalace",
 ]);
+export const ON_DEMAND_SHARED_MCP_PACKS: ReadonlyMap<string, { feature: string; idle_timeout_sec: number; reason: string }> = new Map([
+  ["puppeteer", {
+    feature: "direct-browser-mcp",
+    idle_timeout_sec: 900,
+    reason: "direct browser MCP is a heavy debug pack; default GUI checks use TestBench",
+  }],
+] as const);
 const MCP_BIN_OVERRIDES = {
   bun: "/home/ubuntu/.bun/bin/bun",
   uv: "/home/ubuntu/.local/bin/uv",
@@ -196,6 +204,11 @@ function resolveVars(value: string, vars: Record<string, string>): string {
   return value.replace(/\$\{([^}]+)\}/g, (_, key) => vars[key] ?? `\${${key}}`);
 }
 
+function parseCsv(value: string | undefined): string[] {
+  if (!value) return [];
+  return value.split(",").map(item => item.trim()).filter(Boolean);
+}
+
 type RawMcpServerDef = {
   type?: "http";
   url?: string;
@@ -207,7 +220,77 @@ type RawMcpServerDef = {
 type ResolvedStdioMcpServerDef = { command: string; args?: string[]; env?: Record<string, string>; timeout?: number };
 type ResolvedHttpMcpServerDef = { type: "http"; url: string; env?: Record<string, string>; timeout?: number };
 type ResolvedMcpServerDef = ResolvedStdioMcpServerDef | ResolvedHttpMcpServerDef;
-type McpConfig = { mcpServers: Record<string, ResolvedMcpServerDef> };
+export type McpConfig = { mcpServers: Record<string, ResolvedMcpServerDef> };
+export type McpBuildMode = "startup" | "task";
+export type McpPackReceiptEntry = {
+  server: string;
+  policy: "included" | "deferred" | "skipped";
+  reason: string;
+  feature?: string;
+  idle_timeout_sec?: number;
+  estimated_idle_rss_kib?: number;
+};
+export type McpBuildReceipt = {
+  schema_version: 1;
+  mode: McpBuildMode;
+  requested_on_demand_packs: string[];
+  included_packs: McpPackReceiptEntry[];
+  deferred_packs: McpPackReceiptEntry[];
+  skipped_packs: McpPackReceiptEntry[];
+  estimated_startup_rss_saved_kib: number;
+};
+export type McpBuildOptions = {
+  mode?: McpBuildMode;
+  requestedOnDemandPacks?: string[];
+};
+type SharedMcpLoadResult = {
+  servers: Record<string, ResolvedMcpServerDef>;
+  receipt: McpBuildReceipt;
+};
+
+function sharedMcpConfigPaths(vars: Record<string, string>): string[] {
+  const override = vars.KONOHA_SHARED_MCP_CONFIG_PATH;
+  if (override?.trim()) return override.split(":").map(item => item.trim()).filter(Boolean);
+  return [...SHARED_MCP_CONFIG_PATHS];
+}
+
+function createReceipt(mode: McpBuildMode, requestedOnDemandPacks: string[]): McpBuildReceipt {
+  return {
+    schema_version: 1,
+    mode,
+    requested_on_demand_packs: [...requestedOnDemandPacks].sort(),
+    included_packs: [],
+    deferred_packs: [],
+    skipped_packs: [],
+    estimated_startup_rss_saved_kib: 0,
+  };
+}
+
+function receiptEntry(server: string, policy: McpPackReceiptEntry["policy"], reason: string, extra: Partial<McpPackReceiptEntry> = {}): McpPackReceiptEntry {
+  const cost = getMcpCostCatalogEntry(server);
+  return {
+    server,
+    policy,
+    reason,
+    ...(cost?.measurement.idle_rss_kib ? { estimated_idle_rss_kib: cost.measurement.idle_rss_kib } : {}),
+    ...extra,
+  };
+}
+
+function addReceipt(receipt: McpBuildReceipt, entry: McpPackReceiptEntry): void {
+  if (entry.policy === "included") receipt.included_packs.push(entry);
+  if (entry.policy === "deferred") {
+    receipt.deferred_packs.push(entry);
+    receipt.estimated_startup_rss_saved_kib += entry.estimated_idle_rss_kib ?? 0;
+  }
+  if (entry.policy === "skipped") receipt.skipped_packs.push(entry);
+}
+
+function onDemandIdleTimeoutSec(server: string, vars: Record<string, string>): number {
+  const configured = Number.parseInt(vars.KONOHA_MCP_ON_DEMAND_IDLE_TIMEOUT_SEC || "", 10);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  return ON_DEMAND_SHARED_MCP_PACKS.get(server)?.idle_timeout_sec ?? 900;
+}
 
 function getLiveBitrixWebhook(): string | undefined {
   return process.env.BITRIX24_WEBHOOK_URL || process.env.CHATBOT_BITRIX_WEBHOOK || undefined;
@@ -238,19 +321,42 @@ function resolveMcpArgs(args: string[] | undefined, baseDir: string): string[] |
   });
 }
 
+function wrapOnDemandServer(server: ResolvedMcpServerDef, timeoutSec: number): ResolvedMcpServerDef {
+  if (!("command" in server)) return server;
+  return {
+    command: "/home/ubuntu/.bun/bin/bun",
+    args: [
+      "run",
+      "/home/ubuntu/konoha/scripts/mcp-idle-wrapper.ts",
+      "--timeout-sec",
+      String(timeoutSec),
+      "--",
+      server.command,
+      ...(server.args ?? []),
+    ],
+    ...(server.env ? { env: server.env } : {}),
+    ...(server.timeout !== undefined ? { timeout: server.timeout } : {}),
+  };
+}
+
 function loadSharedMcpServers(
   agentEnv: Record<string, string>,
   allowlist?: string[],
-): Record<string, ResolvedMcpServerDef> {
+  options: McpBuildOptions = {},
+): SharedMcpLoadResult {
   const globalEnv = loadGlobalEnv();
   const vars = { ...loadProcessEnv(), ...globalEnv, ...agentEnv };
   const merged: Record<string, ResolvedMcpServerDef> = {};
+  const mode = options.mode ?? "startup";
+  const requestedOnDemandPacks = options.requestedOnDemandPacks ?? parseCsv(vars.KONOHA_MCP_SESSION_PACKS);
+  const requestedOnDemand = new Set(requestedOnDemandPacks);
+  const receipt = createReceipt(mode, requestedOnDemandPacks);
   // Distinguish between "no allowlist provided" (include broad shared MCPs
   // except runtime-gated optional packs) and "explicit empty allowlist"
   // (include none of the shared MCPs).
   const allowed = allowlist ? new Set(allowlist) : null;
 
-  for (const configPath of SHARED_MCP_CONFIG_PATHS) {
+  for (const configPath of sharedMcpConfigPaths(vars)) {
     if (!existsSync(configPath)) continue;
     const configDir = dirname(configPath);
     try {
@@ -271,16 +377,34 @@ function loadSharedMcpServers(
             path: configPath,
             reason: "requires explicit allowlist/tool_profile with TTL",
           });
+          addReceipt(receipt, receiptEntry(name, "skipped", "requires explicit allowlist/tool_profile with TTL"));
           continue;
         }
         const requiredFeature = featureForMcpPack(name);
-        if (requiredFeature && !isFeatureEnabled(requiredFeature)) {
+        if (requiredFeature && !isFeatureEnabled(requiredFeature, vars)) {
           log.info("skipping disabled experimental MCP pack", {
             server: name,
             path: configPath,
             feature: requiredFeature,
             reason: "feature flag disabled by selected Konoha profile",
           });
+          addReceipt(receipt, receiptEntry(name, "skipped", "feature flag disabled by selected Konoha profile", { feature: requiredFeature }));
+          continue;
+        }
+        const onDemand = ON_DEMAND_SHARED_MCP_PACKS.get(name);
+        if (onDemand && (mode !== "task" || !requestedOnDemand.has(name))) {
+          const timeoutSec = onDemandIdleTimeoutSec(name, vars);
+          log.info("deferring on-demand shared MCP pack", {
+            server: name,
+            path: configPath,
+            feature: onDemand.feature,
+            idle_timeout_sec: timeoutSec,
+            reason: onDemand.reason,
+          });
+          addReceipt(receipt, receiptEntry(name, "deferred", onDemand.reason, {
+            feature: onDemand.feature,
+            idle_timeout_sec: timeoutSec,
+          }));
           continue;
         }
         if (merged[name]) continue;
@@ -297,31 +421,45 @@ function loadSharedMcpServers(
         }
 
         if (server.type === "http" && server.url) {
-          merged[name] = {
+          const resolvedServer: ResolvedMcpServerDef = {
             type: "http",
             url: resolveVars(server.url, vars),
             ...(resolvedEnv ? { env: resolvedEnv } : {}),
             ...(server.timeout !== undefined ? { timeout: server.timeout } : {}),
           };
+          merged[name] = onDemand ? wrapOnDemandServer(resolvedServer, onDemandIdleTimeoutSec(name, vars)) : resolvedServer;
+          if (onDemand) {
+            addReceipt(receipt, receiptEntry(name, "included", "on-demand pack requested for this task/session", {
+              feature: onDemand.feature,
+              idle_timeout_sec: onDemandIdleTimeoutSec(name, vars),
+            }));
+          }
           continue;
         }
 
         if (!server.command) continue;
 
         const resolvedArgs = resolveMcpArgs(server.args?.map(arg => resolveVars(arg, vars)), configDir);
-        merged[name] = {
+        const resolvedServer: ResolvedMcpServerDef = {
           command: resolveMcpCommand(resolveVars(server.command, vars), configDir),
           ...(resolvedArgs?.length ? { args: resolvedArgs } : {}),
           ...(resolvedEnv ? { env: resolvedEnv } : {}),
           ...(server.timeout !== undefined ? { timeout: server.timeout } : {}),
         };
+        merged[name] = onDemand ? wrapOnDemandServer(resolvedServer, onDemandIdleTimeoutSec(name, vars)) : resolvedServer;
+        if (onDemand) {
+          addReceipt(receipt, receiptEntry(name, "included", "on-demand pack requested for this task/session", {
+            feature: onDemand.feature,
+            idle_timeout_sec: onDemandIdleTimeoutSec(name, vars),
+          }));
+        }
       }
     } catch (error) {
       log.warn("failed to load shared MCP config", { path: configPath, error: (error as Error).message });
     }
   }
 
-  return merged;
+  return { servers: merged, receipt };
 }
 
 type McpServerDef = { name: string; command: string; args?: string[]; env?: Record<string, string>; timeout?: number };
@@ -342,12 +480,23 @@ export async function buildMcpConfig(
   agentEnv: Record<string, string>,
   sharedMcpAllowlist?: string[],
 ): Promise<McpConfig> {
+  const result = await buildMcpConfigWithReceipt(capabilities, agentEnv, sharedMcpAllowlist);
+  return result.config;
+}
+
+export async function buildMcpConfigWithReceipt(
+  capabilities: string[],
+  agentEnv: Record<string, string>,
+  sharedMcpAllowlist?: string[],
+  options: McpBuildOptions = {},
+): Promise<{ config: McpConfig; receipt: McpBuildReceipt }> {
   const { redis } = await import("../redis");
   const globalEnv = loadGlobalEnv();
   const vars = { ...loadProcessEnv(), ...globalEnv, ...agentEnv };
+  const shared = loadSharedMcpServers(agentEnv, sharedMcpAllowlist, options);
 
   const servers: Record<string, ResolvedMcpServerDef> = {
-    ...loadSharedMcpServers(agentEnv, sharedMcpAllowlist),
+    ...shared.servers,
   };
 
   const kEnv = Object.fromEntries(
@@ -380,7 +529,7 @@ export async function buildMcpConfig(
     }
   }
 
-  return { mcpServers: servers };
+  return { config: { mcpServers: servers }, receipt: shared.receipt };
 }
 
 function buildCodexMcpConfigArgs(mcpConfig: McpConfig): string[] {

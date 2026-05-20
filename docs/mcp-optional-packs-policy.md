@@ -22,8 +22,36 @@ optional packs unless they are explicitly allowlisted by a time-boxed profile:
 
 Each skipped pack is logged as `skipping optional shared MCP pack` with the
 server name and source config path. An explicit `shared_mcp_allowlist` or
-time-boxed `tool_profile` can still include one of these servers for an
-on-demand session.
+time-boxed `tool_profile` can still request one of these servers, but packs
+marked on-demand are not attached to persistent startup configs.
+
+## Lazy / On-Demand Packs
+
+`puppeteer` is the first heavy pack moved to lazy mode. Even when
+`browser-debug-ttl` or an explicit allowlist requests it, persistent agent
+startup defers the pack and records the decision in
+`/opt/shared/agent-workdirs/<agent>/mcp-pack-receipt.json`.
+
+To attach the pack for a bounded task/session, build the task MCP config with:
+
+```bash
+KONOHA_ENABLED_FEATURES=direct-browser-mcp \
+KONOHA_FEATURE_ENABLE_REASON="time-boxed browser debug" \
+KONOHA_MCP_SESSION_PACKS=puppeteer
+```
+
+The task/session config wraps the stdio MCP server with
+`scripts/mcp-idle-wrapper.ts`, which exits after
+`KONOHA_MCP_ON_DEMAND_IDLE_TIMEOUT_SEC` seconds of stdin inactivity. The
+default timeout is 900 seconds.
+
+Receipts include:
+
+- `included_packs`: on-demand packs attached for the current task/session.
+- `deferred_packs`: on-demand packs intentionally omitted from persistent
+  startup, with estimated idle RSS saved from the cost catalog.
+- `skipped_packs`: packs omitted because they are not allowlisted or their
+  feature flag is disabled.
 
 `mempalace` is different: it is retired, not optional. `buildMcpConfig()` skips
 it even when a stale shared config or explicit allowlist still mentions it, and
