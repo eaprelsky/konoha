@@ -361,14 +361,16 @@ def summarize_service_budgets(budget: dict[str, dict[str, str]]) -> list[dict[st
     for unit, props in sorted(budget.items()):
         current_kib = systemd_size_to_kib(props.get("MemoryCurrent"))
         peak_kib = systemd_size_to_kib(props.get("MemoryPeak"))
-        max_kib = systemd_size_to_kib(props.get("MemoryMax")) or EXPECTED_MEMORY_MAX_KIB.get(unit)
+        actual_max_kib = systemd_size_to_kib(props.get("MemoryMax"))
+        max_kib = actual_max_kib or EXPECTED_MEMORY_MAX_KIB.get(unit)
         rows.append({
             "unit": unit,
             "active_state": props.get("ActiveState") or "unknown",
             "memory_current_kib": current_kib,
             "memory_peak_kib": peak_kib,
             "memory_max_kib": max_kib,
-            "memory_limit_hit": bool(max_kib and peak_kib and peak_kib >= max_kib),
+            "memory_actual_max_kib": actual_max_kib,
+            "memory_limit_hit": bool(actual_max_kib and peak_kib and peak_kib >= actual_max_kib),
             "cpu_usage_nsec": int(props.get("CPUUsageNSec") or 0) if str(props.get("CPUUsageNSec") or "").isdigit() else None,
             "cpu_quota": props.get("CPUQuotaPerSecUSec") or "",
             "result": props.get("Result") or "",
@@ -489,6 +491,7 @@ def format_text(report: dict[str, Any]) -> str:
             lines.append(
                 f"{entry['unit']} state={entry['active_state']} current={format_kib(entry['memory_current_kib'])} "
                 f"peak={format_kib(entry['memory_peak_kib'])} max={format_kib(entry['memory_max_kib'])} "
+                f"actual_max={format_kib(entry.get('memory_actual_max_kib'))} "
                 f"pressure={entry['budget_pressure']} limit_hit={entry.get('memory_limit_hit', False)} "
                 f"result={entry.get('result', '') or 'n/a'} restarts={entry.get('n_restarts', 0)} oom={entry.get('oom_killed', False)}"
             )

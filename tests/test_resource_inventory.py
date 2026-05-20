@@ -100,10 +100,28 @@ def test_service_budget_rows_include_expected_fallback_budget():
 
     assert rows[0]["unit"] == "konoha.service"
     assert rows[0]["memory_max_kib"] == 1200 * 1024
+    assert rows[0]["memory_actual_max_kib"] is None
     assert rows[0]["budget_pressure"] == "critical"
-    assert rows[0]["memory_limit_hit"] is True
+    assert rows[0]["memory_limit_hit"] is False
     assert rows[0]["n_restarts"] == 0
     assert rows[0]["oom_killed"] is False
+
+
+def test_service_budget_rows_report_actual_finite_memory_limit_hit():
+    rows = resource_inventory.summarize_service_budgets({
+        "konoha-testbench.service": {
+            "ActiveState": "active",
+            "MemoryCurrent": str(700 * 1024 * 1024),
+            "MemoryPeak": str(768 * 1024 * 1024),
+            "MemoryMax": str(768 * 1024 * 1024),
+            "CPUUsageNSec": "42",
+            "CPUQuotaPerSecUSec": "1000000",
+        }
+    })
+
+    assert rows[0]["memory_max_kib"] == 768 * 1024
+    assert rows[0]["memory_actual_max_kib"] == 768 * 1024
+    assert rows[0]["memory_limit_hit"] is True
 
 
 def test_service_budget_rows_report_oom_restart_state():
