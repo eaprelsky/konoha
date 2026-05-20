@@ -70,6 +70,9 @@ Additionally: `akamaru.service` — autonomous system health monitoring.
 
 On-demand agents are started by `POST /agents/{id}/start` and receive messages through `agent-watchdog-lifecycle.service`.
 Kakashi, Shikadai, Kiba, Naruto, and Sasuke use dedicated watchdogs because their delivery filters are role-specific.
+SDD specialists are controlled through [`docs/sdd-worker-pool.md`](../docs/sdd-worker-pool.md):
+maximum two active SDD workers, maximum one specialist, 1800 second idle TTL,
+and auditable `SDD_POOL_START` / `SDD_POOL_STOP` bus handoffs.
 
 ## Running Services
 

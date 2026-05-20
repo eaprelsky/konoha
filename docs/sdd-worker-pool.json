@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 791,
+  "default_process": "developer_reviewer",
+  "max_active_workers": 2,
+  "max_active_specialists": 1,
+  "idle_timeout_sec": 1800,
+  "state_file": "/opt/shared/konoha-sdd-worker-pool/state.json",
+  "default_mcp_allowlist": ["konoha"],
+  "testbench": {
+    "service": "konoha-testbench.service",
+    "mode": "on-demand",
+    "feature": "testbench",
+    "max_pool_size": 2
+  },
+  "workers": {
+    "kakashi": {
+      "role": "developer",
+      "default_path": true,
+      "start_policy": "github-ready-for-dev-or-explicit-api",
+      "service": "agent-kakashi.service",
+      "watchdog": "agent-watchdog-kakashi.service",
+      "slice": "konoha-qa.slice",
+      "memory_max": "900M",
+      "cpu_quota": "150%",
+      "mcp_allowlist": ["konoha"],
+      "testbench": false
+    },
+    "guy": {
+      "role": "mechanical_helper",
+      "default_path": false,
+      "start_policy": "kakashi-explicit-helper-request-only",
+      "service": "agent-managed@guy.service",
+      "watchdog": "agent-watchdog-lifecycle.service",
+      "slice": "konoha-qa.slice",
+      "memory_max": "900M",
+      "cpu_quota": "150%",
+      "mcp_allowlist": ["konoha"],
+      "testbench": false
+    },
+    "shino": {
+      "role": "qa_lead",
+      "default_path": false,
+      "start_policy": "reviewer-explicit-qa-request-only",
+      "service": "agent-managed@shino.service",
+      "watchdog": "agent-watchdog-lifecycle.service",
+      "slice": "konoha-qa.slice",
+      "memory_max": "900M",
+      "cpu_quota": "150%",
+      "mcp_allowlist": ["konoha"],
+      "testbench": false
+    },
+    "hinata": {
+      "role": "qa_runner",
+      "default_path": false,
+      "start_policy": "shino-or-reviewer-explicit-test-run-only",
+      "service": "agent-managed@hinata.service",
+      "watchdog": "agent-watchdog-lifecycle.service",
+      "slice": "konoha-qa.slice",
+      "memory_max": "900M",
+      "cpu_quota": "150%",
+      "mcp_allowlist": ["konoha"],
+      "testbench": true
+    },
+    "ibiki": {
+      "role": "security_specialist",
+      "default_path": false,
+      "start_policy": "reviewer-explicit-security-request-only",
+      "service": "agent-managed@ibiki.service",
+      "watchdog": "agent-watchdog-lifecycle.service",
+      "slice": "konoha-qa.slice",
+      "memory_max": "900M",
+      "cpu_quota": "150%",
+      "mcp_allowlist": ["konoha"],
+      "testbench": false
+    }
+  },
+  "handoffs": [
+    {
+      "from": "kakashi",
+      "to": "guy",
+      "allowed_when": "mechanical_batch_or_scaffold_work",
+      "message_type": "task"
+    },
+    {
+      "from": "shikadai",
+      "to": "shino",
+      "allowed_when": "reviewer_requests_qa_or_regression_scope",
+      "message_type": "task"
+    },
+    {
+      "from": "shino",
+      "to": "hinata",
+      "allowed_when": "qa_plan_and_test_cases_exist",
+      "message_type": "task"
+    },
+    {
+      "from": "shikadai",
+      "to": "ibiki",
+      "allowed_when": "security_sensitive_review_scope",
+      "message_type": "task"
+    }
+  ],
+  "rollback": {
+    "command": "python3 scripts/sdd-worker-pool.py rollback --reason <reason>",
+    "effect": "stop all active pool workers and clear pool state; keep core Developer -> Reviewer labels unchanged"
+  }
+}

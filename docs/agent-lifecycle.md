@@ -396,6 +396,13 @@ handles Developer work, then Shikadai handles architecture/code review. Architec
 decomposition is intentionally separate from the reviewer watchdog and must use
 the `route:architecture-decomposition` path when needed.
 
+SDD specialist workers are bounded by `docs/sdd-worker-pool.json` and
+`scripts/sdd-worker-pool.py`. The pool allows at most two active SDD workers and
+at most one active specialist, records every start/stop handoff on the Konoha
+bus, and applies an 1800 second idle mission TTL. Guy, Shino, Hinata, and Ibiki
+remain optional escalations; they are not a mandatory post-fix or pre-review
+chain.
+
 When seed runs over an existing definition, structural/runtime metadata is
 refreshed from code, but org-owned display fields are preserved: `name`,
 `display_alias`, and `avatar_url`. This lets migrations add

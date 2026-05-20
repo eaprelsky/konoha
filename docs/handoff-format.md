@@ -95,6 +95,21 @@ RECOMMENDATIONS:
 [Suggested approach for next phase]
 ```
 
+## SDD Worker Pool Handoff
+
+For bounded optional SDD workers, prefer `scripts/sdd-worker-pool.py`. It sends
+auditable Konoha bus messages in this shape:
+
+```
+SDD_POOL_START: agent=<agent> role=<role> mission=<mission> requester=<requester> expires_at=<iso> reason=<reason>
+SDD_POOL_STOP: agent=<agent> role=<role> mission=<mission> requester=<requester> expires_at=<iso> reason=<reason>
+```
+
+Allowed pool handoffs are Kakashi -> Guy for mechanical helper work,
+Shikadai -> Shino for reviewer-requested QA, Shino -> Hinata after a test plan
+exists, and Shikadai -> Ibiki for security-sensitive review. These are optional
+escalations, not required stages in ordinary Developer -> Reviewer delivery.
+
 ## Status Updates (type: "status")
 
 Short-form updates for progress tracking:

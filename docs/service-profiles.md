@@ -33,6 +33,11 @@ Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
 - Optional workers can be stopped without watchdogs or healthcheck immediately
   resurrecting/failing them unless the selected profile or explicit policy
   enables that worker.
+- SDD dev/test workers are additionally governed by
+  `docs/sdd-worker-pool.json` and `scripts/sdd-worker-pool.py`: at most two
+  active SDD workers, at most one specialist, and an 1800 second idle mission
+  TTL. The pool starts and stops workers through the lifecycle API and records
+  bus handoffs.
 - `disabled_lifecycle_agents` is the explicit profile state for optional
   workers that must not be restarted by systemd wrappers or the generic
   lifecycle watchdog. `prod-core` disables Kakashi and QA specialists by
