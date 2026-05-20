@@ -9,10 +9,12 @@ auditable Konoha bus handoff, and calls the existing agent lifecycle endpoints.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import sys
 import urllib.request
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -46,6 +48,22 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
 
 def state_path(config: dict[str, Any]) -> Path:
     return Path(os.environ.get("KONOHA_SDD_WORKER_POOL_STATE") or config["state_file"])
+
+
+def lock_path(config: dict[str, Any]) -> Path:
+    return state_path(config).with_suffix(state_path(config).suffix + ".lock")
+
+
+@contextmanager
+def state_lock(config: dict[str, Any]):
+    path = lock_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def load_state(config: dict[str, Any]) -> dict[str, Any]:
@@ -127,155 +145,160 @@ def audit_message(action: str, entry: dict[str, Any], reason: str = "") -> str:
 
 def start_worker(args: argparse.Namespace) -> dict[str, Any]:
     config = load_config()
-    state = load_state(config)
-    now = utcnow()
-    prune_expired(state, now)
-    assert_can_start(config, state, args.agent, now)
+    with state_lock(config):
+        state = load_state(config)
+        now = utcnow()
+        prune_expired(state, now)
+        assert_can_start(config, state, args.agent, now)
 
-    worker = config["workers"][args.agent]
-    ttl = int(args.ttl_sec or config["idle_timeout_sec"])
-    entry = {
-        "agent": args.agent,
-        "role": args.role or worker["role"],
-        "mission": args.mission,
-        "requester": args.requester,
-        "reason": args.reason or "",
-        "started_at": iso(now),
-        "expires_at": iso(now + timedelta(seconds=ttl)),
-        "status": "active",
-        "service": worker["service"],
-        "mcp_allowlist": worker["mcp_allowlist"],
-        "testbench": bool(worker["testbench"]),
-    }
+        worker = config["workers"][args.agent]
+        ttl = int(args.ttl_sec or config["idle_timeout_sec"])
+        entry = {
+            "agent": args.agent,
+            "role": args.role or worker["role"],
+            "mission": args.mission,
+            "requester": args.requester,
+            "reason": args.reason or "",
+            "started_at": iso(now),
+            "expires_at": iso(now + timedelta(seconds=ttl)),
+            "status": "active",
+            "service": worker["service"],
+            "mcp_allowlist": worker["mcp_allowlist"],
+            "testbench": bool(worker["testbench"]),
+        }
 
-    actions = [
-        {"method": "POST", "path": f"/agents/{args.agent}/start", "body": {}},
-        {
-            "method": "POST",
-            "path": "/messages",
-            "body": {
-                "from": args.requester,
-                "to": args.agent,
-                "type": "task",
-                "text": audit_message("START", entry, args.reason or "bounded on-demand mission"),
+        actions = [
+            {"method": "POST", "path": f"/agents/{args.agent}/start", "body": {}},
+            {
+                "method": "POST",
+                "path": "/messages",
+                "body": {
+                    "from": args.requester,
+                    "to": args.agent,
+                    "type": "task",
+                    "text": audit_message("START", entry, args.reason or "bounded on-demand mission"),
+                },
             },
-        },
-    ]
-    if not args.dry_run:
-        for action in actions:
-            request(action["method"], action["path"], action["body"])
-        state.setdefault("active", []).append(entry)
-        save_state(config, state)
-    return {"ok": True, "dry_run": args.dry_run, "entry": entry, "actions": actions}
+        ]
+        if not args.dry_run:
+            for action in actions:
+                request(action["method"], action["path"], action["body"])
+            state.setdefault("active", []).append(entry)
+            save_state(config, state)
+        return {"ok": True, "dry_run": args.dry_run, "entry": entry, "actions": actions}
 
 
 def stop_worker(args: argparse.Namespace) -> dict[str, Any]:
     config = load_config()
-    state = load_state(config)
-    now = utcnow()
-    prune_expired(state, now)
-    active = state.get("active") or []
-    stopped = []
-    kept = []
-    for entry in active:
-        if entry["agent"] == args.agent and (not args.mission or entry["mission"] == args.mission):
-            stopped.append({**entry, "status": "stopped", "stopped_at": iso(now), "stop_reason": args.reason or ""})
-        else:
-            kept.append(entry)
-    if not stopped:
-        raise ValueError(f"No active SDD worker entry for {args.agent}")
+    with state_lock(config):
+        state = load_state(config)
+        now = utcnow()
+        prune_expired(state, now)
+        active = state.get("active") or []
+        stopped = []
+        kept = []
+        for entry in active:
+            if entry["agent"] == args.agent and (not args.mission or entry["mission"] == args.mission):
+                stopped.append({**entry, "status": "stopped", "stopped_at": iso(now), "stop_reason": args.reason or ""})
+            else:
+                kept.append(entry)
+        if not stopped:
+            raise ValueError(f"No active SDD worker entry for {args.agent}")
 
-    actions = []
-    for entry in stopped:
-        actions.append({
-            "method": "POST",
-            "path": "/messages",
-            "body": {
-                "from": args.requester,
-                "to": entry["agent"],
-                "type": "status",
-                "text": audit_message("STOP", entry, args.reason or "mission complete"),
-            },
-        })
-        actions.append({"method": "POST", "path": f"/agents/{entry['agent']}/stop", "body": {}})
-    if not args.dry_run:
-        for action in actions:
-            request(action["method"], action["path"], action["body"])
-        state["active"] = kept
-        state.setdefault("history", []).extend(stopped)
-        save_state(config, state)
-    return {"ok": True, "dry_run": args.dry_run, "stopped": stopped, "actions": actions}
+        actions = []
+        for entry in stopped:
+            actions.append({
+                "method": "POST",
+                "path": "/messages",
+                "body": {
+                    "from": args.requester,
+                    "to": entry["agent"],
+                    "type": "status",
+                    "text": audit_message("STOP", entry, args.reason or "mission complete"),
+                },
+            })
+            actions.append({"method": "POST", "path": f"/agents/{entry['agent']}/stop", "body": {}})
+        if not args.dry_run:
+            for action in actions:
+                request(action["method"], action["path"], action["body"])
+            state["active"] = kept
+            state.setdefault("history", []).extend(stopped)
+            save_state(config, state)
+        return {"ok": True, "dry_run": args.dry_run, "stopped": stopped, "actions": actions}
 
 
 def status(args: argparse.Namespace) -> dict[str, Any]:
     config = load_config()
-    state = load_state(config)
-    now = utcnow()
-    expired = prune_expired(state, now)
-    if expired and not args.dry_run:
-        save_state(config, state)
-    active = active_entries(state, now)
-    return {
-        "ok": True,
-        "max_active_workers": config["max_active_workers"],
-        "max_active_specialists": config["max_active_specialists"],
-        "idle_timeout_sec": config["idle_timeout_sec"],
-        "active": active,
-        "expired": expired,
-    }
+    with state_lock(config):
+        state = load_state(config)
+        now = utcnow()
+        expired = prune_expired(state, now)
+        if expired and not args.dry_run:
+            save_state(config, state)
+        active = active_entries(state, now)
+        return {
+            "ok": True,
+            "max_active_workers": config["max_active_workers"],
+            "max_active_specialists": config["max_active_specialists"],
+            "idle_timeout_sec": config["idle_timeout_sec"],
+            "active": active,
+            "expired": expired,
+        }
 
 
 def reap(args: argparse.Namespace) -> dict[str, Any]:
     config = load_config()
-    state = load_state(config)
-    now = utcnow()
-    expired = prune_expired(state, now)
-    actions = []
-    for entry in expired:
-        actions.append({
-            "method": "POST",
-            "path": "/messages",
-            "body": {
-                "from": "sdd-worker-pool",
-                "to": entry["agent"],
-                "type": "status",
-                "text": audit_message("STOP", entry, "idle TTL expired"),
-            },
-        })
-        actions.append({"method": "POST", "path": f"/agents/{entry['agent']}/stop", "body": {}})
-    if not args.dry_run:
-        for action in actions:
-            request(action["method"], action["path"], action["body"])
-        save_state(config, state)
-    return {"ok": True, "dry_run": args.dry_run, "expired": expired, "actions": actions}
+    with state_lock(config):
+        state = load_state(config)
+        now = utcnow()
+        expired = prune_expired(state, now)
+        actions = []
+        for entry in expired:
+            actions.append({
+                "method": "POST",
+                "path": "/messages",
+                "body": {
+                    "from": "sdd-worker-pool",
+                    "to": entry["agent"],
+                    "type": "status",
+                    "text": audit_message("STOP", entry, "idle TTL expired"),
+                },
+            })
+            actions.append({"method": "POST", "path": f"/agents/{entry['agent']}/stop", "body": {}})
+        if not args.dry_run:
+            for action in actions:
+                request(action["method"], action["path"], action["body"])
+            save_state(config, state)
+        return {"ok": True, "dry_run": args.dry_run, "expired": expired, "actions": actions}
 
 
 def rollback(args: argparse.Namespace) -> dict[str, Any]:
     config = load_config()
-    state = load_state(config)
-    now = utcnow()
-    active = active_entries(state, now)
-    stopped = [{**entry, "status": "rollback_stopped", "stopped_at": iso(now), "stop_reason": args.reason} for entry in active]
-    actions = []
-    for entry in stopped:
-        actions.append({
-            "method": "POST",
-            "path": "/messages",
-            "body": {
-                "from": "sdd-worker-pool",
-                "to": entry["agent"],
-                "type": "status",
-                "text": audit_message("STOP", entry, args.reason),
-            },
-        })
-        actions.append({"method": "POST", "path": f"/agents/{entry['agent']}/stop", "body": {}})
-    if not args.dry_run:
-        for action in actions:
-            request(action["method"], action["path"], action["body"])
-        state["active"] = []
-        state.setdefault("history", []).extend(stopped)
-        save_state(config, state)
-    return {"ok": True, "dry_run": args.dry_run, "stopped": stopped, "actions": actions}
+    with state_lock(config):
+        state = load_state(config)
+        now = utcnow()
+        active = active_entries(state, now)
+        stopped = [{**entry, "status": "rollback_stopped", "stopped_at": iso(now), "stop_reason": args.reason} for entry in active]
+        actions = []
+        for entry in stopped:
+            actions.append({
+                "method": "POST",
+                "path": "/messages",
+                "body": {
+                    "from": "sdd-worker-pool",
+                    "to": entry["agent"],
+                    "type": "status",
+                    "text": audit_message("STOP", entry, args.reason),
+                },
+            })
+            actions.append({"method": "POST", "path": f"/agents/{entry['agent']}/stop", "body": {}})
+        if not args.dry_run:
+            for action in actions:
+                request(action["method"], action["path"], action["body"])
+            state["active"] = []
+            state.setdefault("history", []).extend(stopped)
+            save_state(config, state)
+        return {"ok": True, "dry_run": args.dry_run, "stopped": stopped, "actions": actions}
 
 
 def build_parser() -> argparse.ArgumentParser:

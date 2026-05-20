@@ -1,6 +1,10 @@
 import importlib.util
 import json
+import os
+import subprocess
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from argparse import Namespace
 from datetime import timedelta
 from pathlib import Path
@@ -14,6 +18,22 @@ sys.modules[spec.name] = sdd_worker_pool
 spec.loader.exec_module(sdd_worker_pool)
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "docs" / "sdd-worker-pool.json"
+
+
+class RecordingHandler(BaseHTTPRequestHandler):
+    requests: list[str] = []
+
+    def do_POST(self):
+        self.__class__.requests.append(self.path)
+        if self.path.startswith("/agents/"):
+            threading.Event().wait(0.2)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, format, *args):
+        return
 
 
 def test_pool_contract_keeps_specialists_optional_and_bounded():
@@ -96,6 +116,43 @@ def test_start_dry_run_is_auditable_and_does_not_write_state(monkeypatch, tmp_pa
     assert message_action["body"]["type"] == "task"
     assert "SDD_POOL_START" in message_action["body"]["text"]
     assert "mission=issue-791-docs" in message_action["body"]["text"]
+
+
+def test_concurrent_specialist_start_is_serialized_by_state_lock(tmp_path):
+    state_path = tmp_path / "state.json"
+    RecordingHandler.requests = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), RecordingHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    env = os.environ.copy()
+    env["KONOHA_SDD_WORKER_POOL_STATE"] = str(state_path)
+    env["KONOHA_URL"] = f"http://127.0.0.1:{server.server_port}"
+    env["KONOHA_TOKEN"] = ""
+    common_args = ["--requester", "kakashi", "--reason", "concurrent regression"]
+    commands = [
+        [sys.executable, str(MODULE_PATH), "start", "guy", "--mission", "issue-791-guy", *common_args],
+        [sys.executable, str(MODULE_PATH), "start", "shino", "--mission", "issue-791-shino", *common_args],
+    ]
+
+    try:
+        procs = [
+            subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            for command in commands
+        ]
+        results = [proc.communicate(timeout=10) + (proc.returncode,) for proc in procs]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    return_codes = sorted(result[2] for result in results)
+    combined_errors = "\n".join(result[1] for result in results)
+    assert return_codes == [0, 2]
+    assert "specialist lane is full" in combined_errors
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert len(state["active"]) == 1
+    assert state["active"][0]["agent"] in {"guy", "shino"}
+    assert sum(1 for path in RecordingHandler.requests if path.startswith("/agents/")) == 1
 
 
 def test_status_prunes_expired_state(monkeypatch, tmp_path):

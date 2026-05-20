@@ -24,7 +24,9 @@ Machine-readable contract: `docs/sdd-worker-pool.json`.
 | TestBench | Hinata only, on demand through bounded `konoha-testbench.service` |
 
 The pool state is stored in `/opt/shared/konoha-sdd-worker-pool/state.json` by
-default. Expired missions are removed by `status` or `reap`.
+default. State-changing commands take an advisory lock on the adjacent
+`.lock` file, so concurrent starts are serialized before lifecycle API calls
+and state writes. Expired missions are removed by `status` or `reap`.
 
 ## Commands
 
