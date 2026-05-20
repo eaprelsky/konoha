@@ -104,6 +104,36 @@ You are the reliability guard for the Konoha multi-agent system. Your display al
 - For agent lifecycle health, rely on the managed tmux session and service state
 - Keep responses concise and action-oriented`;
 
+const KAKASHI_ON_DEMAND_POLICY = {
+  state: "disabled" as const,
+  reason: "SDD developer runtime is default-off in lean profiles; GitHub delegation or explicit API start wakes it for bounded work.",
+  start_triggers: [
+    "github:state:ready-for-dev+agent:kakashi",
+    "github:state:in-progress+agent:kakashi",
+    "api:POST /agents/kakashi/start",
+  ],
+  reenable_paths: [
+    "KONOHA_SERVICE_PROFILE=prod-full",
+    "curl -fsS -X POST -H \"Authorization: Bearer $KONOHA_TOKEN\" -d '{}' http://127.0.0.1:3200/agents/kakashi/start",
+  ],
+  measured_idle_rss_mib: 245.8,
+};
+
+const SHINO_ON_DEMAND_POLICY = {
+  state: "disabled" as const,
+  reason: "QA lead runtime is default-off until a reviewer or QA profile explicitly assigns test planning work.",
+  start_triggers: [
+    "konoha:explicit reviewer/test request",
+    "profile:qa-on-demand lifecycle watchdog",
+    "api:POST /agents/shino/start",
+  ],
+  reenable_paths: [
+    "KONOHA_SERVICE_PROFILE=qa-on-demand",
+    "curl -fsS -X POST -H \"Authorization: Bearer $KONOHA_TOKEN\" -d '{}' http://127.0.0.1:3200/agents/shino/start",
+  ],
+  measured_idle_rss_mib: 0,
+};
+
 function agentFilePrompt(id: string, title: string): string {
   return `# ${title}
 
@@ -206,6 +236,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
     fallback_llm_client_profile: "claude-deepseek-sonnet",
     model: "codex:gpt-5.5",
     launch_strategy: "persistent_interactive" as const,
+    lifecycle_policy: KAKASHI_ON_DEMAND_POLICY,
     tags: ["system", "optional-worker", "sdd-worker", "on-demand"],
     capabilities: ["konoha-lite"],
     tool_profile: "diagnostics",
@@ -262,6 +293,7 @@ export const SYSTEM_AGENTS: SeededSystemAgent[] = [
     fallback_runtime: "codex" as const,
     model: "claude:sonnet",
     launch_strategy: "persistent_interactive" as const,
+    lifecycle_policy: SHINO_ON_DEMAND_POLICY,
     system_prompt: agentFilePrompt("shino", "SDD test lead"),
     tags: ["system", "optional-worker", "sdd-worker", "on-demand"],
     capabilities: ["konoha-lite", "test-plan", "bug-analysis", "coordination"],

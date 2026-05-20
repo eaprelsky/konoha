@@ -108,13 +108,20 @@
       "launch_strategy": "persistent_interactive",
       "owner": "sdd developer lane",
       "mcp_allowlist": [],
+      "lifecycle_policy": {
+        "state": "disabled",
+        "reason": "Default-off SDD developer runtime; GitHub watchdog or lifecycle API starts it for bounded delegated work.",
+        "start_triggers": ["github:state:ready-for-dev+agent:kakashi", "github:state:in-progress+agent:kakashi", "api:POST /agents/kakashi/start"],
+        "reenable_paths": ["KONOHA_SERVICE_PROFILE=prod-full", "api:POST /agents/kakashi/start"],
+        "measured_idle_rss_mib": 245.8
+      },
       "resource_budget": "konoha-qa.slice + agent-kakashi.service 700M/900M CPU 150%",
       "systemd": { "unit": "agent-kakashi.service", "slice": "konoha-qa.slice" },
       "tmux_session": "kakashi",
       "watchdog": { "service": "agent-watchdog-kakashi.service", "route": "GitHub state:ready-for-dev + agent:kakashi" },
-      "health_policy": "optional_monitor_default",
-      "kiba_monitor": "default",
-      "paused_semantics": "Service/watchdog failures alert when active; missing tmux can be suppressed after on-demand mission completion."
+      "health_policy": "optional_monitor_available",
+      "kiba_monitor": "on_demand",
+      "paused_semantics": "Disabled in prod-core; GitHub watchdog/API start wakes it for delegated issues."
     },
     {
       "id": "shikadai",
@@ -140,6 +147,13 @@
       "launch_strategy": "persistent_interactive",
       "owner": "external-source connector",
       "mcp_allowlist": [],
+      "lifecycle_policy": {
+        "state": "disabled",
+        "reason": "Default-off QA lead runtime; reviewer/test request or QA profile starts it for bounded planning work.",
+        "start_triggers": ["konoha:explicit reviewer/test request", "profile:qa-on-demand lifecycle watchdog", "api:POST /agents/shino/start"],
+        "reenable_paths": ["KONOHA_SERVICE_PROFILE=qa-on-demand", "api:POST /agents/shino/start"],
+        "measured_idle_rss_mib": 0
+      },
       "resource_budget": "konoha-qa.slice via agent-managed@.service",
       "systemd": { "unit": "agent-managed@mirai.service", "slice": "konoha-qa.slice" },
       "tmux_session": "mirai",
@@ -162,7 +176,7 @@
       "watchdog": { "service": "agent-watchdog-lifecycle.service", "route": "Konoha SSE lifecycle wake" },
       "health_policy": "optional_monitor_available",
       "kiba_monitor": "on_demand",
-      "paused_semantics": "Missing tmux is expected unless explicitly activated by reviewer request."
+      "paused_semantics": "Disabled outside explicit QA profiles; missing tmux is expected unless reviewer activates QA."
     },
     {
       "id": "hinata",

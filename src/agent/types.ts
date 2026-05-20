@@ -16,6 +16,7 @@ export type AgentLifecycleMode =
   | "optional_on_demand"
   | "connector_owned"
   | "deprecated";
+export type AgentLifecyclePolicyState = "enabled" | "disabled";
 export type AgentDisplaySource = "org_override" | "locale_catalog" | "neutral_default";
 
 export type LifecycleStatus = "stopped" | "starting" | "running" | "stopping" | "error";
@@ -49,6 +50,15 @@ export interface AgentRuntimeProfile {
   codex_disable_features?: string[];
 }
 
+export interface AgentLifecyclePolicy {
+  /** Default supervision state for deployment profiles; explicit API starts are still allowed. */
+  state: AgentLifecyclePolicyState;
+  reason?: string;
+  start_triggers?: string[];
+  reenable_paths?: string[];
+  measured_idle_rss_mib?: number;
+}
+
 export interface AgentDef {
   id: string;
   name: string;
@@ -76,6 +86,8 @@ export interface AgentDef {
   seed_classification?: AgentSeedClassification;
   /** Product-facing lifecycle mode, separate from runtime launch strategy. */
   lifecycle_mode?: AgentLifecycleMode;
+  /** Optional worker supervision policy for on-demand/disabled lifecycle profiles. */
+  lifecycle_policy?: AgentLifecyclePolicy;
   capabilities?: string[];  // skill IDs assigned to this agent
   tool_profile?: string;        // ToolProfile id (#571)
   sandbox_profile?: string;     // SandboxProfile id (#572), defaults to "tmux"
@@ -111,6 +123,7 @@ export interface AgentTemplate {
   tags?: string[];
   seed_classification?: AgentSeedClassification;
   lifecycle_mode?: AgentLifecycleMode;
+  lifecycle_policy?: AgentLifecyclePolicy;
   capabilities?: string[];
   memory?: string;
   avatar_url?: string;
@@ -144,6 +157,7 @@ export interface AgentRuntimeConfig {
   codex_disable_features?: string[];
   tmux_session_override?: string;
   redis_streams?: AgentRedisStream[];
+  lifecycle_policy?: AgentLifecyclePolicy;
 }
 
 export interface AgentPresence {

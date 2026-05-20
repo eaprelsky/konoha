@@ -22,6 +22,7 @@ POLL_SEC="${AGENT_SERVICE_POLL_SEC:-10}"
 FAILOVER_THRESHOLD="${AGENT_SERVICE_FAILOVER_THRESHOLD:-3}"
 TMUX_SOCKET="$AGENT_ID"
 TMUX_SESSION="$AGENT_ID"
+DISABLED_LOGGED=0
 
 request() {
   local method="$1"
@@ -90,6 +91,30 @@ tmux_alive() {
   tmux -L "$TMUX_SOCKET" has-session -t "$TMUX_SESSION" >/dev/null 2>&1
 }
 
+lifecycle_disabled_by_profile() {
+  python3 - "$AGENT_ID" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+agent_id = sys.argv[1]
+override = {item.strip() for item in os.environ.get("KONOHA_ENABLE_DISABLED_LIFECYCLE_AGENTS", "").split(",") if item.strip()}
+if "all" in override or agent_id in override:
+    print("enabled")
+    raise SystemExit(0)
+
+sys.path.insert(0, str(Path("/home/ubuntu/konoha/scripts")))
+try:
+    from service_profiles import resolve_service_profile_from_env
+    profile = resolve_service_profile_from_env(os.environ)
+except Exception:
+    print("enabled")
+    raise SystemExit(0)
+
+print("disabled" if agent_id in profile.disabled_lifecycle_agents else "enabled")
+PY
+}
+
 export no_proxy="$NO_PROXY_VALUE"
 
 cleanup() {
@@ -108,9 +133,21 @@ while true; do
   # Konoha status can lag or temporarily report stopped/starting during recovery.
   if tmux_alive; then
     FAILURES=0
+    DISABLED_LOGGED=0
     sleep "$POLL_SEC"
     continue
   fi
+
+  if [ "$(lifecycle_disabled_by_profile || echo enabled)" = "disabled" ]; then
+    if [ "$DISABLED_LOGGED" -eq 0 ]; then
+      echo "[$(date)] agent-api-service: $AGENT_ID disabled by selected lifecycle profile, not requesting /start"
+      DISABLED_LOGGED=1
+    fi
+    FAILURES=0
+    sleep "$POLL_SEC"
+    continue
+  fi
+  DISABLED_LOGGED=0
 
   status="$(agent_status || true)"
   if [ "$status" = "starting" ]; then

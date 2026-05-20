@@ -15,6 +15,7 @@ os.environ.setdefault("AGENT_GITHUB_REQUIRED_STATES", "state:ready-for-dev,state
 os.environ.setdefault("AGENT_GITHUB_REDISPATCH_LABELS", "")
 os.environ.setdefault("AGENT_GITHUB_TASK_VERB", "fix")
 os.environ.setdefault("AGENT_BATCH_HEADER", "Задание для Какаши:")
+os.environ.setdefault("AGENT_WAKE_TIMEOUT_SEC", "120")
 
 from github_delegation_watchdog import *  # noqa: F401,F403,E402
 

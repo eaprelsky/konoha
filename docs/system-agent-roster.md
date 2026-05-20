@@ -14,10 +14,10 @@ separate compatibility migration says to do so.
 | `sasuke` | Telegram user-account connector | `connector_owned` | `persistent_interactive` | Telegram user connector | `telethon-channel`, `bitrix24` | `konoha-connectors.slice` | `agent-sasuke.service` / `sasuke` / `agent-watchdog-sasuke.service` | default | Warn while Telegram connector is enabled. |
 | `akamaru` | Autonomous health monitor script | external infra | `systemd_service` | Kiba | none | `konoha-agents.slice` | `akamaru.service` / none / none | self | Pause only when health monitoring is intentionally disabled. |
 | `kiba` | System monitor | `optional_on_demand` | `persistent_interactive` | Platform monitoring | none | `konoha-agents.slice`, `700M/900M`, CPU `150%` | `agent-kiba.service` / `kiba` / `agent-watchdog-kiba.service` | default | Warn while enabled by health policy. |
-| `kakashi` | Developer in Developer -> Reviewer | `optional_on_demand` | `persistent_interactive` | SDD developer lane | none | `konoha-qa.slice`, `700M/900M`, CPU `150%` | `agent-kakashi.service` / `kakashi` / `agent-watchdog-kakashi.service` | default | Service/watchdog failures alert when active; missing tmux can be suppressed after on-demand mission completion. |
+| `kakashi` | Developer in Developer -> Reviewer | `optional_on_demand` | `persistent_interactive` | SDD developer lane | none | `konoha-qa.slice`, `700M/900M`, CPU `150%` | `agent-kakashi.service` / `kakashi` / `agent-watchdog-kakashi.service` | on demand | Disabled in `prod-core`; GitHub watchdog/API start wakes it for delegated issues. |
 | `shikadai` | Reviewer / architecture-code review worker | `optional_on_demand` | `persistent_interactive` | SDD reviewer lane | none | `konoha-qa.slice` | `agent-managed@shikadai.service` / `shikadai` / `agent-watchdog-shikadai.service` | default | Reviewer watchdog requires `state:ready-for-review` + `agent:shikadai`; decomposition uses `route:architecture-decomposition`; missing tmux can be suppressed after review completion. |
 | `mirai` | External-source connector compatibility actor | `connector_owned` | `persistent_interactive` | External-source connector | none | `konoha-qa.slice` via `agent-managed@.service` | `agent-managed@mirai.service` / `mirai` / `agent-watchdog-lifecycle.service` | on demand | Missing tmux is expected when not enabled or idle. |
-| `shino` | Optional QA lead | `optional_on_demand` | `persistent_interactive` | Reviewer-requested QA | none | `konoha-qa.slice` via `agent-managed@.service` | `agent-managed@shino.service` / `shino` / `agent-watchdog-lifecycle.service` | on demand | Missing tmux is expected unless reviewer activates QA. |
+| `shino` | Optional QA lead | `optional_on_demand` | `persistent_interactive` | Reviewer-requested QA | none | `konoha-qa.slice` via `agent-managed@.service` | `agent-managed@shino.service` / `shino` / `agent-watchdog-lifecycle.service` | on demand | Disabled outside explicit QA profiles; missing tmux is expected unless reviewer activates QA. |
 | `hinata` | Optional QA executor with TestBench browser checks | `optional_on_demand` | `persistent_interactive` | Reviewer-requested QA | none | `konoha-qa.slice` via `agent-managed@.service` | `agent-managed@hinata.service` / `hinata` / `agent-watchdog-lifecycle.service` | on demand | Missing tmux is expected unless reviewer activates QA. |
 | `guy` | Optional mechanical developer helper | `optional_on_demand` | `persistent_interactive` | Kakashi explicit helper request | none | `konoha-qa.slice` via `agent-managed@.service` | `agent-managed@guy.service` / `guy` / `agent-watchdog-lifecycle.service` | on demand | Missing tmux is expected unless Kakashi activates the helper. |
 | `ibiki` | Optional security auditor | `optional_on_demand` | `persistent_interactive` | Security escalation | none | `konoha-qa.slice` via `agent-managed@.service` | `agent-managed@ibiki.service` / `ibiki` / `agent-watchdog-lifecycle.service` | on demand | Missing tmux is expected unless security review is active. |
@@ -36,6 +36,10 @@ separate compatibility migration says to do so.
   compatibility actors: Mirai, Shino, Hinata, Ibiki, Ino, Inojin, and Guy.
   Jiraiya is excluded because the corporate-memory experiment is disabled until
   an explicit product need and operator approval exist.
+- Kakashi and Shino carry a default-off lifecycle policy. Service profiles use
+  `disabled_lifecycle_agents` to prevent their wrappers/watchdogs from
+  recreating idle LLM sessions; explicit GitHub/QA assignments and lifecycle
+  API starts remain the re-enable path.
 - Kakashi, Shikadai, Kiba, Naruto, and Sasuke have dedicated watchdogs because
   their delivery filters are role-specific.
 - Naruto and Sasuke remain separate connector-owned runtimes. Any future

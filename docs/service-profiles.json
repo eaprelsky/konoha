@@ -9,6 +9,7 @@
       "enabled_features": [],
       "autostart_agents": ["naruto", "sasuke", "kiba"],
       "lifecycle_watchdog_agents": [],
+      "disabled_lifecycle_agents": ["kakashi", "shino", "hinata", "guy", "ibiki"],
       "infra_dependencies": ["postgresql.service"],
       "required_services": [
         "konoha.service",
@@ -35,12 +36,13 @@
       ]
     },
     "prod-full": {
-      "description": "Production with SDD lane enabled for active development/review while still keeping specialist workers on demand.",
+      "description": "Production with SDD GitHub/review watchdogs enabled; developer/test runtimes remain on demand until assigned work arrives.",
       "enabled_connectors": ["telegram"],
       "enabled_optional_monitors": ["akamaru", "kiba", "kakashi", "shikadai"],
       "enabled_features": [],
-      "autostart_agents": ["naruto", "sasuke", "kiba", "kakashi"],
+      "autostart_agents": ["naruto", "sasuke", "kiba"],
       "lifecycle_watchdog_agents": [],
+      "disabled_lifecycle_agents": ["shino", "hinata", "guy", "ibiki"],
       "infra_dependencies": ["postgresql.service"],
       "required_services": [
         "konoha.service",
@@ -54,11 +56,11 @@
         "agent-sasuke.service",
         "akamaru.service",
         "agent-kiba.service",
-        "agent-kakashi.service",
         "agent-watchdog-kakashi.service",
         "agent-watchdog-shikadai.service"
       ],
       "optional_services": [
+        "agent-kakashi.service",
         "agent-managed@shino.service",
         "agent-managed@hinata.service",
         "agent-managed@guy.service",
@@ -73,6 +75,7 @@
       "enabled_features": [],
       "autostart_agents": [],
       "lifecycle_watchdog_agents": [],
+      "disabled_lifecycle_agents": ["kakashi", "shikadai", "shino", "hinata", "guy", "ibiki"],
       "infra_dependencies": ["postgresql.service"],
       "required_services": [
         "konoha.service",
@@ -101,6 +104,7 @@
       "enabled_features": ["testbench"],
       "autostart_agents": [],
       "lifecycle_watchdog_agents": ["shino", "hinata", "guy", "ibiki"],
+      "disabled_lifecycle_agents": ["kakashi"],
       "infra_dependencies": ["postgresql.service"],
       "required_services": [
         "konoha.service",

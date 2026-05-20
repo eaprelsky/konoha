@@ -55,6 +55,19 @@ describe("seeded system agent classifications", () => {
     });
   });
 
+  test("Kakashi and Shino seeds carry default-off lifecycle policies", () => {
+    expect(agent("kakashi").lifecycle_policy).toMatchObject({
+      state: "disabled",
+      measured_idle_rss_mib: 245.8,
+    });
+    expect(agent("kakashi").lifecycle_policy?.start_triggers ?? []).toContain("github:state:ready-for-dev+agent:kakashi");
+    expect(agent("shino").lifecycle_policy).toMatchObject({
+      state: "disabled",
+      measured_idle_rss_mib: 0,
+    });
+    expect(agent("shino").lifecycle_policy?.start_triggers ?? []).toContain("profile:qa-on-demand lifecycle watchdog");
+  });
+
   test("Shikadai reviewer seed cannot revert the Codex runtime profile", () => {
     expect(agent("shikadai")).toMatchObject({
       runtime: "codex",

@@ -301,6 +301,19 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 _set_retry_count(0)  # agent is responsive — reset recovery budget (#544)
                 break
             now = time.monotonic()
+            # On-demand wake must happen before startup grace. If the session is
+            # absent, there is no startup to wait for yet.
+            if WAKE_TIMEOUT_SEC > 0 and not is_session_alive(TMUX_SESSION) and not wake_attempted:
+                wake_attempted = True
+                if try_wake_agent():
+                    grace_deadline = max(grace_deadline, time.monotonic() + WAKE_TIMEOUT_SEC)
+                    log.info(f"Waiting for {TMUX_SESSION} session after wake (max {WAKE_TIMEOUT_SEC}s)")
+                    await asyncio.sleep(IDLE_POLL_SEC)
+                    continue
+            if WAKE_TIMEOUT_SEC > 0 and not is_session_alive(TMUX_SESSION):
+                await asyncio.sleep(IDLE_POLL_SEC)
+                waited += IDLE_POLL_SEC
+                continue
             # Startup grace: when agent is busy on first contact (fresh process or
             # just-restarted), give it time for model load + AGENTS.md + registration
             # + memory before starting desync countdown.
@@ -314,14 +327,6 @@ async def send_loop(batched_queue: asyncio.Queue) -> None:
                 log.info(f"Startup grace elapsed for {TMUX_SESSION} — resuming desync timer")
                 grace_deadline = 0.0
                 waited = 0.0
-            # On-demand wake: start the agent service if session doesn't exist
-            if WAKE_TIMEOUT_SEC > 0 and not is_session_alive(TMUX_SESSION) and not wake_attempted:
-                wake_attempted = True
-                if try_wake_agent():
-                    grace_deadline = max(grace_deadline, time.monotonic() + WAKE_TIMEOUT_SEC)
-                    log.info(f"Waiting for {TMUX_SESSION} session after wake (max {WAKE_TIMEOUT_SEC}s)")
-                    await asyncio.sleep(IDLE_POLL_SEC)
-                    continue
             if waited >= IDLE_TIMEOUT_SEC:
                 log.warning(f"Agent {TMUX_SESSION} busy >{waited:.0f}s — attempting desync recovery (#505)")
                 await _send_desync_audit("agent unresponsive", f"waited={waited:.0f}s msgs={len(pending)}")

@@ -17,7 +17,7 @@ staging work is `docs/lean-baseline-gate.md`.
 | Profile | Purpose | Infra dependencies | Autostart agents | Enabled connectors | Enabled optional monitors | Enabled feature flags |
 | --- | --- | --- | --- | --- | --- | --- |
 | `prod-core` | Lean production always-on runtime: API, Redis/Postgres, Telegram ingestion, Naruto/Sasuke, bounded Akamaru/Kiba monitoring. | `postgresql.service` | `naruto`, `sasuke`, `kiba` | `telegram` | `akamaru`, `kiba` | none |
-| `prod-full` | Production with the SDD development/review lane enabled. Specialist workers remain on demand. | `postgresql.service` | `naruto`, `sasuke`, `kiba`, `kakashi` | `telegram` | `akamaru`, `kiba`, `kakashi`, `shikadai` | none |
+| `prod-full` | Production with SDD GitHub/review watchdogs enabled while Developer/Test runtimes remain on demand. | `postgresql.service` | `naruto`, `sasuke`, `kiba` | `telegram` | `akamaru`, `kiba`, `kakashi`, `shikadai` | none |
 | `staging-core` | Staging API core without external Telegram connector or worker fleet unless explicitly enabled. | `postgresql.service` | none | none | `akamaru` | none |
 | `qa-on-demand` | QA/test profile where QA workers and TestBench are started manually for bounded sessions. | `postgresql.service` | none | none | `akamaru` | `testbench` |
 
@@ -33,6 +33,12 @@ Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
 - Optional workers can be stopped without watchdogs or healthcheck immediately
   resurrecting/failing them unless the selected profile or explicit policy
   enables that worker.
+- `disabled_lifecycle_agents` is the explicit profile state for optional
+  workers that must not be restarted by systemd wrappers or the generic
+  lifecycle watchdog. `prod-core` disables Kakashi and QA specialists by
+  default; `prod-full` enables Kakashi's GitHub watchdog but still keeps the
+  Codex runtime stopped until a delegated issue arrives; `qa-on-demand` enables
+  Shino/Hinata/Guy/Ibiki delivery for explicit QA assignments.
 - `agent-watchdog-lifecycle.service` may listen for on-demand agents, but it is
   a delivery adapter. It is not an autostart policy and must not resurrect
   optional workers just because they are offline.
@@ -75,6 +81,10 @@ KONOHA_SERVICE_PROFILE=staging-core python3 scripts/healthcheck-system.py
 KONOHA_SERVICE_PROFILE=qa-on-demand python3 scripts/healthcheck-system.py
 python3 scripts/healthcheck-system.py --policy-dry-run
 ```
+
+To override the disabled lifecycle guard for a bounded recovery or manual
+mission, set `KONOHA_ENABLE_DISABLED_LIFECYCLE_AGENTS=<id>` or `all` in the
+service environment and restart the relevant wrapper/watchdog.
 
 An optional-disabled service that is absent is `OK`. A disabled service that is
 still installed and active can still warn when it is in the wrong slice or

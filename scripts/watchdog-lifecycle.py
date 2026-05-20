@@ -20,6 +20,11 @@ import sys
 import time
 from datetime import datetime, timezone
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from service_profiles import resolve_service_profile_from_env
+
 # ── Config ──────────────────────────────────────────────────────────────────
 KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
@@ -39,6 +44,7 @@ AUTO_PUSH_INTERVAL = 300  # 5 minutes — push unpushed commits (#367)
 LOG_FILE = "/tmp/watchdog-lifecycle.log"
 DISABLED_EXPERIMENT_AGENTS = {"jiraiya"}
 DISABLED_EXPERIMENT_OVERRIDE_ENV = "KONOHA_ENABLE_DISABLED_EXPERIMENT_AGENTS"
+DISABLED_LIFECYCLE_OVERRIDE_ENV = "KONOHA_ENABLE_DISABLED_LIFECYCLE_AGENTS"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,6 +67,34 @@ def disabled_experiment_allowed(agent_id: str, environ: dict[str, str] | None = 
     return "all" in enabled or agent_id in enabled
 
 
+def disabled_lifecycle_allowed(agent_id: str, environ: dict[str, str] | None = None) -> bool:
+    env = environ or os.environ
+    enabled = set(parse_csv(env.get(DISABLED_LIFECYCLE_OVERRIDE_ENV, "")))
+    return "all" in enabled or agent_id in enabled
+
+
+def profile_allows_lifecycle_watch(agent_id: str, environ: dict[str, str] | None = None) -> bool:
+    env = environ or os.environ
+    try:
+        profile = resolve_service_profile_from_env(env)
+    except Exception as e:
+        log.warning("could not resolve service profile for lifecycle watchdog filtering: %r", e)
+        return True
+    override_allowed = disabled_lifecycle_allowed(agent_id, env)
+    if agent_id in profile.disabled_lifecycle_agents and not override_allowed:
+        log.warning(
+            "agent %s removed from lifecycle watch list by service profile %s disabled_lifecycle_agents; set %s=%s for explicit override",
+            agent_id,
+            profile.id,
+            DISABLED_LIFECYCLE_OVERRIDE_ENV,
+            agent_id,
+        )
+        return False
+    if profile.lifecycle_watchdog_agents:
+        return agent_id in profile.lifecycle_watchdog_agents or override_allowed
+    return override_allowed
+
+
 def filter_watch_agents(agent_ids: list[str], environ: dict[str, str] | None = None) -> list[str]:
     env = environ or os.environ
     filtered: list[str] = []
@@ -72,6 +106,9 @@ def filter_watch_agents(agent_ids: list[str], environ: dict[str, str] | None = N
                 DISABLED_EXPERIMENT_OVERRIDE_ENV,
                 agent_id,
             )
+            continue
+        if not profile_allows_lifecycle_watch(agent_id, env):
+            log.info("agent %s removed from lifecycle watch list by selected service profile", agent_id)
             continue
         filtered.append(agent_id)
     return filtered

@@ -21,6 +21,7 @@ export function templateFromAgentDef(def: AgentDef): AgentTemplate {
     tags: def.tags,
     seed_classification: def.seed_classification,
     lifecycle_mode: def.lifecycle_mode,
+    lifecycle_policy: def.lifecycle_policy,
     capabilities: def.capabilities,
     memory: def.memory,
     avatar_url: def.avatar_url,
@@ -46,6 +47,7 @@ export function runtimeConfigFromAgentDef(def: AgentDef): AgentRuntimeConfig {
     codex_disable_features: def.codex_disable_features,
     tmux_session_override: def.tmux_session_override,
     redis_streams: def.redis_streams,
+    lifecycle_policy: def.lifecycle_policy,
   };
 }
 

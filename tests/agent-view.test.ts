@@ -49,6 +49,7 @@ describe("agent view boundaries", () => {
       tags: ["system"],
       seed_classification: undefined,
       lifecycle_mode: undefined,
+      lifecycle_policy: undefined,
       capabilities: ["telegram"],
       memory: undefined,
       avatar_url: undefined,

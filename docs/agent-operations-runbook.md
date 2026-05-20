@@ -109,12 +109,51 @@ Kakashi and Shikadai currently keep dedicated GitHub watchdogs for the
 Developer -> Reviewer lane so issue label delivery does not duplicate through
 the generic lifecycle watchdog.
 
-Kakashi is a special on-demand interactive worker. His dedicated systemd units exist for manual starts, but are disabled by default:
+Kakashi and Shino are default-off optional workers in lean profiles. Their
+AgentDef `lifecycle_policy.state=disabled` and the selected service profile's
+`disabled_lifecycle_agents` list mean systemd wrappers must not recreate idle
+LLM sessions just because tmux is absent. Explicit task assignment still starts
+them through the lifecycle API:
+
+| Agent | On-demand trigger | Persistent profile |
+|---|---|---|
+| `kakashi` | `state:ready-for-dev` or `state:in-progress` + `agent:kakashi`; `agent-watchdog-kakashi.service` wakes the lifecycle API. | `prod-full` enables the GitHub watchdog but does not autostart the Codex session. |
+| `shino` | Reviewer/test request sent to Shino while `qa-on-demand` allows lifecycle watchdog delivery. | `qa-on-demand` enables Shino/Hinata/Guy/Ibiki delivery without idle sessions. |
+
+Measured live baseline on 2026-05-21 before #765: one idle Kakashi Codex
+runtime used 4 processes / 251,720 KiB RSS (245.8 MiB). No Shino LLM process
+was resident in the same sample. Keeping Kakashi stopped until GitHub
+assignment saves about 245.8 MiB RSS; stopping both wrapper/watchdog processes
+would save only the smaller supervisor budget, sampled separately at 68.1 MiB
+RSS for Kakashi watchdog/service plus lifecycle watcher.
+
+Kakashi is a special on-demand interactive worker. His dedicated systemd units
+exist for manual starts, but the runtime is disabled by default in `prod-core`:
 
 ```bash
 sudo systemctl disable --now agent-kakashi.service agent-watchdog-kakashi.service
 sudo systemctl start agent-kakashi.service
 sudo systemctl stop agent-kakashi.service agent-watchdog-kakashi.service
+```
+
+Preferred re-enable paths:
+
+```bash
+# Bounded manual/API start; works even when the systemd wrapper is parked.
+source /home/ubuntu/.agent-env
+curl -fsS -X POST \
+  -H "Authorization: Bearer $KONOHA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  "http://127.0.0.1:3200/agents/kakashi/start"
+
+# Profile-level SDD lane: watchdog delivery is on, Codex remains stopped until work arrives.
+sudo systemctl set-environment KONOHA_SERVICE_PROFILE=prod-full
+sudo systemctl restart agent-watchdog-kakashi.service
+
+# QA lane for Shino/Hinata/Guy/Ibiki explicit assignments.
+sudo systemctl set-environment KONOHA_SERVICE_PROFILE=qa-on-demand
+sudo systemctl restart agent-watchdog-lifecycle.service
 ```
 
 GitHub labels are Kakashi's canonical task intake for delegated code work. Add

@@ -62,6 +62,39 @@ def load_shikadai_wrapper():
     return module
 
 
+def load_kakashi_wrapper():
+    sys.path.insert(0, str(SCRIPTS))
+    for module_name in ("watchdog_kakashi_wrapper", "github_delegation_watchdog"):
+        sys.modules.pop(module_name, None)
+    spec = importlib.util.spec_from_file_location(
+        "watchdog_kakashi_wrapper", SCRIPTS / "watchdog-kakashi.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    env_keys = [
+        "AGENT_ID",
+        "AGENT_DISPLAY_NAME",
+        "AGENT_TMUX_SESSION",
+        "AGENT_WAKE_TIMEOUT_SEC",
+        "AGENT_GITHUB_DELEGATION_LABELS",
+        "AGENT_GITHUB_REQUIRED_STATES",
+        "AGENT_GITHUB_REDISPATCH_LABELS",
+        "AGENT_GITHUB_TASK_VERB",
+        "AGENT_BATCH_HEADER",
+        "AGENT_BATCH_FOOTER",
+    ]
+    saved = {key: os.environ.pop(key, None) for key in env_keys}
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        for key, value in saved.items():
+            if value is not None:
+                os.environ[key] = value
+            else:
+                os.environ.pop(key, None)
+    return module
+
+
 def issue_with_labels(*labels: str) -> dict:
     return {"number": 654, "title": "Architecture intake", "labels": [{"name": label} for label in labels]}
 
@@ -76,6 +109,14 @@ class GitHubDelegationWatchdogTest(unittest.TestCase):
         self.assertTrue(module.is_delegated_issue(issue_with_labels("agent:shikadai", "state:ready-for-review")))
         self.assertFalse(module.is_delegated_issue(issue_with_labels("agent:shikadai")))
         self.assertFalse(module.is_delegated_issue(issue_with_labels("agent:shikadai", "route:architecture-decomposition", "type:architecture")))
+
+    def test_kakashi_wrapper_wakes_on_delegated_github_work(self):
+        module = load_kakashi_wrapper()
+
+        self.assertEqual(module.DELEGATION_LABELS, {"agent:kakashi"})
+        self.assertEqual(module.REQUIRED_STATES, {"state:ready-for-dev", "state:in-progress"})
+        self.assertEqual(module._b.WAKE_TIMEOUT_SEC, 120)
+        self.assertTrue(module.is_delegated_issue(issue_with_labels("agent:kakashi", "state:ready-for-dev")))
 
     def test_review_route_requires_shikadai_and_ready_for_review(self):
         module = load_module(

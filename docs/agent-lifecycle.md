@@ -58,6 +58,13 @@ interface AgentDef {
     | "optional_on_demand"
     | "connector_owned"
     | "deprecated";
+  lifecycle_policy?: {                // default supervision policy for optional workers
+    state: "enabled" | "disabled";
+    reason?: string;
+    start_triggers?: string[];
+    reenable_paths?: string[];
+    measured_idle_rss_mib?: number;
+  };
   capabilities?: string[];            // skill IDs assigned to this agent
   memory?: string;                    // path to agent memory file
   avatar_url?: string;
@@ -374,7 +381,7 @@ paused-service policy, lives in `docs/system-agent-roster.md` and
 | `naruto` | Telegram bot connector | `connector_owned` | `connector_owned` | connector deployment only |
 | `sasuke` | Telegram user-account connector | `connector_owned` | `connector_owned` | connector deployment only |
 | `kiba` | Системный монитор | `optional_worker` | `optional_on_demand` | optional, enabled on deployments that need active monitoring |
-| `kakashi`, `guy`, `shino`, `hinata` | SDD workflow workers | `optional_worker` | `optional_on_demand` | no; started by assignment/policy |
+| `kakashi`, `shino`, `guy`, `hinata` | SDD workflow workers | `optional_worker` | `optional_on_demand` | no; Kakashi/Shino are default-off through `lifecycle_policy.state=disabled` and profile `disabled_lifecycle_agents`, then started by assignment/API |
 | `mirai` | External-source connector compatibility actor | `connector_owned` | `connector_owned` | connector-owned on-demand compatibility actor |
 | `shikadai` | Reviewer / architecture-code review worker | `optional_worker` | `optional_on_demand` | no; reviewer watchdog requires `state:ready-for-review` + `agent:shikadai` |
 | `jiraiya`, `ino`, `inojin` | legacy specialist aliases | `deprecated_compat` | `deprecated` | no |

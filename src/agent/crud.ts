@@ -40,6 +40,7 @@ const RUNTIME_PRESERVED_FIELDS = [
   "codex_disable_features",
   "active_runtime_profile",
   "auto_runtime_fallback",
+  "lifecycle_policy",
 ] as const;
 
 export function sha256Text(value: string): string {
