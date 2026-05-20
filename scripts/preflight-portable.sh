@@ -17,6 +17,7 @@ run_backend_tests() {
   cd "$ROOT"
   bun test --timeout 30000 \
     tests/test-storage-guardrails.test.ts \
+    tests/test-factory-namespace.test.ts \
     tests/redis-test-isolation-contract.test.ts \
     tests/pg-test-isolation-contract.test.ts \
     tests/assistant-response.test.ts \

@@ -1,12 +1,14 @@
 import type { RoleDef } from "../src/runtime/roles";
 import type { Case, WorkItem } from "../src/runtime/cases/types";
 import type { WorkflowDefinition } from "../src/workflow-loader";
+import { createTestNamespace } from "./test-namespace";
 
 let seq = 0;
+const factoryNamespace = createTestNamespace("factory");
 
 function nextId(prefix: string): string {
   seq += 1;
-  return `${prefix}-${seq}`;
+  return factoryNamespace.id(`${prefix}-${seq}`);
 }
 
 export function makeRoleDef(overrides: Partial<RoleDef> = {}): RoleDef {
@@ -27,7 +29,7 @@ export function makeCase(overrides: Partial<Case> = {}): Case {
   const now = "2026-04-16T00:00:00.000Z";
   return {
     case_id: overrides.case_id ?? nextId("case"),
-    process_id: overrides.process_id ?? "process-test",
+    process_id: overrides.process_id ?? nextId("process"),
     process_version: overrides.process_version ?? "1.0",
     subject: overrides.subject ?? "Test subject",
     status: overrides.status ?? "running",
@@ -46,8 +48,8 @@ export function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
   const now = "2026-04-16T00:00:00.000Z";
   return {
     work_item_id: overrides.work_item_id ?? nextId("wi"),
-    case_id: overrides.case_id ?? "case-test",
-    process_id: overrides.process_id ?? "process-test",
+    case_id: overrides.case_id ?? nextId("case"),
+    process_id: overrides.process_id ?? nextId("process"),
     element_id: overrides.element_id ?? "fn-1",
     label: overrides.label ?? "Review request",
     assignee: overrides.assignee ?? "operator",

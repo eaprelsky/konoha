@@ -43,18 +43,18 @@ const HAS_DATABASE_CREDENTIALS = hasDatabaseCredentials();
 // ── cleanup ───────────────────────────────────────────────────────────────────
 
 async function cleanupTestData() {
-  if (HAS_DATABASE_CREDENTIALS) await cleanupGeneratedTestAgents();
+  if (HAS_DATABASE_CREDENTIALS) await cleanupGeneratedTestAgents({ idSuffix: RUN });
   const regKeys = await redis.hkeys("konoha:registry");
   for (const k of regKeys) {
-    if (k.startsWith("rtest-")) await redis.hdel("konoha:registry", k);
+    if (k.endsWith(`-${RUN}`)) await redis.hdel("konoha:registry", k);
   }
   const tokenMap = await redis.hgetall("konoha:tokens");
   for (const [tok, agentId] of Object.entries(tokenMap ?? {})) {
-    if (agentId.startsWith("rtest-")) await redis.hdel("konoha:tokens", tok);
+    if (agentId.endsWith(`-${RUN}`)) await redis.hdel("konoha:tokens", tok);
   }
-  const streamKeys = await redis.keys("konoha:agent:rtest-*");
+  const streamKeys = await redis.keys(`konoha:agent:*-${RUN}`);
   if (streamKeys.length) await redis.del(...streamKeys);
-  const caseKeys = await redis.keys("case:rtest-*");
+  const caseKeys = await redis.keys(`case:*-${RUN}`);
   if (caseKeys.length) await redis.del(...caseKeys);
 }
 

@@ -49,25 +49,24 @@ function id(name: string) { return `test-${name}-${RUN}`; }
 // ── cleanup ───────────────────────────────────────────────────────────────────
 
 async function cleanupTestAgents() {
-  await cleanupGeneratedTestAgents();
+  await cleanupGeneratedTestAgents({ idSuffix: RUN });
   const keys = await redis.hkeys("konoha:registry");
   for (const k of keys) {
-    if (k.startsWith("test-")) await redis.hdel("konoha:registry", k);
+    if (k.endsWith(`-${RUN}`)) await redis.hdel("konoha:registry", k);
   }
   // clean per-agent streams
-  const streamKeys = await redis.keys("konoha:agent:test-*");
+  const streamKeys = await redis.keys(`konoha:agent:*-${RUN}`);
   if (streamKeys.length) await redis.del(...streamKeys);
   // clean token entries
   const tokenMap = await redis.hgetall("konoha:tokens");
   for (const [tok, agentId] of Object.entries(tokenMap ?? {})) {
-    if (agentId.startsWith("test-")) await redis.hdel("konoha:tokens", tok);
+    if (agentId.endsWith(`-${RUN}`)) await redis.hdel("konoha:tokens", tok);
   }
 }
 
 beforeAll(cleanupTestAgents);
 afterAll(async () => {
   await cleanupTestAgents();
-  await redis.flushdb();
   redis.disconnect();
   if (process.env.KONOHA_SETUP_FILE) rmSync(process.env.KONOHA_SETUP_FILE, { force: true });
   delete process.env.KONOHA_PORT;

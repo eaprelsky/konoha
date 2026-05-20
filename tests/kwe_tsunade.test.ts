@@ -52,7 +52,6 @@ afterAll(async () => {
     }
   }
   redis.disconnect();
-  await cleanupGeneratedTestAgents();
   delete process.env.KONOHA_PORT;
 });
 

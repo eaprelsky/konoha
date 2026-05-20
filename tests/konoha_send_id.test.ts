@@ -39,12 +39,12 @@ async function req(
 }
 
 async function cleanup() {
-  await cleanupGeneratedTestAgents();
+  await cleanupGeneratedTestAgents({ idSuffix: RUN });
   const keys = await redis.hkeys("konoha:registry");
   for (const k of keys) {
-    if (k.startsWith("test-")) await redis.hdel("konoha:registry", k);
+    if (k.endsWith(`-${RUN}`)) await redis.hdel("konoha:registry", k);
   }
-  const streamKeys = await redis.keys("konoha:agent:test-*");
+  const streamKeys = await redis.keys(`konoha:agent:*-${RUN}`);
   if (streamKeys.length) await redis.del(...streamKeys);
 }
 

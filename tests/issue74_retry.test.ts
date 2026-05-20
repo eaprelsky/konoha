@@ -15,9 +15,9 @@ const redis = createTestRedis();
 const RUN = `t${Date.now()}`;
 function id(name: string) { return `test-${name}-${RUN}`; }
 
-beforeAll(cleanupGeneratedTestAgents);
+beforeAll(() => cleanupGeneratedTestAgents({ idSuffix: RUN }));
 afterAll(async () => {
-  await cleanupGeneratedTestAgents();
+  await cleanupGeneratedTestAgents({ idSuffix: RUN });
   redis.disconnect();
   delete process.env.KONOHA_PORT;
 });

@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { createTestRedis } from "./redis-test-utils";
+import { createTestNamespace } from "./test-namespace";
 import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "../src/retention/runtime-cleanup";
 import type { Case, WorkItem } from "../src/runtime/cases";
 
 const redis = createTestRedis();
-const RUN = `test-retention-${Date.now()}`;
+const NS = createTestNamespace("test-retention");
+const RUN = NS.value;
 
 function iso(hoursAgo: number): string {
   return new Date(Date.parse("2026-05-17T12:00:00Z") - hoursAgo * 60 * 60 * 1000).toISOString();
@@ -59,20 +61,24 @@ function wi(id: string, caseId: string, processId: string, status: WorkItem["sta
 async function cleanupRunKeys(): Promise<void> {
   const caseIds = await redis.zrange("konoha:cases:all", 0, -1);
   for (const id of caseIds.filter(id => id.includes(RUN))) {
+    const raw = await redis.get(`case:${id}`);
+    const kase = raw ? JSON.parse(raw) as Case : null;
     await redis.del(`case:${id}`);
     await redis.zrem("konoha:cases:all", id);
-    await redis.srem("konoha:cases:status:running", id);
-    await redis.srem("konoha:cases:status:done", id);
-    await redis.srem("konoha:cases:status:error", id);
-    await redis.srem("konoha:cases:status:cancelled", id);
+    if (kase?.status) await redis.srem(`konoha:cases:status:${kase.status}`, id);
+    if (kase?.process_id) await redis.srem(`konoha:cases:process:${kase.process_id}`, id);
   }
   const wiIds = await redis.zrange("konoha:workitems:all", 0, -1);
   for (const id of wiIds.filter(id => id.includes(RUN))) {
+    const raw = await redis.get(`workitem:${id}`);
+    const wi = raw ? JSON.parse(raw) as WorkItem : null;
     await redis.del(`workitem:${id}`);
     await redis.zrem("konoha:workitems:all", id);
+    if (wi?.status) await redis.srem(`konoha:workitems:status:${wi.status}`, id);
+    if (wi?.assignee) await redis.srem(`konoha:workitems:assignee:${wi.assignee}`, id);
+    if (wi?.process_id) await redis.srem(`konoha:workitems:process:${wi.process_id}`, id);
+    if (wi?.case_id) await redis.srem(`konoha:workitems:case:${wi.case_id}`, id);
   }
-  const keys = await redis.keys(`*${RUN}*`);
-  if (keys.length > 0) await redis.del(...keys);
 }
 
 afterAll(async () => {

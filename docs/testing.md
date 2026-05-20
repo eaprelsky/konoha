@@ -70,6 +70,10 @@ storage by default:
   (`createTestPostgres` / `getTestDatabaseUrl`) instead of constructing
   `postgres` clients inline. `tests/pg-test-isolation-contract.test.ts` audits
   this so new direct clients cannot silently use the production `public` schema.
+- Tests that create workflow/case/work-item/role fixtures should use
+  `tests/factories.ts` defaults or `tests/test-namespace.ts` for run-scoped IDs,
+  and cleanup should target that namespace or suffix instead of deleting broad
+  `test-*`/`rtest-*` ranges.
 
 Do not point normal unit/integration tests at production Redis DB `0` or the
 production PostgreSQL `public` schema. For a deliberate destructive integration
