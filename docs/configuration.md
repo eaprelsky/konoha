@@ -104,7 +104,7 @@ Allowed duplicate keys are documented in the validator: `SERVICE_ACCOUNT_PATH` a
 | `KONOHA_AGENT_TOKEN` | — | Per-agent token (set by the lifecycle manager on agent startup). Identifies the agent to the server. |
 | `KONOHA_SKILLS` | — | Comma-separated list of skill IDs enabled for this MCP client instance. |
 | `TESTBENCH_URL` | `http://127.0.0.1:3201` | URL of the TestBench Chromium service. Used by the `testbench-proxy` route and MCP tools. |
-| `KONOHA_MCP_SESSION_PACKS` | — | Comma-separated on-demand MCP packs to attach to a bounded task/session. Persistent startup ignores lazy packs unless this is set for a task config. |
+| `KONOHA_MCP_SESSION_PACKS` | — | Comma-separated on-demand MCP packs to attach through `scripts/build-mcp-session-config.ts`. Persistent startup always uses startup mode and still defers lazy packs. |
 | `KONOHA_MCP_ON_DEMAND_IDLE_TIMEOUT_SEC` | `900` | Idle timeout for stdio on-demand MCP wrappers such as `puppeteer`. |
 | `KONOHA_SHARED_MCP_CONFIG_PATH` | `/opt/shared/comind-template/.mcp.json:/home/ubuntu/.mcp.json` | Optional colon-separated override for shared MCP config resolution, mainly for tests/diagnostics. |
 

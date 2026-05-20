@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -132,6 +132,61 @@ describe("tool and sandbox profiles", () => {
     expect(result.receipt.skipped_packs).toMatchObject([
       { server: "puppeteer", policy: "skipped", feature: "direct-browser-mcp" },
     ]);
+  });
+
+  test("public task/session entrypoint includes requested lazy MCP packs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "konoha-mcp-session-entrypoint-"));
+    const sharedConfig = join(dir, ".mcp.json");
+    const configOut = join(dir, "session.mcp.json");
+    const receiptOut = join(dir, "session.mcp-receipt.json");
+    writeFileSync(sharedConfig, JSON.stringify({
+      mcpServers: {
+        puppeteer: { command: "node", args: ["puppeteer-mcp.js"] },
+      },
+    }), "utf-8");
+
+    const proc = Bun.spawnSync({
+      cmd: [
+        "bun",
+        "scripts/build-mcp-session-config.ts",
+        "--allowlist",
+        "puppeteer",
+        "--config-out",
+        configOut,
+        "--receipt-out",
+        receiptOut,
+      ],
+      cwd: join(import.meta.dir, ".."),
+      env: {
+        ...process.env,
+        KONOHA_URL: "http://127.0.0.1:3200",
+        KONOHA_TOKEN: "test-token",
+        KONOHA_ENABLED_FEATURES: "direct-browser-mcp",
+        KONOHA_FEATURE_ENABLE_REASON: "test",
+        KONOHA_FEATURE_FLAGS_FILE: join(dir, "missing-feature-flags.json"),
+        KONOHA_SHARED_MCP_CONFIG_PATH: sharedConfig,
+        KONOHA_MCP_SESSION_PACKS: "puppeteer",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(proc.exitCode).toBe(0);
+    expect(existsSync(configOut)).toBe(true);
+    expect(existsSync(receiptOut)).toBe(true);
+    const config = JSON.parse(readFileSync(configOut, "utf-8")) as { mcpServers: Record<string, unknown> };
+    const receipt = JSON.parse(readFileSync(receiptOut, "utf-8")) as {
+      mode: string;
+      included_packs: Array<{ server: string; policy: string; feature?: string }>;
+      deferred_packs: Array<{ server: string }>;
+    };
+
+    expect(Object.keys(config.mcpServers).sort()).toEqual(["konoha", "puppeteer"]);
+    expect(receipt.mode).toBe("task");
+    expect(receipt.included_packs).toMatchObject([
+      { server: "puppeteer", policy: "included", feature: "direct-browser-mcp" },
+    ]);
+    expect(receipt.deferred_packs).toEqual([]);
   });
 
   test("retired Mempalace MCP is excluded from active runtime profiles", () => {

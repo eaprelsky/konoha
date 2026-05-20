@@ -32,15 +32,21 @@ marked on-demand are not attached to persistent startup configs.
 startup defers the pack and records the decision in
 `/opt/shared/agent-workdirs/<agent>/mcp-pack-receipt.json`.
 
-To attach the pack for a bounded task/session, build the task MCP config with:
+To attach the pack for a bounded task/session, build the task MCP config through
+the public task-mode entrypoint:
 
 ```bash
 KONOHA_ENABLED_FEATURES=direct-browser-mcp \
 KONOHA_FEATURE_ENABLE_REASON="time-boxed browser debug" \
-KONOHA_MCP_SESSION_PACKS=puppeteer
+KONOHA_MCP_SESSION_PACKS=puppeteer \
+bun scripts/build-mcp-session-config.ts \
+  --allowlist puppeteer \
+  --config-out /tmp/konoha-task.mcp.json \
+  --receipt-out /tmp/konoha-task.mcp-receipt.json
 ```
 
-The task/session config wraps the stdio MCP server with
+`scripts/build-mcp-session-config.ts` always uses `mode=task`; persistent
+`startAgent()` startup continues to use `mode=startup`. The task/session config wraps the stdio MCP server with
 `scripts/mcp-idle-wrapper.ts`, which exits after
 `KONOHA_MCP_ON_DEMAND_IDLE_TIMEOUT_SEC` seconds of stdin inactivity. The
 default timeout is 900 seconds.
