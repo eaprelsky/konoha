@@ -11,6 +11,9 @@ Packaging and deployment boundaries are decided in
 monorepo, moves toward multiple deployable services over time, and keeps the
 current production server as a modular monolith until accepted boundary slices
 are implemented.
+Naruto/Sasuke consolidation is explicitly blocked by
+`docs/adr-007-naruto-sasuke-separation.md` until a reviewed compatibility
+experiment proves queue, lag, health, identity, and rollback safety.
 
 ## Current Shape
 

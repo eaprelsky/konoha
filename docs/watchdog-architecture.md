@@ -2,6 +2,12 @@
 
 Active watchdogs deliver Konoha bus messages and side-channel queues to agent tmux sessions. Lifecycle ownership stays in the TypeScript lifecycle API; watchdogs are delivery adapters only.
 
+Naruto and Sasuke watchdogs are intentionally separate compatibility surfaces.
+`docs/adr-007-naruto-sasuke-separation.md` is the guardrail for any future
+consolidation experiment: Naruto bot delivery may be paused only with explicit
+queue/lag/health criteria, and Sasuke user-account ingestion must remain
+protected.
+
 ## Implementations
 
 ### 1. Dedicated watchdog wrappers (`watchdog-naruto.py`, `watchdog-sasuke.py`, `watchdog-kakashi.py`, `watchdog-shikadai.py`, `watchdog-kiba.py`)

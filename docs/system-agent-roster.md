@@ -38,6 +38,10 @@ separate compatibility migration says to do so.
   an explicit product need and operator approval exist.
 - Kakashi, Shikadai, Kiba, Naruto, and Sasuke have dedicated watchdogs because
   their delivery filters are role-specific.
+- Naruto and Sasuke remain separate connector-owned runtimes. Any future
+  consolidation experiment must satisfy
+  `docs/adr-007-naruto-sasuke-separation.md` first and must preserve Sasuke
+  user-account chat ingestion.
 - Kiba's default tool profile is `kiba-monitor-core`: Konoha health/action MCP
   only. GitLab, Yonote, Yandex Tracker, Miro, Office/document tools,
   browser/Puppeteer, memory, retired MemPalace, spreadsheets, calendar,

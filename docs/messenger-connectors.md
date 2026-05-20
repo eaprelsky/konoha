@@ -36,6 +36,9 @@ These records are compatibility records only. They do not rename systemd units,
 tmux sessions, Redis streams, or watchdogs. Runtime catalog overrides can add
 new connectors or bindings, but the compatibility records remain the rollback
 path unless the override intentionally replaces them.
+Naruto/Sasuke process consolidation is separately governed by
+`docs/adr-007-naruto-sasuke-separation.md`; connector catalog changes must not
+merge bot and user-account runtime identities in the same step.
 
 `telegram-event-bridge.py` now publishes connector-normalized workflow events
 while preserving the existing Redis streams. The compatibility defaults are:
