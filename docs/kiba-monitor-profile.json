@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 772,
+  "monitor_agent": "kiba",
+  "mode": "single-shared-monitor",
+  "default_environment": "prod",
+  "mcp_profile": "kiba-monitor-core",
+  "mcp_allowlist": ["konoha"],
+  "targets": [
+    {
+      "environment": "prod",
+      "service_profile": "prod-core",
+      "konoha_url_env": "KONOHA_URL",
+      "healthcheck_env": {
+        "KONOHA_SERVICE_PROFILE": "prod-core"
+      },
+      "remediation": "enabled_with_explicit_target_environment"
+    },
+    {
+      "environment": "staging",
+      "service_profile": "staging-core",
+      "konoha_url_env": "KONOHA_STAGING_URL",
+      "healthcheck_env": {
+        "KONOHA_SERVICE_PROFILE": "staging-core"
+      },
+      "remediation": "disabled_unless_explicit_target_environment_matches"
+    }
+  ],
+  "action_guard": {
+    "required_alert_field": "env",
+    "required_runtime_env": "KIBA_ACTION_TARGET_ENV",
+    "rule": "deterministic admin actions are allowed only when alert env equals KIBA_ACTION_TARGET_ENV"
+  },
+  "alert_labels": {
+    "required_fields": ["env"],
+    "formats": ["kiba:alert env=<environment> ...", "kiba:healthcheck env=<environment>"]
+  }
+}

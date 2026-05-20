@@ -25,6 +25,7 @@ from pathlib import Path
 
 from watchdog_tmux import is_session_alive, is_agent_idle, tmux_send
 from watchdog_format import format_batch
+from kiba_monitor_profile import label_kiba_message, target_environment_from_env
 from watchdog_sources import (
     konoha_sse_watcher,
     telegram_queue_watcher,
@@ -74,7 +75,10 @@ async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
     payload = json.dumps({
         "from": f"watchdog-{session}",
         "to": "kiba",
-        "text": f"kiba:alert agent={session} frozen timeout={int(waited)}s msgs_dropped={n_msgs}",
+        "text": label_kiba_message(
+            f"kiba:alert agent={session} frozen timeout={int(waited)}s msgs_dropped={n_msgs}",
+            target_environment_from_env(),
+        ),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     env = {**os.environ, "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}

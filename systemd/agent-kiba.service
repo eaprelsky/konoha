@@ -10,6 +10,8 @@ User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
 Environment=HOME=/home/ubuntu
 Environment=KONOHA_AGENT_ID=kiba
+Environment=KIBA_MONITOR_ENVIRONMENT=prod
+Environment=KIBA_ACTION_TARGET_ENV=prod
 Environment=PATH=/home/ubuntu/.bun/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/home/ubuntu/konoha/scripts/agent-api-service.sh kiba
 Restart=always

@@ -21,6 +21,7 @@ import time
 from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(__file__))
 import watchdog_base as _b
+from kiba_monitor_profile import action_guard_reason, alert_environment
 
 # ── Config ───────────────────────────────────────────────────────────────────
 _b.AGENT_ID                  = "kiba"
@@ -194,6 +195,10 @@ def recovery_action_for_alert(text: str) -> tuple[str, str] | None:
     if target in KIBA_RECOVERY_BLOCKLIST:
         return None
 
+    guard = action_guard_reason(text)
+    if guard:
+        return ("audit", guard)
+
     if fields.get("watchdog") == "dead" and fields.get("session") == "alive" and agent:
         return ("restart_watchdog", agent)
     if fields.get("tmux") == "missing":
@@ -327,7 +332,7 @@ async def _handle_recovery_action(action: str, target: str, source_text: str) ->
     )
     await _post_konoha_message(
         "naruto",
-        f"[Kiba watchdog] deterministic recovery action={action} target={target} result={result}"
+        f"[Kiba watchdog] deterministic recovery env={alert_environment(source_text)} action={action} target={target} result={result}"
         + (f" detail={detail}" if detail and not ok else ""),
     )
 

@@ -20,11 +20,13 @@ import os
 import subprocess
 import time
 from datetime import datetime, timezone
+from kiba_monitor_profile import action_guard_reason, label_kiba_message, target_environment_from_env
 
 # ── Config ──────────────────────────────────────────────────────────────────
 KONOHA_URL   = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
 KONOHA_TOKEN = os.environ.get("KONOHA_TOKEN", "")
 AUTO_REMEDIATE = os.environ.get("AKAMARU_AUTO_REMEDIATE", "1") == "1"
+KIBA_MONITOR_ENVIRONMENT = target_environment_from_env()
 
 CHECK_INTERVAL  = 60   # seconds between full checks
 HEARTBEAT_ALERT = 600  # seconds (10 min) without heartbeat → alert
@@ -327,6 +329,7 @@ ALERT_COOLDOWN = 300  # 5 min between repeat alerts for same issue
 
 def should_alert(key: str) -> bool:
     now = time.time()
+    key = f"{KIBA_MONITOR_ENVIRONMENT}:{key}"
     last = _alerted.get(key, 0)
     if now - last >= ALERT_COOLDOWN:
         _alerted[key] = now
@@ -496,10 +499,14 @@ def remediate_alert(alert: str) -> str | None:
     """
     if not AUTO_REMEDIATE:
         return None
+    alert = label_kiba_message(alert, KIBA_MONITOR_ENVIRONMENT)
 
     service = extract_field(alert, "service")
     if service:
         if service.startswith("agent-watchdog-") or service in SAFE_RESTART_SERVICES:
+            guard = action_guard_reason(alert)
+            if guard:
+                return f"auto_remediation_blocked={guard!r}"
             if is_service_masked(service):
                 log.info(f"[suppressed] masked service {service} — skipping auto_restart")
                 return None
@@ -511,15 +518,24 @@ def remediate_alert(alert: str) -> str | None:
     if agent and "watchdog=dead" in alert:
         watchdog = AGENT_WATCHDOGS.get(agent)
         if watchdog:
+            guard = action_guard_reason(alert)
+            if guard:
+                return f"auto_remediation_blocked={guard!r}"
             ok, output = restart_service(watchdog)
             return f"auto_restart_watchdog={watchdog} ok={int(ok)} detail={output[:160]!r}"
 
     session = extract_field(alert, "session")
     if session and "tmux=stuck_paste" in alert:
+        guard = action_guard_reason(alert)
+        if guard:
+            return f"auto_remediation_blocked={guard!r}"
         ok, output = nudge_tmux(session)
         return f"auto_nudge_tmux={session} ok={int(ok)} detail={output[:160]!r}"
 
     if agent and ("token_exhausted=true" in alert or "compacting_loop" in alert):
+        guard = action_guard_reason(alert)
+        if guard:
+            return f"auto_remediation_blocked={guard!r}"
         ok, output = restart_agent_session(agent)
         return f"auto_restart_agent={agent} ok={int(ok)} detail={output[:160]!r}"
 
@@ -972,6 +988,7 @@ async def check_konoha(paused: set[str] = frozenset()) -> list[str]:
 
 async def send_alert(text: str) -> None:
     """Send alert to Kiba via Konoha bus."""
+    text = label_kiba_message(text, KIBA_MONITOR_ENVIRONMENT)
     payload = json.dumps({
         "from": "akamaru",
         "to": "kiba",

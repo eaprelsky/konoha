@@ -38,6 +38,10 @@ Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
   active SDD workers, at most one specialist, and an 1800 second idle mission
   TTL. The pool starts and stops workers through the lifecycle API and records
   bus handoffs.
+- Kiba uses `docs/kiba-monitor-profile.json` as a single shared monitor profile
+  for `prod` and `staging`. Alerts and healthcheck summaries carry
+  `env=<target>`, and remediation actions require an explicit matching
+  `KIBA_ACTION_TARGET_ENV`.
 - `disabled_lifecycle_agents` is the explicit profile state for optional
   workers that must not be restarted by systemd wrappers or the generic
   lifecycle watchdog. `prod-core` disables Kakashi and QA specialists by

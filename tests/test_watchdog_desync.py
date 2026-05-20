@@ -155,12 +155,13 @@ class TestKibaDeterministicAlertRecovery:
         spec = importlib.util.spec_from_file_location("watchdog_kiba", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        module.os.environ["KIBA_ACTION_TARGET_ENV"] = "prod"
         return module
 
     def test_frozen_alert_restarts_agent(self):
         mod = self._load_kiba_watchdog()
         assert mod.recovery_action_for_alert(
-            "kiba:alert agent=kakashi frozen timeout=600s msgs_dropped=1"
+            "kiba:alert env=prod agent=kakashi frozen timeout=600s msgs_dropped=1"
         ) == ("restart_agent", "kakashi")
 
     def test_stuck_alert_restarts_agent(self):
@@ -169,19 +170,19 @@ class TestKibaDeterministicAlertRecovery:
         # may exist with shorter uptime than the alert's claimed stuck duration
         mod.KIBA_MIN_CREDIBLE_STUCK_SEC = 999999999
         assert mod.recovery_action_for_alert(
-            "kiba:alert agent=naruto runtime=claude stuck duration=2623min"
+            "kiba:alert env=prod agent=naruto runtime=claude stuck duration=2623min"
         ) == ("restart_agent", "naruto")
 
     def test_watchdog_dead_restarts_watchdog_only(self):
         mod = self._load_kiba_watchdog()
         assert mod.recovery_action_for_alert(
-            "kiba:alert agent=kakashi watchdog=dead session=alive"
+            "kiba:alert env=prod agent=kakashi watchdog=dead session=alive"
         ) == ("restart_watchdog", "kakashi")
 
     def test_idle_with_messages_nudges_agent(self):
         mod = self._load_kiba_watchdog()
         assert mod.recovery_action_for_alert(
-            "kiba:alert agent=sasuke idle_with_messages msg_age=12min"
+            "kiba:alert env=prod agent=sasuke idle_with_messages msg_age=12min"
         ) == ("nudge_agent", "sasuke")
 
     def test_unrelated_alert_is_left_to_llm(self):
@@ -194,7 +195,7 @@ class TestKibaDeterministicAlertRecovery:
         mod.KIBA_SELF_TARGET_KILLSWITCH = True
         mod._b.AGENT_ID = "kiba"
         result = mod.recovery_action_for_alert(
-            "kiba:alert agent=kiba runtime=claude stuck duration=30min"
+            "kiba:alert env=prod agent=kiba runtime=claude stuck duration=30min"
         )
         assert result is not None
         assert result[0] == "audit"
@@ -207,7 +208,7 @@ class TestKibaDeterministicAlertRecovery:
         # Mock _validate_stuck_alert to return False
         monkeypatch.setattr(mod, "_validate_stuck_alert", lambda agent, text: False)
         result = mod.recovery_action_for_alert(
-            "kiba:alert agent=kakashi runtime=claude stuck duration=120min"
+            "kiba:alert env=prod agent=kakashi runtime=claude stuck duration=120min"
         )
         assert result is not None
         assert result[0] == "audit"
@@ -221,7 +222,7 @@ class TestKibaDeterministicAlertRecovery:
         # Mock _storm_allows to return False
         monkeypatch.setattr(mod, "_storm_allows", lambda target: False)
         result = mod.recovery_action_for_alert(
-            "kiba:alert agent=kakashi runtime=claude stuck duration=10min"
+            "kiba:alert env=prod agent=kakashi runtime=claude stuck duration=10min"
         )
         assert result is not None
         assert result[0] == "audit"
@@ -240,7 +241,7 @@ class TestKibaDeterministicAlertRecovery:
             return True
         monkeypatch.setattr(mod, "_validate_stuck_alert", fake_validate)
         result = mod.recovery_action_for_alert(
-            "kiba:alert agent=sasuke compacting_loop duration=15min"
+            "kiba:alert env=prod agent=sasuke compacting_loop duration=15min"
         )
         assert result == ("restart_agent", "sasuke")
         assert called["agent"] == "sasuke"
@@ -252,9 +253,27 @@ class TestKibaDeterministicAlertRecovery:
         mod.KIBA_SELF_TARGET_KILLSWITCH = False
         mod.KIBA_MIN_CREDIBLE_STUCK_SEC = 300
         result = mod.recovery_action_for_alert(
-            "kiba:alert agent=kakashi frozen=permission_prompt action_hint=approve_or_deny"
+            "kiba:alert env=prod agent=kakashi frozen=permission_prompt action_hint=approve_or_deny"
         )
         assert result == ("restart_agent", "kakashi")
+
+    def test_missing_environment_label_blocks_admin_action(self):
+        mod = self._load_kiba_watchdog()
+        result = mod.recovery_action_for_alert(
+            "kiba:alert agent=kakashi watchdog=dead session=alive"
+        )
+        assert result is not None
+        assert result[0] == "audit"
+        assert "missing env" in result[1]
+
+    def test_staging_alert_cannot_target_prod_actions(self):
+        mod = self._load_kiba_watchdog()
+        result = mod.recovery_action_for_alert(
+            "kiba:alert env=staging agent=kakashi watchdog=dead session=alive"
+        )
+        assert result is not None
+        assert result[0] == "audit"
+        assert "does not match KIBA_ACTION_TARGET_ENV=prod" in result[1]
 
 
 class TestDesyncTimerReset:

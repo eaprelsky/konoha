@@ -26,6 +26,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from service_profiles import resolve_service_profile_from_env
 from resource_budgets import systemd_slice_policies
 from feature_flags import resolve_feature_flags
+from kiba_monitor_profile import target_environment_from_env
 
 
 KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
@@ -1239,7 +1240,7 @@ def print_report(checks: list[Check]) -> int:
     fails = sum(1 for check in checks if check.level == "FAIL")
     warns = sum(1 for check in checks if check.level == "WARN")
     oks = sum(1 for check in checks if check.level == "OK")
-    print(f"\nsummary: {oks} OK, {warns} WARN, {fails} FAIL")
+    print(f"\nsummary env={target_environment_from_env()}: {oks} OK, {warns} WARN, {fails} FAIL")
     return 2 if fails else 0
 
 

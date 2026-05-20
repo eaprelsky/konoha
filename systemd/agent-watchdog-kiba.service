@@ -7,6 +7,8 @@ Type=simple
 User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
 Environment=PYTHONUNBUFFERED=1
+Environment=KIBA_MONITOR_ENVIRONMENT=prod
+Environment=KIBA_ACTION_TARGET_ENV=prod
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/watchdog-kiba.py
 Restart=always
 Slice=konoha-agents.slice

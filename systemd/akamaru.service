@@ -6,6 +6,8 @@ After=network.target redis.service
 Type=simple
 User=ubuntu
 EnvironmentFile=/home/ubuntu/.agent-env
+Environment=KIBA_MONITOR_ENVIRONMENT=prod
+Environment=KIBA_ACTION_TARGET_ENV=prod
 ExecStart=/usr/bin/python3 /home/ubuntu/konoha/scripts/akamaru.py
 Restart=always
 Slice=konoha-agents.slice

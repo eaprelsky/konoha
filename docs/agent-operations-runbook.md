@@ -39,6 +39,12 @@ Sasuke, and Kiba; development, review, QA, TestBench, deprecated compatibility
 agents, and heavy MCP packs stay optional unless a profile or explicit policy
 enables them.
 
+Kiba uses the shared monitor profile in `docs/kiba-monitor-profile.json`:
+one Kiba runtime monitors `prod` and `staging` targets with environment labels.
+Alerts and healthcheck summaries include `env=<target>`, and deterministic
+recovery actions require `KIBA_ACTION_TARGET_ENV` to match the alert environment
+before Kiba calls lifecycle or systemd admin APIs.
+
 ## Control Plane Policy
 
 Systemd is only a supervisor. It must not launch `claude`, `codex`, `opencode`, or `tmux` directly for managed agents. Permanent `agent-*.service` units must call `scripts/agent-api-service.sh <id>`, which reconciles the Konoha lifecycle API with the tmux session.

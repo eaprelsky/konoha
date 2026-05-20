@@ -42,6 +42,16 @@ def test_core_profiles_keep_experimental_features_disabled():
     assert policy.enabled_features == frozenset()
 
 
+def test_healthcheck_summary_includes_monitor_environment(capsys, monkeypatch):
+    monkeypatch.setenv("KIBA_MONITOR_ENVIRONMENT", "staging")
+
+    rc = healthcheck.print_report([healthcheck.Check("OK", "sample", "detail")])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "summary env=staging: 1 OK, 0 WARN, 0 FAIL" in out
+
+
 def test_prod_core_treats_sdd_worker_absence_as_optional_disabled():
     policy = healthcheck.load_healthcheck_policy(
         environ={"KONOHA_FEATURE_FLAGS_FILE": "/tmp/nonexistent-konoha-feature-flags.json"},

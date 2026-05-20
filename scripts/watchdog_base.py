@@ -38,6 +38,7 @@ from watchdog_tmux import (
     tmux_send,
 )
 from watchdog_format import is_session_noise, sanitize_message_text
+from kiba_monitor_profile import label_kiba_message, target_environment_from_env
 
 # ── Config — set these in each agent script after import ─────────────────────
 KONOHA_URL      = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200")
@@ -379,6 +380,7 @@ async def send_freeze_alert(session: str, waited: float, n_msgs: int) -> None:
         if target == "kiba"
         else f"kiba:alert agent={session} frozen timeout={int(waited)}s msgs_dropped={n_msgs} circuit=open — restart may be needed"
     )
+    text = label_kiba_message(text, target_environment_from_env())
     payload = json.dumps({
         "from": f"watchdog-{session}",
         "to": target,
