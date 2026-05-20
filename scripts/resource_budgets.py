@@ -64,6 +64,19 @@ def profile_dropin_policies(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, dic
     return dict(raw["systemd"].get("profile_dropins", {}))
 
 
+def host_capacity_model(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, Any]:
+    raw = load_resource_budgets(path)
+    model = raw.get("host_capacity")
+    if not isinstance(model, dict):
+        raise ValueError("resource budget contract must define host_capacity")
+    return model
+
+
+def host_profile_accounting(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, dict[str, Any]]:
+    model = host_capacity_model(path)
+    return dict(model.get("profile_accounting") or {})
+
+
 def expected_memory_max_kib(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, int]:
     raw = load_resource_budgets(path)
     result: dict[str, int] = {}

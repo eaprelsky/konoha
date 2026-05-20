@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_for_issue": 770,
+  "updated_for_issue": 773,
   "default_budget_profile": "prod-core",
   "budget_profiles": {
     "prod-core": {
@@ -47,6 +47,81 @@
       "disk_budget_gib": 10,
       "testbench": { "default": "disabled", "pool_size": 0, "max_pool_size": 0 },
       "scale_out_at": { "memory_pressure": "warning", "disk_used_percent": 80, "sustained_cpu_percent": 175 }
+    }
+  },
+  "host_capacity": {
+    "updated_for_issue": 773,
+    "planning_host_memory_mib": 8192,
+    "planning_host_cpu_percent": 800,
+    "non_konoha_reserved_memory_mib": 1500,
+    "non_konoha_reserved_cpu_percent": 200,
+    "non_konoha_reserved_disk_gib": 16,
+    "live_baseline_sample": {
+      "source": "python3 scripts/resource-inventory.py --json --no-disk",
+      "group": "docker_mail_stack",
+      "rss_kib": 601032,
+      "cpu_percent": 0.5,
+      "process_count": 64,
+      "note": "Single live sample for issue #773; planning reserves stay above the sample and must be refreshed before disabling host services."
+    },
+    "reservations": [
+      {
+        "id": "shared_mail_stack",
+        "classification": "required",
+        "services": ["mailcow docker containers", "postfix", "dovecot", "rspamd", "mail nginx"],
+        "memory_reserve_mib": 768,
+        "cpu_reserve_percent": 100,
+        "disk_budget_gib": 10,
+        "source": "docs/mail-integration-profile.json shared_mail_host.resource_budget",
+        "removal_policy": "do_not_remove_in_lean_konoha_cleanup",
+        "externalization": "candidate_only_after_dedicated_mail_migration_plan"
+      },
+      {
+        "id": "docker_runtime",
+        "classification": "required_for_mail_stack",
+        "services": ["docker.service", "containerd.service", "containerd-shim", "docker-proxy"],
+        "memory_reserve_mib": 256,
+        "cpu_reserve_percent": 50,
+        "disk_budget_gib": 2,
+        "source": "host process sample plus Docker supervisor overhead",
+        "removal_policy": "do_not_remove_while_shared_mail_stack_runs_on_host",
+        "externalization": "moves_with_shared_mail_stack"
+      },
+      {
+        "id": "host_reverse_proxy",
+        "classification": "required",
+        "services": ["nginx.service"],
+        "memory_reserve_mib": 128,
+        "cpu_reserve_percent": 25,
+        "disk_budget_gib": 1,
+        "source": "host reverse proxy baseline",
+        "removal_policy": "required_for_host_ingress"
+      },
+      {
+        "id": "host_os_and_system_services",
+        "classification": "required",
+        "services": ["systemd", "journald", "ssh", "cron", "kernel page cache"],
+        "memory_reserve_mib": 348,
+        "cpu_reserve_percent": 25,
+        "disk_budget_gib": 3,
+        "source": "planning reserve",
+        "removal_policy": "not_konoha_owned"
+      }
+    ],
+    "optional_cleanup_candidates": [
+      { "id": "unused_docker_images", "policy": "prune only after mailcow backup and docker compose inventory review", "rollback": "re-pull images through the mail stack deployment manifest" },
+      { "id": "stale_host_logs", "policy": "rotate/prune through journald and application retention, not service removal", "rollback": "restore from backups when required for incident review" }
+    ],
+    "externalization_candidates": [
+      { "id": "shared_mail_stack", "target": "dedicated mail host or managed mail provider", "condition": "separate migration plan preserving SMTP credentials, DNS auth, backups, and tenant mailboxes" },
+      { "id": "docker_runtime", "target": "moves with shared_mail_stack", "condition": "only if no required non-mail container remains on the Konoha host" }
+    ],
+    "profile_accounting": {
+      "prod-core": { "konoha_memory_max_mib": 6500, "konoha_cpu_quota_percent": 600, "reserved_memory_mib": 1500, "reserved_cpu_percent": 200, "planned_total_memory_mib": 8000, "planned_total_cpu_percent": 800 },
+      "prod-full": { "konoha_memory_max_mib": 6500, "konoha_cpu_quota_percent": 600, "reserved_memory_mib": 1500, "reserved_cpu_percent": 200, "planned_total_memory_mib": 8000, "planned_total_cpu_percent": 800 },
+      "staging-core": { "konoha_memory_max_mib": 2600, "konoha_cpu_quota_percent": 250, "reserved_memory_mib": 1500, "reserved_cpu_percent": 200, "planned_total_memory_mib": 4100, "planned_total_cpu_percent": 450 },
+      "qa-on-demand": { "konoha_memory_max_mib": 3600, "konoha_cpu_quota_percent": 350, "reserved_memory_mib": 1500, "reserved_cpu_percent": 200, "planned_total_memory_mib": 5100, "planned_total_cpu_percent": 550 },
+      "ci-test": { "konoha_memory_max_mib": 2200, "konoha_cpu_quota_percent": 250, "reserved_memory_mib": 1500, "reserved_cpu_percent": 200, "planned_total_memory_mib": 3700, "planned_total_cpu_percent": 450 }
     }
   },
   "systemd": {

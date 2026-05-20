@@ -32,6 +32,11 @@ The report groups current RSS and CPU by:
 - cache/artifact disk entries such as npm, uv, Bun, Playwright, and
   `node_modules`
 
+`docker_mail_stack` is not automatically removable Konoha bloat. It feeds the
+host-level reserve in `docs/resource-budgets.json` for the required shared mail
+stack and Docker runtime. Treat cleanup of that group as capacity planning or a
+dedicated mail externalization project, not an agent/MCP diet task.
+
 Process rows include inferred `agent_id`, `mcp_server`, `systemd_unit`, and
 `systemd_slice` where available. Agent and MCP origins are inferred from
 `/opt/shared/agent-workdirs/<id>`, `.mcp.json` paths, process ancestry, and

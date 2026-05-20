@@ -19,6 +19,45 @@ Runtime consumers:
 - `scripts/bpms-load-regression.ts` validates BPMS load/soak observations
   against profile thresholds that must stay within these resource budgets.
 
+## Host-Level Reserve
+
+Issue #773 adds a host-level non-Konoha reserve so Konoha planning does not
+assume the whole VM belongs to Konoha services. The reserve is part of
+`docs/resource-budgets.json` under `host_capacity`.
+
+Planning host envelope:
+
+| Capacity | Value |
+| --- | --- |
+| Host memory | 8192 MiB |
+| Host CPU | 800% |
+| Reserved non-Konoha memory | 1500 MiB |
+| Reserved non-Konoha CPU | 200% |
+| Reserved non-Konoha disk | 16 GiB |
+
+Baseline sample for #773 used `python3 scripts/resource-inventory.py --json
+--no-disk`: the `docker_mail_stack` group was 601032 KiB RSS, 0.5% CPU, and 64
+processes. The planning reserve intentionally stays above that sample because
+mail spikes and Docker supervisor overhead are host-level responsibilities.
+
+| Reservation | Classification | Memory | CPU | Disk | Policy |
+| --- | --- | --- | --- | --- | --- |
+| Shared mail stack | required | 768 MiB | 100% | 10 GiB | Do not remove in Lean Konoha cleanup. |
+| Docker runtime | required for mail stack | 256 MiB | 50% | 2 GiB | Moves only with a dedicated mail migration. |
+| Host reverse proxy | required | 128 MiB | 25% | 1 GiB | Required for host ingress. |
+| Host OS/system services | required | 348 MiB | 25% | 3 GiB | Not Konoha-owned. |
+
+Optional cleanup candidates are limited to artifacts such as unused Docker
+images and stale logs, and require backup/inventory review first. Externalization
+candidates are the shared mail stack and its Docker runtime as a pair; they move
+only through a dedicated mail migration that preserves SMTP credentials, DNS
+auth, backups, and tenant mailboxes.
+
+`prod-core` and `prod-full` therefore use a 6500 MiB / 600% Konoha envelope
+inside an 8000 MiB / 800% planned total, leaving the host reserve explicit.
+`staging-core`, `qa-on-demand`, and `ci-test` account for the same host reserve
+before their smaller Konoha envelopes are considered.
+
 ## Profile Budgets
 
 | Budget profile | Service profile | Use | Memory max | CPU quota | Disk budget | TestBench |
@@ -151,3 +190,8 @@ the shared mail host boundary. Mail is product-critical shared infrastructure,
 not optional Konoha runtime bloat: Lean Konoha cleanup may remove Office,
 document, spreadsheet, Miro, and browser MCP packs, but must not remove the mail
 stack or require those packs for mail delivery.
+
+The mail reserve in `docs/resource-budgets.json` mirrors
+`shared_mail_host.resource_budget` from `docs/mail-integration-profile.json`.
+Externalizing mail is allowed only as a separate migration plan; #773 does not
+disable Docker, mailcow, Postfix, Dovecot, Rspamd, or the shared mail host.

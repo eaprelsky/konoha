@@ -23,6 +23,7 @@ describe("resource budget contract", () => {
   test("defines production, staging, QA, and CI budget profiles", () => {
     const raw = JSON.parse(read("docs/resource-budgets.json"));
 
+    expect(raw.updated_for_issue).toBe(773);
     expect(raw.default_budget_profile).toBe("prod-core");
     expect(Object.keys(raw.budget_profiles).sort()).toEqual([
       "ci-test",
@@ -33,6 +34,33 @@ describe("resource budget contract", () => {
     ]);
     expect(raw.budget_profiles["staging-core"].service_profile).toBe("staging-core");
     expect(raw.budget_profiles["ci-test"].testbench.default).toBe("disabled");
+  });
+
+  test("reserves host capacity for non-Konoha mail and system services", () => {
+    const raw = JSON.parse(read("docs/resource-budgets.json"));
+    const mailProfile = JSON.parse(read("docs/mail-integration-profile.json"));
+    const host = raw.host_capacity;
+    const reservations = new Map(host.reservations.map((item: any) => [item.id, item]));
+    const mail = reservations.get("shared_mail_stack") as any;
+
+    expect(host.non_konoha_reserved_memory_mib).toBe(1500);
+    expect(host.non_konoha_reserved_cpu_percent).toBe(200);
+    expect(host.live_baseline_sample.group).toBe("docker_mail_stack");
+    expect(mail.classification).toBe("required");
+    expect(mail.removal_policy).toBe("do_not_remove_in_lean_konoha_cleanup");
+    expect(mail.memory_reserve_mib).toBe(parseInt(mailProfile.shared_mail_host.resource_budget.memory_max));
+    expect(mail.disk_budget_gib).toBe(mailProfile.shared_mail_host.resource_budget.disk_budget_gib);
+    expect((reservations.get("docker_runtime") as any).classification).toBe("required_for_mail_stack");
+    expect(host.optional_cleanup_candidates.map((item: any) => item.id).sort()).toEqual(["stale_host_logs", "unused_docker_images"]);
+    expect(host.externalization_candidates.map((item: any) => item.id).sort()).toEqual(["docker_runtime", "shared_mail_stack"]);
+
+    for (const [profileId, budget] of Object.entries<any>(raw.budget_profiles)) {
+      const row = host.profile_accounting[profileId];
+      expect(row.konoha_memory_max_mib).toBe(budget.memory_max_mib);
+      expect(row.reserved_memory_mib).toBe(host.non_konoha_reserved_memory_mib);
+      expect(row.planned_total_memory_mib).toBeLessThanOrEqual(host.planning_host_memory_mib);
+      expect(row.planned_total_cpu_percent).toBeLessThanOrEqual(host.planning_host_cpu_percent);
+    }
   });
 
   test("TestBench service and code enforce bounded Chromium pool", () => {
@@ -90,10 +118,15 @@ describe("resource budget contract", () => {
     const policy = read("docs/resource-budget-policy.md");
     const inventory = read("docs/resource-inventory.md");
 
+    expect(policy).toContain("Host-Level Reserve");
+    expect(policy).toContain("Shared mail stack");
+    expect(policy).toContain("Externalization");
+    expect(policy).toContain("must not remove the mail");
     expect(policy).toContain("Scale-Out Policy");
     expect(policy).toContain("python3 scripts/resource-inventory.py --json --no-disk");
     expect(policy).toContain("redis-server.service");
     expect(policy).toContain("postgresql.service");
     expect(inventory).toContain("docs/resource-budgets.json");
+    expect(inventory).toContain("docker_mail_stack");
   });
 });

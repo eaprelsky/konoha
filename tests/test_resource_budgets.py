@@ -18,6 +18,7 @@ CATALOG_PATH = Path(__file__).resolve().parents[1] / "docs" / "resource-budgets.
 def test_required_budget_profiles_exist_and_map_to_service_profiles():
     raw = resource_budgets.load_resource_budgets(CATALOG_PATH)
 
+    assert raw["updated_for_issue"] == 773
     assert raw["default_budget_profile"] == "prod-core"
     assert set(raw["budget_profiles"]) == {"prod-core", "prod-full", "staging-core", "qa-on-demand", "ci-test"}
     assert raw["budget_profiles"]["prod-core"]["service_profile"] == "prod-core"
@@ -65,3 +66,31 @@ def test_transient_scope_and_staging_dropin_policies_are_modeled():
     assert scopes["mcp_low_pack_scope"]["memory_max"] == "256M"
     assert dropins["staging-core"]["konoha.service"]["path"] == "systemd/dropins/staging-core-konoha.conf"
     assert dropins["staging-core"]["konoha.service"]["memory_max"] == "900M"
+
+
+def test_host_capacity_reserves_required_non_konoha_services():
+    raw = resource_budgets.load_resource_budgets(CATALOG_PATH)
+    model = resource_budgets.host_capacity_model(CATALOG_PATH)
+    accounting = resource_budgets.host_profile_accounting(CATALOG_PATH)
+    reservations = {item["id"]: item for item in model["reservations"]}
+
+    assert model["updated_for_issue"] == 773
+    assert model["non_konoha_reserved_memory_mib"] == sum(item["memory_reserve_mib"] for item in reservations.values())
+    assert model["non_konoha_reserved_cpu_percent"] == sum(item["cpu_reserve_percent"] for item in reservations.values())
+    assert reservations["shared_mail_stack"]["classification"] == "required"
+    assert reservations["shared_mail_stack"]["memory_reserve_mib"] == 768
+    assert reservations["shared_mail_stack"]["removal_policy"] == "do_not_remove_in_lean_konoha_cleanup"
+    assert reservations["docker_runtime"]["classification"] == "required_for_mail_stack"
+    assert {item["id"] for item in model["optional_cleanup_candidates"]} == {"unused_docker_images", "stale_host_logs"}
+    assert {item["id"] for item in model["externalization_candidates"]} == {"shared_mail_stack", "docker_runtime"}
+    assert model["live_baseline_sample"]["group"] == "docker_mail_stack"
+    assert model["live_baseline_sample"]["rss_kib"] > 0
+
+    for profile_id, profile in raw["budget_profiles"].items():
+        row = accounting[profile_id]
+        assert row["konoha_memory_max_mib"] == profile["memory_max_mib"]
+        assert row["konoha_cpu_quota_percent"] == profile["cpu_quota_percent"]
+        assert row["reserved_memory_mib"] == model["non_konoha_reserved_memory_mib"]
+        assert row["reserved_cpu_percent"] == model["non_konoha_reserved_cpu_percent"]
+        assert row["planned_total_memory_mib"] <= model["planning_host_memory_mib"]
+        assert row["planned_total_cpu_percent"] <= model["planning_host_cpu_percent"]
