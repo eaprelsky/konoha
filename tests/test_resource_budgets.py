@@ -18,7 +18,7 @@ CATALOG_PATH = Path(__file__).resolve().parents[1] / "docs" / "resource-budgets.
 def test_required_budget_profiles_exist_and_map_to_service_profiles():
     raw = resource_budgets.load_resource_budgets(CATALOG_PATH)
 
-    assert raw["updated_for_issue"] == 773
+    assert raw["updated_for_issue"] == 779
     assert raw["default_budget_profile"] == "prod-core"
     assert set(raw["budget_profiles"]) == {"prod-core", "prod-full", "staging-core", "qa-on-demand", "ci-test"}
     assert raw["budget_profiles"]["prod-core"]["service_profile"] == "prod-core"
@@ -74,7 +74,7 @@ def test_host_capacity_reserves_required_non_konoha_services():
     accounting = resource_budgets.host_profile_accounting(CATALOG_PATH)
     reservations = {item["id"]: item for item in model["reservations"]}
 
-    assert model["updated_for_issue"] == 773
+    assert model["updated_for_issue"] == 779
     assert model["non_konoha_reserved_memory_mib"] == sum(item["memory_reserve_mib"] for item in reservations.values())
     assert model["non_konoha_reserved_cpu_percent"] == sum(item["cpu_reserve_percent"] for item in reservations.values())
     assert reservations["shared_mail_stack"]["classification"] == "required"
@@ -94,3 +94,29 @@ def test_host_capacity_reserves_required_non_konoha_services():
         assert row["reserved_cpu_percent"] == model["non_konoha_reserved_cpu_percent"]
         assert row["planned_total_memory_mib"] <= model["planning_host_memory_mib"]
         assert row["planned_total_cpu_percent"] <= model["planning_host_cpu_percent"]
+
+
+def test_host_service_audit_disables_only_allowlisted_non_konoha_services():
+    audit = resource_budgets.host_service_audit(CATALOG_PATH)
+    candidates = resource_budgets.host_service_disable_candidates(CATALOG_PATH)
+    protected = resource_budgets.protected_host_service_units(CATALOG_PATH)
+
+    assert audit["updated_for_issue"] == 779
+    assert audit["scope_guard"] == "never_disable_production_konoha_telegram_mail_ssh_redis_postgresql_nginx"
+    assert {"modem_manager", "snap_cups_printing", "fwupd_background_refresh"} == set(candidates)
+
+    forbidden_tokens = ("konoha", "telegram", "docker", "containerd", "postfix", "dovecot", "rspamd", "ssh", "redis", "postgres", "nginx")
+    for candidate in candidates.values():
+        assert candidate["classification"] == "optional_non_konoha"
+        assert candidate["disable_commands"]
+        assert candidate["rollback_commands"]
+        for unit in candidate["units"]:
+            assert unit not in protected
+            assert not any(token in unit.lower() for token in forbidden_tokens)
+
+    assert "docker.service" in protected
+    assert "ssh.socket" in protected
+    assert "redis-server.service" in protected
+    assert "postgresql.service" in protected
+    assert "nginx.service" in protected
+    assert {item["id"] for item in audit["unknown_keep_enabled_until_review"]} == {"snapd_runtime", "host_network_discovery"}

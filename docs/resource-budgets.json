@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_for_issue": 773,
+  "updated_for_issue": 779,
   "default_budget_profile": "prod-core",
   "budget_profiles": {
     "prod-core": {
@@ -50,7 +50,7 @@
     }
   },
   "host_capacity": {
-    "updated_for_issue": 773,
+    "updated_for_issue": 779,
     "planning_host_memory_mib": 8192,
     "planning_host_cpu_percent": 800,
     "non_konoha_reserved_memory_mib": 1500,
@@ -62,7 +62,7 @@
       "rss_kib": 601032,
       "cpu_percent": 0.5,
       "process_count": 64,
-      "note": "Single live sample for issue #773; planning reserves stay above the sample and must be refreshed before disabling host services."
+      "note": "Single live sample for issue #773; issue #779 keeps required mail/Docker/system reserves intact while disabling only allowlisted optional host services."
     },
     "reservations": [
       {
@@ -122,6 +122,53 @@
       "staging-core": { "konoha_memory_max_mib": 2600, "konoha_cpu_quota_percent": 250, "reserved_memory_mib": 1500, "reserved_cpu_percent": 200, "planned_total_memory_mib": 4100, "planned_total_cpu_percent": 450 },
       "qa-on-demand": { "konoha_memory_max_mib": 3600, "konoha_cpu_quota_percent": 350, "reserved_memory_mib": 1500, "reserved_cpu_percent": 200, "planned_total_memory_mib": 5100, "planned_total_cpu_percent": 550 },
       "ci-test": { "konoha_memory_max_mib": 2200, "konoha_cpu_quota_percent": 250, "reserved_memory_mib": 1500, "reserved_cpu_percent": 200, "planned_total_memory_mib": 3700, "planned_total_cpu_percent": 450 }
+    },
+    "host_service_audit": {
+      "updated_for_issue": 779,
+      "source": "systemctl list-unit-files --type=service --type=socket --type=timer; systemctl list-units --state=active",
+      "scope_guard": "never_disable_production_konoha_telegram_mail_ssh_redis_postgresql_nginx",
+      "protected_services": [
+        { "id": "production_konoha", "units": ["konoha.service", "konoha-dashboard.service", "konoha-testbench.service", "konoha-agent-log-retention.service", "konoha-agent-log-retention.timer"], "reason": "production Konoha/API/dashboard/test support" },
+        { "id": "telegram", "units": ["telegram-bot.service", "telegram-bus.service", "telegram-context-packer.service", "telegram-event-bridge.service", "telegram-vision-packer.service", "agent-telegram.service"], "reason": "Telegram ingestion and routing" },
+        { "id": "mail_and_docker", "units": ["docker.service", "docker.socket", "containerd.service", "postfix.service", "dovecot.service", "rspamd.service"], "reason": "required shared mail stack and Docker runtime" },
+        { "id": "ssh", "units": ["ssh.service", "ssh.socket"], "reason": "operator access" },
+        { "id": "redis", "units": ["redis-server.service", "redis-server@.service", "redis.service"], "reason": "Konoha bus/data dependency" },
+        { "id": "postgresql", "units": ["postgresql.service", "postgresql@.service", "postgresql@16-main.service"], "reason": "Konoha persistence dependency" },
+        { "id": "nginx", "units": ["nginx.service"], "reason": "host ingress and reverse proxy" }
+      ],
+      "disable_candidates": [
+        {
+          "id": "modem_manager",
+          "classification": "optional_non_konoha",
+          "units": ["ModemManager.service"],
+          "precondition": "host has no cellular modem or WWAN management requirement",
+          "disable_commands": ["systemctl disable --now ModemManager.service"],
+          "rollback_commands": ["systemctl enable --now ModemManager.service"],
+          "expected_savings_mib": 20
+        },
+        {
+          "id": "snap_cups_printing",
+          "classification": "optional_non_konoha",
+          "units": ["snap.cups.cups-browsed.service", "snap.cups.cupsd.service"],
+          "precondition": "host is not used for local printing or printer discovery",
+          "disable_commands": ["systemctl disable --now snap.cups.cups-browsed.service", "systemctl disable --now snap.cups.cupsd.service"],
+          "rollback_commands": ["systemctl enable --now snap.cups.cupsd.service", "systemctl enable --now snap.cups.cups-browsed.service"],
+          "expected_savings_mib": 70
+        },
+        {
+          "id": "fwupd_background_refresh",
+          "classification": "optional_non_konoha",
+          "units": ["fwupd.service", "fwupd-refresh.timer"],
+          "precondition": "firmware updates are handled manually during maintenance windows",
+          "disable_commands": ["systemctl stop fwupd.service", "systemctl disable --now fwupd-refresh.timer"],
+          "rollback_commands": ["systemctl enable --now fwupd-refresh.timer", "systemctl start fwupd.service"],
+          "expected_savings_mib": 35
+        }
+      ],
+      "unknown_keep_enabled_until_review": [
+        { "id": "snapd_runtime", "units": ["snapd.service", "snapd.socket", "snapd.apparmor.service", "snapd.seeded.service"], "reason": "requires snap package inventory before disabling because cups is snap-managed on this host" },
+        { "id": "host_network_discovery", "units": ["avahi-daemon.service", "bluetooth.service"], "reason": "disable only if present and operator confirms no local discovery/Bluetooth dependency" }
+      ]
     }
   },
   "systemd": {

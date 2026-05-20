@@ -23,7 +23,7 @@ describe("resource budget contract", () => {
   test("defines production, staging, QA, and CI budget profiles", () => {
     const raw = JSON.parse(read("docs/resource-budgets.json"));
 
-    expect(raw.updated_for_issue).toBe(773);
+    expect(raw.updated_for_issue).toBe(779);
     expect(raw.default_budget_profile).toBe("prod-core");
     expect(Object.keys(raw.budget_profiles).sort()).toEqual([
       "ci-test",
@@ -61,6 +61,38 @@ describe("resource budget contract", () => {
       expect(row.planned_total_memory_mib).toBeLessThanOrEqual(host.planning_host_memory_mib);
       expect(row.planned_total_cpu_percent).toBeLessThanOrEqual(host.planning_host_cpu_percent);
     }
+  });
+
+  test("audits host services without touching protected production flows", () => {
+    const raw = JSON.parse(read("docs/resource-budgets.json"));
+    const audit = raw.host_capacity.host_service_audit;
+    const candidates = new Map(audit.disable_candidates.map((item: any) => [item.id, item]));
+    const protectedUnits = new Set(audit.protected_services.flatMap((item: any) => item.units));
+    const forbidden = ["konoha", "telegram", "docker", "containerd", "postfix", "dovecot", "rspamd", "ssh", "redis", "postgres", "nginx"];
+
+    expect(audit.updated_for_issue).toBe(779);
+    expect(audit.scope_guard).toBe("never_disable_production_konoha_telegram_mail_ssh_redis_postgresql_nginx");
+    expect([...candidates.keys()].sort()).toEqual(["fwupd_background_refresh", "modem_manager", "snap_cups_printing"]);
+    expect(protectedUnits).toContain("docker.service");
+    expect(protectedUnits).toContain("ssh.socket");
+    expect(protectedUnits).toContain("redis-server.service");
+    expect(protectedUnits).toContain("postgresql.service");
+    expect(protectedUnits).toContain("nginx.service");
+
+    for (const candidate of candidates.values() as Iterable<any>) {
+      expect(candidate.classification).toBe("optional_non_konoha");
+      expect(candidate.disable_commands.length).toBeGreaterThan(0);
+      expect(candidate.rollback_commands.length).toBeGreaterThan(0);
+      for (const unit of candidate.units) {
+        expect(protectedUnits.has(unit)).toBe(false);
+        expect(forbidden.some((token) => unit.toLowerCase().includes(token))).toBe(false);
+      }
+    }
+
+    expect(audit.unknown_keep_enabled_until_review.map((item: any) => item.id).sort()).toEqual([
+      "host_network_discovery",
+      "snapd_runtime",
+    ]);
   });
 
   test("TestBench service and code enforce bounded Chromium pool", () => {
@@ -119,6 +151,9 @@ describe("resource budget contract", () => {
     const inventory = read("docs/resource-inventory.md");
 
     expect(policy).toContain("Host-Level Reserve");
+    expect(policy).toContain("Host Service Audit");
+    expect(policy).toContain("python3 scripts/host-service-audit.py --json");
+    expect(policy).toContain("sudo systemctl enable --now ModemManager.service");
     expect(policy).toContain("Shared mail stack");
     expect(policy).toContain("Externalization");
     expect(policy).toContain("must not remove the mail");

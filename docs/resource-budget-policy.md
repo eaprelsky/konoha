@@ -58,6 +58,41 @@ inside an 8000 MiB / 800% planned total, leaving the host reserve explicit.
 `staging-core`, `qa-on-demand`, and `ci-test` account for the same host reserve
 before their smaller Konoha envelopes are considered.
 
+## Host Service Audit
+
+Issue #779 keeps the #773 mail/Docker/system reserve intact and adds a
+conservative host service audit. The machine-readable table lives at
+`host_capacity.host_service_audit` in `docs/resource-budgets.json`.
+
+Protected units are never disable candidates: production Konoha/API/dashboard,
+Telegram ingestion, Docker/mail stack, SSH, Redis, PostgreSQL, and nginx. The
+disable list is intentionally narrow and limited to non-Konoha services that do
+not participate in those flows:
+
+| Candidate | Units | Preconditions | Rollback |
+| --- | --- | --- | --- |
+| `modem_manager` | `ModemManager.service` | No cellular modem or WWAN management requirement. | `sudo systemctl enable --now ModemManager.service` |
+| `snap_cups_printing` | `snap.cups.cups-browsed.service`, `snap.cups.cupsd.service` | Host is not used for local printing or printer discovery. | `sudo systemctl enable --now snap.cups.cupsd.service`; `sudo systemctl enable --now snap.cups.cups-browsed.service` |
+| `fwupd_background_refresh` | `fwupd.service`, `fwupd-refresh.timer` | Firmware updates are handled manually during maintenance windows. | `sudo systemctl enable --now fwupd-refresh.timer`; `sudo systemctl start fwupd.service` |
+
+Run the audit in dry-run mode first:
+
+```bash
+python3 scripts/host-service-audit.py
+python3 scripts/host-service-audit.py --json
+```
+
+To apply the allowlisted disable commands after checking the preconditions:
+
+```bash
+python3 scripts/host-service-audit.py --apply --sudo
+```
+
+The script refuses to run if a disable candidate overlaps protected Konoha,
+Telegram, mail/Docker, SSH, Redis, PostgreSQL, or nginx units. `snapd`,
+Bluetooth, and Avahi stay in `unknown_keep_enabled_until_review` until an
+operator confirms package/network discovery dependencies.
+
 ## Profile Budgets
 
 | Budget profile | Service profile | Use | Memory max | CPU quota | Disk budget | TestBench |

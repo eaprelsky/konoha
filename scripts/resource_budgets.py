@@ -77,6 +77,28 @@ def host_profile_accounting(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, dic
     return dict(model.get("profile_accounting") or {})
 
 
+def host_service_audit(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, Any]:
+    model = host_capacity_model(path)
+    audit = model.get("host_service_audit")
+    if not isinstance(audit, dict):
+        raise ValueError("resource budget contract must define host_capacity.host_service_audit")
+    return audit
+
+
+def protected_host_service_units(path: Path = RESOURCE_BUDGETS_PATH) -> set[str]:
+    audit = host_service_audit(path)
+    return {
+        unit
+        for group in audit.get("protected_services", [])
+        for unit in group.get("units", [])
+    }
+
+
+def host_service_disable_candidates(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, dict[str, Any]]:
+    audit = host_service_audit(path)
+    return {item["id"]: dict(item) for item in audit.get("disable_candidates", [])}
+
+
 def expected_memory_max_kib(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, int]:
     raw = load_resource_budgets(path)
     result: dict[str, int] = {}
