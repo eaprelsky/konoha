@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "default_profile": "prod-core",
+  "flags": {
+    "corporate-memory": {
+      "description": "Knowledge/corporate-memory product surface, including KB UI, KB chat, Jiraiya, and memory-backed MCP packs.",
+      "default_enabled": false,
+      "surfaces": {
+        "routes": ["/kb", "/ai/kb-chat"],
+        "ui": ["/kb"],
+        "agents": ["jiraiya"],
+        "mcp_packs": ["yonote", "memory"]
+      }
+    },
+    "broad-admin-assistant": {
+      "description": "Broad administrative assistant panels and admin-mode assistant affordances beyond the core action surface.",
+      "default_enabled": false,
+      "surfaces": {
+        "routes": [],
+        "ui": [],
+        "agents": [],
+        "mcp_packs": []
+      }
+    },
+    "optional-dashboards": {
+      "description": "Optional operational dashboards that are useful for development and diagnosis but are not prod-core navigation.",
+      "default_enabled": false,
+      "surfaces": {
+        "routes": ["/workspace"],
+        "ui": ["/eventlog", "/event-monitor", "/workspace"],
+        "agents": [],
+        "mcp_packs": []
+      }
+    },
+    "office-miro-mcp": {
+      "description": "Office, spreadsheet, and Miro MCP packs for time-boxed document and whiteboard work.",
+      "default_enabled": false,
+      "surfaces": {
+        "routes": [],
+        "ui": [],
+        "agents": [],
+        "mcp_packs": ["excel", "word", "google-docs", "google-sheets", "miro", "miro-api"]
+      }
+    },
+    "direct-browser-mcp": {
+      "description": "Direct browser MCP pack for time-boxed debug sessions. Product GUI checks should use TestBench instead.",
+      "default_enabled": false,
+      "surfaces": {
+        "routes": [],
+        "ui": [],
+        "agents": [],
+        "mcp_packs": ["puppeteer"]
+      }
+    },
+    "testbench": {
+      "description": "Bounded TestBench browser service and MCP skill for QA/evaluation sessions.",
+      "default_enabled": false,
+      "surfaces": {
+        "routes": ["/testbench"],
+        "ui": [],
+        "agents": [],
+        "mcp_packs": ["konoha_testbench"]
+      }
+    }
+  },
+  "profiles": {
+    "prod-core": {
+      "enabled_features": []
+    },
+    "prod-full": {
+      "enabled_features": []
+    },
+    "staging-core": {
+      "enabled_features": []
+    },
+    "qa-on-demand": {
+      "enabled_features": ["testbench"]
+    }
+  }
+}

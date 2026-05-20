@@ -107,6 +107,39 @@ Allowed duplicate keys are documented in the validator: `SERVICE_ACCOUNT_PATH` a
 
 ---
 
+## Feature Flags
+
+The feature catalog lives in `docs/feature-flags.json`. Service-profile defaults
+come from `docs/service-profiles.json`; `prod-core` and `staging-core` keep all
+experimental product surfaces disabled by default. Disabled routes return an
+intentional JSON `404`, disabled UI surfaces are hidden from navigation, and
+healthcheck reports disabled experiments as intentional.
+
+| Variable | Default | Description |
+|---|---|---|
+| `KONOHA_SERVICE_PROFILE` | `prod-core` | Selects service-profile defaults for connectors, agents, monitors, and feature flags. |
+| `KONOHA_FEATURE_PROFILE` | `KONOHA_SERVICE_PROFILE` | Optional feature-only profile override. |
+| `KONOHA_FEATURE_FLAGS_FILE` | `/opt/shared/konoha-feature-flags.json` | Optional JSON override file. Use `features.<id>.enabled`, `enabled_by`, and `reason` to record who enabled an experiment and why. |
+| `KONOHA_ENABLED_FEATURES` | — | Comma-separated emergency/dev override for enabling feature flags. Pair with `KONOHA_FEATURE_ENABLE_REASON`. |
+| `KONOHA_DISABLED_FEATURES` | — | Comma-separated override that disables feature flags after profile/file/env enablement. |
+| `KONOHA_FEATURE_ENABLE_REASON` | — | Audit reason attached to `KONOHA_ENABLED_FEATURES`. |
+
+Example override:
+
+```json
+{
+  "features": {
+    "corporate-memory": {
+      "enabled": true,
+      "enabled_by": "operator:yegor",
+      "reason": "Time-boxed Jiraiya/KB acceptance check"
+    }
+  }
+}
+```
+
+---
+
 ## Minimal production `.env`
 
 ```env

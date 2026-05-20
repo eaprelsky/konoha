@@ -18,6 +18,7 @@ class ServiceProfile:
     description: str
     enabled_connectors: frozenset[str]
     enabled_optional_monitors: frozenset[str]
+    enabled_features: frozenset[str]
     autostart_agents: tuple[str, ...]
     lifecycle_watchdog_agents: tuple[str, ...]
     infra_dependencies: tuple[str, ...]
@@ -59,6 +60,7 @@ def resolve_service_profile(profile_id: str | None = None, path: Path = SERVICE_
         description=str(raw.get("description") or ""),
         enabled_connectors=frozenset(str(item) for item in raw.get("enabled_connectors") or []),
         enabled_optional_monitors=frozenset(str(item) for item in raw.get("enabled_optional_monitors") or []),
+        enabled_features=frozenset(str(item) for item in raw.get("enabled_features") or []),
         autostart_agents=tuple(str(item) for item in raw.get("autostart_agents") or []),
         lifecycle_watchdog_agents=tuple(str(item) for item in raw.get("lifecycle_watchdog_agents") or []),
         infra_dependencies=tuple(str(item) for item in raw.get("infra_dependencies") or []),

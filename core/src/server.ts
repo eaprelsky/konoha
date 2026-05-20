@@ -30,7 +30,9 @@ import auditRouter from "../../src/routes/audit";
 import authRouter from "../../src/routes/auth";
 import profileRouter from "../../src/routes/profile";
 import deployRouter from "../../src/routes/deploy";
+import featuresRouter from "../../src/routes/features";
 import testbenchProxyRouter from "../../src/routes/testbench-proxy";
+import { requireFeature } from "../../src/feature-flags";
 import { seedSystemAgents } from "../../src/routes/admin";
 import staticRouter, { DIST_UI_DIR } from "../../src/middleware/static";
 import { actRouter } from "../../src/act-envelope";
@@ -116,11 +118,22 @@ app.use("/skills", requireAuth);
 app.use("/documents/*", requireAuth);
 app.use("/documents", requireAuth);
 app.use("/people", requireAuth);
+app.use("/features", requireAuth);
 app.use("/kb", requireAuth);
 app.use("/kb/*", requireAuth);
 app.use("/mining/*", requireAuth);
 app.use("/workspace", requireAuth);
 app.use("/workspace/*", requireAuth);
+
+// Default-off experimental product surfaces. Disabled routes return an
+// intentional 404 instead of leaking product capabilities into core profiles.
+app.use("/kb", requireFeature("corporate-memory"));
+app.use("/kb/*", requireFeature("corporate-memory"));
+app.use("/ai/kb-chat", requireFeature("corporate-memory"));
+app.use("/ai/kb-chat/*", requireFeature("corporate-memory"));
+app.use("/workspace", requireFeature("optional-dashboards"));
+app.use("/workspace/*", requireFeature("optional-dashboards"));
+app.use("/testbench/*", requireFeature("testbench"));
 
 // Mount platform routers
 app.route("/agents", agentsRouter);
@@ -134,6 +147,7 @@ app.route("/roles", rolesRouter);
 app.route("/skills", skillsRouter);
 app.route("/documents", documentsRouter);
 app.route("/people", peopleRouter);
+app.route("/features", featuresRouter);
 app.route("/", avatarsRouter);
 app.route("/", aiRouter);
 app.route("/kb", kbRouter);

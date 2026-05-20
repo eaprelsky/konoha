@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useI18n } from '../context/I18nContext';
 import { useSubtitle } from '../context/SubtitleContext';
 import { useBranding } from '../context/BrandingContext';
 import { ProfileModal } from './ProfileModal';
-import { NAV_GROUPS, NAV_ITEMS, detectGroup } from '../utils/operatorNavigation';
+import { NAV_ITEMS, detectGroup, visibleNavGroups } from '../utils/operatorNavigation';
+import { api } from '../api/client';
 
 export function isLoggedIn(): boolean {
   return localStorage.getItem('konoha_dash_auth') === '1';
@@ -98,16 +99,33 @@ export function Layout({ children }: LayoutProps) {
   const branding = useBranding();
   const [showProfile, setShowProfile] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [enabledFeatures, setEnabledFeatures] = useState<Set<string>>(new Set());
 
-  // Keep activeGroup in sync with navigation
-  const activeGroupResolved = detectGroup(location.pathname);
+  useEffect(() => {
+    let cancelled = false;
+    api.features.list()
+      .then(result => {
+        if (cancelled) return;
+        setEnabledFeatures(new Set(result.features.filter(feature => feature.enabled).map(feature => feature.id)));
+      })
+      .catch(() => {
+        if (!cancelled) setEnabledFeatures(new Set());
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const groups = useMemo(() => visibleNavGroups(enabledFeatures), [enabledFeatures]);
+  const detectedGroup = detectGroup(location.pathname);
+  const activeGroupResolved = groups.some(group => group.id === detectedGroup)
+    ? detectedGroup
+    : groups[0]?.id;
 
   function label(item: { labelKey: string; fallback: string }) {
     return t(item.labelKey, item.fallback);
   }
 
-  const group = NAV_GROUPS.find(g => g.id === activeGroupResolved)!;
-  const subItems = group.pages.map(p => NAV_ITEMS[p]).filter(Boolean);
+  const group = groups.find(g => g.id === activeGroupResolved) ?? groups[0];
+  const subItems = group ? group.pages.map(p => NAV_ITEMS[p]).filter(Boolean) : [];
 
   return (
     <>
@@ -121,7 +139,7 @@ export function Layout({ children }: LayoutProps) {
         <div className="spacer" />
         <button className="kw-hamburger" onClick={() => setShowDrawer(true)}>☰</button>
         <div className="kw-groups">
-          {NAV_GROUPS.map(g => (
+          {groups.map(g => (
             <button
               key={g.id}
               className={`kw-group-btn${activeGroupResolved === g.id ? ' active' : ''}`}
@@ -156,7 +174,7 @@ export function Layout({ children }: LayoutProps) {
           <div className="kw-drawer-overlay open" onClick={() => setShowDrawer(false)} />
           <div className="kw-drawer open">
             <button className="kw-drawer-close" onClick={() => setShowDrawer(false)}>✕</button>
-            {NAV_GROUPS.map(g => (
+            {groups.map(g => (
               <div key={g.id} className="kw-drawer-section">
                 <div className="kw-drawer-group">{label(g)}</div>
                 {g.pages.map(p => {

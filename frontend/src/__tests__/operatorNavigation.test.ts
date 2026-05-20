@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAV_GROUPS, NAV_ITEMS, detectGroup } from '../utils/operatorNavigation';
+import { NAV_GROUPS, NAV_ITEMS, detectGroup, visibleNavGroups } from '../utils/operatorNavigation';
 
 describe('operator navigation model', () => {
   it('separates operator, builder, and admin surfaces', () => {
@@ -44,5 +44,26 @@ describe('operator navigation model', () => {
   it('defaults unknown pages to the operator surface', () => {
     expect(detectGroup('/')).toBe('operator');
     expect(detectGroup('/unknown')).toBe('operator');
+  });
+
+  it('hides default-off experimental surfaces when their feature is disabled', () => {
+    const groups = visibleNavGroups(new Set());
+    const pages = groups.flatMap(group => group.pages);
+
+    expect(pages).not.toContain('/kb');
+    expect(pages).not.toContain('/eventlog');
+    expect(pages).not.toContain('/event-monitor');
+    expect(pages).not.toContain('/workspace');
+    expect(pages).toContain('/health');
+  });
+
+  it('shows experimental surfaces when their feature is enabled', () => {
+    const groups = visibleNavGroups(new Set(['corporate-memory', 'optional-dashboards']));
+    const pages = groups.flatMap(group => group.pages);
+
+    expect(pages).toContain('/kb');
+    expect(pages).toContain('/eventlog');
+    expect(pages).toContain('/event-monitor');
+    expect(pages).toContain('/workspace');
   });
 });

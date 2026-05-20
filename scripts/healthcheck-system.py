@@ -25,6 +25,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from service_profiles import resolve_service_profile_from_env
 from resource_budgets import systemd_slice_policies
+from feature_flags import resolve_feature_flags
 
 
 KONOHA_URL = os.environ.get("KONOHA_URL", "http://127.0.0.1:3200").rstrip("/")
@@ -215,6 +216,7 @@ class Check:
 class HealthcheckPolicy:
     enabled_connectors: frozenset[str]
     enabled_optional_monitors: frozenset[str]
+    enabled_features: frozenset[str]
     service_profile: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -222,6 +224,7 @@ class HealthcheckPolicy:
             "service_profile": self.service_profile,
             "enabled_connectors": sorted(self.enabled_connectors),
             "enabled_optional_monitors": sorted(self.enabled_optional_monitors),
+            "enabled_features": sorted(self.enabled_features),
         }
 
 
@@ -254,7 +257,9 @@ def load_healthcheck_policy(environ: dict[str, str] | None = None, policy_file: 
     optional_env = env.get("KONOHA_HEALTH_ENABLED_OPTIONAL_MONITORS") or env.get("KONOHA_ENABLED_OPTIONAL_MONITORS")
     connectors = parse_policy_csv(connector_env, connectors)
     optional_monitors = parse_policy_csv(optional_env, optional_monitors)
-    return HealthcheckPolicy(frozenset(connectors), frozenset(optional_monitors), profile.id)
+    _, features = resolve_feature_flags(env)
+    enabled_features = {feature.id for feature in features if feature.enabled}
+    return HealthcheckPolicy(frozenset(connectors), frozenset(optional_monitors), frozenset(enabled_features), profile.id)
 
 
 def connector_for_service(service: str) -> str | None:
@@ -1042,6 +1047,25 @@ def check_disabled_experiment_agents() -> list[Check]:
     return checks
 
 
+def check_experimental_feature_flags() -> list[Check]:
+    try:
+        profile, features = resolve_feature_flags()
+    except Exception as exc:
+        return [Check("WARN", "feature_flags.catalog", str(exc), "Fix docs/feature-flags.json or KONOHA_FEATURE_FLAGS_FILE")]
+
+    checks: list[Check] = []
+    for feature in features:
+        if feature.enabled:
+            detail = f"profile={profile} enabled_by={feature.enabled_by or 'unknown'} reason={feature.reason or 'missing'}"
+            if not feature.enabled_by or not feature.reason:
+                checks.append(Check("WARN", f"feature_flags.{feature.id}", detail, "Record enabled_by and reason in KONOHA_FEATURE_FLAGS_FILE"))
+            else:
+                checks.append(Check("OK", f"feature_flags.{feature.id}", detail))
+        else:
+            checks.append(Check("OK", f"feature_flags.{feature.id}", f"profile={profile} disabled intentionally"))
+    return checks
+
+
 def check_shared_config() -> list[Check]:
     script = Path("/home/ubuntu/konoha/scripts/validate-shared-config.py")
     rc, stdout, stderr = run([sys.executable, str(script), "--require-credentials", "--require-trusted-users"], timeout=20)
@@ -1494,6 +1518,7 @@ def main() -> int:
     checks.extend(check_messenger_connector_health(policy))
     checks.extend(check_agents(policy))
     checks.extend(check_lifecycle_control_plane(policy))
+    checks.extend(check_experimental_feature_flags())
     checks.extend(check_disabled_experiment_agents())
     for fn in (check_shared_config, check_security_hygiene, check_route_auth_policy, check_agent_naming_policy, check_role_registry_hygiene, check_workflow_engine, check_codex_proxy, check_agent_registry_hygiene, check_agent_definition_storage_split, check_llm_client_profiles, check_large_source_files, check_resource_inventory_budget):
         checks.extend(fn())

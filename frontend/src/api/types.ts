@@ -1,5 +1,28 @@
 // ── Konoha API types ──────────────────────────────────────────────────────────
 
+export interface FeatureSurface {
+  routes: string[];
+  ui: string[];
+  agents: string[];
+  mcp_packs: string[];
+}
+
+export interface FeatureFlagState {
+  id: string;
+  description: string;
+  default_enabled: boolean;
+  enabled: boolean;
+  enabled_by?: string;
+  reason?: string;
+  surfaces: FeatureSurface;
+}
+
+export interface FeatureFlagsResponse {
+  profile: string;
+  source: string;
+  features: FeatureFlagState[];
+}
+
 export interface Workflow {
   id: string;
   name: string;

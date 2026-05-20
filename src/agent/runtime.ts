@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import type { AgentProvider, AgentDef } from "./types";
 import { createLogger } from "../logger";
+import { featureForMcpPack, isFeatureEnabled } from "../feature-flags";
 import { profileAgentProvider, resolveLLMClientProfile } from "./llm-client-profiles";
 
 const log = createLogger("agent:runtime");
@@ -269,6 +270,16 @@ function loadSharedMcpServers(
             server: name,
             path: configPath,
             reason: "requires explicit allowlist/tool_profile with TTL",
+          });
+          continue;
+        }
+        const requiredFeature = featureForMcpPack(name);
+        if (requiredFeature && !isFeatureEnabled(requiredFeature)) {
+          log.info("skipping disabled experimental MCP pack", {
+            server: name,
+            path: configPath,
+            feature: requiredFeature,
+            reason: "feature flag disabled by selected Konoha profile",
           });
           continue;
         }

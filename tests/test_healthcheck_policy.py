@@ -23,17 +23,30 @@ def test_default_policy_uses_prod_core_service_profile():
 
 def test_service_profile_can_select_qa_on_demand_policy():
     policy = healthcheck.load_healthcheck_policy(
-        environ={"KONOHA_SERVICE_PROFILE": "qa-on-demand"},
+        environ={"KONOHA_SERVICE_PROFILE": "qa-on-demand", "KONOHA_FEATURE_FLAGS_FILE": "/tmp/nonexistent-konoha-feature-flags.json"},
         policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
     )
 
     assert policy.service_profile == "qa-on-demand"
     assert policy.enabled_connectors == frozenset()
     assert policy.enabled_optional_monitors == frozenset({"akamaru"})
+    assert policy.enabled_features == frozenset({"testbench"})
+
+
+def test_core_profiles_keep_experimental_features_disabled():
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_SERVICE_PROFILE": "prod-core", "KONOHA_FEATURE_FLAGS_FILE": "/tmp/nonexistent-konoha-feature-flags.json"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
+
+    assert policy.enabled_features == frozenset()
 
 
 def test_prod_core_treats_sdd_worker_absence_as_optional_disabled():
-    policy = healthcheck.load_healthcheck_policy(environ={}, policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"))
+    policy = healthcheck.load_healthcheck_policy(
+        environ={"KONOHA_FEATURE_FLAGS_FILE": "/tmp/nonexistent-konoha-feature-flags.json"},
+        policy_file=Path("/tmp/nonexistent-konoha-health-policy.json"),
+    )
 
     assert healthcheck.agent_policy_enabled("kakashi", "optional_worker", policy) is False
     check = healthcheck.systemd_service_slice_check(
@@ -68,6 +81,17 @@ def test_disabled_but_configured_connector_warns():
     check = healthcheck.systemd_service_check("telegram-bot", "inactive", "connector_owned", policy)
     assert check.level == "WARN"
     assert "policy=disabled" in check.detail
+
+
+def test_healthcheck_reports_disabled_feature_flags_as_intentional(monkeypatch):
+    monkeypatch.setenv("KONOHA_SERVICE_PROFILE", "prod-core")
+    monkeypatch.setenv("KONOHA_FEATURE_FLAGS_FILE", "/tmp/nonexistent-konoha-feature-flags.json")
+
+    checks = healthcheck.check_experimental_feature_flags()
+    corporate_memory = next(check for check in checks if check.name == "feature_flags.corporate-memory")
+
+    assert corporate_memory.level == "OK"
+    assert "disabled intentionally" in corporate_memory.detail
 
 
 def test_policy_file_can_disable_telegram(tmp_path):

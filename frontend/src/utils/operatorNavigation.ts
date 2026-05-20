@@ -4,6 +4,7 @@ export type NavItem = {
   labelKey: string;
   fallback: string;
   to: string;
+  feature?: string;
 };
 
 export type NavGroupDef = {
@@ -46,14 +47,14 @@ export const NAV_ITEMS: Record<string, NavItem> = {
   '/calendar':      { labelKey: 'nav.calendar',     fallback: 'Calendar',   to: '/calendar' },
   '/my-calendar':   { labelKey: 'nav.myCalendar',   fallback: 'My Calendar', to: '/my-calendar' },
   '/reminders':     { labelKey: 'nav.reminders',    fallback: 'Reminders',  to: '/reminders' },
-  '/kb':            { labelKey: 'nav.kb',           fallback: 'KB',         to: '/kb' },
+  '/kb':            { labelKey: 'nav.kb',           fallback: 'KB',         to: '/kb', feature: 'corporate-memory' },
   '/health':        { labelKey: 'nav.health',       fallback: 'Health',     to: '/health' },
   '/connectors':    { labelKey: 'nav.connectors',   fallback: 'IS',         to: '/connectors' },
   '/agents':        { labelKey: 'nav.agents',       fallback: 'Agents',     to: '/agents' },
   '/messages':      { labelKey: 'nav.messages',     fallback: 'Messages',   to: '/messages' },
-  '/eventlog':      { labelKey: 'nav.eventlog',     fallback: 'Event Log',  to: '/eventlog' },
-  '/event-monitor': { labelKey: 'nav.eventMonitor', fallback: 'Monitor',    to: '/event-monitor' },
-  '/workspace':     { labelKey: 'nav.workspace',    fallback: 'Workspace',  to: '/workspace' },
+  '/eventlog':      { labelKey: 'nav.eventlog',     fallback: 'Event Log',  to: '/eventlog', feature: 'optional-dashboards' },
+  '/event-monitor': { labelKey: 'nav.eventMonitor', fallback: 'Monitor',    to: '/event-monitor', feature: 'optional-dashboards' },
+  '/workspace':     { labelKey: 'nav.workspace',    fallback: 'Workspace',  to: '/workspace', feature: 'optional-dashboards' },
   '/whitelist':     { labelKey: 'nav.access',       fallback: 'Access',     to: '/whitelist' },
   '/settings':      { labelKey: 'nav.parameters',   fallback: 'Parameters', to: '/settings' },
   '/skills':        { labelKey: 'nav.skills',       fallback: 'Skills',     to: '/skills' },
@@ -66,4 +67,20 @@ export function detectGroup(pathname: string): NavGroup {
     }
   }
   return 'operator';
+}
+
+export function isNavItemVisible(item: NavItem, enabledFeatures: ReadonlySet<string>): boolean {
+  return !item.feature || enabledFeatures.has(item.feature);
+}
+
+export function visibleNavGroups(enabledFeatures: ReadonlySet<string>): NavGroupDef[] {
+  return NAV_GROUPS
+    .map(group => ({
+      ...group,
+      pages: group.pages.filter(page => {
+        const item = NAV_ITEMS[page];
+        return item ? isNavItemVisible(item, enabledFeatures) : false;
+      }),
+    }))
+    .filter(group => group.pages.length > 0);
 }

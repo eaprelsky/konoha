@@ -4,8 +4,8 @@ Issue #761 defines named deployment profiles so the server does not treat every
 agent, MCP pack, and watchdog as always-on.
 
 The machine-readable source of truth is `docs/service-profiles.json`.
-`scripts/healthcheck-system.py` and `scripts/agent-autostart.py` both read that
-catalog through `scripts/service_profiles.py`.
+`scripts/healthcheck-system.py`, `scripts/agent-autostart.py`, and feature flag
+resolution read that catalog through `scripts/service_profiles.py`.
 
 Resource budgets for these profiles are defined separately in
 `docs/resource-budgets.json` and explained in `docs/resource-budget-policy.md`.
@@ -14,12 +14,12 @@ staging work is `docs/lean-baseline-gate.md`.
 
 ## Profiles
 
-| Profile | Purpose | Infra dependencies | Autostart agents | Enabled connectors | Enabled optional monitors |
-| --- | --- | --- | --- | --- | --- |
-| `prod-core` | Lean production always-on runtime: API, Redis/Postgres, Telegram ingestion, Naruto/Sasuke, bounded Akamaru/Kiba monitoring. | `postgresql.service` | `naruto`, `sasuke`, `kiba` | `telegram` | `akamaru`, `kiba` |
-| `prod-full` | Production with the SDD development/review lane enabled. Specialist workers remain on demand. | `postgresql.service` | `naruto`, `sasuke`, `kiba`, `kakashi` | `telegram` | `akamaru`, `kiba`, `kakashi`, `shikadai` |
-| `staging-core` | Staging API core without external Telegram connector or worker fleet unless explicitly enabled. | `postgresql.service` | none | none | `akamaru` |
-| `qa-on-demand` | QA/test profile where QA workers and TestBench are started manually for bounded sessions. | `postgresql.service` | none | none | `akamaru` |
+| Profile | Purpose | Infra dependencies | Autostart agents | Enabled connectors | Enabled optional monitors | Enabled feature flags |
+| --- | --- | --- | --- | --- | --- | --- |
+| `prod-core` | Lean production always-on runtime: API, Redis/Postgres, Telegram ingestion, Naruto/Sasuke, bounded Akamaru/Kiba monitoring. | `postgresql.service` | `naruto`, `sasuke`, `kiba` | `telegram` | `akamaru`, `kiba` | none |
+| `prod-full` | Production with the SDD development/review lane enabled. Specialist workers remain on demand. | `postgresql.service` | `naruto`, `sasuke`, `kiba`, `kakashi` | `telegram` | `akamaru`, `kiba`, `kakashi`, `shikadai` | none |
+| `staging-core` | Staging API core without external Telegram connector or worker fleet unless explicitly enabled. | `postgresql.service` | none | none | `akamaru` | none |
+| `qa-on-demand` | QA/test profile where QA workers and TestBench are started manually for bounded sessions. | `postgresql.service` | none | none | `akamaru` | `testbench` |
 
 Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
 `prod-core`.
@@ -42,7 +42,12 @@ Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
   `postgresql.service`, a container, or an external managed database.
 - Heavy MCP/browser/Office/Miro/document packs remain outside always-on
   profiles. Use explicit TTL/debug profiles from
-  `docs/mcp-optional-packs-policy.md`.
+  `docs/mcp-optional-packs-policy.md` and enable the matching feature flag
+  with a recorded owner/reason.
+- Experimental product surfaces are default-off in `prod-core` and
+  `staging-core`. The machine-readable feature catalog is
+  `docs/feature-flags.json`; route/API/UI/MCP gates read the selected service
+  profile and `KONOHA_FEATURE_*` overrides.
 - Broad BPMS refactors and the staging rollout in #753 must start from this
   profile contract. They are blocked by `docs/lean-baseline-gate.md` until
   `prod-core` is live-clean or a time-boxed waiver is recorded.
@@ -56,6 +61,11 @@ this order:
 2. `KONOHA_HEALTH_ENABLED_CONNECTORS` or `KONOHA_ENABLED_CONNECTORS`.
 3. `KONOHA_HEALTH_ENABLED_OPTIONAL_MONITORS` or
    `KONOHA_ENABLED_OPTIONAL_MONITORS`.
+
+Feature flags are reported separately. Disabled experiments are `OK` when they
+match the selected profile; enabled experiments should include `enabled_by` and
+`reason` through `/opt/shared/konoha-feature-flags.json` or the matching
+environment override.
 
 Examples:
 

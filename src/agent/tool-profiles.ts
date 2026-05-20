@@ -65,7 +65,7 @@ const PROFILES: Record<string, ToolProfile> = {
     mcp_servers: ["puppeteer"],
     scopes: ["read", "write", "execute"],
     dangerous_tools: ["browser-automation"],
-    notes: "Not for always-on agents. Use only for explicit QA/debug sessions with operator-approved TTL and resource limits; default GUI checks use TestBench.",
+    notes: "Not for always-on agents. Requires direct-browser-mcp feature flag plus operator-approved TTL and resource limits; default GUI checks use TestBench.",
   },
   "office-miro-debug-ttl": {
     id: "office-miro-debug-ttl",
@@ -73,7 +73,7 @@ const PROFILES: Record<string, ToolProfile> = {
     mcp_servers: ["excel", "word", "google-docs", "google-sheets", "miro", "miro-api"],
     scopes: ["read", "write", "execute"],
     dangerous_tools: ["document-write", "spreadsheet-write", "miro-write"],
-    notes: "Not for always-on agents. Use only for explicit on-demand document/spreadsheet/whiteboard debug sessions with operator-approved TTL and resource limits.",
+    notes: "Not for always-on agents. Requires office-miro-mcp feature flag plus explicit on-demand document/spreadsheet/whiteboard debug session with operator-approved TTL and resource limits.",
   },
   "business-ops": {
     id: "business-ops",
@@ -86,6 +86,7 @@ const PROFILES: Record<string, ToolProfile> = {
     name: "Knowledge base read/write",
     mcp_servers: ["yonote"],
     scopes: ["read", "write"],
+    notes: "Requires corporate-memory feature flag before Yonote/memory MCP packs are attached.",
   },
 };
 

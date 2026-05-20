@@ -66,6 +66,7 @@ describe("tool and sandbox profiles", () => {
     ]);
     const runtimeSource = readFileSync(join(import.meta.dir, "..", "src", "agent", "runtime.ts"), "utf-8");
     expect(runtimeSource).toContain("skipping optional shared MCP pack");
+    expect(runtimeSource).toContain("skipping disabled experimental MCP pack");
   });
 
   test("retired Mempalace MCP is excluded from active runtime profiles", () => {
