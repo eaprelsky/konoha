@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_for_issue": 758,
+  "updated_for_issue": 770,
   "default_budget_profile": "prod-core",
   "budget_profiles": {
     "prod-core": {
@@ -125,6 +125,17 @@
       "telegram-context-packer.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" },
       "telegram-event-bridge.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" },
       "telegram-vision-packer.service": { "slice": "konoha-connectors.slice", "memory_max": "512M", "cpu_quota": "100%", "restart": "always" }
+    },
+    "transient_scopes": {
+      "optional_agent_scope": { "slice": "konoha-agents.slice", "memory_high": "700M", "memory_max": "900M", "cpu_weight": "120", "cpu_quota": "150%", "tasks_max": "3072" },
+      "qa_agent_scope": { "slice": "konoha-qa.slice", "memory_high": "700M", "memory_max": "900M", "cpu_weight": "100", "cpu_quota": "150%", "tasks_max": "3072" },
+      "mcp_heavy_pack_scope": { "slice": "konoha-qa.slice", "memory_high": "256M", "memory_max": "384M", "cpu_weight": "80", "cpu_quota": "50%", "tasks_max": "512", "applied_by": "scripts/mcp-idle-wrapper.ts via systemd-run --scope" },
+      "mcp_low_pack_scope": { "slice": "konoha-qa.slice", "memory_high": "128M", "memory_max": "256M", "cpu_weight": "60", "cpu_quota": "25%", "tasks_max": "256", "applied_by": "scripts/mcp-idle-wrapper.ts via systemd-run --scope" }
+    },
+    "profile_dropins": {
+      "staging-core": {
+        "konoha.service": { "path": "systemd/dropins/staging-core-konoha.conf", "memory_high": "700M", "memory_max": "900M", "cpu_weight": "300", "cpu_quota": "150%", "tasks_max": "3072" }
+      }
     }
   },
   "disk_budgets": {
@@ -141,7 +152,7 @@
   "scale_out_policy": {
     "move_to_second_vm_when": [
       "prod-core reaches critical memory pressure twice in 24h after optional workers are stopped",
-      "TestBench requires pool_size > 3 or sustained QA runs overlap production smoke",
+      "TestBench requires pool_size > 2 or sustained QA runs overlap production smoke",
       "Redis/PostgreSQL combined peak exceeds 75% of konoha-infra.slice budget",
       "Disk pressure remains above 85% after retention cleanup",
       "MCP server RSS remains critical after optional pack gates and stale workdir configs are regenerated"

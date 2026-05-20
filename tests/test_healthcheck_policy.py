@@ -565,7 +565,10 @@ def test_resource_inventory_budget_pressure_ok(monkeypatch):
     checks = healthcheck.check_resource_inventory_budget()
 
     assert checks[0].level == "OK"
-    assert "pressure={'groups': {}, 'services': {}, 'disk': {}}" in checks[0].detail
+    assert "'groups': {}" in checks[0].detail
+    assert "'services': {}" in checks[0].detail
+    assert "'limit_hits': {}" in checks[0].detail
+    assert "'oom_restarts': {}" in checks[0].detail
 
 
 def test_resource_inventory_service_budget_pressure_is_reported(monkeypatch):
@@ -578,3 +581,29 @@ def test_resource_inventory_service_budget_pressure_is_reported(monkeypatch):
 
     assert checks[0].level == "WARN"
     assert "'konoha-testbench.service': 'critical'" in checks[0].detail
+
+
+def test_resource_inventory_memory_limit_hit_is_reported(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        return 0, '{"groups":{"core_konoha_api":{"rss_kib":100,"budget_pressure":"ok"}},"service_budgets":[{"unit":"konoha-testbench.service","budget_pressure":"ok","memory_limit_hit":true,"memory_peak_kib":786432}],"disk":[]}', ""
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+
+    checks = healthcheck.check_resource_inventory_budget()
+
+    assert checks[0].level == "WARN"
+    assert checks[0].name == "resource_inventory.limit_hits"
+    assert "'konoha-testbench.service': 786432" in checks[0].detail
+
+
+def test_resource_inventory_oom_restart_is_reported(monkeypatch):
+    def fake_run(cmd, timeout=10):
+        return 0, '{"groups":{"core_konoha_api":{"rss_kib":100,"budget_pressure":"ok"}},"service_budgets":[{"unit":"agent-managed@shino.service","budget_pressure":"ok","result":"oom-kill","n_restarts":1,"oom_killed":true}],"disk":[]}', ""
+
+    monkeypatch.setattr(healthcheck, "run", fake_run)
+
+    checks = healthcheck.check_resource_inventory_budget()
+
+    assert checks[0].level == "WARN"
+    assert checks[0].name == "resource_inventory.oom_restarts"
+    assert "agent-managed@shino.service" in checks[0].detail

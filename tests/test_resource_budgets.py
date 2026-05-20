@@ -54,3 +54,14 @@ def test_systemd_budget_helpers_include_infra_and_disk_budgets():
     assert memory["konoha-testbench.service"] == 768 * 1024
     assert memory["redis-server.service"] == 768 * 1024
     assert disk["playwright_cache"] == 2 * 1024 * 1024
+
+
+def test_transient_scope_and_staging_dropin_policies_are_modeled():
+    scopes = resource_budgets.transient_scope_policies(CATALOG_PATH)
+    dropins = resource_budgets.profile_dropin_policies(CATALOG_PATH)
+
+    assert scopes["mcp_heavy_pack_scope"]["memory_max"] == "384M"
+    assert scopes["mcp_heavy_pack_scope"]["cpu_quota"] == "50%"
+    assert scopes["mcp_low_pack_scope"]["memory_max"] == "256M"
+    assert dropins["staging-core"]["konoha.service"]["path"] == "systemd/dropins/staging-core-konoha.conf"
+    assert dropins["staging-core"]["konoha.service"]["memory_max"] == "900M"

@@ -40,8 +40,8 @@ known MCP command names.
 ## Budgets
 
 `scripts/resource-inventory.py` reads systemd `MemoryCurrent`, `MemoryPeak`,
-`MemoryMax`, `CPUUsageNSec`, and CPU quota fields for Konoha slices and known
-services. Group summaries include:
+`MemoryMax`, `CPUUsageNSec`, CPU quota, `Result`, `NRestarts`, and `OOMKilled`
+fields for Konoha slices and known services. Group summaries include:
 
 - current `rss_kib`
 - current `cpu_percent`
@@ -50,13 +50,15 @@ services. Group summaries include:
 - `budget_pressure`: `ok`, `warning`, `critical`, or `unknown`
 
 JSON output also includes `service_budgets[]`, one row per known Konoha service
-or slice, with current/peak/max memory and pressure. When deployed systemd units
-still report `MemoryMax=infinity`, the report falls back to the committed
-Konoha budget contract so pressure remains visible during migration.
+or slice, with current/peak/max memory, `memory_limit_hit`, restart/OOM state,
+and pressure. When deployed systemd units still report `MemoryMax=infinity`, the
+report falls back to the committed Konoha budget contract so pressure remains
+visible during migration.
 
 `scripts/healthcheck-system.py` runs the inventory with `--json --no-disk` and
-emits `resource_inventory.budget_pressure`, so healthcheck/admin diagnostics can
-show pressure without a slower disk scan.
+emits `resource_inventory.budget_pressure`, `resource_inventory.limit_hits`, or
+`resource_inventory.oom_restarts`, so healthcheck/admin diagnostics can show
+pressure and OOM restarts without a slower disk scan.
 
 ## Redaction
 

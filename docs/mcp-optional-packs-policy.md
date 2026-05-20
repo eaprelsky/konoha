@@ -75,7 +75,12 @@ bun scripts/build-mcp-session-config.ts \
 `startAgent()` startup continues to use `mode=startup`. The task/session config wraps the stdio MCP server with
 `scripts/mcp-idle-wrapper.ts`, which exits after
 `KONOHA_MCP_ON_DEMAND_IDLE_TIMEOUT_SEC` seconds of stdin inactivity. The
-default timeout is 900 seconds.
+default timeout is 900 seconds. When systemd is available, the wrapper starts
+the pack in a transient `konoha-mcp-<pack>.scope` under `konoha-qa.slice`.
+Heavy packs are capped at `MemoryMax=384M`, `CPUQuota=50%`, `TasksMax=512`;
+low-cost packs are capped at `MemoryMax=256M`, `CPUQuota=25%`,
+`TasksMax=256`. Set `KONOHA_MCP_SYSTEMD_SCOPE=0` only for rollback or local
+non-systemd development.
 
 Receipts include:
 
@@ -84,6 +89,7 @@ Receipts include:
   startup, with estimated idle RSS saved from the cost catalog.
 - `skipped_packs`: packs omitted because they are not allowlisted or their
   feature flag is disabled.
+- `resource_limits`: systemd scope limits applied by the task/session wrapper.
 
 ## Cache Cleanup After Conversion
 

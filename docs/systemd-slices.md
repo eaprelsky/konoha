@@ -29,6 +29,13 @@ sudo -n systemd-run --scope --collect \
 That scope owns the tmux server, the interactive runtime, and MCP child
 processes. Konoha core only performs the lifecycle API request.
 
+Task/session MCP packs get an additional cap when the pack is spawned through
+`scripts/mcp-idle-wrapper.ts`: heavy packs run in
+`konoha-mcp-<pack>.scope` under `konoha-qa.slice` with `MemoryMax=384M`,
+`CPUQuota=50%`, and `TasksMax=512`; low-cost packs use `MemoryMax=256M`,
+`CPUQuota=25%`, and `TasksMax=256`. This keeps rare browser/document/repository
+MCP work below production chat ingestion even when a task explicitly enables it.
+
 Deployment service profiles decide which of these units are expected for a
 given environment. See `docs/service-profiles.md` for `prod-core`, `prod-full`,
 `staging-core`, and `qa-on-demand`. The machine-readable budget contract for
@@ -91,7 +98,9 @@ restart `konoha.service`.
 - `slice.<name>` budget checks for MemoryHigh, MemoryMax, CPUWeight, and finite CPUQuota.
 - `service_slice.<service>` checks that known services are assigned to their intended slice.
 - Disabled optional monitor slices as healthy when policy disables them.
-- `resource_inventory.budget_pressure` from `scripts/resource-inventory.py --json --no-disk`.
+- `resource_inventory.budget_pressure`, `resource_inventory.limit_hits`, and
+  `resource_inventory.oom_restarts` from
+  `scripts/resource-inventory.py --json --no-disk`.
 
 Run:
 

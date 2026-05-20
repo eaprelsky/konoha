@@ -262,6 +262,9 @@ def collect_systemd_budget() -> dict[str, dict[str, str]]:
             "-p", "MemoryMax",
             "-p", "CPUUsageNSec",
             "-p", "CPUQuotaPerSecUSec",
+            "-p", "Result",
+            "-p", "NRestarts",
+            "-p", "OOMKilled",
             "--no-pager",
         ], timeout=4)
         if rc != 0:
@@ -365,8 +368,12 @@ def summarize_service_budgets(budget: dict[str, dict[str, str]]) -> list[dict[st
             "memory_current_kib": current_kib,
             "memory_peak_kib": peak_kib,
             "memory_max_kib": max_kib,
+            "memory_limit_hit": bool(max_kib and peak_kib and peak_kib >= max_kib),
             "cpu_usage_nsec": int(props.get("CPUUsageNSec") or 0) if str(props.get("CPUUsageNSec") or "").isdigit() else None,
             "cpu_quota": props.get("CPUQuotaPerSecUSec") or "",
+            "result": props.get("Result") or "",
+            "n_restarts": int(props.get("NRestarts") or 0) if str(props.get("NRestarts") or "").isdigit() else 0,
+            "oom_killed": str(props.get("OOMKilled") or "").lower() in {"yes", "true", "1"},
             "budget_pressure": pressure_for(current_kib, peak_kib, max_kib),
         })
     return rows
@@ -482,7 +489,8 @@ def format_text(report: dict[str, Any]) -> str:
             lines.append(
                 f"{entry['unit']} state={entry['active_state']} current={format_kib(entry['memory_current_kib'])} "
                 f"peak={format_kib(entry['memory_peak_kib'])} max={format_kib(entry['memory_max_kib'])} "
-                f"pressure={entry['budget_pressure']}"
+                f"pressure={entry['budget_pressure']} limit_hit={entry.get('memory_limit_hit', False)} "
+                f"result={entry.get('result', '') or 'n/a'} restarts={entry.get('n_restarts', 0)} oom={entry.get('oom_killed', False)}"
             )
     return "\n".join(lines)
 

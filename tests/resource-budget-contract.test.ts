@@ -65,6 +65,27 @@ describe("resource budget contract", () => {
     }
   });
 
+  test("optional agent, MCP, and staging limits are committed", () => {
+    const raw = JSON.parse(read("docs/resource-budgets.json"));
+    const kiba = parseUnit("systemd/agent-kiba.service");
+    const managed = parseUnit("systemd/agent-managed@.service");
+    const staging = parseUnit("systemd/dropins/staging-core-konoha.conf");
+    const mcpHeavy = raw.systemd.transient_scopes.mcp_heavy_pack_scope;
+
+    expect(kiba.MemoryMax).toContain(raw.systemd.units["agent-kiba.service"].memory_max);
+    expect(kiba.CPUQuota).toContain(raw.systemd.units["agent-kiba.service"].cpu_quota);
+    expect(managed.MemoryMax).toContain(raw.systemd.units["agent-managed@.service"].memory_max);
+    expect(managed.CPUQuota).toContain(raw.systemd.units["agent-managed@.service"].cpu_quota);
+    expect(staging.MemoryMax).toContain(raw.systemd.profile_dropins["staging-core"]["konoha.service"].memory_max);
+    expect(staging.CPUQuota).toContain(raw.systemd.profile_dropins["staging-core"]["konoha.service"].cpu_quota);
+    expect(mcpHeavy).toMatchObject({
+      slice: "konoha-qa.slice",
+      memory_max: "384M",
+      cpu_quota: "50%",
+      tasks_max: "512",
+    });
+  });
+
   test("operator docs expose capacity report and scale-out policy", () => {
     const policy = read("docs/resource-budget-policy.md");
     const inventory = read("docs/resource-inventory.md");

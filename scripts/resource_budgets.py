@@ -54,6 +54,16 @@ def systemd_budget_units(path: Path = RESOURCE_BUDGETS_PATH) -> list[str]:
     return sorted({*raw["systemd"]["slices"].keys(), *raw["systemd"].get("units", {}).keys()})
 
 
+def transient_scope_policies(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, dict[str, Any]]:
+    raw = load_resource_budgets(path)
+    return dict(raw["systemd"].get("transient_scopes", {}))
+
+
+def profile_dropin_policies(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, dict[str, Any]]:
+    raw = load_resource_budgets(path)
+    return dict(raw["systemd"].get("profile_dropins", {}))
+
+
 def expected_memory_max_kib(path: Path = RESOURCE_BUDGETS_PATH) -> dict[str, int]:
     raw = load_resource_budgets(path)
     result: dict[str, int] = {}

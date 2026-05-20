@@ -15,6 +15,7 @@ import {
   RETIRED_SHARED_MCP_PACKS,
   MCP_COST_CATALOG,
   ROLE_DEFAULT_MCP_ALLOWLISTS,
+  mcpResourcePolicy,
   resolveSharedMcpAllowlist,
   toolProfileToMcpAllowlist,
 } from "../src/agent";
@@ -115,10 +116,38 @@ describe("tool and sandbox profiles", () => {
     expect(Object.keys(task.config.mcpServers).sort()).toEqual(["konoha", "puppeteer"]);
     expect(task.config.mcpServers.puppeteer).toMatchObject({
       command: "/home/ubuntu/.bun/bin/bun",
-      args: ["run", "/home/ubuntu/konoha/scripts/mcp-idle-wrapper.ts", "--timeout-sec", "900", "--", "/usr/bin/node", "puppeteer-mcp.js"],
+      args: [
+        "run",
+        "/home/ubuntu/konoha/scripts/mcp-idle-wrapper.ts",
+        "--timeout-sec",
+        "900",
+        "--scope-unit",
+        "konoha-mcp-puppeteer",
+        "--slice",
+        "konoha-qa.slice",
+        "--memory-high",
+        "256M",
+        "--memory-max",
+        "384M",
+        "--cpu-weight",
+        "80",
+        "--cpu-quota",
+        "50%",
+        "--tasks-max",
+        "512",
+        "--",
+        "/usr/bin/node",
+        "puppeteer-mcp.js",
+      ],
     });
     expect(task.receipt.included_packs).toMatchObject([
-      { server: "puppeteer", policy: "included", feature: "direct-browser-mcp", idle_timeout_sec: 900 },
+      {
+        server: "puppeteer",
+        policy: "included",
+        feature: "direct-browser-mcp",
+        idle_timeout_sec: 900,
+        resource_limits: { slice: "konoha-qa.slice", memoryMax: "384M", cpuQuota: "50%", tasksMax: 512 },
+      },
     ]);
   });
 
@@ -171,11 +200,40 @@ describe("tool and sandbox profiles", () => {
     expect(Object.keys(task.config.mcpServers).sort()).toEqual(["gitlab", "konoha"]);
     expect(task.config.mcpServers.gitlab).toMatchObject({
       command: "/home/ubuntu/.bun/bin/bun",
-      args: ["run", "/home/ubuntu/konoha/scripts/mcp-idle-wrapper.ts", "--timeout-sec", "900", "--", "npx", "-y", "@zereight/mcp-gitlab"],
+      args: expect.arrayContaining([
+        "--scope-unit",
+        "konoha-mcp-gitlab",
+        "--slice",
+        "konoha-qa.slice",
+        "--memory-max",
+        "384M",
+        "--cpu-quota",
+        "50%",
+        "--tasks-max",
+        "512",
+        "--",
+        "npx",
+        "-y",
+        "@zereight/mcp-gitlab",
+      ]),
     });
     expect(task.receipt.included_packs).toMatchObject([
-      { server: "gitlab", policy: "included", idle_timeout_sec: 900 },
+      { server: "gitlab", policy: "included", idle_timeout_sec: 900, resource_limits: { memoryMax: "384M", cpuQuota: "50%" } },
     ]);
+  });
+
+  test("on-demand MCP packs carry systemd resource limits", () => {
+    expect(mcpResourcePolicy("gitlab")).toMatchObject({
+      slice: "konoha-qa.slice",
+      memoryMax: "384M",
+      cpuQuota: "50%",
+      tasksMax: 512,
+    });
+    expect(mcpResourcePolicy("filesystem")).toMatchObject({
+      memoryMax: "256M",
+      cpuQuota: "25%",
+      tasksMax: 256,
+    });
   });
 
   test("required Sasuke MCP flow resolves to pinned local commands", async () => {

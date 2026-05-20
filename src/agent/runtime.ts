@@ -10,6 +10,7 @@ import { createLogger } from "../logger";
 import { featureForMcpPack, isFeatureEnabled } from "../feature-flags";
 import { profileAgentProvider, resolveLLMClientProfile } from "./llm-client-profiles";
 import { getMcpCostCatalogEntry } from "./mcp-cost-catalog";
+import { mcpResourcePolicy, type McpResourcePolicy } from "./mcp-resource-policy";
 
 const log = createLogger("agent:runtime");
 
@@ -274,6 +275,7 @@ export type McpPackReceiptEntry = {
   feature?: string;
   idle_timeout_sec?: number;
   estimated_idle_rss_kib?: number;
+  resource_limits?: McpResourcePolicy;
 };
 export type McpBuildReceipt = {
   schema_version: 1;
@@ -366,8 +368,25 @@ function resolveMcpArgs(args: string[] | undefined, baseDir: string): string[] |
   });
 }
 
-function wrapOnDemandServer(server: ResolvedMcpServerDef, timeoutSec: number): ResolvedMcpServerDef {
+function wrapOnDemandServer(serverName: string, server: ResolvedMcpServerDef, timeoutSec: number): ResolvedMcpServerDef {
   if (!("command" in server)) return server;
+  const resourcePolicy = mcpResourcePolicy(serverName);
+  const resourceArgs = resourcePolicy ? [
+    "--scope-unit",
+    `konoha-mcp-${codexServerName(serverName)}`,
+    "--slice",
+    resourcePolicy.slice,
+    "--memory-high",
+    resourcePolicy.memoryHigh,
+    "--memory-max",
+    resourcePolicy.memoryMax,
+    "--cpu-weight",
+    String(resourcePolicy.cpuWeight),
+    "--cpu-quota",
+    resourcePolicy.cpuQuota,
+    "--tasks-max",
+    String(resourcePolicy.tasksMax),
+  ] : [];
   return {
     command: "/home/ubuntu/.bun/bin/bun",
     args: [
@@ -375,6 +394,7 @@ function wrapOnDemandServer(server: ResolvedMcpServerDef, timeoutSec: number): R
       "/home/ubuntu/konoha/scripts/mcp-idle-wrapper.ts",
       "--timeout-sec",
       String(timeoutSec),
+      ...resourceArgs,
       "--",
       server.command,
       ...(server.args ?? []),
@@ -482,11 +502,12 @@ function loadSharedMcpServers(
             ...(resolvedEnv ? { env: resolvedEnv } : {}),
             ...(server.timeout !== undefined ? { timeout: server.timeout } : {}),
           };
-          merged[name] = onDemand ? wrapOnDemandServer(resolvedServer, onDemandIdleTimeoutSec(name, vars)) : resolvedServer;
+          merged[name] = onDemand ? wrapOnDemandServer(name, resolvedServer, onDemandIdleTimeoutSec(name, vars)) : resolvedServer;
           if (onDemand) {
             addReceipt(receipt, receiptEntry(name, "included", "on-demand pack requested for this task/session", {
               ...(onDemand.feature ? { feature: onDemand.feature } : {}),
               idle_timeout_sec: onDemandIdleTimeoutSec(name, vars),
+              ...(mcpResourcePolicy(name) ? { resource_limits: mcpResourcePolicy(name) } : {}),
             }));
           }
           continue;
@@ -501,11 +522,12 @@ function loadSharedMcpServers(
           ...(resolvedEnv ? { env: resolvedEnv } : {}),
           ...(server.timeout !== undefined ? { timeout: server.timeout } : {}),
         };
-        merged[name] = onDemand ? wrapOnDemandServer(resolvedServer, onDemandIdleTimeoutSec(name, vars)) : resolvedServer;
+        merged[name] = onDemand ? wrapOnDemandServer(name, resolvedServer, onDemandIdleTimeoutSec(name, vars)) : resolvedServer;
         if (onDemand) {
           addReceipt(receipt, receiptEntry(name, "included", "on-demand pack requested for this task/session", {
             ...(onDemand.feature ? { feature: onDemand.feature } : {}),
             idle_timeout_sec: onDemandIdleTimeoutSec(name, vars),
+            ...(mcpResourcePolicy(name) ? { resource_limits: mcpResourcePolicy(name) } : {}),
           }));
         }
       }

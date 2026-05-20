@@ -101,6 +101,30 @@ def test_service_budget_rows_include_expected_fallback_budget():
     assert rows[0]["unit"] == "konoha.service"
     assert rows[0]["memory_max_kib"] == 1200 * 1024
     assert rows[0]["budget_pressure"] == "critical"
+    assert rows[0]["memory_limit_hit"] is True
+    assert rows[0]["n_restarts"] == 0
+    assert rows[0]["oom_killed"] is False
+
+
+def test_service_budget_rows_report_oom_restart_state():
+    rows = resource_inventory.summarize_service_budgets({
+        "agent-managed@shino.service": {
+            "ActiveState": "active",
+            "MemoryCurrent": str(100 * 1024 * 1024),
+            "MemoryPeak": str(120 * 1024 * 1024),
+            "MemoryMax": str(900 * 1024 * 1024),
+            "CPUUsageNSec": "42",
+            "CPUQuotaPerSecUSec": "500000",
+            "Result": "oom-kill",
+            "NRestarts": "2",
+            "OOMKilled": "yes",
+        }
+    })
+
+    assert rows[0]["result"] == "oom-kill"
+    assert rows[0]["n_restarts"] == 2
+    assert rows[0]["oom_killed"] is True
+    assert rows[0]["memory_limit_hit"] is False
 
 
 def test_text_report_uses_redacted_args():

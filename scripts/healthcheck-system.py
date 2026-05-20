@@ -1487,7 +1487,7 @@ def load_resource_inventory_report() -> tuple[dict[str, Any] | None, Check | Non
     return report, None
 
 
-def resource_inventory_pressure(report: dict[str, Any]) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+def resource_inventory_pressure(report: dict[str, Any]) -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str, Any], dict[str, Any]]:
     groups = report.get("groups") or {}
     group_pressure = {
         name: group.get("budget_pressure")
@@ -1499,12 +1499,30 @@ def resource_inventory_pressure(report: dict[str, Any]) -> tuple[dict[str, str],
         for row in report.get("service_budgets", [])
         if row.get("budget_pressure") in {"warning", "critical"}
     }
+    service_limit_hits = {
+        row.get("unit"): row.get("memory_peak_kib")
+        for row in report.get("service_budgets", [])
+        if row.get("unit") and row.get("memory_limit_hit") is True
+    }
+    service_oom_restarts = {
+        row.get("unit"): {
+            "result": row.get("result"),
+            "n_restarts": row.get("n_restarts"),
+            "oom_killed": row.get("oom_killed"),
+        }
+        for row in report.get("service_budgets", [])
+        if row.get("unit") and (
+            row.get("oom_killed") is True
+            or str(row.get("result") or "").lower() in {"oom-kill", "oom"}
+            or ((row.get("n_restarts") or 0) > 0 and str(row.get("result") or "").lower() in {"oom-kill", "oom"})
+        )
+    }
     disk_pressure = {
         row.get("name"): row.get("budget_pressure")
         for row in report.get("disk", [])
         if row.get("budget_pressure") in {"warning", "critical"}
     }
-    return group_pressure, service_pressure, disk_pressure
+    return group_pressure, service_pressure, disk_pressure, service_limit_hits, service_oom_restarts
 
 
 def check_testbench_pool(policy: HealthcheckPolicy | None = None) -> list[Check]:
@@ -1545,7 +1563,7 @@ def check_testbench_pool(policy: HealthcheckPolicy | None = None) -> list[Check]
     if report_check:
         return [Check("WARN", "testbench.pool", f"{detail} resource_inventory={report_check.detail}", report_check.hint)]
 
-    group_pressure, service_pressure, _ = resource_inventory_pressure(report or {})
+    group_pressure, service_pressure, _, _, _ = resource_inventory_pressure(report or {})
     testbench_pressure = service_pressure.get(TESTBENCH_SERVICE) or group_pressure.get("testbench_browser")
     idle_pool = total > 0 and free == total and waiting == 0 and busy == 0
     if idle_pool and testbench_pressure in {"warning", "critical"}:
@@ -1560,11 +1578,21 @@ def check_resource_inventory_budget() -> list[Check]:
 
     assert report is not None
     groups = report.get("groups") or {}
-    group_pressure, service_pressure, disk_pressure = resource_inventory_pressure(report)
+    group_pressure, service_pressure, disk_pressure, service_limit_hits, service_oom_restarts = resource_inventory_pressure(report)
     total_rss_kib = sum(int(group.get("rss_kib") or 0) for group in groups.values())
-    pressure = {"groups": group_pressure, "services": service_pressure, "disk": disk_pressure}
+    pressure = {
+        "groups": group_pressure,
+        "services": service_pressure,
+        "disk": disk_pressure,
+        "limit_hits": service_limit_hits,
+        "oom_restarts": service_oom_restarts,
+    }
     detail = f"groups={len(groups)} total_rss_kib={total_rss_kib} pressure={pressure}"
     levels = [*group_pressure.values(), *service_pressure.values(), *disk_pressure.values()]
+    if service_oom_restarts:
+        return [Check("WARN", "resource_inventory.oom_restarts", detail, "Inspect: journalctl -u <unit> for OOMKilled/Result=oom-kill")]
+    if service_limit_hits:
+        return [Check("WARN", "resource_inventory.limit_hits", detail, "Inspect: systemctl show <unit> -p MemoryPeak -p MemoryMax")]
     if any(level == "critical" for level in levels):
         return [Check("WARN", "resource_inventory.budget_pressure", detail, "Inspect: python3 scripts/resource-inventory.py")]
     if levels:
