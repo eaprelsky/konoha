@@ -47,6 +47,26 @@ describe("agent systemd slice policy", () => {
     expect(scoped.args.slice(-4)).toEqual(["tmux", "-L", "kakashi", "new-session", "-d"].slice(-4));
   });
 
+  test("propagates proxy environment into systemd scope", () => {
+    const scoped = buildAgentSystemdScopeCommand(
+      "kakashi",
+      { seed_classification: "optional_worker" },
+      "tmux",
+      ["-L", "kakashi", "new-session", "-d"],
+      {
+        https_proxy: "http://127.0.0.1:8118",
+        http_proxy: "http://127.0.0.1:8118",
+        no_proxy: "127.0.0.1,localhost",
+        NO_PROXY: "127.0.0.1,localhost",
+      } as NodeJS.ProcessEnv,
+    );
+
+    expect(scoped.args).toContain("--setenv=https_proxy=http://127.0.0.1:8118");
+    expect(scoped.args).toContain("--setenv=http_proxy=http://127.0.0.1:8118");
+    expect(scoped.args).toContain("--setenv=no_proxy=127.0.0.1,localhost");
+    expect(scoped.args).toContain("--setenv=NO_PROXY=127.0.0.1,localhost");
+  });
+
   test("keeps unit names systemd-safe", () => {
     expect(systemdUnitSegment("team lead/kakashi")).toBe("team-lead-kakashi");
   });

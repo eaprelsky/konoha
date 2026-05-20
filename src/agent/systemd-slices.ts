@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
 import type { AgentDef } from "./types";
+import { agentProxySystemdSetenvArgs } from "./proxy-policy";
 
 export type AgentSliceClass = "connector_owned" | "optional_worker" | "qa_on_demand";
 
@@ -90,6 +91,7 @@ export function buildAgentSystemdScopeCommand(
   def: Pick<AgentDef, "seed_classification" | "lifecycle_mode">,
   command: string,
   args: string[],
+  env: NodeJS.ProcessEnv = process.env,
 ): { cmd: string; args: string[]; policy: AgentSlicePolicy; unit: string } {
   const policy = agentSlicePolicy(id, def);
   const unit = `konoha-agent-${systemdUnitSegment(id)}`;
@@ -107,6 +109,7 @@ export function buildAgentSystemdScopeCommand(
       "--gid=ubuntu",
       "--setenv=HOME=/home/ubuntu",
       `--setenv=PATH=${SYSTEMD_AGENT_PATH}`,
+      ...agentProxySystemdSetenvArgs(env),
       `--property=MemoryHigh=${policy.memoryHigh}`,
       `--property=MemoryMax=${policy.memoryMax}`,
       `--property=CPUWeight=${policy.cpuWeight}`,

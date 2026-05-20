@@ -1231,6 +1231,30 @@ def check_workflow_engine() -> list[Check]:
     return checks
 
 
+def codex_processes_without_proxy() -> list[int]:
+    rc, stdout, _stderr = run(["pgrep", "-af", "codex"], timeout=5)
+    if rc != 0:
+        return []
+
+    missing: list[int] = []
+    for line in stdout.splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        pid_raw, command = parts
+        if "healthcheck-system.py" in command or "pgrep -af codex" in command:
+            continue
+        try:
+            pid = int(pid_raw)
+            raw_env = Path(f"/proc/{pid}/environ").read_bytes().decode("utf-8", "ignore")
+        except (OSError, ValueError):
+            continue
+        env = dict(item.split("=", 1) for item in raw_env.split("\0") if "=" in item)
+        if not any((env.get(key) or "").strip() for key in ("https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY")):
+            missing.append(pid)
+    return missing
+
+
 def check_codex_proxy() -> list[Check]:
     checks: list[Check] = []
     proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
@@ -1244,6 +1268,17 @@ def check_codex_proxy() -> list[Check]:
             checks.append(Check("OK", f"codex_proxy.service.{service}", "active"))
         else:
             checks.append(Check("WARN", f"codex_proxy.service.{service}", state or "inactive", f"Run: sudo systemctl restart {service}"))
+
+    missing_proxy = codex_processes_without_proxy()
+    if missing_proxy:
+        checks.append(Check(
+            "FAIL",
+            "codex_proxy.process_env",
+            f"{len(missing_proxy)} Codex process(es) missing HTTPS proxy env: pid={','.join(map(str, missing_proxy[:8]))}",
+            "Restart managed agents only after launcher proxy propagation is fixed",
+        ))
+    else:
+        checks.append(Check("OK", "codex_proxy.process_env", "all running Codex processes have HTTPS proxy env"))
 
     env = {
         "http_proxy": os.environ.get("http_proxy", proxy),

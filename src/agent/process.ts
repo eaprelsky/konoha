@@ -14,6 +14,7 @@ import { recordRenderedPromptMirror } from "./crud";
 import { buildMcpConfig, buildLaunchCommand, shellEscape, ensureCodexProjectTrusted, getLiveBitrixWebhook } from "./runtime";
 import { AGENT_WORKDIR_ROOT } from "./runtime";
 import { buildAgentSystemdScopeCommand, systemdScopesEnabled } from "./systemd-slices";
+import { assertCodexEgressProxy } from "./proxy-policy";
 import { resolveSharedMcpAllowlist } from "./tool-profiles";
 import type { AgentDef, AgentState, LifecycleStatus } from "./types";
 
@@ -274,7 +275,10 @@ export async function startAgent(id: string, def: AgentDef): Promise<AgentState>
     writeFileSync(join(cursorConfigDir, "mcp.json"), JSON.stringify(mcpConfig, null, 2), "utf-8");
 
     const launch = buildLaunchCommand(def, workdir, mcpConfigPath, mcpConfig);
-    if (launch.provider === "codex") ensureCodexProjectTrusted(workdir);
+    if (launch.provider === "codex") {
+      assertCodexEgressProxy();
+      ensureCodexProjectTrusted(workdir);
+    }
 
     // Build env prefix if custom env vars provided
     const envPrefix = def.env ? Object.entries(def.env).map(([k, v]) => `${k}=${shellEscape(v)}`).join(" ") + " " : "";
