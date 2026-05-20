@@ -6,11 +6,13 @@
   "feature_flag": "corporate-memory",
   "tool_profile_overlay": "telegram-userbot-yonote-read",
   "default_mcp_allowlist": ["konoha", "telethon-channel", "bitrix24"],
-  "task_session_mcp_allowlist": ["konoha", "telethon-channel", "bitrix24", "yonote"],
+  "task_session_mcp_allowlist": ["konoha", "telethon-channel", "bitrix24", "yonote-read"],
   "yonote_access": {
     "mode": "read-search-only",
+    "mcp_server": "yonote-read",
     "allowed_operations": ["search", "read_page", "read_team_context"],
-    "forbidden_operations": ["write_page", "delete_page", "admin", "bulk_export"],
+    "forbidden_mcp_servers": ["yonote"],
+    "forbidden_operations": ["yonote_request", "documents.create", "documents.update", "documents.delete", "documents.export", "collections.create", "collections.update", "collections.delete", "attachments.create", "attachments.upload", "attachments.delete", "admin", "bulk_export"],
     "context_limits": {
       "max_documents": 3,
       "max_chars": 6000,
@@ -36,7 +38,7 @@
     "sasuke_task_session_rss_delta_kib": 24156
   },
   "rollback": {
-    "command": "remove yonote from KONOHA_MCP_SESSION_PACKS and regenerate the task/session MCP config",
+    "command": "remove yonote-read from KONOHA_MCP_SESSION_PACKS and regenerate the task/session MCP config",
     "persistent_startup_impact": "none; Sasuke default allowlist remains konoha + telethon-channel + bitrix24"
   }
 }

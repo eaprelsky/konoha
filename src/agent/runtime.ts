@@ -188,6 +188,11 @@ export const ON_DEMAND_SHARED_MCP_PACKS: ReadonlyMap<string, { feature: string; 
     idle_timeout_sec: 900,
     reason: "Yonote context is a bounded Sasuke read-context pack and must be requested for a task/session",
   }],
+  ["yonote-read", {
+    feature: "corporate-memory",
+    idle_timeout_sec: 900,
+    reason: "Yonote read context is a bounded Sasuke read-only pack and must be requested for a task/session",
+  }],
   ["puppeteer", {
     feature: "direct-browser-mcp",
     idle_timeout_sec: 900,
@@ -425,6 +430,7 @@ function loadSharedMcpServers(
   // except runtime-gated optional packs) and "explicit empty allowlist"
   // (include none of the shared MCPs).
   const allowed = allowlist ? new Set(allowlist) : null;
+  maybeIncludeSyntheticSharedMcpServer("yonote-read", YONOTE_READ_MCP_SERVER, vars, allowed, requestedOnDemand, mode, merged, receipt);
 
   for (const configPath of sharedMcpConfigPaths(vars)) {
     if (!existsSync(configPath)) continue;
@@ -556,6 +562,57 @@ const KONOHA_MCP_SERVER: McpServerDef & { name: string } = {
     no_proxy: "127.0.0.1,localhost",
   },
 };
+
+const YONOTE_READ_MCP_SERVER: ResolvedMcpServerDef = {
+  command: "/usr/bin/python3",
+  args: ["/home/ubuntu/konoha/scripts/yonote-read-mcp.py"],
+  env: {
+    YONOTE_API_KEY: "${YONOTE_API_KEY}",
+    YONOTE_BASE_URL: "${YONOTE_BASE_URL}",
+    YONOTE_INDEX_DOCUMENT_ID: "${YONOTE_INDEX_DOCUMENT_ID}",
+    YONOTE_TEAM_DOCUMENT_ID: "${YONOTE_TEAM_DOCUMENT_ID}",
+  },
+  timeout: 60000,
+};
+
+function maybeIncludeSyntheticSharedMcpServer(
+  name: string,
+  server: ResolvedMcpServerDef,
+  vars: Record<string, string>,
+  allowed: Set<string> | null,
+  requestedOnDemand: Set<string>,
+  mode: McpBuildMode,
+  merged: Record<string, ResolvedMcpServerDef>,
+  receipt: McpBuildReceipt,
+): void {
+  if (!allowed?.has(name) || merged[name]) return;
+  const requiredFeature = featureForMcpPack(name);
+  if (requiredFeature && !isFeatureEnabled(requiredFeature, vars)) {
+    addReceipt(receipt, receiptEntry(name, "skipped", "feature flag disabled by selected Konoha profile", { feature: requiredFeature }));
+    return;
+  }
+  const onDemand = ON_DEMAND_SHARED_MCP_PACKS.get(name);
+  if (onDemand && (mode !== "task" || !requestedOnDemand.has(name))) {
+    const timeoutSec = onDemandIdleTimeoutSec(name, vars);
+    addReceipt(receipt, receiptEntry(name, "deferred", onDemand.reason, {
+      ...(onDemand.feature ? { feature: onDemand.feature } : {}),
+      idle_timeout_sec: timeoutSec,
+    }));
+    return;
+  }
+  const resolvedServer: ResolvedMcpServerDef = {
+    ...server,
+    ...(server.env ? { env: Object.fromEntries(Object.entries(server.env).map(([key, value]) => [key, resolveVars(value, vars)])) } : {}),
+  };
+  merged[name] = onDemand ? wrapOnDemandServer(name, resolvedServer, onDemandIdleTimeoutSec(name, vars)) : resolvedServer;
+  if (onDemand) {
+    addReceipt(receipt, receiptEntry(name, "included", "on-demand pack requested for this task/session", {
+      ...(onDemand.feature ? { feature: onDemand.feature } : {}),
+      idle_timeout_sec: onDemandIdleTimeoutSec(name, vars),
+      ...(mcpResourcePolicy(name) ? { resource_limits: mcpResourcePolicy(name) } : {}),
+    }));
+  }
+}
 
 export async function buildMcpConfig(
   capabilities: string[],

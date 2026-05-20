@@ -9,7 +9,7 @@
         "routes": ["/kb", "/ai/kb-chat"],
         "ui": ["/kb"],
         "agents": ["jiraiya"],
-        "mcp_packs": ["yonote", "memory"]
+        "mcp_packs": ["yonote", "yonote-read", "memory"]
       }
     },
     "broad-admin-assistant": {

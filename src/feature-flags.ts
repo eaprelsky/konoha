@@ -64,6 +64,7 @@ type FeatureOverrideFile = {
 
 const MCP_PACK_FEATURES: Record<string, FeatureFlagId> = {
   yonote: "corporate-memory",
+  "yonote-read": "corporate-memory",
   memory: "corporate-memory",
   excel: "office-miro-mcp",
   word: "office-miro-mcp",

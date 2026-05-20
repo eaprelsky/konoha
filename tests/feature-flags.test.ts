@@ -41,6 +41,7 @@ describe("feature flags", () => {
 
   test("maps experimental MCP packs to feature gates", () => {
     expect(featureForMcpPack("yonote")).toBe("corporate-memory");
+    expect(featureForMcpPack("yonote-read")).toBe("corporate-memory");
     expect(featureForMcpPack("excel")).toBe("office-miro-mcp");
     expect(featureForMcpPack("puppeteer")).toBe("direct-browser-mcp");
     expect(featureForMcpPack("konoha")).toBeUndefined();

@@ -46,10 +46,10 @@ const PROFILES: Record<string, ToolProfile> = {
   "telegram-userbot-yonote-read": {
     id: "telegram-userbot-yonote-read",
     name: "Telegram userbot with bounded Yonote read context",
-    mcp_servers: ["telethon-channel", "bitrix24", "yonote"],
+    mcp_servers: ["telethon-channel", "bitrix24", "yonote-read"],
     scopes: ["read", "write"],
     dangerous_tools: ["telegram-send-user"],
-    notes: "Task/session overlay for Sasuke. Yonote is read/search-only by policy, gated by corporate-memory, and deferred from persistent startup.",
+    notes: "Task/session overlay for Sasuke. Uses the repo-owned yonote-read MCP surface, gated by corporate-memory, and deferred from persistent startup.",
   },
   diagnostics: {
     id: "diagnostics",

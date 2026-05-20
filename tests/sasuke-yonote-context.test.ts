@@ -17,9 +17,24 @@ describe("Sasuke Yonote read-context policy", () => {
     expect(policy.issue).toBe(775);
     expect(policy.decision).toBe("on-demand-only");
     expect(policy.default_mcp_allowlist).toEqual(["konoha", "telethon-channel", "bitrix24"]);
-    expect(policy.task_session_mcp_allowlist).toEqual(["konoha", "telethon-channel", "bitrix24", "yonote"]);
+    expect(policy.task_session_mcp_allowlist).toEqual(["konoha", "telethon-channel", "bitrix24", "yonote-read"]);
+    expect(policy.task_session_mcp_allowlist).not.toContain("yonote");
     expect(policy.yonote_access.mode).toBe("read-search-only");
-    expect(policy.yonote_access.forbidden_operations).toEqual(expect.arrayContaining(["write_page", "delete_page", "admin"]));
+    expect(policy.yonote_access.mcp_server).toBe("yonote-read");
+    expect(policy.yonote_access.forbidden_mcp_servers).toEqual(["yonote"]);
+    expect(policy.yonote_access.forbidden_operations).toEqual(expect.arrayContaining([
+      "yonote_request",
+      "documents.create",
+      "documents.update",
+      "documents.delete",
+      "documents.export",
+      "collections.create",
+      "collections.update",
+      "collections.delete",
+      "attachments.create",
+      "attachments.upload",
+      "attachments.delete",
+    ]));
     expect(policy.yonote_access.context_limits).toMatchObject({
       max_documents: 3,
       max_chars: 6000,
@@ -34,11 +49,37 @@ describe("Sasuke Yonote read-context policy", () => {
     expect(policy.measurement.sasuke_default_process_delta).toBe(0);
     expect(policy.measurement.sasuke_task_session_process_delta).toBe(2);
     expect(sasukeDefault?.mcp_servers).toEqual(["konoha", "telethon-channel", "bitrix24"]);
-    expect(getToolProfile("telegram-userbot-yonote-read")?.mcp_servers).toEqual(["telethon-channel", "bitrix24", "yonote"]);
-    expect(ON_DEMAND_SHARED_MCP_PACKS.get("yonote")).toMatchObject({
+    expect(getToolProfile("telegram-userbot-yonote-read")?.mcp_servers).toEqual(["telethon-channel", "bitrix24", "yonote-read"]);
+    expect(ON_DEMAND_SHARED_MCP_PACKS.get("yonote-read")).toMatchObject({
       feature: "corporate-memory",
       idle_timeout_sec: 900,
     });
+  });
+
+  test("read MCP surface excludes raw, write, destructive, export, and attachment upload tools", () => {
+    const source = read("scripts/yonote-read-mcp.py");
+    const forbidden = [
+      "@mcp.tool(annotations=ToolAnnotations(title=\"Raw Yonote RPC Request\"",
+      "async def yonote_request(",
+      "documents.create",
+      "documents.update",
+      "documents.delete",
+      "documents.export",
+      "collections.create",
+      "collections.update",
+      "collections.delete",
+      "attachments.create",
+      "attachments.upload",
+      "attachments.delete",
+      "destructiveHint=True",
+    ];
+
+    expect(source).toContain("FastMCP(\"yonote-read\")");
+    expect(source).toContain("async def yonote_read_search(");
+    expect(source).toContain("async def yonote_read_document(");
+    for (const token of forbidden) {
+      expect(source).not.toContain(token);
+    }
   });
 
   test("operator documentation records fallback and measured delta", () => {
@@ -47,7 +88,8 @@ describe("Sasuke Yonote read-context policy", () => {
     const catalog = read("docs/mcp-cost-catalog.md");
 
     expect(adr).toContain("Sasuke does not get Yonote by default");
-    expect(adr).toContain("KONOHA_MCP_SESSION_PACKS=yonote");
+    expect(adr).toContain("KONOHA_MCP_SESSION_PACKS=yonote-read");
+    expect(adr).toContain("raw Yonote RPC");
     expect(adr).toContain("read/search-only");
     expect(adr).toContain("Sasuke persistent default delta | 0 | 0");
     expect(inventory).toContain("Sasuke Yonote Context Decision After #775");

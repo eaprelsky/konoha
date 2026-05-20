@@ -36,6 +36,7 @@ const ON_DEMAND_MCP_RESOURCE_POLICIES: ReadonlyMap<string, McpResourcePolicy> = 
   ["sequential-thinking", DEFAULT_ON_DEMAND_MCP_POLICY],
   ["word", DEFAULT_ON_DEMAND_MCP_POLICY],
   ["yonote", LOW_COST_ON_DEMAND_MCP_POLICY],
+  ["yonote-read", LOW_COST_ON_DEMAND_MCP_POLICY],
 ]);
 
 export function mcpResourcePolicy(server: string): McpResourcePolicy | undefined {

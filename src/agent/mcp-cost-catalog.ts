@@ -122,6 +122,22 @@ export const MCP_COST_CATALOG: readonly McpCostCatalogEntry[] = [
     notes: "Narrow Sasuke knowledge lookup pack. Keep out of always-on defaults; attach only through corporate-memory task/session mode for read/search context.",
   },
   {
+    server: "yonote-read",
+    necessity: "role-scoped",
+    cost_band: "low",
+    default_allowed_for_roles: [],
+    opt_in_only: true,
+    retired: false,
+    measurement: {
+      ...MCP_COST_CATALOG_SAMPLE,
+      idle_process_count: 2,
+      idle_rss_kib: 24156,
+      idle_cpu_pct: 0,
+      note: "Same transport footprint as the sampled Yonote MCP, but with repo-owned read/search-only tool exposure for Sasuke task/session context.",
+    },
+    notes: "Sasuke-only bounded read/search context surface. Exposes no raw RPC, write, delete, export, admin, or attachment upload tools.",
+  },
+  {
     server: "yandex-tracker",
     necessity: "optional-on-demand",
     cost_band: "none",

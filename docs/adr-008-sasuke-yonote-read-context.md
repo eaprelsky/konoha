@@ -24,12 +24,15 @@ feature flag.
 
 Sasuke does not get Yonote by default.
 
-Yonote is approved only as a bounded task/session read-context overlay:
+Yonote is approved only as a bounded task/session read-context overlay through
+the repo-owned `yonote-read` MCP server:
 
-- `KONOHA_MCP_SESSION_PACKS=yonote`
+- `KONOHA_MCP_SESSION_PACKS=yonote-read`
 - feature flag `corporate-memory` enabled with an explicit reason
 - allowlist/profile overlay `telegram-userbot-yonote-read`
-- read/search-only usage; no Yonote write/admin/bulk export through Sasuke
+- read/search-only usage; no raw Yonote RPC, document write/delete/export,
+  collection write/delete, attachment create/upload/delete, admin, or bulk
+  export tools through Sasuke
 - idle timeout `900s`
 - per-request context cap: at most 3 documents / 6000 chars / 60000 ms timeout
 
@@ -71,9 +74,11 @@ Fallback behavior is intentionally boring:
 - do not restart, stop, or delay `agent-watchdog-sasuke.service` because Yonote
   is unavailable.
 
-The contract test builds Sasuke startup with Yonote in the allowlist and proves
-that persistent startup still resolves only `konoha`, `telethon-channel`, and
-`bitrix24` when Yonote is disabled/deferred.
+The contract test builds Sasuke startup with `yonote-read` in the allowlist and
+proves that persistent startup still resolves only `konoha`,
+`telethon-channel`, and `bitrix24` when Yonote is disabled/deferred. It also
+checks that the full `yonote` MCP and raw/write/delete/export tool names are
+not part of the Sasuke read-context surface.
 
 ## Rollback
 
@@ -81,9 +86,9 @@ Rollback is immediate because Yonote is not persistent startup:
 
 ```bash
 unset KONOHA_MCP_SESSION_PACKS
-# or remove yonote from KONOHA_MCP_SESSION_PACKS, then rebuild the session config
+# or remove yonote-read from KONOHA_MCP_SESSION_PACKS, then rebuild the session config
 ```
 
-If a task/session has already started a Yonote MCP wrapper, let the idle
-timeout expire or stop the `konoha-mcp-yonote` scope. Do not change Sasuke's
-default role allowlist or Redis consumer groups during rollback.
+If a task/session has already started a Yonote read MCP wrapper, let the idle
+timeout expire or stop the `konoha-mcp-yonote_read` scope. Do not change
+Sasuke's default role allowlist or Redis consumer groups during rollback.

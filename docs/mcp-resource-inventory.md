@@ -61,9 +61,9 @@ optional pack.
 
 ## Sasuke Yonote Context Decision After #775
 
-Yonote is not added to Sasuke persistent startup. The approved path is a
-task/session read-context overlay gated by `corporate-memory` and
-`KONOHA_MCP_SESSION_PACKS=yonote`; see
+Full Yonote is not added to Sasuke persistent startup. The approved path is a
+repo-owned `yonote-read` task/session read-context overlay gated by
+`corporate-memory` and `KONOHA_MCP_SESSION_PACKS=yonote-read`; see
 `docs/adr-008-sasuke-yonote-read-context.md` and
 `docs/sasuke-yonote-context-policy.json`.
 
@@ -74,7 +74,7 @@ MCP config:
 | --- | ---: | ---: | --- |
 | Stale Kiba Yonote MCP | 2 | 24,156 | `uv --directory .../yonote-mcp run main.py` plus Python child |
 | Sasuke persistent default delta | 0 | 0 | Default remains `konoha`, `telethon-channel`, `bitrix24` |
-| Sasuke task/session overlay delta | 2 | 24,156 | Only while the bounded session requests `yonote` |
+| Sasuke task/session overlay delta | 2 | 24,156 | Only while the bounded session requests `yonote-read` |
 
 If Yonote is disabled or unavailable, Sasuke must continue user-account
 listening and CRM routing without Yonote context.
