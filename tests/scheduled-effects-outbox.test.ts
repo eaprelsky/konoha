@@ -116,6 +116,32 @@ describe("scheduled runtime effects outbox", () => {
     await expect(getRuntimeEffect(runtimeEffectIdFromIdempotencyKey(idempotencyKey))).resolves.toBeNull();
   });
 
+  test("stale subscription.create effect does not resurrect scheduler resources", async () => {
+    const result = await createSubscriptionProgrammatic({
+      event_id: "timer-stale",
+      event_label: "Timer Stale",
+      process_id: `${RUN}:workflow-stale`,
+      instance_id: `${RUN}:case-stale`,
+      trigger: { kind: "timer", cron: "* * * * *" },
+    });
+    subscriptions.add(result.subscription_id);
+
+    const idempotencyKey = subscriptionCreateIdempotencyKey(result.subscription_id);
+    const effect = await getRuntimeEffect(runtimeEffectIdFromIdempotencyKey(idempotencyKey));
+    expect(effect).not.toBeNull();
+
+    await redis.hdel(SUBSCRIPTIONS_KEY, result.subscription_id);
+    const handled = await handleSubscriptionRuntimeEffect(effect!);
+    expect(handled.receipt?.data).toMatchObject({
+      operation: "activate",
+      subscription_id: result.subscription_id,
+      scheduled: false,
+      resource: "none",
+      reason: "subscription_missing",
+    });
+    expect(activeTasks.has(result.subscription_id)).toBe(false);
+  });
+
   test("subscription activation retries and dead-letters through the shared worker", async () => {
     const sub: Subscription = {
       id: `${RUN}:sub-retry`,

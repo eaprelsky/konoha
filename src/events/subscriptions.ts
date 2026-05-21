@@ -519,7 +519,7 @@ function subscriptionPayloadId(record: RuntimeEffectRecord): string {
   return value;
 }
 
-async function subscriptionFromEffect(record: RuntimeEffectRecord): Promise<Subscription> {
+async function liveSubscriptionFromEffect(record: RuntimeEffectRecord): Promise<Subscription | null> {
   const subscriptionId = subscriptionPayloadId(record);
   const raw = await redis.hget(SUBSCRIPTIONS_KEY, subscriptionId).catch(() => null);
   if (raw) {
@@ -532,6 +532,13 @@ async function subscriptionFromEffect(record: RuntimeEffectRecord): Promise<Subs
     }
     return current;
   }
+  return null;
+}
+
+async function subscriptionFromEffect(record: RuntimeEffectRecord): Promise<Subscription> {
+  const subscriptionId = subscriptionPayloadId(record);
+  const current = await liveSubscriptionFromEffect(record);
+  if (current) return current;
   const snapshot = record.payload.subscription;
   if (snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)) {
     const sub = snapshot as Subscription;
@@ -544,8 +551,37 @@ export async function handleSubscriptionRuntimeEffect(record: RuntimeEffectRecor
   if (record.kind !== "subscription.create" && record.kind !== "subscription.cancel") {
     subscriptionEffectFail("RUNTIME_EFFECT_KIND_UNSUPPORTED", `Unsupported subscription runtime effect kind: ${record.kind}`, { kind: record.kind });
   }
-  const sub = await subscriptionFromEffect(record);
   if (record.kind === "subscription.create") {
+    const subscriptionId = subscriptionPayloadId(record);
+    const sub = await liveSubscriptionFromEffect(record);
+    if (!sub) {
+      return {
+        receipt: {
+          data: {
+            operation: "activate",
+            subscription_id: subscriptionId,
+            scheduled: false,
+            resource: "none",
+            reason: "subscription_missing",
+          },
+        },
+      };
+    }
+    if (sub.status !== "active") {
+      return {
+        receipt: {
+          data: {
+            operation: "activate",
+            subscription_id: sub.id,
+            trigger_kind: sub.trigger.kind,
+            mode: sub.mode,
+            scheduled: false,
+            resource: "none",
+            reason: "subscription_not_active",
+          },
+        },
+      };
+    }
     const result = await subscriptionOutboxHooks.scheduleSubscriptionResources(sub);
     return {
       receipt: {
@@ -560,6 +596,7 @@ export async function handleSubscriptionRuntimeEffect(record: RuntimeEffectRecor
     };
   }
 
+  const sub = await subscriptionFromEffect(record);
   await subscriptionOutboxHooks.cancelSubscriptionResources(sub);
   return {
     receipt: {
