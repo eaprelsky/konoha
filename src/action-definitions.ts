@@ -64,11 +64,25 @@ export const ACTIONS: ActionDef[] = [
     audited: true,
   },
   {
+    id: "workflow.retire",
+    description: "Retire a workflow from new case starts and optionally clean generated runtime artifacts while preserving audit-readable records.",
+    scope: "workflow",
+    args: [
+      { name: "id", type: "string", required: true, description: "Workflow ID to retire." },
+      { name: "mode", type: "string", required: false, description: "Cleanup mode: retire_only, archive_with_runtime_cleanup, or purge_generated. Defaults to archive_with_runtime_cleanup." },
+      { name: "retired_by", type: "string", required: false, description: "Operator or agent ID recorded in lifecycle retire metadata." },
+    ],
+    implementation: { kind: "direct", note: "Canonical lifecycle retire action handled by action-executor." },
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
     id: "workflow.delete",
-    description: "Archive a workflow and cascade-delete its cases.",
+    description: "Compatibility archive route for workflow.retire with runtime cleanup.",
     scope: "workflow",
     args: [
       { name: "id", type: "string", required: true, description: "Workflow ID to archive." },
+      { name: "mode", type: "string", required: false, description: "Cleanup mode: retire_only, archive_with_runtime_cleanup, or purge_generated. Defaults to archive_with_runtime_cleanup." },
     ],
     currentEndpoint: "DELETE /workflows/:id",
     autonomy: "confirm",

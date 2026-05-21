@@ -30,6 +30,7 @@ const LEGACY_TO_CANONICAL_ACTION: Record<string, string> = {
   workflow_create: "workflow.create",
   workflow_update: "workflow.update",
   workflow_deploy: "workflow.deploy",
+  workflow_retire: "workflow.retire",
   workflow_delete: "workflow.delete",
   workflow_list: "workflow.list",
   workflow_get: "workflow.get",
@@ -120,6 +121,7 @@ const AUTONOMY_DEFAULTS: Record<string, AutonomyLevel> = {
   "case.start":      "auto",
   "workflow.create": "confirm",
   "workflow.deploy": "confirm",
+  "workflow.retire": "confirm",
   "workflow.delete": "confirm",
   "data.delete":     "confirm",  // HARDCODED — never overridable
   "agent.restart":   "confirm",

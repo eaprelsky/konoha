@@ -66,7 +66,8 @@ argument metadata.
 | `workflow.update` | Update existing workflow as draft or validated; demotes executable workflows until redeploy | confirm |
 | `workflow.validate` | Return the canonical graph/runtime/deploy/migration readiness receipt | auto |
 | `workflow.deploy` | Validate, materialize runtime start triggers, record deploy metadata, and mark workflow executable | confirm |
-| `workflow.delete` | Archive workflow + cascade delete cases | confirm |
+| `workflow.retire` | Retire workflow from new starts and optionally clean generated runtime artifacts | confirm |
+| `workflow.delete` | Compatibility archive route for `workflow.retire` with default runtime cleanup | confirm |
 | `workflow.list` | List all workflows | auto |
 | `workflow.get` | Get single workflow by ID | auto |
 

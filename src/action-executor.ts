@@ -106,6 +106,7 @@ function validationFailure(action: string, args: Record<string, unknown>): Actio
 
 const ELEMENT_TYPES = new Set(["event", "function", "gateway"]);
 const GATEWAY_OPERATORS = new Set(["AND", "OR", "XOR"]);
+const WORKFLOW_RETIRE_MODES = new Set(["retire_only", "archive_with_runtime_cleanup", "purge_generated"]);
 
 function buildElementAddPayload(args: Record<string, unknown>): { element?: WorkflowElement; error?: ActionExecution } {
   const invalid = validationFailure("element.add", args);
@@ -363,13 +364,17 @@ async function executeWorkflowValidate(args: Record<string, unknown>): Promise<A
   return { status: 200, data: validation };
 }
 
+function workflowNotFound(id: string): ActionExecution {
+  return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: id } };
+}
+
 async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<ActionExecution> {
   const invalid = validationFailure("workflow.deploy", args);
   if (invalid) return invalid;
 
   const id = String(args.id);
   const current = await getWorkflow(id);
-  if (!current) return { status: 404, data: { error: "Workflow not found" } };
+  if (!current) return workflowNotFound(id);
   const currentState = getWorkflowLifecycleState(current);
   if (currentState === "retired") {
     return {
@@ -413,7 +418,7 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
       },
       needsReview: true,
     });
-    if (result === null) return { status: 404, data: { error: "Workflow not found" } };
+    if (result === null) return workflowNotFound(id);
     if (result.errors.length > 0) {
       return {
         status: 422,
@@ -451,7 +456,7 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
       },
       needsReview: validation.gates.reviewer_required,
     });
-    if (result === null) return { status: 404, data: { error: "Workflow not found" } };
+    if (result === null) return workflowNotFound(id);
     if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
     return {
       status: 422,
@@ -482,22 +487,40 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
     },
     needsReview: false,
   });
-  if (result === null) return { status: 404, data: { error: "Workflow not found" } };
+  if (result === null) return workflowNotFound(id);
   if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
 
   await subscribeStartEvents(result.workflow);
   return { status: 200, data: { ...result.workflow, normalized } };
 }
 
-async function executeWorkflowDelete(args: Record<string, unknown>): Promise<ActionExecution> {
-  const invalid = validationFailure("workflow.delete", args);
+async function executeWorkflowRetire(action: "workflow.retire" | "workflow.delete", args: Record<string, unknown>): Promise<ActionExecution> {
+  const invalid = validationFailure(action, args);
   if (invalid) return invalid;
 
   const id = String(args.id);
   const mode = String(args.mode ?? "archive_with_runtime_cleanup");
+  if (!WORKFLOW_RETIRE_MODES.has(mode)) {
+    return {
+      status: 400,
+      data: {
+        error: "Invalid workflow retire mode",
+        code: "WORKFLOW_RETIRE_INVALID_MODE",
+        workflow_id: id,
+        allowed_modes: [...WORKFLOW_RETIRE_MODES],
+      },
+    };
+  }
 
-  const archived = await archiveWorkflow(id);
-  if (!archived) return { status: 404, data: { error: "Workflow not found" } };
+  const current = await getWorkflow(id);
+  if (!current) return workflowNotFound(id);
+  const alreadyRetired = getWorkflowLifecycleState(current) === "retired";
+  const retiredBy = action === "workflow.retire" && args.retired_by ? String(args.retired_by) : action;
+
+  if (!alreadyRetired) {
+    const archived = await archiveWorkflow(id, { source: action, retiredBy });
+    if (!archived) return workflowNotFound(id);
+  }
 
   let deletedCases = 0;
   let deletedWorkItems = 0;
@@ -516,6 +539,11 @@ async function executeWorkflowDelete(args: Record<string, unknown>): Promise<Act
       ok: true,
       workflow_id: id,
       mode,
+      action,
+      retired: true,
+      lifecycle_state: "retired",
+      retired_by: alreadyRetired ? (current.retired_by ?? current.lifecycle?.retired_by ?? retiredBy) : retiredBy,
+      already_retired: alreadyRetired,
       archived: true,
       deleted_cases: deletedCases,
       deleted_work_items: deletedWorkItems,
@@ -523,6 +551,10 @@ async function executeWorkflowDelete(args: Record<string, unknown>): Promise<Act
       warnings: warnings.length > 0 ? warnings : undefined,
     },
   };
+}
+
+async function executeWorkflowDelete(args: Record<string, unknown>): Promise<ActionExecution> {
+  return executeWorkflowRetire("workflow.delete", args);
 }
 
 async function executeWorkflowBatchDelete(args: Record<string, unknown>): Promise<ActionExecution> {
@@ -585,6 +617,8 @@ export async function executeWorkflowAction(
       return executeWorkflowValidate(args);
     case "workflow.deploy":
       return executeWorkflowDeploy(args);
+    case "workflow.retire":
+      return executeWorkflowRetire("workflow.retire", args);
     case "workflow.delete":
       return executeWorkflowDelete(args);
     case "workflow.batch_delete":

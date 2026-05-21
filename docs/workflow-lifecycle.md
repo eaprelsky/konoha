@@ -23,10 +23,12 @@ longer the same operation as deploying it for runtime execution.
   values, and gate flags for deployment, case start, release, and reviewer
   review.
 - `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, increments `deploy_version`, records `deployed_at` and optional `deployed_by`, and marks the workflow `executable` when readiness passes.
-- `workflow.delete` is an archive/retire operation. It removes the workflow
-  from active lists but keeps the Redis and PostgreSQL record with
-  `lifecycle_state: "retired"` so old references and audit reads remain
-  inspectable.
+- `workflow.retire` is the canonical retire operation. It removes the workflow
+  from active lists, marks `lifecycle_state: "retired"`, records optional
+  `retired_by`, and can run in `retire_only`,
+  `archive_with_runtime_cleanup`, or `purge_generated` mode.
+- `workflow.delete` is a compatibility archive route for `workflow.retire`
+  with the same durable retired record and default runtime cleanup.
 - Messenger-driven start triggers must include an activation policy covering
   deduplication, throttling/backpressure, and inspectable suppressions; invalid
   or missing policies block validation/deploy readiness.
@@ -93,6 +95,42 @@ assistant paths should use `workflow.deploy` instead.
 Readiness failures use `code: "WORKFLOW_READINESS_BLOCKED"` and include the
 full validation receipt. `workflow.deploy` uses `code:
 "WORKFLOW_VALIDATION_BLOCKED"` for the same blocking receipt.
+
+## Deploy And Retire Action Results
+
+`workflow.deploy` returns the updated workflow definition on success. Failures
+use stable `code` values:
+
+- `WORKFLOW_NOT_FOUND` for unknown workflow ids, with `workflow_id`;
+- `WORKFLOW_RETIRED` when a retired workflow is deployed again;
+- `WORKFLOW_DEPLOY_NEEDS_REVIEW` when trigger resolution requires operator
+  review, including the canonical `validation` receipt;
+- `WORKFLOW_VALIDATION_BLOCKED` when readiness blocks deployment, including the
+  canonical `validation` receipt.
+
+`workflow.retire` returns a stable receipt:
+
+```json
+{
+  "ok": true,
+  "workflow_id": "sales/lead-qualification",
+  "action": "workflow.retire",
+  "mode": "archive_with_runtime_cleanup",
+  "retired": true,
+  "lifecycle_state": "retired",
+  "retired_by": "operator-1",
+  "already_retired": false,
+  "archived": true,
+  "deleted_cases": 0,
+  "deleted_work_items": 0,
+  "cancelled_subscriptions": 0
+}
+```
+
+Unknown workflow ids use `WORKFLOW_NOT_FOUND`. Invalid cleanup modes use
+`WORKFLOW_RETIRE_INVALID_MODE` and include `allowed_modes`. Repeated retire
+calls are idempotent and return `already_retired: true` without changing the
+existing retire actor metadata.
 
 ## Operator Contract
 

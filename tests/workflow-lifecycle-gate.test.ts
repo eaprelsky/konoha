@@ -373,6 +373,101 @@ describe("workflow lifecycle deploy gate", () => {
     });
   });
 
+  test("workflow.retire is the canonical retire action and remains idempotent", async () => {
+    const id = `${RUN}-canonical-retire`;
+    touched.add(id);
+    await createWorkflow(workflow(id));
+    await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+
+    const retired = await executeActionDirect("workflow.retire", {
+      id,
+      mode: "retire_only",
+      retired_by: "operator-2",
+    });
+    expect(retired?.status).toBe(200);
+    expect((retired?.data as any)).toMatchObject({
+      ok: true,
+      action: "workflow.retire",
+      archived: true,
+      retired: true,
+      workflow_id: id,
+      mode: "retire_only",
+      lifecycle_state: "retired",
+      retired_by: "operator-2",
+      already_retired: false,
+      deleted_cases: 0,
+      deleted_work_items: 0,
+      cancelled_subscriptions: 0,
+    });
+
+    const stored = await getWorkflow(id);
+    expect(stored).toMatchObject({
+      status: "retired",
+      lifecycle_state: "retired",
+      retired_by: "operator-2",
+      lifecycle: {
+        schema_version: 1,
+        state: "retired",
+        retired_by: "operator-2",
+      },
+      last_deploy: {
+        status: "retired",
+        source: "workflow.retire",
+      },
+    });
+
+    const second = await executeActionDirect("workflow.retire", { id, retired_by: "operator-3" });
+    expect(second?.status).toBe(200);
+    expect((second?.data as any)).toMatchObject({
+      ok: true,
+      action: "workflow.retire",
+      workflow_id: id,
+      lifecycle_state: "retired",
+      retired_by: "operator-2",
+      already_retired: true,
+    });
+
+    const redeploy = await executeActionDirect("workflow.deploy", { id });
+    expect(redeploy?.status).toBe(409);
+    expect((redeploy?.data as any)).toMatchObject({
+      error: "Workflow is retired",
+      code: "WORKFLOW_RETIRED",
+      process_id: id,
+      lifecycle_state: "retired",
+    });
+  });
+
+  test("workflow.deploy and workflow.retire return stable not-found and mode errors", async () => {
+    const missingId = `${RUN}-missing`;
+    const missingDeploy = await executeActionDirect("workflow.deploy", { id: missingId });
+    expect(missingDeploy?.status).toBe(404);
+    expect((missingDeploy?.data as any)).toMatchObject({
+      error: "Workflow not found",
+      code: "WORKFLOW_NOT_FOUND",
+      workflow_id: missingId,
+    });
+
+    const missingRetire = await executeActionDirect("workflow.retire", { id: missingId });
+    expect(missingRetire?.status).toBe(404);
+    expect((missingRetire?.data as any)).toMatchObject({
+      error: "Workflow not found",
+      code: "WORKFLOW_NOT_FOUND",
+      workflow_id: missingId,
+    });
+
+    const invalidModeId = `${RUN}-invalid-retire-mode`;
+    touched.add(invalidModeId);
+    await createWorkflow(workflow(invalidModeId));
+    const invalidMode = await executeActionDirect("workflow.retire", { id: invalidModeId, mode: "erase_everything" });
+    expect(invalidMode?.status).toBe(400);
+    expect((invalidMode?.data as any)).toMatchObject({
+      error: "Invalid workflow retire mode",
+      code: "WORKFLOW_RETIRE_INVALID_MODE",
+      workflow_id: invalidModeId,
+    });
+    expect((invalidMode?.data as any).allowed_modes).toContain("retire_only");
+  });
+
   test("case.start supports explicit admin override for tests and migration", async () => {
     const id = `${RUN}-override`;
     touched.add(id);

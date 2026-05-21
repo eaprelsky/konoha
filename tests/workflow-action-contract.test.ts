@@ -12,6 +12,7 @@ describe("workflow action contract validation", () => {
     expect(ids).toContain("workflow.create");
     expect(ids).toContain("workflow.update");
     expect(ids).toContain("workflow.deploy");
+    expect(ids).toContain("workflow.retire");
     expect(ids).toContain("workflow.delete");
     expect(ids).toContain("workflow.list");
     expect(ids).toContain("workflow.get");
@@ -41,6 +42,19 @@ describe("workflow action contract validation", () => {
     expect(result.errors).toContain("Missing required argument: id");
   });
 
+  it("workflow.retire requires id", () => {
+    const missing = validateActionArgs("workflow.retire", {});
+    expect(missing.valid).toBe(false);
+    expect(missing.errors).toContain("Missing required argument: id");
+
+    const valid = validateActionArgs("workflow.retire", {
+      id: "wf-123",
+      mode: "archive_with_runtime_cleanup",
+      retired_by: "operator-1",
+    });
+    expect(valid.valid).toBe(true);
+  });
+
   it("workflow.deploy requires id", () => {
     const missing = validateActionArgs("workflow.deploy", {});
     expect(missing.valid).toBe(false);
@@ -60,7 +74,7 @@ describe("workflow action contract validation", () => {
   });
 
   it("workflow.delete accepts valid args", () => {
-    const result = validateActionArgs("workflow.delete", { id: "wf-123" });
+    const result = validateActionArgs("workflow.delete", { id: "wf-123", mode: "archive_with_runtime_cleanup" });
     expect(result.valid).toBe(true);
   });
 
@@ -159,6 +173,7 @@ describe("workflow action contract validation", () => {
       "trigger.set",
       "trigger.resolve",
       "workflow.deploy",
+      "workflow.retire",
       "workflow.batch_delete",
     ]) {
       expect(byId.get(id)?.category).toBe("act");
@@ -203,6 +218,7 @@ describe("workflow action contract validation", () => {
     expect(canonicalActionType("workflow_create")).toBe("workflow.create");
     expect(canonicalActionType("workflow_update")).toBe("workflow.update");
     expect(canonicalActionType("workflow_deploy")).toBe("workflow.deploy");
+    expect(canonicalActionType("workflow_retire")).toBe("workflow.retire");
     expect(canonicalActionType("case_start")).toBe("case.start");
     expect(canonicalActionType("message_send")).toBe("message.send");
     expect(canonicalActionType("workflow.create")).toBe("workflow.create");

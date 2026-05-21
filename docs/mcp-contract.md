@@ -37,7 +37,7 @@ that wrap one workflow directly:
 
 | Scope | Actions without MCP | Gap |
 |-------|---------------------|-----|
-| workflow | workflow.create, workflow.update, workflow.delete, workflow.list, workflow.get | No workflow CRUD via MCP |
+| workflow | workflow.create, workflow.update, workflow.retire, workflow.delete, workflow.list, workflow.get | No bespoke workflow CRUD/retire tools; use generic `konoha_action_*` |
 | element | element.update, element.remove | `element.add` is available through the generic `konoha_action_*` bridge; no bespoke element editing MCP tools |
 | flow | — | `flow.add` and `flow.remove` are available through the generic `konoha_action_*` bridge; no bespoke flow editing MCP tools |
 | trigger | trigger.set, trigger.resolve | No trigger config via MCP |

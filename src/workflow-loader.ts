@@ -131,6 +131,11 @@ export interface WorkflowUpdateOptions {
   needsReview?: boolean;
 }
 
+export interface WorkflowArchiveOptions {
+  source?: string;
+  retiredBy?: string;
+}
+
 // Flow edge: [from, to] or [from, to, condition]
 // condition is a JS expression evaluated against case payload (e.g. "payload.qualified === true")
 export type FlowEdge = [string, string] | [string, string, string];
@@ -1171,23 +1176,25 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
   return { workflow: prepared.workflow, errors: [] };
 }
 
-export async function archiveWorkflow(id: string): Promise<boolean> {
+export async function archiveWorkflow(id: string, opts: WorkflowArchiveOptions = {}): Promise<boolean> {
   const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
   if (!raw) return false;
   const def = normalizeWorkflow(JSON.parse(raw));
   const retiredAt = nowIso();
+  const source = opts.source ?? "workflow.delete";
+  const retiredBy = opts.retiredBy ?? source;
   const retired = withLifecycle(
     {
       ...def,
       retired_at: retiredAt,
-      retired_by: "workflow.delete",
+      retired_by: retiredBy,
     },
     "retired",
     {
       deploy: {
         status: "retired",
         checked_at: retiredAt,
-        source: "workflow.delete",
+        source,
         details: ["workflow archived and retired from new case starts"],
       },
       needsReview: false,
