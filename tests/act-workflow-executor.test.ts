@@ -911,6 +911,79 @@ describe("/act workflow executor", () => {
     expect(removeBody.data.flow).toEqual([]);
   });
 
+  test("element.remove rejects invalid graph mutations without partial persistence", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-element-remove-invalid`;
+    const createWorkflowRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.create",
+        category: "act",
+        args: {
+          id: workflowId,
+          name: "Element remove invalid workflow",
+          elements: [
+            { id: "start", type: "event", label: "Start" },
+            { id: "review", type: "function", label: "Review", role: "reviewer" },
+            { id: "done", type: "event", label: "Done" },
+          ],
+          flow: [["start", "review"], ["review", "done"]],
+        },
+      }),
+    }));
+    expect(createWorkflowRes.status).toBe(201);
+
+    const invalidRemove = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.remove",
+        category: "act",
+        args: { workflow_id: workflowId, id: "done", expected_edit_version: 1 },
+      }),
+    }));
+    const invalidBody = await invalidRemove.json();
+    expect(invalidRemove.status).toBe(422);
+    expect(invalidBody.data).toMatchObject({
+      code: "WORKFLOW_VALIDATION_FAILED",
+      workflow_id: workflowId,
+      element_id: "done",
+    });
+    expect((invalidBody.data.details as Array<{ code: string }>).map(issue => issue.code)).toContain("GRAPH_INVALID_TERMINAL_STATE");
+
+    const getWorkflowRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.get",
+        category: "inspect",
+        args: { id: workflowId },
+      }),
+    }));
+    const getWorkflowBody = await getWorkflowRes.json();
+    expect(getWorkflowRes.status).toBe(200);
+    expect(getWorkflowBody.data.edit_version).toBe(1);
+    expect(getWorkflowBody.data.elements.map((el: any) => el.id)).toEqual(["start", "review", "done"]);
+    expect(getWorkflowBody.data.flow).toEqual([["start", "review"], ["review", "done"]]);
+
+    const missingRemove = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.remove",
+        category: "act",
+        args: { workflow_id: workflowId, id: "missing" },
+      }),
+    }));
+    const missingBody = await missingRemove.json();
+    expect(missingRemove.status).toBe(404);
+    expect(missingBody.data).toMatchObject({
+      code: "ELEMENT_NOT_FOUND",
+      workflow_id: workflowId,
+      element_id: "missing",
+    });
+  });
+
   test("executes element.update for type-specific metadata fields with guards", async () => {
     const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-element-update-fields`;
     const createWorkflowRes = await app.fetch(new Request("http://localhost/act", {
