@@ -13,6 +13,7 @@ export interface WorkflowRecord {
   lifecycle_state?: string;
   lifecycle?: Record<string, unknown>;
   validation_status?: string;
+  edit_version?: number;
   deploy_version?: number;
   deployed_at?: string;
   deployed_by?: string;

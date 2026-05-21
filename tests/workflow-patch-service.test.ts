@@ -3,7 +3,7 @@ import { createTestRedis } from "./redis-test-utils";
 import { executeActionDirect } from "../src/action-executor";
 import { createRole, deleteRole } from "../src/runtime/roles";
 import { getWorkflow, getWorkflowDeployedSnapshot } from "../src/workflow-loader";
-import { pgDeleteWorkflow } from "../src/storage/pg";
+import { pgDeleteWorkflow, pgGetWorkflow, pgListWorkflows } from "../src/storage/pg";
 
 const redis = createTestRedis();
 const RUN = `workflow-patch-${Date.now()}`;
@@ -76,9 +76,15 @@ describe("atomic workflow patch service", () => {
 
     const saved = await getWorkflow(id);
     expect(saved?.name).toBe("Patched workflow");
+    expect(saved?.edit_version).toBe(2);
     expect(saved?.elements.map(element => element.id).sort()).toEqual(["done", "review", "start"]);
     expect(saved?.flow).toEqual([["start", "review"], ["review", "done"]]);
     expect(saved?.last_validation?.source).toBe("workflow.patch");
+
+    const pgSaved = await pgGetWorkflow(id);
+    expect(Number(pgSaved?.edit_version)).toBe(2);
+    const pgListed = await pgListWorkflows();
+    expect(Number(pgListed.find(row => row.id === id)?.edit_version)).toBe(2);
   });
 
   test("rejects invalid patches without partially persisting added resources", async () => {

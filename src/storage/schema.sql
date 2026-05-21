@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS workflows (
   lifecycle_state TEXT NOT NULL DEFAULT 'executable',
   lifecycle    JSONB NOT NULL DEFAULT '{}',
   validation_status TEXT NOT NULL DEFAULT 'unknown',
+  edit_version BIGINT NOT NULL DEFAULT 0,
   deploy_version BIGINT NOT NULL DEFAULT 0,
   deployed_at  TIMESTAMPTZ,
   deployed_by  TEXT,
@@ -36,6 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_workflows_parent_id ON workflows(parent_id);
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'executable';
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS lifecycle JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS validation_status TEXT NOT NULL DEFAULT 'unknown';
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS edit_version BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deploy_version BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_at TIMESTAMPTZ;
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_by TEXT;

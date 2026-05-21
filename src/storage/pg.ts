@@ -59,6 +59,7 @@ async function ensureWorkflowLifecycleColumns(sql: ReturnType<typeof postgres>):
   await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'executable'`;
   await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS lifecycle JSONB NOT NULL DEFAULT '{}'`;
   await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS validation_status TEXT NOT NULL DEFAULT 'unknown'`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS edit_version BIGINT NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deploy_version BIGINT NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_at TIMESTAMPTZ`;
   await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_by TEXT`;
@@ -105,11 +106,12 @@ export async function pgUpsertWorkflow(wf: WorkflowRecord): Promise<void> {
     const sql = getSql();
     await ensureWorkflowLifecycleColumns(sql);
     const lifecycleState = String((wf as any).lifecycle_state || (wf as any).status || 'executable');
+    const editVersion = Number((wf as any).edit_version ?? 0);
     const deployVersion = Number((wf as any).deploy_version ?? (wf as any).lifecycle?.deploy_version ?? 0);
     await sql`
       INSERT INTO workflows (
         id, name, version, elements, flow, triggers, status,
-        lifecycle_state, lifecycle, validation_status, deploy_version,
+        lifecycle_state, lifecycle, validation_status, edit_version, deploy_version,
         deployed_at, deployed_by, retired_at, retired_by,
         last_validation, last_deploy, parent_id, updated_at
       )
@@ -122,6 +124,7 @@ export async function pgUpsertWorkflow(wf: WorkflowRecord): Promise<void> {
         ${lifecycleState},
         ${sql.json(asJson((wf as any).lifecycle ?? {}))},
         ${(wf as any).validation_status || (wf as any).lifecycle?.validation_status || 'unknown'},
+        ${Number.isFinite(editVersion) ? Math.trunc(editVersion) : 0},
         ${Number.isFinite(deployVersion) ? Math.trunc(deployVersion) : 0},
         ${asDateOrNull((wf as any).deployed_at || (wf as any).lifecycle?.deployed_at)},
         ${(wf as any).deployed_by || (wf as any).lifecycle?.deployed_by || null},
@@ -142,6 +145,7 @@ export async function pgUpsertWorkflow(wf: WorkflowRecord): Promise<void> {
         lifecycle_state = EXCLUDED.lifecycle_state,
         lifecycle    = EXCLUDED.lifecycle,
         validation_status = EXCLUDED.validation_status,
+        edit_version = EXCLUDED.edit_version,
         deploy_version = EXCLUDED.deploy_version,
         deployed_at  = EXCLUDED.deployed_at,
         deployed_by  = EXCLUDED.deployed_by,

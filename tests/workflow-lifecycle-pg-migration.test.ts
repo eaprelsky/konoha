@@ -46,10 +46,10 @@ describe("workflow lifecycle PostgreSQL migration", () => {
     await sql.unsafe(schemaSql);
 
     const rows = await sql`
-      SELECT id, status, lifecycle_state, lifecycle
+      SELECT id, status, lifecycle_state, lifecycle, edit_version
       FROM workflows
       ORDER BY id
-    ` as unknown as Array<{ id: string; status: string; lifecycle_state: string; lifecycle: Record<string, unknown> }>;
+    ` as unknown as Array<{ id: string; status: string; lifecycle_state: string; lifecycle: Record<string, unknown>; edit_version: string | number }>;
     const byId = new Map(rows.map(row => [row.id, row]));
 
     expect(byId.get("legacy-draft")).toMatchObject({ status: "draft", lifecycle_state: "draft" });
@@ -58,6 +58,7 @@ describe("workflow lifecycle PostgreSQL migration", () => {
     expect(byId.get("legacy-deleted")).toMatchObject({ status: "retired", lifecycle_state: "retired" });
     expect(byId.get("legacy-active")).toMatchObject({ status: "executable", lifecycle_state: "executable" });
     expect(byId.get("legacy-executable")).toMatchObject({ status: "executable", lifecycle_state: "executable" });
+    expect(Number(byId.get("legacy-active")?.edit_version)).toBe(0);
 
     expect(byId.get("legacy-archived")?.lifecycle).toMatchObject({
       schema_version: 1,
