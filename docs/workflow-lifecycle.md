@@ -268,6 +268,12 @@ new case starts fail the executable gate:
 }
 ```
 
+If start-subscription reconciliation fails for `workflow.undeploy`,
+`workflow.retire`, or compatibility `workflow.delete`, the action returns
+`502`, `ok:false`, `code:"WORKFLOW_START_SUBSCRIPTION_RECONCILIATION_FAILED"`,
+and keeps the active deploy-managed start subscriptions retryable instead of
+presenting the operation as a clean success.
+
 Unknown workflow ids use `WORKFLOW_NOT_FOUND`. Invalid cleanup modes use
 `WORKFLOW_RETIRE_INVALID_MODE` and include `allowed_modes`. Repeated retire
 calls are idempotent and return `already_retired: true` without changing the

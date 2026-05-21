@@ -912,6 +912,31 @@ async function executeWorkflowRetire(action: "workflow.retire" | "workflow.delet
   const warnings: string[] = [];
   if (!reconciliation.ok) warnings.push("start subscription reconciliation failed");
 
+  if (!reconciliation.ok) {
+    return {
+      status: 502,
+      data: {
+        ok: false,
+        error: "Start subscription reconciliation failed",
+        code: "WORKFLOW_START_SUBSCRIPTION_RECONCILIATION_FAILED",
+        workflow_id: id,
+        mode,
+        action,
+        retired: true,
+        lifecycle_state: "retired",
+        retired_by: alreadyRetired ? (current.retired_by ?? current.lifecycle?.retired_by ?? retiredBy) : retiredBy,
+        already_retired: alreadyRetired,
+        archived: true,
+        deleted_cases: 0,
+        deleted_work_items: 0,
+        cancelled_subscriptions: cancelledSubscriptions,
+        subscription_reconciliation: reconciliation,
+        cleanup_skipped: mode === "archive_with_runtime_cleanup" || mode === "purge_generated",
+        warnings,
+      },
+    };
+  }
+
   if (mode === "archive_with_runtime_cleanup" || mode === "purge_generated") {
     deletedCases = await deleteCasesByProcess(id).catch(() => { warnings.push("case cleanup failed"); return 0; });
     deletedWorkItems = await deleteWorkItemsByProcess(id).catch(() => { warnings.push("work item cleanup failed"); return 0; });

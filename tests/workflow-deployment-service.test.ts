@@ -445,6 +445,105 @@ describe("workflow deployment service", () => {
     });
   });
 
+  test("workflow.retire reports failed start-subscription reconciliation as non-success", async () => {
+    const id = `${RUN}-retire-failed-reconcile`;
+    touched.add(id);
+    await createWorkflow(workflow(id));
+
+    const deployed = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+    expect(deployed?.status).toBe(200);
+    expect(await activeStartSubscriptionsForProcess(id)).toHaveLength(1);
+
+    const restoreDeps = setWorkflowDeploymentSubscriptionDepsForTest({
+      async cancelResources() {
+        throw new Error("simulated retire cancel failure");
+      },
+    });
+    try {
+      const retired = await executeActionDirect("workflow.retire", {
+        id,
+        mode: "retire_only",
+        retired_by: "operator-2",
+      });
+      expect(retired?.status).toBe(502);
+      expect((retired?.data as any)).toMatchObject({
+        ok: false,
+        error: "Start subscription reconciliation failed",
+        code: "WORKFLOW_START_SUBSCRIPTION_RECONCILIATION_FAILED",
+        workflow_id: id,
+        action: "workflow.retire",
+        lifecycle_state: "retired",
+        cancelled_subscriptions: 0,
+        cleanup_skipped: false,
+        subscription_reconciliation: {
+          ok: false,
+          source: "workflow.retire",
+          reason: "workflow_retired",
+          active_before: 1,
+          cancelled: [],
+          failed: [expect.objectContaining({
+            event_id: "start",
+            status: "failed",
+            error: "simulated retire cancel failure",
+          })],
+          preserved_running_case_subscriptions: true,
+        },
+      });
+    } finally {
+      restoreDeps();
+    }
+
+    expect(await activeStartSubscriptionsForProcess(id)).toHaveLength(1);
+  });
+
+  test("workflow.delete reports failed start-subscription reconciliation as non-success and skips cleanup", async () => {
+    const id = `${RUN}-delete-failed-reconcile`;
+    touched.add(id);
+    await createWorkflow(workflow(id));
+
+    const deployed = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+    expect(deployed?.status).toBe(200);
+    expect(await activeStartSubscriptionsForProcess(id)).toHaveLength(1);
+
+    const restoreDeps = setWorkflowDeploymentSubscriptionDepsForTest({
+      async cancelResources() {
+        throw new Error("simulated delete cancel failure");
+      },
+    });
+    try {
+      const deleted = await executeActionDirect("workflow.delete", { id });
+      expect(deleted?.status).toBe(502);
+      expect((deleted?.data as any)).toMatchObject({
+        ok: false,
+        error: "Start subscription reconciliation failed",
+        code: "WORKFLOW_START_SUBSCRIPTION_RECONCILIATION_FAILED",
+        workflow_id: id,
+        action: "workflow.delete",
+        lifecycle_state: "retired",
+        deleted_cases: 0,
+        deleted_work_items: 0,
+        cancelled_subscriptions: 0,
+        cleanup_skipped: true,
+        subscription_reconciliation: {
+          ok: false,
+          source: "workflow.delete",
+          reason: "workflow_retired",
+          active_before: 1,
+          failed: [expect.objectContaining({
+            event_id: "start",
+            status: "failed",
+            error: "simulated delete cancel failure",
+          })],
+          preserved_running_case_subscriptions: true,
+        },
+      });
+    } finally {
+      restoreDeps();
+    }
+
+    expect(await activeStartSubscriptionsForProcess(id)).toHaveLength(1);
+  });
+
   test("redeploy cancels stale start subscriptions and creates changed trigger subscriptions", async () => {
     const id = `${RUN}-changed`;
     touched.add(id);
