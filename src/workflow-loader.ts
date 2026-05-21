@@ -7,6 +7,9 @@ import { silentCatch, createLogger } from "./logger";
 import { upsertDoc, type DocType } from "./runtime/documents";
 import type { WorkflowActivationPolicy } from "./event-activation-policy";
 import { analyzeGatewayCondition } from "./workflow-gateway-conditions";
+import * as nodeCron from "node-cron";
+import { parseBdDuration } from "./work-calendar";
+import { parseDurationMs } from "./events/utils";
 
 const log = createLogger("workflow-loader");
 
@@ -59,6 +62,8 @@ export interface WorkflowElement {
     event_name?: string;
     process_ref?: string;
     function_ref?: string;
+    // ambiguous resolver output
+    candidates?: unknown[];
     // Legacy fields (auto-migrated to `kind` on read, never used in new code)
     /** @deprecated use kind instead */
     type?: "manual" | "telegram" | "schedule" | "event" | "webhook";
@@ -240,6 +245,15 @@ const WORKFLOW_LIFECYCLE_STATES = new Set<WorkflowLifecycleState>([
   "executable",
   "retired",
 ]);
+const TRIGGER_ACTIONS = new Set(["approve", "reject", "submit", "complete", "escalate"]);
+const TRIGGER_SYSTEM_EVENTS = new Set([
+  "process_completed",
+  "process_error",
+  "subprocess_completed",
+  "function_completed",
+  "all_branches_completed",
+]);
+const TRIGGER_CONDITION_OPERATORS = new Set([">", "<", ">=", "<=", "==", "!="]);
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -653,6 +667,10 @@ function validationIssue(
   return { code, severity, class: issueClass, message, ...extras };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function edgeFrom(edge: FlowEdge): string {
   return edge[0];
 }
@@ -705,6 +723,106 @@ function isDeclaredPayloadDependency(dependency: string, fields: Set<string>): b
     if (dependency.startsWith(`${field}.`)) return true;
   }
   return false;
+}
+
+function isValidDuration(value: unknown): value is string {
+  if (typeof value !== "string" || value.trim() === "") return false;
+  if (parseBdDuration(value)) return true;
+  try {
+    return parseDurationMs(value) > 0;
+  } catch {
+    return false;
+  }
+}
+
+function validateTriggerReadinessIssues(
+  element: WorkflowElement,
+  trigger: NonNullable<WorkflowElement["trigger"]>,
+): WorkflowValidationIssue[] {
+  const issues: WorkflowValidationIssue[] = [];
+  const details: Record<string, unknown> = { kind: trigger.kind };
+  const invalid = (reason: string, extra: Record<string, unknown> = {}) => {
+    issues.push(validationIssue(
+      "TRIGGER_READINESS_INVALID",
+      "error",
+      "trigger",
+      `Event "${element.id}" trigger is not ready for runtime deployment: ${reason}`,
+      {
+        element_id: element.id,
+        legacy_code: "DEPLOYMENT_TRIGGER_INVALID",
+        details: { ...details, reason, ...extra },
+      },
+    ));
+  };
+
+  if (trigger.confidence !== undefined && (typeof trigger.confidence !== "number" || trigger.confidence < 0 || trigger.confidence > 1)) {
+    invalid("confidence must be a number between 0 and 1", { field: "confidence" });
+  }
+
+  switch (trigger.kind) {
+    case "timer": {
+      if (typeof trigger.cron === "string" && trigger.cron.trim() !== "") {
+        if (!nodeCron.validate(trigger.cron)) invalid("timer cron expression is invalid", { field: "cron", cron: trigger.cron });
+        return issues;
+      }
+      if (trigger.delay_after && isRecord(trigger.delay_after) && isValidDuration(trigger.delay_after.duration)) return issues;
+      invalid("timer trigger requires a valid cron expression or delay_after.duration", { field: "cron" });
+      return issues;
+    }
+    case "message":
+      if (typeof trigger.source !== "string" || trigger.source.trim() === "") {
+        invalid("message trigger requires source", { field: "source" });
+      }
+      if (!isRecord(trigger.filter)) {
+        invalid("message trigger requires filter object", { field: "filter" });
+      }
+      return issues;
+    case "condition": {
+      const query = trigger.query;
+      if (typeof trigger.data_source !== "string" || trigger.data_source.trim() === "") {
+        invalid("condition trigger requires data_source", { field: "data_source" });
+      }
+      if (!isRecord(query) || typeof query.entity !== "string" || query.entity.trim() === "" || !isRecord(query.filter) || typeof query.metric !== "string" || query.metric.trim() === "") {
+        invalid("condition trigger requires query.entity, query.filter, and query.metric", { field: "query" });
+      }
+      if (!TRIGGER_CONDITION_OPERATORS.has(String(trigger.operator))) {
+        invalid("condition trigger requires a supported operator", { field: "operator", operator: trigger.operator });
+      }
+      if (typeof trigger.threshold !== "number" || !Number.isFinite(trigger.threshold)) {
+        invalid("condition trigger requires numeric threshold", { field: "threshold" });
+      }
+      if (!isValidDuration(trigger.poll_interval)) {
+        invalid("condition trigger requires a valid poll_interval duration", { field: "poll_interval" });
+      }
+      return issues;
+    }
+    case "delay_after":
+      if (!isValidDuration(trigger.duration)) {
+        invalid("delay_after trigger requires a valid duration", { field: "duration" });
+      }
+      return issues;
+    case "manual":
+      if (trigger.manual_override) return issues;
+      if (!TRIGGER_ACTIONS.has(String(trigger.action))) {
+        invalid("manual trigger requires a supported action", { field: "action" });
+      }
+      if (typeof trigger.role !== "string" || trigger.role.trim() === "") {
+        invalid("manual trigger requires role", { field: "role" });
+      }
+      return issues;
+    case "system":
+      if (!TRIGGER_SYSTEM_EVENTS.has(String(trigger.event_name))) {
+        invalid("system trigger requires a supported event_name", { field: "event_name", event_name: trigger.event_name });
+      }
+      return issues;
+    case "ambiguous":
+      if (!Array.isArray(trigger.candidates)) {
+        invalid("ambiguous trigger requires candidates array", { field: "candidates" });
+      }
+      return issues;
+    default:
+      return issues;
+  }
 }
 
 function graphNodesThatCanReachTerminals(terminalIds: string[], inEdges: Map<string, FlowEdge[]>): Set<string> {
@@ -997,6 +1115,7 @@ export function validateWorkflowReadiness(
   const adapterNames = new Set(context.adapters ?? []);
   const adapterContextProvided = context.adapters !== undefined;
   const supportedTriggers = new Set(["timer", "message", "condition", "delay_after", "system", "manual"]);
+  const deployReadiness = context.source === "workflow.deploy";
 
   for (const element of elements) {
     if (element.type === "function") {
@@ -1075,6 +1194,8 @@ export function validateWorkflowReadiness(
           `Event "${element.id}" uses unsupported trigger kind "${element.trigger.kind}"`,
           { element_id: element.id, legacy_code: "DEPLOYMENT_UNSUPPORTED_TRIGGER", details: { kind: element.trigger.kind } },
         ));
+      } else {
+        issues.push(...validateTriggerReadinessIssues(element, element.trigger));
       }
       if (terminalEventIds.has(element.id) && !startEventIds.has(element.id) && !element.trigger.manual_override) {
         issues.push(validationIssue(
@@ -1090,7 +1211,7 @@ export function validateWorkflowReadiness(
     if (element.type === "event" && startEventIds.has(element.id) && !element.trigger?.kind && !element.trigger?.manual_override) {
       issues.push(validationIssue(
         "DEPLOYMENT_START_TRIGGER_UNRESOLVED",
-        "warning",
+        deployReadiness ? "error" : "warning",
         "deployment",
         `Start event "${element.id}" has no materialized trigger`,
         { element_id: element.id },

@@ -182,6 +182,22 @@ function hasEdge(flow: FlowEdge[] | undefined, from: string, to: string): boolea
   });
 }
 
+function normalizeResolvedTrigger(trigger: Awaited<ReturnType<typeof resolveBatchProgrammatic>>[number]["trigger"]): WorkflowElement["trigger"] | null {
+  if (!trigger) return null;
+  if (trigger.kind === "timer" && !trigger.cron && isRecord(trigger.delay_after)) {
+    const delayAfter = trigger.delay_after as Record<string, unknown>;
+    if (typeof delayAfter.duration === "string" && delayAfter.duration.trim() !== "") {
+      return {
+        kind: "delay_after",
+        duration: delayAfter.duration,
+        ...(typeof delayAfter.ref_event === "string" ? { ref_event: delayAfter.ref_event } : {}),
+        confidence: trigger.confidence,
+      };
+    }
+  }
+  return trigger as WorkflowElement["trigger"];
+}
+
 function lifecycleUpdateOpts(current: WorkflowDefinition): { draft?: boolean; lifecycleState?: WorkflowLifecycleState } {
   const lifecycleState = getWorkflowLifecycleState(current);
   return lifecycleState === "draft" ? { draft: true } : { lifecycleState: "validated" };
@@ -235,13 +251,18 @@ async function resolveTriggers(
   }
 
   let needs_review = false;
-  const resultMap = new Map(results.map(r => [r.id, r.trigger]));
+  const resultMap = new Map(results.map(r => [r.id, normalizeResolvedTrigger(r.trigger)]));
 
   for (let i = 0; i < updatedElements.length; i++) {
     const el = updatedElements[i];
     if (el.type !== "event") continue;
+    if (!eventsToResolve.some(event => event.id === el.id)) continue;
     const resolved = resultMap.get(el.id);
-    if (!resolved) continue;
+    if (!resolved) {
+      updatedElements[i] = { ...el, trigger: { kind: "ambiguous", candidates: [], confidence: 0 } };
+      needs_review = true;
+      continue;
+    }
 
     updatedElements[i] = { ...el, trigger: resolved as WorkflowElement["trigger"] };
 
