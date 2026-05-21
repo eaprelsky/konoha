@@ -1,5 +1,6 @@
 import { dispatchWorkItem, type DispatchParams, type DispatchReceipt } from "../dispatcher";
 import { redis } from "../redis";
+import { handleAdapterInvokeEffect } from "./adapter-outbox";
 import {
   enqueueRuntimeEffect,
   processRuntimeEffectOutboxOnce,
@@ -156,6 +157,8 @@ export async function handleWorkItemDispatchEffect(record: RuntimeEffectRecord):
 
 export async function handleRuntimeEffect(record: RuntimeEffectRecord): Promise<RuntimeEffectHandlerResult> {
   switch (record.kind) {
+    case "adapter.invoke":
+      return handleAdapterInvokeEffect(record);
     case "workitem.dispatch":
       return handleWorkItemDispatchEffect(record);
     default:

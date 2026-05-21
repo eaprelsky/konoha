@@ -319,11 +319,17 @@ function systemsFromValue(value: unknown, details: string[]): WorkflowElement["s
     const connector = optionalNonEmptyString(item.connector, `systems[${index}].connector`, details);
     const operation = item.operation === undefined ? undefined : optionalNonEmptyString(item.operation, `systems[${index}].operation`, details);
     const bindingId = item.binding_id === undefined ? undefined : optionalNonEmptyString(item.binding_id, `systems[${index}].binding_id`, details);
+    const execution = item.execution === undefined ? undefined : optionalNonEmptyString(item.execution, `systems[${index}].execution`, details);
+    if (execution && execution !== "sync" && execution !== "async_effect") {
+      details.push(`systems[${index}].execution must be "sync" or "async_effect" when provided`);
+      continue;
+    }
     if (!connector) continue;
     systems.push({
       connector,
       ...(operation ? { operation } : {}),
       ...(bindingId ? { binding_id: bindingId } : {}),
+      ...(execution ? { execution: execution as "sync" | "async_effect" } : {}),
     });
   }
   return systems;

@@ -98,6 +98,14 @@ the existing dispatcher transport and stores a delivery receipt; duplicate
 idempotency keys return the original effect, and retry attempts suppress a second
 notification once a prior delivery receipt exists.
 
+`adapter.invoke` is only used for adapter bindings explicitly marked
+`execution: "async_effect"`. Default `sync` adapter bindings continue to run in
+the runtime loop because their output can auto-complete the work item, update
+case payload, or drive gateway conditions. Async-effect adapter records include
+`case_id`, `work_item_id`, `adapter_id`, operation, and binding correlation; the
+worker executes the adapter with retry/dead-letter policy and stores a delivered
+receipt so a retry after successful delivery does not repeat the side effect.
+
 ## Idempotency And Correlation
 
 The idempotency key must be scoped by the source that creates the effect:
@@ -105,6 +113,8 @@ The idempotency key must be scoped by the source that creates the effect:
 - deploy subscription effects use the existing deployment-scoped keys such as
   `workflow.deploy:<workflow_id>:v<deploy_version>:subscription:<operation>:<event_id>`;
 - work-item dispatch effects should include `case_id` and `work_item_id`;
+- adapter invoke effects should include `case_id`, `work_item_id`, binding key,
+  connector, and operation;
 - connector effects should include connector/message identifiers before an
   external send is attempted;
 - event publication effects should include the originating event or action

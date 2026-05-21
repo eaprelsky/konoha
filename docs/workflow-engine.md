@@ -95,7 +95,7 @@ States: `running` → `done` | `error`
    | `gateway` | See gateway logic below |
    | element not found | Set `status = "error"`, emit `process.exception`, **return** |
 
-3. **System bindings** — if a function element has `systems[]`, the engine calls each adapter synchronously and merges outputs into the case payload. On success the work item is auto-completed and the loop continues without pausing.
+3. **System bindings** — if a function element has `systems[]`, the engine calls default `sync` adapter bindings synchronously and merges outputs into the case payload. On success the work item is auto-completed and the loop continues without pausing. Bindings explicitly marked `execution: "async_effect"` are safe side effects: the runtime enqueues an `adapter.invoke` outbox record instead of executing inline, and the work item/case do not depend on that adapter output.
 
 ---
 

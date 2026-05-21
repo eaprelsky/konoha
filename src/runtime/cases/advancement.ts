@@ -8,7 +8,7 @@
 import { randomUUID } from "crypto";
 import { redis } from "../../redis";
 import { publishEvent } from "../../redis";
-import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "../../workflow-loader";
+import { getWorkflow, WORKFLOW_INDEX_KEY, type SystemBinding, type WorkflowDefinition, type WorkflowElement } from "../../workflow-loader";
 import { assertCaseStartAllowed, type CaseStartGateOptions } from "../case-start-gate";
 import { getAdapter } from "../../adapters/index";
 import { dispatchWorkItem, isSystemDispatchRole } from "../../dispatcher";
@@ -18,6 +18,7 @@ import { createLogger } from "../../logger";
 import { createEventWait, loadActiveWaitsForCase } from "../event-waits";
 import { scheduleWaitReminders } from "../event-waits";
 import { enqueueWorkItemDispatchEffect } from "../workitem-dispatch-outbox";
+import { adapterInvokeBindingKey, enqueueAdapterInvokeEffect } from "../adapter-outbox";
 import { saveCase, loadCase, saveWorkItem, loadWorkItem, CASES_IDX_PROCESS, WORKITEMS_IDX_CASE, WORKITEM_KEY_PREFIX } from "./persistence";
 import type { Case, WorkItem, ActiveBranch } from "./types";
 import { bindWorkflowSnapshotForCase, loadWorkflowForCase } from "./workflow-binding";
@@ -135,6 +136,51 @@ async function dispatchWorkItemForElement(
   } else {
     await enqueueWorkItemDispatchEffect(dispatchParams)
       .catch(e => log.error("enqueue dispatch effect error", { case_id: kase.case_id, element_id: elementId, work_item_id: wi.work_item_id, error: e.message }));
+  }
+}
+
+function isAsyncAdapterBinding(binding: SystemBinding): boolean {
+  return binding.execution === "async_effect";
+}
+
+function operationForBinding(binding: SystemBinding, label: string): string {
+  const labelSlug = label.toLowerCase().replace(/\s+/g, "_");
+  return binding.operation && binding.operation !== "default" ? binding.operation : labelSlug;
+}
+
+async function enqueueAsyncAdapterEffectsForElement(
+  kase: Case,
+  def: WorkflowDefinition,
+  elementId: string,
+  el: WorkflowElement,
+  wi: WorkItem,
+  bindings: SystemBinding[],
+): Promise<void> {
+  for (const [index, binding] of bindings.entries()) {
+    if (!isAsyncAdapterBinding(binding)) continue;
+    const adapter = getAdapter(binding.connector);
+    if (!adapter) continue;
+    const operation = operationForBinding(binding, el.label);
+    const bindingKey = adapterInvokeBindingKey(binding, index);
+    await enqueueAdapterInvokeEffect({
+      connector: binding.connector,
+      operation,
+      binding_id: binding.binding_id,
+      binding_key: bindingKey,
+      input: kase.payload,
+      case_id: kase.case_id,
+      process_id: kase.process_id,
+      element_id: elementId,
+      work_item_id: wi.work_item_id,
+      def,
+    }).catch(e => log.error("enqueue adapter effect error", {
+      case_id: kase.case_id,
+      element_id: elementId,
+      work_item_id: wi.work_item_id,
+      connector: binding.connector,
+      operation,
+      error: e.message,
+    }));
   }
 }
 
@@ -295,15 +341,16 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
             kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
             await dispatchWorkItemForElement(kase, def, branchElId, branchEl, wi);
             const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
-            if (branchBindings.length > 0) {
-              const labelSlug = branchEl.label.toLowerCase().replace(/\s+/g, "_");
+            await enqueueAsyncAdapterEffectsForElement(kase, def, branchElId, branchEl, wi, branchBindings);
+            const directBranchBindings = branchBindings.filter(binding => !isAsyncAdapterBinding(binding));
+            if (directBranchBindings.length > 0) {
               let mergedOut: Record<string, unknown> = {};
               let branchErr = false;
-              for (const binding of branchBindings) {
+              for (const binding of directBranchBindings) {
                 const adapter = getAdapter(binding.connector);
                 if (!adapter) continue;
                 try {
-                  const op = (binding.operation && binding.operation !== "default") ? binding.operation : labelSlug;
+                  const op = operationForBinding(binding, branchEl.label);
                   const out = await adapter.execute(op, kase.payload);
                   mergedOut = { ...mergedOut, ...out };
                 } catch (e: any) {
@@ -312,7 +359,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
                   break;
                 }
               }
-              if (!branchErr && branchBindings.some(b => getAdapter(b.connector))) {
+              if (!branchErr && directBranchBindings.some(b => getAdapter(b.connector))) {
                 wi.status = "done"; wi.output = mergedOut; wi.updated_at = new Date().toISOString();
                 await saveWorkItem(wi, "pending");
                 const h = kase.history.find(h => h.work_item_id === wi.work_item_id);
@@ -446,16 +493,17 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       await dispatchWorkItemForElement(kase, def, nextId, nextEl, wi);
 
       const systemBindings = nextEl.systems ?? (nextEl.system ? [{ connector: nextEl.system, operation: "default" }] : []);
-      if (systemBindings.length > 0) {
-        const labelSlug = nextEl.label.toLowerCase().replace(/\s+/g, "_");
+      await enqueueAsyncAdapterEffectsForElement(kase, def, nextId, nextEl, wi, systemBindings);
+      const directSystemBindings = systemBindings.filter(binding => !isAsyncAdapterBinding(binding));
+      if (directSystemBindings.length > 0) {
         let mergedOutput: Record<string, unknown> = {};
         let adapterError = false;
 
-        for (const binding of systemBindings) {
+        for (const binding of directSystemBindings) {
           const adapter = getAdapter(binding.connector);
           if (!adapter) continue;
           try {
-            const op = (binding.operation && binding.operation !== "default") ? binding.operation : labelSlug;
+            const op = operationForBinding(binding, nextEl.label);
             const out = await adapter.execute(op, kase.payload);
             mergedOutput = { ...mergedOutput, ...out };
           } catch (e: any) {
@@ -474,7 +522,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
           return kase;
         }
 
-        if (Object.keys(mergedOutput).length > 0 || systemBindings.some(b => getAdapter(b.connector))) {
+        if (Object.keys(mergedOutput).length > 0 || directSystemBindings.some(b => getAdapter(b.connector))) {
           const prevStatus = wi.status;
           wi.status = "done";
           wi.output = mergedOutput;
@@ -625,15 +673,16 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
           await dispatchWorkItemForElement(kase, def, branchElId, branchEl, wi);
 
           const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
-          if (branchBindings.length > 0) {
-            const labelSlug = branchEl.label.toLowerCase().replace(/\s+/g, "_");
+          await enqueueAsyncAdapterEffectsForElement(kase, def, branchElId, branchEl, wi, branchBindings);
+          const directBranchBindings = branchBindings.filter(binding => !isAsyncAdapterBinding(binding));
+          if (directBranchBindings.length > 0) {
             let mergedOut: Record<string, unknown> = {};
             let branchErr = false;
-            for (const binding of branchBindings) {
+            for (const binding of directBranchBindings) {
               const adapter = getAdapter(binding.connector);
               if (!adapter) continue;
               try {
-                const op = (binding.operation && binding.operation !== "default") ? binding.operation : labelSlug;
+                const op = operationForBinding(binding, branchEl.label);
                 const out = await adapter.execute(op, kase.payload);
                 mergedOut = { ...mergedOut, ...out };
               } catch (e: any) {
@@ -642,7 +691,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
                 break;
               }
             }
-            if (!branchErr && branchBindings.some(b => getAdapter(b.connector))) {
+            if (!branchErr && directBranchBindings.some(b => getAdapter(b.connector))) {
               wi.status = "done"; wi.output = mergedOut; wi.updated_at = new Date().toISOString();
               await saveWorkItem(wi, "pending");
               const h = kase.history.find(h => h.work_item_id === wi.work_item_id);

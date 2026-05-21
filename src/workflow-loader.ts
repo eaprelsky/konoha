@@ -19,6 +19,7 @@ export interface SystemBinding {
   binding_id?: string; // stable payload scope key for action_args, unique within a workflow
   connector: string;  // adapter name (e.g. "telegram", "bitrix24")
   operation?: string; // specific operation; defaults to function label slug
+  execution?: "sync" | "async_effect"; // sync keeps deterministic output; async_effect routes safe side effects through outbox
 }
 
 export interface WorkflowElement {
@@ -1194,6 +1195,17 @@ export function validateWorkflowReadiness(
         }
         const connector = system.connector.trim();
         const operation = typeof system.operation === "string" ? system.operation : undefined;
+        const execution = typeof system.execution === "string" ? system.execution : undefined;
+        if (execution !== undefined && execution !== "sync" && execution !== "async_effect") {
+          issues.push(validationIssue(
+            "ADAPTER_BINDING_INVALID",
+            "error",
+            "adapter",
+            `Function "${element.id}" has an invalid adapter binding`,
+            { element_id: element.id, legacy_code: "RUNTIME_INVALID_ADAPTER_BINDING", details: { system, execution } },
+          ));
+          continue;
+        }
         if (adapterContextProvided && !adapterNames.has(connector)) {
           issues.push(validationIssue(
             "ADAPTER_MISSING",
