@@ -15,6 +15,7 @@ import type { WorkflowDefinition } from "../src/workflow-loader";
 
 const redis = createTestRedis();
 const RUN = `eepc-${Date.now()}`;
+const draftStateMachineFixtures = new Set<string>();
 
 function wfId(name: string) {
   return `${RUN}-${name}`;
@@ -22,6 +23,7 @@ function wfId(name: string) {
 
 async function registerWorkflow(def: WorkflowDefinition): Promise<void> {
   await createWorkflow(def, { draft: true });
+  draftStateMachineFixtures.add(def.id);
 }
 
 async function registerExecutableWorkflow(def: WorkflowDefinition): Promise<void> {
@@ -29,6 +31,24 @@ async function registerExecutableWorkflow(def: WorkflowDefinition): Promise<void
   if (result.errors.length > 0) {
     throw new Error(`Executable workflow fixture failed validation: ${JSON.stringify(result.errors)}`);
   }
+}
+
+async function createStateMachineCase(
+  processId: string,
+  subject: string,
+  payload: Record<string, unknown>,
+  startNode?: string,
+) {
+  return createCase(
+    processId,
+    subject,
+    payload,
+    startNode,
+    undefined,
+    draftStateMachineFixtures.has(processId)
+      ? { adminOverride: true, source: "eepc-state-machine-regression" }
+      : {},
+  );
 }
 
 async function cleanupWorkflow(id: string): Promise<void> {
@@ -130,7 +150,7 @@ describe("eEPC state-machine regression suite", () => {
       flow: [["start", "end"]],
     });
 
-    const kase = await createCase(id, "start-end", {});
+    const kase = await createStateMachineCase(id, "start-end", {});
     expect(kase.status).toBe("done");
     expect(kase.position).toBe("end");
     expect(kase.history.map(h => h.element_id)).toEqual(["start", "end"]);
@@ -151,7 +171,7 @@ describe("eEPC state-machine regression suite", () => {
       flow: [["start", "review"], ["review", "end"]],
     });
 
-    const kase = await createCase(id, "manual-function", { input: 1 });
+    const kase = await createStateMachineCase(id, "manual-function", { input: 1 });
     expect(kase.status).toBe("running");
     expect(kase.position).toBe("review");
 
@@ -173,7 +193,7 @@ describe("eEPC state-machine regression suite", () => {
     const def: WorkflowDefinition = { ...JSON.parse(raw), id };
     await registerExecutableWorkflow(def);
 
-    const kase = await createCase(id, "coMind Лиды: AI assistant request", {
+    const kase = await createStateMachineCase(id, "coMind Лиды: AI assistant request", {
       source_chat: "coMind Лиды",
       source_agent: "sasuke",
       raw_message: "Нужен AI ассистент для обработки заявок и подготовки КП",
@@ -249,7 +269,7 @@ describe("eEPC state-machine regression suite", () => {
     const def: WorkflowDefinition = { ...JSON.parse(raw), id };
     await registerExecutableWorkflow(def);
 
-    const kase = await createCase(id, "ADR-42 source intake", {
+    const kase = await createStateMachineCase(id, "ADR-42 source intake", {
       source_kind: "adr",
       source_title: "ADR-42: Queue-based dispatch",
       source_text: "Accepted decision to route work items through the bus.",
@@ -382,7 +402,7 @@ describe("eEPC state-machine regression suite", () => {
     const def: WorkflowDefinition = { ...JSON.parse(raw), id };
     await registerWorkflow(def);
 
-    const kase = await createCase(id, "SDD issue #637", { issue_number: 637 });
+    const kase = await createStateMachineCase(id, "SDD issue #637", { issue_number: 637 });
     expect(kase.status).toBe("running");
     expect(kase.position).toBe("f_intake");
 
@@ -427,7 +447,7 @@ describe("eEPC state-machine regression suite", () => {
     const def: WorkflowDefinition = { ...JSON.parse(raw), id };
     await registerWorkflow(def);
 
-    const kase = await createCase(id, "SDD issue with failing tests", { issue_number: 638 });
+    const kase = await createStateMachineCase(id, "SDD issue with failing tests", { issue_number: 638 });
     await completeWorkItem((await pendingWorkItemForCase(kase.case_id, "f_intake")).work_item_id, { scope_locked: true });
     await completeWorkItem((await pendingWorkItemForCase(kase.case_id, "f_design")).work_item_id, { tests_to_add: ["rework branch"] });
     await completeWorkItem((await pendingWorkItemForCase(kase.case_id, "f_implement")).work_item_id, { commit_summary: "Initial slice" });
@@ -462,7 +482,7 @@ describe("eEPC state-machine regression suite", () => {
     const def: WorkflowDefinition = { ...JSON.parse(raw), id };
     await registerWorkflow(def);
 
-    const kase = await createCase(id, "GitHub issue #792", {
+    const kase = await createStateMachineCase(id, "GitHub issue #792", {
       issue_number: 792,
       issue_url: "https://github.com/eaprelsky/konoha/issues/792",
     });
@@ -529,7 +549,7 @@ describe("eEPC state-machine regression suite", () => {
     const def: WorkflowDefinition = { ...JSON.parse(raw), id };
     await registerWorkflow(def);
 
-    const kase = await createCase(id, "Knowledge source intake", {
+    const kase = await createStateMachineCase(id, "Knowledge source intake", {
       source_url: "https://example.test/runbook",
       source_owner: "engineering",
     });
@@ -597,7 +617,7 @@ describe("eEPC state-machine regression suite", () => {
       ],
     });
 
-    const kase = await createCase(id, "xor", { path: "b" });
+    const kase = await createStateMachineCase(id, "xor", { path: "b" });
     expect(kase.status).toBe("running");
     expect(kase.position).toBe("pathB");
     expect(kase.history.map(h => h.element_id)).toContain("route");
@@ -631,7 +651,7 @@ describe("eEPC state-machine regression suite", () => {
       ],
     });
 
-    const kase = await createCase(id, "function-output-gateway", { source_chat: "coMind Лиды" });
+    const kase = await createStateMachineCase(id, "function-output-gateway", { source_chat: "coMind Лиды" });
     const triage = await pendingWorkItemForCase(kase.case_id, "triage");
 
     const afterTriage = await completeWorkItem(triage.work_item_id, {
@@ -676,7 +696,7 @@ describe("eEPC state-machine regression suite", () => {
       ],
     });
 
-    const kase = await createCase(id, "and-join", {});
+    const kase = await createStateMachineCase(id, "and-join", {});
     expect(kase.status).toBe("running");
     expect(kase.position).toBe("split");
     expect(kase.active_branches?.map(b => b.element_id).sort()).toEqual(["taskA", "taskB"]);
@@ -710,7 +730,7 @@ describe("eEPC state-machine regression suite", () => {
       flow: [["start", "review"], ["review", "approved"], ["approved", "publish"], ["publish", "end"]],
     });
 
-    const kase = await createCase(id, "manual-wait", {});
+    const kase = await createStateMachineCase(id, "manual-wait", {});
     const [item] = await workItemsForCase(kase.case_id);
     const paused = await completeWorkItem(item.work_item_id, { reviewed: true });
 
@@ -744,7 +764,7 @@ describe("eEPC state-machine regression suite", () => {
       flow: [["start", "prepare"], ["prepare", "due"], ["due", "followup"], ["followup", "end"]],
     });
 
-    const kase = await createCase(id, "delay-after-wait", {});
+    const kase = await createStateMachineCase(id, "delay-after-wait", {});
     const prepare = await pendingWorkItemForCase(kase.case_id, "prepare");
     const paused = await completeWorkItem(prepare.work_item_id, { prepared: true });
 
@@ -814,7 +834,7 @@ describe("eEPC state-machine regression suite", () => {
       ],
     });
 
-    const kase = await createCase(id, "or-both", { doA: true, doB: true });
+    const kase = await createStateMachineCase(id, "or-both", { doA: true, doB: true });
     expect(kase.status).toBe("running");
     expect(kase.position).toBe("split");
     expect(kase.active_branches?.map(b => b.element_id).sort()).toEqual(["taskA", "taskB"]);
@@ -854,7 +874,7 @@ describe("eEPC state-machine regression suite", () => {
       ],
     });
 
-    const kase = await createCase(id, "or-single", { doA: true, doB: false });
+    const kase = await createStateMachineCase(id, "or-single", { doA: true, doB: false });
     expect(kase.status).toBe("running");
     expect(kase.position).toBe("split");
     expect(kase.active_branches?.map(b => b.element_id)).toEqual(["taskA"]);
@@ -886,7 +906,7 @@ describe("eEPC state-machine regression suite", () => {
       ],
     });
 
-    const kase = await createCase(id, "xor-no-match", { path: "wrong" });
+    const kase = await createStateMachineCase(id, "xor-no-match", { path: "wrong" });
     expect(kase.status).toBe("error");
     expect(kase.position).toBe("route");
     expect(kase.history.map(h => h.element_id)).toContain("route");
@@ -895,7 +915,7 @@ describe("eEPC state-machine regression suite", () => {
 
   test("subprocess function creates child case and pauses parent", async () => {
     const childId = wfId("subprocess-child");
-    await registerWorkflow({
+    await registerExecutableWorkflow({
       id: childId,
       version: "1.0.0",
       name: "Child process",
@@ -920,7 +940,7 @@ describe("eEPC state-machine regression suite", () => {
       flow: [["start", "delegate"], ["delegate", "end"]],
     });
 
-    const kase = await createCase(parentId, "subprocess-parent", {});
+    const kase = await createStateMachineCase(parentId, "subprocess-parent", {});
     expect(kase.status).toBe("running");
     expect(kase.position).toBe("delegate");
 
@@ -959,7 +979,7 @@ describe("eEPC state-machine regression suite", () => {
       ],
     });
 
-    const kase = await createCase(id, "force-close-branches", {});
+    const kase = await createStateMachineCase(id, "force-close-branches", {});
     expect(kase.active_branches).toBeDefined();
     expect(kase.active_branches!.length).toBe(2);
 
