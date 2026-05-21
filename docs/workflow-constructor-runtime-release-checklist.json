@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 751,
+  "parent_issue": 686,
+  "release_policy": "docs/release-policy.md",
+  "preflight_tiers": "docs/workflow-engine-preflight-tiers.md",
+  "runtime_recovery_runbook": "docs/workflow-runtime-rollback-recovery.md",
+  "security_boundary": "docs/workflow-security-boundary.md",
+  "action_surface": "docs/action-surface.json",
+  "staging_contract": "docs/staging-environment.json",
+  "m1_isolation_evidence": [
+    "tests/test-storage-guardrails.test.ts",
+    "tests/redis-test-isolation-contract.test.ts",
+    "tests/pg-test-isolation-contract.test.ts",
+    "tests/test-factory-namespace.test.ts",
+    "tests/staging-environment.test.ts"
+  ],
+  "portable_ci_commands": [
+    "scripts/preflight-portable.sh",
+    "bun test --timeout 30000 tests/workflow-loader-validation.test.ts tests/act-workflow-executor.test.ts tests/eepc-state-machine-regression.test.ts tests/event-activation-policy.test.ts tests/event-waits-list.test.ts tests/runtime-condition-eval.test.ts",
+    "bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py"
+  ],
+  "production_only_commands": [
+    "scripts/preflight.sh",
+    "KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py",
+    "bun run scripts/pg-verify.ts",
+    "scripts/telegram-smoke.sh"
+  ],
+  "reviewer_checklist": [
+    {
+      "id": "stable-contract",
+      "prompt": "Is the behavior implemented behind a stable contract instead of ad hoc route, MCP, or UI-only behavior?",
+      "required_evidence": ["action id or typed route contract", "contract test", "docs link when operator-visible"]
+    },
+    {
+      "id": "success-and-failure-tests",
+      "prompt": "Do tests cover success and failure behavior where applicable?",
+      "required_evidence": ["focused test command", "failure/negative path assertion", "artifact path or log summary"]
+    },
+    {
+      "id": "m1-isolation",
+      "prompt": "Could this touch Redis, PostgreSQL, staging, factories, or test storage?",
+      "required_evidence": ["M1 isolation contract result", "no Redis DB 0/public PG use in tests", "destructive override absent or audited"]
+    },
+    {
+      "id": "staging-core",
+      "prompt": "Does the change affect broad Workflow Engine behavior, deploy, runtime, connectors, or release claims?",
+      "required_evidence": ["scripts/staging-smoke.sh --dry-run", "live staging smoke or time-boxed waiver", "staging-core profile remains isolated"]
+    },
+    {
+      "id": "rollback-recovery",
+      "prompt": "Is rollback/recovery bounded by the #750 runtime runbook?",
+      "required_evidence": ["rollback command", "data rollback limit", "scenario id from docs/workflow-runtime-rollback-recovery.json when runtime state changes"]
+    },
+    {
+      "id": "terminal-case-rule",
+      "prompt": "Can the change route work, waits, subscriptions, or dispatch effects to closed/terminal cases?",
+      "required_evidence": ["#812 terminal-case rule considered", "terminal-case negative test or explicit non-applicability note"]
+    },
+    {
+      "id": "action-spine-security",
+      "prompt": "Do user-visible mutations go through Action Spine or an accepted compatibility route with matching auth/audit?",
+      "required_evidence": ["bun run scripts/action-surface-report.ts --check", "python3 scripts/check-route-auth-policy.py", "docs/workflow-security-boundary.md satisfied"]
+    },
+    {
+      "id": "parent-receipt",
+      "prompt": "Is the release-gate evidence linked back to parent #686?",
+      "required_evidence": ["GitHub comment on #686 or child issue receipt", "commit hash", "commands and artifacts"]
+    }
+  ],
+  "change_classes": [
+    {
+      "id": "constructor-editor",
+      "applies_to": ["workflow editor", "constructor UI", "assistant editor UX", "schema patch UI"],
+      "required_contracts": ["frontend source of truth in frontend/src", "no module-local fork unless module-specific", "Action Spine action for durable mutation"],
+      "portable_ci": ["fast-local", "browser-e2e when UI behavior changes", "isolated-integration for normal release"],
+      "production_only": ["production-smoke only for normal production release or deployed UI change"],
+      "required_artifacts": ["focused Bun tests", "Playwright report or explicit backend-only note", "action receipt for durable mutation"],
+      "blockers": ["UI mutation bypasses durable Action Spine contract", "constructor/editor behavior diverges between frontend/src and module wrapper", "no negative test for invalid schema/patch when applicable"],
+      "warnings": ["browser tier not applicable to docs-only or backend-only patch"]
+    },
+    {
+      "id": "workflow-runtime",
+      "applies_to": ["case lifecycle", "dispatcher", "event waits", "gateway behavior", "reminders", "work items"],
+      "required_contracts": ["deterministic state-machine tests", "runtime rollback scenario", "#812 terminal-case rule"],
+      "portable_ci": ["fast-local", "isolated-integration"],
+      "production_only": ["production-smoke", "pg-verify when persisted entities change"],
+      "required_artifacts": ["state-machine regression output", "before/after runtime state note", "rollback/recovery scenario id"],
+      "blockers": ["terminal cases can receive new work", "runtime mutation lacks rollback/recovery plan", "onlyInRedis > 0"],
+      "warnings": ["onlyInPG bloat with onlyInRedis=0", "optional worker disabled by profile"]
+    },
+    {
+      "id": "action-spine-mutation",
+      "applies_to": ["new action", "action args", "action security", "MCP action bridge", "compatibility route mutation"],
+      "required_contracts": ["src/action-definitions.ts", "docs/action-surface.json", "docs/workflow-security-boundary.md"],
+      "portable_ci": ["action surface contract", "route auth policy", "focused action executor tests"],
+      "production_only": ["production-smoke only when deployed action affects production runtime"],
+      "required_artifacts": ["action-surface check", "auth policy check", "audit/autonomy result"],
+      "blockers": ["unknown or planned action exposed as executable", "mutation bypasses /act or accepted compatibility executor", "admin-only action lacks audit"],
+      "warnings": ["read-only inspect action has no audit by policy"]
+    },
+    {
+      "id": "deployment-subscription",
+      "applies_to": ["workflow.deploy", "runtime subscriptions", "trigger materialization", "partial deploy recovery"],
+      "required_contracts": ["deploy receipt", "subscription ownership", "staging-core smoke"],
+      "portable_ci": ["staging smoke dry-run", "action surface contract"],
+      "production_only": ["production-smoke", "pg-verify"],
+      "required_artifacts": ["deploy/action receipt", "subscription diff or non-applicability note", "partial-deploy rollback command"],
+      "blockers": ["deploy creates subscriptions for invalid definition", "subscription owner unknown", "partial deploy lacks abort criteria"],
+      "warnings": ["live staging unavailable with time-boxed waiver"]
+    },
+    {
+      "id": "storage-pg-shadow",
+      "applies_to": ["Redis state", "PostgreSQL shadow writes", "PG_READ", "test factories", "retention"],
+      "required_contracts": ["M1 isolation", "pg-verify", "destructive data gate"],
+      "portable_ci": ["test storage guardrails", "Redis/PG isolation contracts"],
+      "production_only": ["pg-verify", "production preflight"],
+      "required_artifacts": ["pg-verify output", "isolation test output", "dry-run evidence for cleanup"],
+      "blockers": ["tests touch Redis DB 0 or public PG", "onlyInRedis > 0", "destructive cleanup lacks owner/reviewer acceptance"],
+      "warnings": ["onlyInPG bloat with onlyInRedis=0"]
+    },
+    {
+      "id": "connector-outbox-effects",
+      "applies_to": ["Telegram connector", "messenger connectors", "outbox effects", "external dispatch"],
+      "required_contracts": ["connector.send_message action contract", "idempotency receipt", "external-send approval"],
+      "portable_ci": ["messenger/connector contract tests", "action surface contract"],
+      "production_only": ["telegram smoke", "healthcheck connector profile"],
+      "required_artifacts": ["dry-run receipt for recovery send", "idempotency key", "connector health summary"],
+      "blockers": ["external resend lacks owner approval", "no idempotency key", "connector enabled without profile health"],
+      "warnings": ["external connector disabled by staging-core default"]
+    },
+    {
+      "id": "docs-only-exception",
+      "applies_to": ["documentation", "runbook", "architecture policy", "machine-readable docs contract"],
+      "required_contracts": ["doc source of truth", "contract test when machine-readable", "no runtime behavior change"],
+      "portable_ci": ["focused doc contract test", "json.tool when JSON changes"],
+      "production_only": ["none unless release notes/tag are created"],
+      "required_artifacts": ["diff review", "contract test output", "non-applicability note for production-only gates"],
+      "blockers": ["doc contradicts runtime contract", "machine-readable doc lacks test", "operator behavior changes without runbook link"],
+      "warnings": ["production preflight not required for docs-only change"]
+    }
+  ],
+  "waiver_template": "Workflow constructor/runtime checklist waiver for #<issue>: skipped gate(s)=<list>; reason=<why safe>; replacement evidence=<commands/artifacts>; risk accepted=<runtime/user/data impact>; rollback owner/command=<owner + command>; expires=<date/time>.",
+  "dispatch_escalation": {
+    "default_path": "Developer Kakashi -> Reviewer Shikadai",
+    "specialist_qa": "Use Shino/Hinata only when Shikadai explicitly requests state:ready-for-test for QA-heavy, release, browser, or regression scope.",
+    "shino": "test-plan escalation and QA report",
+    "hinata": "bounded browser/TestBench execution from reviewer-approved plan",
+    "do_not_notify_by_default": ["Shino", "Hinata", "Guy"]
+  },
+  "parent_receipt": {
+    "issue": 686,
+    "required": true,
+    "fields": ["child issue", "commit hash", "checklist class ids", "commands", "artifacts", "blockers", "warnings", "waivers"]
+  }
+}

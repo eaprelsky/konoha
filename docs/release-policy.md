@@ -17,6 +17,8 @@ Related gates and roadmap issues:
   `docs/workflow-engine-preflight-tiers.md`.
 - #750 defines Workflow Engine runtime rollback and recovery in
   `docs/workflow-runtime-rollback-recovery.md`.
+- #751 defines the constructor/runtime PR release checklist in
+  `docs/workflow-constructor-runtime-release-checklist.md`.
 - #682, #733, #734, #735, and #736 are the M1 storage isolation/preflight
   foundation required before broad Workflow Engine release claims.
 
@@ -96,6 +98,11 @@ artifacts, and residual risk back to the issue before release approval.
 Security-sensitive workflow changes must satisfy
 `docs/workflow-security-boundary.md`, including Action Spine surface and route
 authorization checks.
+
+Constructor/runtime PRs must satisfy
+`docs/workflow-constructor-runtime-release-checklist.md` before #686 release
+signoff. The checklist separates portable CI evidence from production-only
+gates and records when Shikadai must request Shino/Hinata explicitly.
 
 ## Blockers And Warnings
 
@@ -213,6 +220,8 @@ Every release request or bypass must record:
 5. For Workflow Engine/runtime changes, attach staging-core evidence from #753
    and the relevant M1 isolation/preflight tier from
    `docs/workflow-engine-preflight-tiers.md`.
+   Constructor/runtime PRs must also cite
+   `docs/workflow-constructor-runtime-release-checklist.md`.
 6. Run `python3 scripts/pre-release-gate.py` and resolve blockers.
 7. Update version/changelog/tag/GitHub release for versioned releases.
 8. Record rollback command and data rollback limits; for Workflow

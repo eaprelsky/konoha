@@ -57,8 +57,9 @@ The release-gate shell is intentionally split by milestone: #749 gives M1
 preflight scaffolding in `docs/workflow-engine-preflight-tiers.json`, #750 adds
 runtime rollback/recovery evidence in
 `docs/workflow-runtime-rollback-recovery.md`, #751 collects constructor/runtime
-checklist evidence, and #686 is the M6 final production signoff. No M1 issue
-depends on M5/M6 completion.
+checklist evidence in
+`docs/workflow-constructor-runtime-release-checklist.md`, and #686 is the M6
+final production signoff. No M1 issue depends on M5/M6 completion.
 
 The full issue-level table, including #687-#751 detailed execution issues, is
 in `docs/bpms-program-dependency-graph.json`.

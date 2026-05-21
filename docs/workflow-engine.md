@@ -8,6 +8,7 @@
 > Security and audit boundary: `docs/workflow-security-boundary.md`.
 > Preflight tier contract: `docs/workflow-engine-preflight-tiers.md`.
 > Runtime rollback and recovery: `docs/workflow-runtime-rollback-recovery.md`.
+> Constructor/runtime release checklist: `docs/workflow-constructor-runtime-release-checklist.md`.
 
 ## Overview
 

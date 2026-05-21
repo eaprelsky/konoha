@@ -28,6 +28,7 @@ run_backend_tests() {
     tests/release-policy.test.ts \
     tests/workflow-engine-preflight-tiers.test.ts \
     tests/workflow-runtime-rollback-recovery.test.ts \
+    tests/workflow-constructor-runtime-release-checklist.test.ts \
     tests/staging-environment.test.ts \
     tests/test-factory-namespace.test.ts \
     tests/redis-test-isolation-contract.test.ts \

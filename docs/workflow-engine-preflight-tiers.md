@@ -9,7 +9,8 @@ These tiers inherit `docs/release-policy.md`, the #753 staging-core contract,
 and the M1 isolation work from #682, #733, #734, #735, and #736. They do not
 replace #686. #686 remains the final Workflow Engine release gate/runbook that
 collects evidence from these tiers plus the #750 runtime recovery runbook in
-`docs/workflow-runtime-rollback-recovery.md`.
+`docs/workflow-runtime-rollback-recovery.md` and the #751 constructor/runtime
+checklist in `docs/workflow-constructor-runtime-release-checklist.md`.
 
 ## Tier Selection
 
@@ -71,10 +72,11 @@ connectors or weaken `prod-core`.
 
 #749 is the M1 preflight scaffold. #750 adds runtime rollback/recovery evidence
 through `docs/workflow-runtime-rollback-recovery.md`; #751 adds
-constructor/runtime checklist evidence. #686 is the final Workflow Engine
-release gate/runbook and should reference the tier ids from
-`docs/workflow-engine-preflight-tiers.json` instead of redefining separate
-ad hoc gates.
+constructor/runtime checklist evidence through
+`docs/workflow-constructor-runtime-release-checklist.md`. #686 is the final
+Workflow Engine release gate/runbook and should reference the tier ids from
+`docs/workflow-engine-preflight-tiers.json` instead of redefining separate ad
+hoc gates.
 
 ## Operator Notes
 
