@@ -5,6 +5,7 @@ import {
   claimNextRuntimeEffect,
   completeRuntimeEffect,
   enqueueRuntimeEffect,
+  failRuntimeEffect,
   getRuntimeEffect,
   listRuntimeEffectsByStatus,
   processRuntimeEffectOutboxOnce,
@@ -516,6 +517,74 @@ describe("runtime effect outbox model", () => {
           code: "PERMANENT_FAILURE",
           retryable: false,
         },
+      },
+    });
+  });
+
+  test("expired in-flight claims are recovered before new claims and stale workers cannot overwrite", async () => {
+    const enqueued = await enqueueRuntimeEffect({
+      kind: "event.publish",
+      idempotency_key: `${RUN}:stale-reclaim`,
+      payload: { event: "stale" },
+      links: { case_id: `${RUN}:case-stale-reclaim` },
+      retry_policy: { retry_delays_ms: [0], dead_letter_after_attempts: 2, max_attempts: 2 },
+    }, "2026-05-21T20:31:00.000Z");
+
+    const staleClaim = await claimNextRuntimeEffect({
+      worker_id: "stale-worker",
+      now: "2026-05-21T20:31:01.000Z",
+      lock_ms: 1,
+      batch_size: 100,
+    });
+    expect(staleClaim).toMatchObject({
+      effect_id: enqueued.record.effect_id,
+      status: "in_flight",
+      attempts: 1,
+      locked_by: "stale-worker",
+      locked_until: "2026-05-21T20:31:01.001Z",
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 5));
+
+    const reclaimed = await claimNextRuntimeEffect({
+      worker_id: "reclaimer",
+      now: "2026-05-21T20:31:03.000Z",
+      lock_ms: 30_000,
+      batch_size: 100,
+    });
+    expect(reclaimed).toMatchObject({
+      effect_id: enqueued.record.effect_id,
+      status: "in_flight",
+      attempts: 2,
+      locked_by: "reclaimer",
+      locked_until: "2026-05-21T20:31:33.000Z",
+      error: {
+        code: "RUNTIME_EFFECT_CLAIM_EXPIRED",
+        retryable: true,
+      },
+    });
+
+    await expect(completeRuntimeEffect(staleClaim!, { data: { stale: true } }, "2026-05-21T20:31:04.000Z"))
+      .rejects.toThrow("runtime effect claim is not active for completion");
+    await expect(failRuntimeEffect(staleClaim!, {
+      code: "STALE_WORKER_FAILED",
+      message: "stale worker failed late",
+      retryable: true,
+      now: "2026-05-21T20:31:04.000Z",
+    })).rejects.toThrow("runtime effect claim is not active for failure");
+
+    const deadLetter = await failRuntimeEffect(reclaimed!, {
+      code: "RECLAIMED_WORK_FAILED",
+      message: "reclaimed worker failed",
+      retryable: true,
+      now: "2026-05-21T20:31:04.000Z",
+    });
+    expect(deadLetter).toMatchObject({
+      status: "dead_letter",
+      attempts: 2,
+      error: {
+        code: "RECLAIMED_WORK_FAILED",
+        retryable: false,
       },
     });
   });

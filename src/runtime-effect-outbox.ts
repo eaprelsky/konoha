@@ -167,12 +167,17 @@ export interface RuntimeEffectFailureInput {
   retryable: boolean;
   details?: Record<string, unknown>;
   now?: string;
+  allow_expired_claim?: boolean;
 }
 
 export interface RuntimeEffectProcessResult {
   claimed: RuntimeEffectRecord | null;
   final_record: RuntimeEffectRecord | null;
   outcome: "idle" | "succeeded" | "retry" | "dead_letter";
+}
+
+export interface RuntimeEffectStaleRecoveryResult {
+  recovered: RuntimeEffectRecord[];
 }
 
 export const DEFAULT_RUNTIME_EFFECT_RETRY_POLICY: RuntimeEffectRetryPolicy = {
@@ -467,11 +472,47 @@ function retryDelayMs(record: RuntimeEffectRecord): number {
   return record.retry_policy.retry_delays_ms[index] ?? 0;
 }
 
+function hasActiveClaim(record: RuntimeEffectRecord, workerId?: string, now = new Date().toISOString()): boolean {
+  if (record.status !== "in_flight") return false;
+  if (workerId && record.locked_by !== workerId) return false;
+  if (!record.locked_until) return false;
+  return Date.parse(record.locked_until) > Date.parse(now);
+}
+
+export async function recoverStaleRuntimeEffects(
+  options: { now?: string; limit?: number } = {},
+): Promise<RuntimeEffectStaleRecoveryResult> {
+  const now = options.now ?? new Date().toISOString();
+  assertIso(now, "now");
+  const inFlight = await listRuntimeEffectsByStatus("in_flight", { now: undefined, limit: options.limit ?? 50 });
+  const recovered: RuntimeEffectRecord[] = [];
+  for (const record of inFlight) {
+    if (!record.locked_until || Date.parse(record.locked_until) > Date.parse(now)) continue;
+    const lockKey = runtimeEffectLockKey(record.effect_id);
+    const currentLock = await redis.get(lockKey);
+    if (currentLock) continue;
+    const recoveredRecord = await failRuntimeEffect(record, {
+      code: "RUNTIME_EFFECT_CLAIM_EXPIRED",
+      message: "Runtime effect worker claim expired before completion",
+      retryable: true,
+      now,
+      allow_expired_claim: true,
+      details: {
+        locked_by: record.locked_by,
+        locked_until: record.locked_until,
+      },
+    });
+    recovered.push(recoveredRecord);
+  }
+  return { recovered };
+}
+
 export async function claimNextRuntimeEffect(
   options: RuntimeEffectClaimOptions,
 ): Promise<RuntimeEffectRecord | null> {
   const now = options.now ?? new Date().toISOString();
   assertIso(now, "now");
+  await recoverStaleRuntimeEffects({ now, limit: options.batch_size ?? 25 });
   const batchSize = options.batch_size ?? 25;
   const candidates = [
     ...(await listRuntimeEffectsByStatus("pending", { now, limit: batchSize })),
@@ -513,6 +554,9 @@ export async function completeRuntimeEffect(
   now = new Date().toISOString(),
 ): Promise<RuntimeEffectRecord> {
   const current = await readRuntimeEffectById(record.effect_id) ?? record;
+  if (!hasActiveClaim(current, record.locked_by, now)) {
+    throw new Error("runtime effect claim is not active for completion");
+  }
   const completed = transitionRuntimeEffectRecord(current, {
     status: "succeeded",
     now,
@@ -531,6 +575,9 @@ export async function failRuntimeEffect(
   const now = failure.now ?? new Date().toISOString();
   assertIso(now, "now");
   const current = await readRuntimeEffectById(record.effect_id) ?? record;
+  if (record.status === "in_flight" && !failure.allow_expired_claim && !hasActiveClaim(current, record.locked_by, now)) {
+    throw new Error("runtime effect claim is not active for failure");
+  }
   const retryable = failure.retryable && current.attempts < current.retry_policy.dead_letter_after_attempts;
   const status: RuntimeEffectStatus = retryable ? "retry" : "dead_letter";
   const nextRetryAt = retryable

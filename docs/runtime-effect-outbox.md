@@ -85,6 +85,11 @@ handler. Handler success transitions to `succeeded` with a receipt. Handler
 failure transitions to `retry` when the error is retryable and the attempt
 budget remains; otherwise it transitions to `dead_letter`. A `retry` record at
 `dead_letter_after_attempts` cannot be claimed again and must be dead-lettered.
+Before claiming new work, the worker recovers expired `in_flight` records whose
+`locked_until` is in the past and whose Redis lock has expired. Recovered stale
+claims receive `RUNTIME_EFFECT_CLAIM_EXPIRED` error evidence and move to
+`retry` or `dead_letter` according to the same attempt budget. Completion and
+failure calls reject stale worker records once ownership has moved.
 
 ## Idempotency And Correlation
 
