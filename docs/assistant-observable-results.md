@@ -19,6 +19,7 @@ This prevents Tsunade from acting as a black box and gives both the user and the
 
 Assistant responses now expose:
 
+- `edit_result` — explicit schema patch mode: `preview`, `pending_confirmation`, `committed`, or `failed`
 - `action_receipts[]` — per-action receipts
 - `observable_result` — aggregate result summary for the whole turn
 - `pending_confirmations[]` — explicit outstanding confirmations
@@ -36,8 +37,10 @@ Each receipt includes:
 ## Current coverage
 
 - Targeted `schema_patch` commits now route through the server-side `workflow.patch` Action Spine boundary and yield a success receipt only after durable persistence succeeds
-- Untargeted/client-only `schema_patch` remains preview-only and yields no durable success receipt
-- Readiness or validation failures return failed `workflow.patch` receipts and must not be treated as saved canvas state
+- Untargeted/client-only `schema_patch` is marked `edit_result.mode=preview` and yields no durable success receipt
+- Confirmation-required commits are marked `edit_result.mode=pending_confirmation`
+- Durable commits are marked `edit_result.mode=committed`
+- Readiness, validation, or malformed-patch failures are marked `edit_result.mode=failed` and must not be treated as saved canvas state
 - `create_workflow` yields a `workflow.create` receipt
 - confirm-required workflow creation yields `pending_confirmation` receipts and aggregate result status instead of magical silence
 

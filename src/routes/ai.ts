@@ -258,6 +258,7 @@ function toAssistantWorkflowResponse(normalized: AssistantResponse) {
     reply: normalized.reply,
     chat_id: normalized.chat_id,
     schema_patch: normalized.schema_patch,
+    edit_result: normalized.edit_result,
     created_workflow: normalized.created_workflow,
     actions: normalized.ui_actions,
     actions_taken: normalized.actions_taken,

@@ -49,6 +49,7 @@ Non-streaming process chat (`POST /api/ai/chat`, with legacy shims still support
   created_workflow: WorkflowDef | null;
   actions: HighlightAction[];
   actions_taken: WorkflowAssistantAction[];
+  edit_result: AssistantEditResult | null; // preview, pending_confirmation, committed, or failed schema edits
   action_receipts: WorkflowActionReceipt[];
   observable_result: WorkflowObservableResult;
   pending_confirmations: WorkflowPendingConfirmation[];
@@ -60,7 +61,7 @@ Streaming (`POST /api/ai/chat { stream: true }`):
 SSE events:
   type: "chat_id"  → { chat_id }
   type: "delta"    → { text }         // raw LLM text chunks (may be JSON)
-  type: "parsed"   → { reply, schema_patch, created_workflow, actions }
+  type: "parsed"   → { reply, schema_patch, edit_result, created_workflow, actions }
   type: "error"    → { message }
   [DONE]
 ```

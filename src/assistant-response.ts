@@ -35,6 +35,8 @@ export interface AssistantResponse {
   chat_id: string;
   /** Schema patch for the current workflow (if editing) */
   schema_patch: unknown | null;
+  /** Explicit edit durability state for schema_patch turns. */
+  edit_result: AssistantEditResult | null;
   /** Newly created workflow (if any) */
   created_workflow: { id: string; name: string; [key: string]: unknown } | null;
   /** Actions executed during this response */
@@ -47,6 +49,19 @@ export interface AssistantResponse {
   observable_result: ObservableResult;
   /** UI actions (highlights, etc.) */
   ui_actions: UiAction[];
+}
+
+export type AssistantEditMode = "preview" | "pending_confirmation" | "committed" | "failed";
+
+export interface AssistantEditResult {
+  kind: "schema_patch";
+  mode: AssistantEditMode;
+  durable: boolean;
+  action: "workflow.patch";
+  summary: string;
+  workflow_id?: string;
+  receipt_id?: string;
+  error?: string;
 }
 
 export interface UiAction {
@@ -87,6 +102,7 @@ export async function normalizeAssistantResponse(
   const actionReceipts: ActionReceipt[] = [];
   let reply = rawText;
   let schemaPatch: unknown = null;
+  let editResult: AssistantEditResult | null = null;
   let createdWorkflow: AssistantResponse["created_workflow"] = null;
   const uiActions: UiAction[] = [];
 
@@ -105,17 +121,33 @@ export async function normalizeAssistantResponse(
         if (patchAction) {
           actionsTaken.push(patchAction);
           if (patchAction.status === "executed") {
-            actionReceipts.push(buildWorkflowPatchReceipt(patchAction, opts, "succeeded"));
+            const receipt = buildWorkflowPatchReceipt(patchAction, opts, "succeeded");
+            actionReceipts.push(receipt);
+            editResult = buildAssistantEditResult(patchAction, "committed", receipt);
             reply = reply + `\n\nИзменение процесса сохранено через workflow.patch.`;
           } else if (patchAction.status === "needs_confirm") {
             pendingConfirmations.push(await buildPendingConfirmation("workflow.patch", patchAction.params, opts));
-            actionReceipts.push(buildWorkflowPatchReceipt(patchAction, opts, "pending_confirmation"));
+            const receipt = buildWorkflowPatchReceipt(patchAction, opts, "pending_confirmation");
+            actionReceipts.push(receipt);
+            editResult = buildAssistantEditResult(patchAction, "pending_confirmation", receipt);
             reply = reply + `\n\nТребуется подтверждение перед сохранением изменения процесса.`;
           } else if (patchAction.status === "failed") {
-            actionReceipts.push(buildWorkflowPatchReceipt(patchAction, opts, "failed"));
+            const receipt = buildWorkflowPatchReceipt(patchAction, opts, "failed");
+            actionReceipts.push(receipt);
+            editResult = buildAssistantEditResult(patchAction, "failed", receipt);
             reply = reply + `\n\n⚠️ Изменение процесса не сохранено: ${patchAction.error}`;
+          } else if (patchAction.status === "skipped") {
+            editResult = buildAssistantEditResult(patchAction, "preview");
           }
         }
+      } else {
+        editResult = {
+          kind: "schema_patch",
+          mode: "preview",
+          durable: false,
+          action: "workflow.patch",
+          summary: "Schema patch is preview-only because action execution is disabled.",
+        };
       }
     }
 
@@ -246,6 +278,7 @@ export async function normalizeAssistantResponse(
     reply,
     chat_id: opts.chat_id,
     schema_patch: schemaPatch,
+    edit_result: editResult,
     created_workflow: createdWorkflow,
     actions_taken: actionsTaken,
     pending_confirmations: pendingConfirmations,
@@ -1036,6 +1069,35 @@ function buildWorkflowPatchReceipt(
   };
 }
 
+function buildAssistantEditResult(
+  action: AssistantAction,
+  mode: AssistantEditMode,
+  receipt?: ActionReceipt,
+): AssistantEditResult {
+  const workflowId = typeof action.result?.workflow_id === "string"
+    ? action.result.workflow_id
+    : typeof action.params.id === "string"
+    ? action.params.id
+    : undefined;
+  return {
+    kind: "schema_patch",
+    mode,
+    durable: mode === "committed",
+    action: "workflow.patch",
+    summary:
+      mode === "committed"
+        ? "Schema patch was committed durably through workflow.patch."
+        : mode === "pending_confirmation"
+        ? "Schema patch is waiting for workflow.patch confirmation."
+        : mode === "failed"
+        ? "Schema patch was rejected before durable commit."
+        : "Schema patch is preview-only and has not been committed.",
+    ...(workflowId ? { workflow_id: workflowId } : {}),
+    ...(receipt ? { receipt_id: receipt.id } : {}),
+    ...(action.error ? { error: action.error } : {}),
+  };
+}
+
 function extractOpenWorkflow(raw: unknown): { id: string; name?: string } | null {
   if (typeof raw === "string" && raw.trim()) return { id: raw.trim() };
   if (!raw || typeof raw !== "object") return null;
@@ -1207,6 +1269,7 @@ export function buildSseParsedEvent(resp: AssistantResponse): Record<string, unk
     type: "parsed",
     reply: resp.reply,
     schema_patch: resp.schema_patch,
+    edit_result: resp.edit_result,
     created_workflow: resp.created_workflow,
     actions: resp.ui_actions,
     actions_taken: resp.actions_taken,

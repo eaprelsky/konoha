@@ -279,10 +279,24 @@ export interface WorkflowObservableResult {
   };
 }
 
+export type AssistantEditMode = 'preview' | 'pending_confirmation' | 'committed' | 'failed';
+
+export interface AssistantEditResult {
+  kind: 'schema_patch';
+  mode: AssistantEditMode;
+  durable: boolean;
+  action: 'workflow.patch';
+  summary: string;
+  workflow_id?: string;
+  receipt_id?: string;
+  error?: string;
+}
+
 export interface AssistantWorkflowResponse {
   reply: string;
   chat_id: string;
   schema_patch: unknown | null;
+  edit_result: AssistantEditResult | null;
   created_workflow: { id: string; name: string } | null;
   actions?: AssistantUiAction[];
   actions_taken: WorkflowAssistantAction[];

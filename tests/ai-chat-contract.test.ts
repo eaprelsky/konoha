@@ -73,7 +73,15 @@ describe("POST /api/ai/chat workflow contract", () => {
     expect(body.reply).toContain("Готово: обновила схему.");
     expect(body.reply).toContain("workflow.patch");
     expect(body.schema_patch.set_name).toBe("Contract workflow updated");
+    expect(body.edit_result).toMatchObject({
+      kind: "schema_patch",
+      mode: "committed",
+      durable: true,
+      action: "workflow.patch",
+      workflow_id: "wf-contract",
+    });
     expect(body.action_receipts[0].action).toBe("workflow.patch");
+    expect(body.edit_result.receipt_id).toBe(body.action_receipts[0].id);
     expect(body.observable_result.status).toBe("succeeded");
     expect(body.pending_confirmations).toEqual([]);
     await redis.hdel("konoha:config:autonomy", "workflow.patch");

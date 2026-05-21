@@ -86,6 +86,12 @@ describe("normalizeAssistantResponse", () => {
     const raw = JSON.stringify({ reply: "Добавил шаг", schema_patch: patch });
     const resp = await normalizeAssistantResponse(raw, baseOpts);
     expect(resp.schema_patch).toEqual(patch);
+    expect(resp.edit_result).toMatchObject({
+      kind: "schema_patch",
+      mode: "preview",
+      durable: false,
+      action: "workflow.patch",
+    });
     expect(resp.action_receipts).toHaveLength(0);
     expect(resp.actions_taken[0]).toMatchObject({ action: "workflow.patch", status: "skipped" });
     expect(resp.observable_result.status).toBe("no_effect");
@@ -124,6 +130,14 @@ describe("normalizeAssistantResponse", () => {
       expect(resp.action_receipts[0]).toMatchObject({
         action: "workflow.patch",
         status: "succeeded",
+      });
+      expect(resp.edit_result).toMatchObject({
+        kind: "schema_patch",
+        mode: "committed",
+        durable: true,
+        action: "workflow.patch",
+        workflow_id: workflowId,
+        receipt_id: resp.action_receipts[0].id,
       });
       expect(resp.action_receipts[0].changed_resources).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "workflow", id: workflowId, change: "updated" }),
@@ -176,6 +190,13 @@ describe("normalizeAssistantResponse", () => {
         action: "workflow.patch",
         status: "failed",
       });
+      expect(resp.edit_result).toMatchObject({
+        kind: "schema_patch",
+        mode: "failed",
+        durable: false,
+        action: "workflow.patch",
+        workflow_id: workflowId,
+      });
       expect(resp.action_receipts.some(receipt => receipt.action === "workflow.patch" && receipt.status === "succeeded")).toBe(false);
       expect(resp.observable_result.status).toBe("failed");
       const saved = await getWorkflow(workflowId);
@@ -220,6 +241,7 @@ describe("normalizeAssistantResponse", () => {
       });
 
       expect(resp.action_receipts[0]).toMatchObject({ action: "workflow.patch", status: "failed" });
+      expect(resp.edit_result).toMatchObject({ kind: "schema_patch", mode: "failed", durable: false });
       expect(resp.observable_result.status).toBe("failed");
       const saved = await getWorkflow(workflowId);
       expect(saved?.elements).toEqual([]);
@@ -229,6 +251,52 @@ describe("normalizeAssistantResponse", () => {
       await redis.del(`workflow:${workflowId}`).catch(() => 0);
       await redis.srem(WORKFLOW_INDEX_KEY, workflowId).catch(() => 0);
       await pgDeleteWorkflow(workflowId).catch(() => 0);
+    }
+  });
+
+  it("marks targeted schema_patch as pending when workflow.patch requires confirmation", async () => {
+    const workflowId = `assistant-patch-pending-${Date.now()}`;
+    const roleId = `${workflowId}-role`;
+    await createRole({ role_id: roleId, name: "Assistant pending patch role", strategy: "manual", assignees: [] });
+    await createWorkflow({
+      id: workflowId,
+      version: "1.0",
+      name: "Assistant Patch Pending",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "review", type: "function", label: "Review", role: roleId },
+        { id: "done", type: "event", label: "Done" },
+      ],
+      flow: [["start", "review"], ["review", "done"]],
+    }, { draft: true });
+
+    try {
+      const resp = await normalizeAssistantResponse(JSON.stringify({
+        reply: "Подготовил изменение",
+        schema_patch: { set_name: "Assistant Patch Pending After" },
+      }), {
+        ...baseOpts,
+        current_workflow_id: workflowId,
+        autonomy_overrides: { "workflow.patch": "confirm" },
+      });
+
+      expect(resp.pending_confirmations[0]).toMatchObject({ action: "workflow.patch" });
+      expect(resp.action_receipts[0]).toMatchObject({ action: "workflow.patch", status: "pending_confirmation" });
+      expect(resp.edit_result).toMatchObject({
+        kind: "schema_patch",
+        mode: "pending_confirmation",
+        durable: false,
+        workflow_id: workflowId,
+        receipt_id: resp.action_receipts[0].id,
+      });
+      const saved = await getWorkflow(workflowId);
+      expect(saved?.name).toBe("Assistant Patch Pending");
+    } finally {
+      await deleteCasesByProcess(workflowId).catch(() => 0);
+      await redis.del(`workflow:${workflowId}`).catch(() => 0);
+      await redis.srem(WORKFLOW_INDEX_KEY, workflowId).catch(() => 0);
+      await pgDeleteWorkflow(workflowId).catch(() => 0);
+      await deleteRole(roleId).catch(() => {});
     }
   });
 
@@ -410,6 +478,7 @@ describe("buildSseParsedEvent", () => {
       reply: "Тест",
       chat_id: "ch1",
       schema_patch: null,
+      edit_result: { kind: "schema_patch", mode: "preview", durable: false, action: "workflow.patch", summary: "Preview" },
       created_workflow: null,
       actions_taken: [],
       pending_confirmations: [{ action: "workflow.create" }],
@@ -425,5 +494,6 @@ describe("buildSseParsedEvent", () => {
     expect(event.pending_confirmations).toEqual(resp.pending_confirmations);
     expect(event.action_receipts).toEqual(resp.action_receipts);
     expect(event.observable_result).toEqual(resp.observable_result);
+    expect(event.edit_result).toEqual(resp.edit_result);
   });
 });

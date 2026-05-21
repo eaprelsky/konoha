@@ -62,13 +62,12 @@ function formatReceiptSummary(receipt: any): string {
   return `[${status}] ${summary}`;
 }
 
-function schemaPatchDurability(ev: any): 'saved' | 'pending' | 'failed' | 'preview' {
-  const receipts = Array.isArray(ev?.action_receipts) ? ev.action_receipts : [];
-  const patchReceipt = receipts.find((receipt: any) => receipt?.action === 'workflow.patch');
-  if (!patchReceipt) return 'preview';
-  if (patchReceipt.status === 'succeeded') return 'saved';
-  if (patchReceipt.status === 'pending_confirmation') return 'pending';
-  if (patchReceipt.status === 'failed') return 'failed';
+export function schemaPatchDurability(ev: any): 'saved' | 'pending' | 'failed' | 'preview' {
+  const mode = typeof ev?.edit_result?.mode === 'string' ? ev.edit_result.mode : null;
+  if (mode === 'committed') return 'saved';
+  if (mode === 'pending_confirmation') return 'pending';
+  if (mode === 'failed') return 'failed';
+  if (mode === 'preview') return 'preview';
   return 'preview';
 }
 

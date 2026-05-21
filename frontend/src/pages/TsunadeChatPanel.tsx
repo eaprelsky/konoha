@@ -130,22 +130,22 @@ export function TsunadeChatPanel({
       setChatMsgs(prev => [...prev, { role: 'assistant', text: res.reply }]);
       const patch = res.schema_patch as SchemaPatch | undefined;
       if (patch) {
-        const patchReceipt = (res.action_receipts ?? []).find((receipt: any) => receipt?.action === 'workflow.patch');
-        const failedOrPending = patchReceipt?.status === 'failed' || patchReceipt?.status === 'pending_confirmation';
+        const editMode = res.edit_result?.mode ?? 'preview';
+        const failedOrPending = editMode === 'failed' || editMode === 'pending_confirmation';
         if (!failedOrPending) onApplyPatch(patch);
         const hasChanges = !failedOrPending && (patch.update_elements?.length || patch.update_positions
           || patch.add_elements?.length || patch.remove_elements?.length);
         if (hasChanges) {
           setChatMsgs(prev => [...prev, {
             role: 'system',
-            text: patchReceipt?.status === 'succeeded'
+            text: editMode === 'committed'
               ? 'Схема сохранена на сервере.'
               : 'Предпросмотр схемы применён локально. Нажмите 💾 для сохранения.',
           }]);
         } else if (failedOrPending) {
           setChatMsgs(prev => [...prev, {
             role: 'system',
-            text: patchReceipt?.status === 'pending_confirmation'
+            text: editMode === 'pending_confirmation'
               ? 'Изменение подготовлено и ждёт подтверждения.'
               : 'Изменение отклонено серверной проверкой. Холст не изменён.',
           }]);
