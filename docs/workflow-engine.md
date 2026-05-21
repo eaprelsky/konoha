@@ -6,6 +6,7 @@
 > Entity ownership contracts: `docs/entity-contracts.md`.
 > Legacy retirement inventory: `docs/legacy-retirement.md`.
 > Security and audit boundary: `docs/workflow-security-boundary.md`.
+> Preflight tier contract: `docs/workflow-engine-preflight-tiers.md`.
 
 ## Overview
 
@@ -24,14 +25,19 @@ At runtime the engine creates a **Case** (instance of a process) and advances it
 
 ## Regression Gate
 
-Before delegating autonomous workflow-engine repair or merging workflow editor/action changes, run the canonical smoke suite:
+Before delegating autonomous workflow-engine repair or merging workflow
+editor/action changes, select the required tier from
+`docs/workflow-engine-preflight-tiers.md`. For a normal production release or
+broad runtime change, run the production gate:
 
 ```bash
 cd /home/ubuntu/konoha
 PATH=/home/ubuntu/.bun/bin:$PATH bun run preflight
 ```
 
-The suite covers:
+The tier contract separates fast local tests, isolated integration, browser e2e,
+staging-core smoke/load evidence, production smoke, `pg-verify`, healthcheck,
+and optional specialist QA. The production suite covers:
 - `workflow.create` materialization and observable receipts.
 - `workflow.update` schema patches through API and operator evals.
 - `workflow.open` navigation actions and receipts.

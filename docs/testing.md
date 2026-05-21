@@ -53,6 +53,10 @@ Live staging smoke must source `/opt/shared/.agent-env.staging` and use
 
 The canonical release checklist, release types, waiver wording, versioning, and
 rollback/audit requirements live in `docs/release-policy.md`.
+Workflow Engine changes use the tier contract in
+`docs/workflow-engine-preflight-tiers.md`, which separates fast local tests,
+isolated integration, browser e2e, staging-core, production smoke, `pg-verify`,
+healthcheck, and optional specialist QA.
 
 Workflow construction/runtime security changes must also satisfy
 `docs/workflow-security-boundary.md`. The release gate runs

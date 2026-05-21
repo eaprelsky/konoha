@@ -54,8 +54,9 @@ include a before/after resource note.
 | #686 final release gate and runbook | #682, #685, #749-#751, #787, #788, #789 | production readiness |
 
 The release-gate shell is intentionally split by milestone: #749 gives M1
-preflight scaffolding, #750/#751 collect M5 runtime evidence, and #686 is the
-M6 final production signoff. No M1 issue depends on M5/M6 completion.
+preflight scaffolding in `docs/workflow-engine-preflight-tiers.json`, #750/#751
+collect M5 runtime evidence, and #686 is the M6 final production signoff. No M1
+issue depends on M5/M6 completion.
 
 The full issue-level table, including #687-#751 detailed execution issues, is
 in `docs/bpms-program-dependency-graph.json`.

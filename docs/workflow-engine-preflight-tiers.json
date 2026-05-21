@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 749,
+  "parent_issue": 686,
+  "release_policy": "docs/release-policy.md",
+  "staging_contract": "docs/staging-environment.json",
+  "m1_isolation_evidence": [
+    "tests/test-storage-guardrails.test.ts",
+    "tests/redis-test-isolation-contract.test.ts",
+    "tests/pg-test-isolation-contract.test.ts",
+    "tests/test-factory-namespace.test.ts",
+    "tests/staging-environment.test.ts"
+  ],
+  "tiers": [
+    {
+      "id": "fast-local",
+      "release_scope": ["focused fix", "hotfix", "inner-loop development"],
+      "environment": "local-or-ci",
+      "production_only": false,
+      "requires_staging": false,
+      "purpose": "Fast deterministic Workflow Engine checks without browser, live services, production Redis DB 0, or PostgreSQL public schema.",
+      "commands": [
+        "bun test --timeout 30000 tests/workflow-loader-validation.test.ts tests/act-workflow-executor.test.ts tests/eepc-state-machine-regression.test.ts tests/event-activation-policy.test.ts tests/event-waits-list.test.ts tests/runtime-condition-eval.test.ts"
+      ],
+      "artifacts": ["bun test output"],
+      "blockers": ["failed test", "test attempts production Redis DB 0", "test attempts PostgreSQL public schema"],
+      "warnings": ["none"],
+      "waiver": "Only emergency bypass from docs/release-policy.md may skip; record focused replacement checks."
+    },
+    {
+      "id": "isolated-integration",
+      "release_scope": ["normal release", "storage/runtime change", "workflow integration change"],
+      "environment": "ci",
+      "production_only": false,
+      "requires_staging": false,
+      "purpose": "Portable integration gate with isolated Redis/PostgreSQL contracts, disposable namespaces, and Workflow Engine integration suites.",
+      "commands": [
+        "scripts/preflight-portable.sh"
+      ],
+      "artifacts": [
+        "/tmp/bpms-load-regression-report.json",
+        "/tmp/konoha-data-store-drill-report.json",
+        "CI portable-preflight log"
+      ],
+      "blockers": ["portable preflight failure", "M1 isolation contract failure", "BPMS load fixture failure", "data-store drill contract failure"],
+      "warnings": ["known CI infrastructure flake with rerun evidence"],
+      "waiver": "Normal releases must not waive this tier. Hotfix waiver requires owner risk acceptance."
+    },
+    {
+      "id": "browser-e2e",
+      "release_scope": ["workflow UI change", "constructor UX change", "assistant editor change", "release/regression specialist branch"],
+      "environment": "ci-or-qa-on-demand",
+      "production_only": false,
+      "requires_staging": false,
+      "purpose": "Browser and TestBench coverage for workflow editor/operator flows without production services.",
+      "commands": [
+        "bunx playwright test",
+        "KONOHA_SERVICE_PROFILE=qa-on-demand KONOHA_ENABLED_FEATURES=testbench scripts/preflight-portable.sh"
+      ],
+      "artifacts": ["playwright-report", "test-results", "TestBench status output"],
+      "blockers": ["failed browser spec touching changed workflow UI", "blank or unreachable editor", "TestBench pool/resource contract failure"],
+      "warnings": ["browser-only coverage not required for backend-only docs or runtime changes"],
+      "waiver": "Shikadai may waive for docs-only/backend-only changes; record why browser behavior is unaffected."
+    },
+    {
+      "id": "staging-core",
+      "release_scope": ["broad Workflow Engine change", "BPMS load gate", "pre-production workflow smoke"],
+      "environment": "staging-core",
+      "production_only": false,
+      "requires_staging": true,
+      "purpose": "Validate Workflow Engine behavior against the isolated #753 staging lane before production release claims.",
+      "commands": [
+        "scripts/staging-smoke.sh --dry-run",
+        "set -a; source /opt/shared/.agent-env.staging; set +a; scripts/staging-smoke.sh --live",
+        "BPMS_LOAD_PROFILE=release-gate-staging BPMS_LOAD_OBSERVATIONS=/tmp/staging-observations.json BPMS_LOAD_REPORT=/tmp/bpms-load-regression-report.json bun run scripts/bpms-load-regression.ts"
+      ],
+      "artifacts": [
+        "/tmp/bpms-load-regression-report.json",
+        "staging smoke log",
+        "staging observation file"
+      ],
+      "blockers": ["staging env violates #753 contract", "staging live smoke failure", "release-gate-staging budget failure"],
+      "warnings": ["no live staging deployment exists; attach dry-run and waiver from docs/release-policy.md"],
+      "waiver": "Allowed only as a time-boxed staging waiver; must not weaken prod-core or enable production connectors."
+    },
+    {
+      "id": "production-smoke",
+      "release_scope": ["normal release", "infra-only production change", "post-deploy verification"],
+      "environment": "production",
+      "production_only": true,
+      "requires_staging": false,
+      "purpose": "Production server gate for live services, Telegram connector, lifecycle/watchdogs, resource pressure, and deploy readiness.",
+      "commands": [
+        "scripts/preflight.sh"
+      ],
+      "artifacts": [
+        "/tmp/bpms-load-regression-report.json",
+        "/tmp/konoha-data-store-drill-report.json",
+        "production preflight log"
+      ],
+      "blockers": ["required prod-core service failure", "Telegram smoke failure for connector release", "resource/log/disk pressure that blocks agents", "production preflight failure"],
+      "warnings": ["known unrelated infra WARN recorded in release notes"],
+      "waiver": "Only hotfix or emergency bypass may skip; run post-deploy healthcheck immediately."
+    },
+    {
+      "id": "pg-verify",
+      "release_scope": ["storage change", "PG_READ/cutover work", "normal production release"],
+      "environment": "production-or-staging",
+      "production_only": false,
+      "requires_staging": false,
+      "purpose": "Verify Redis active entities are mirrored to PostgreSQL before storage release/cutover claims.",
+      "commands": [
+        "bun run scripts/pg-verify.ts",
+        "KONOHA_SERVICE_PROFILE=staging-core REDIS_DB=2 DATABASE_URL=\"$STAGING_DATABASE_URL\" bun run scripts/pg-verify.ts"
+      ],
+      "artifacts": ["pg-verify output"],
+      "blockers": ["onlyInRedis > 0", "pg-verify fatal error"],
+      "warnings": ["onlyInPG bloat when onlyInRedis=0"],
+      "waiver": "PG_READ/cutover work cannot waive onlyInRedis. Other hotfixes may defer with owner risk acceptance."
+    },
+    {
+      "id": "healthcheck",
+      "release_scope": ["normal release", "infra-only change", "post-deploy verification", "hotfix"],
+      "environment": "production-or-staging",
+      "production_only": false,
+      "requires_staging": false,
+      "purpose": "Severity-aware runtime readiness for selected service profile and monitor environment.",
+      "commands": [
+        "KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py",
+        "KONOHA_SERVICE_PROFILE=staging-core KIBA_MONITOR_ENVIRONMENT=staging python3 scripts/healthcheck-system.py --policy-dry-run"
+      ],
+      "artifacts": ["healthcheck summary", "resource inventory summary"],
+      "blockers": ["FAIL on required service/profile", "critical resource_inventory.limit_hits", "connector enabled without required service health"],
+      "warnings": ["disabled optional workers by profile", "known baseline WARNs recorded in issue"],
+      "waiver": "Warnings may be acknowledged in release notes; FAIL requires emergency bypass wording."
+    },
+    {
+      "id": "specialist-qa",
+      "release_scope": ["state:ready-for-test", "release/regression specialist branch"],
+      "environment": "qa-on-demand-or-staging",
+      "production_only": false,
+      "requires_staging": false,
+      "purpose": "Optional Shino/Hinata branch requested by Shikadai for QA-heavy, release, or regression scope.",
+      "commands": [
+        "Reviewer-provided focused test plan",
+        "KONOHA_SERVICE_PROFILE=qa-on-demand scripts/preflight-portable.sh"
+      ],
+      "artifacts": ["specialist QA report", "test plan", "residual risk note"],
+      "blockers": ["requested specialist branch has not reported pass/fail", "unresolved regression in changed workflow path"],
+      "warnings": ["not requested for ordinary Developer -> Reviewer fixes"],
+      "waiver": "Shikadai may waive if the issue is not QA-heavy; record this in review notes."
+    }
+  ]
+}

@@ -26,6 +26,7 @@ run_backend_tests() {
   bun test --timeout 30000 \
     tests/test-storage-guardrails.test.ts \
     tests/release-policy.test.ts \
+    tests/workflow-engine-preflight-tiers.test.ts \
     tests/staging-environment.test.ts \
     tests/test-factory-namespace.test.ts \
     tests/redis-test-isolation-contract.test.ts \

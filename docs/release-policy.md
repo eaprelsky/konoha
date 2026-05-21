@@ -13,6 +13,8 @@ Related gates and roadmap issues:
 - #793 defines canonical labels used by this policy.
 - #794 defines the issue-delivery/bootstrap route that feeds reviewer evidence.
 - #753 defines the `staging-core` environment contract used by release staging.
+- #749 defines the Workflow Engine preflight tier contract in
+  `docs/workflow-engine-preflight-tiers.md`.
 - #682, #733, #734, #735, and #736 are the M1 storage isolation/preflight
   foundation required before broad Workflow Engine release claims.
 
@@ -205,7 +207,8 @@ Every release request or bypass must record:
 4. Run `scripts/preflight.sh` for normal production release, or document why the
    release type does not require it.
 5. For Workflow Engine/runtime changes, attach staging-core evidence from #753
-   and the relevant M1 isolation/preflight checks.
+   and the relevant M1 isolation/preflight tier from
+   `docs/workflow-engine-preflight-tiers.md`.
 6. Run `python3 scripts/pre-release-gate.py` and resolve blockers.
 7. Update version/changelog/tag/GitHub release for versioned releases.
 8. Record rollback command and data rollback limits.
