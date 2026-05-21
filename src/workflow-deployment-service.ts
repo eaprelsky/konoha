@@ -11,7 +11,41 @@ export interface WorkflowDeploymentContext {
   deploy_version: number;
   deployed_at: string;
   deployed_by: string;
+  idempotency_key?: string;
   source?: string;
+}
+
+export type WorkflowDeploymentTransactionStatus =
+  | "planned"
+  | "subscription_diff_applied"
+  | "completed"
+  | "blocked";
+
+export interface WorkflowDeploymentTransactionReceipt {
+  transaction_id: string;
+  idempotency_key: string;
+  workflow_id: string;
+  deploy_version: number;
+  deployment_id: string;
+  source: string;
+  status: WorkflowDeploymentTransactionStatus;
+  commit_order: [
+    "validate",
+    "commit_executable_workflow",
+    "save_deployed_snapshot",
+    "materialize_subscription_diff",
+    "persist_deploy_receipt",
+  ];
+  records: {
+    workflow: string;
+    deployed_snapshot: string;
+    deploy_receipt: "workflow.last_deploy.side_effects";
+  };
+  retry_policy: {
+    scope: "workflow_deploy_version";
+    operation_key_template: "{workflow_id}:v{deploy_version}:{event_id}";
+    duplicate_effect: "matching_active_subscription_is_unchanged";
+  };
 }
 
 export interface WorkflowDeploymentSubscriptionReceipt {
@@ -21,6 +55,7 @@ export interface WorkflowDeploymentSubscriptionReceipt {
   subscription_id?: string;
   previous_subscription_id?: string;
   operation_key: string;
+  idempotency_key: string;
   status: "created" | "cancelled" | "unchanged" | "failed";
   mode?: "auto" | "manual";
   reason?: string;
@@ -32,6 +67,7 @@ export interface WorkflowDeploymentReceipt {
   workflow_id: string;
   deploy_version: number;
   deployment_id: string;
+  transaction: WorkflowDeploymentTransactionReceipt;
   source: string;
   subscriptions: {
     desired: number;
@@ -86,6 +122,66 @@ function operationKey(workflowId: string, deployVersion: number, eventId: string
   return `${workflowId}:v${deployVersion}:${eventId}`;
 }
 
+function defaultDeploymentIdempotencyKey(workflowId: string, deployVersion: number): string {
+  return `workflow.deploy:${deploymentId(workflowId, deployVersion)}`;
+}
+
+function operationIdempotencyKey(
+  transaction: WorkflowDeploymentTransactionReceipt,
+  eventId: string,
+  operation: "create" | "cancel" | "unchanged" | "failed" | "rollback",
+): string {
+  return `${transaction.idempotency_key}:subscription:${operation}:${eventId}`;
+}
+
+export function buildWorkflowDeploymentTransaction(
+  def: Pick<WorkflowDefinition, "id">,
+  context: WorkflowDeploymentContext,
+  status: WorkflowDeploymentTransactionStatus = "planned",
+): WorkflowDeploymentTransactionReceipt {
+  const deployment_id = deploymentId(def.id, context.deploy_version);
+  const idempotency_key = context.idempotency_key?.trim() || defaultDeploymentIdempotencyKey(def.id, context.deploy_version);
+  return {
+    transaction_id: `${deployment_id}:transaction`,
+    idempotency_key,
+    workflow_id: def.id,
+    deploy_version: context.deploy_version,
+    deployment_id,
+    source: context.source ?? "workflow.deploy",
+    status,
+    commit_order: [
+      "validate",
+      "commit_executable_workflow",
+      "save_deployed_snapshot",
+      "materialize_subscription_diff",
+      "persist_deploy_receipt",
+    ],
+    records: {
+      workflow: `workflow:${def.id}`,
+      deployed_snapshot: `workflow:deployed:${def.id}:v${context.deploy_version}`,
+      deploy_receipt: "workflow.last_deploy.side_effects",
+    },
+    retry_policy: {
+      scope: "workflow_deploy_version",
+      operation_key_template: "{workflow_id}:v{deploy_version}:{event_id}",
+      duplicate_effect: "matching_active_subscription_is_unchanged",
+    },
+  };
+}
+
+export function setWorkflowDeploymentTransactionStatus<T extends WorkflowDeploymentReceipt>(
+  receipt: T,
+  status: WorkflowDeploymentTransactionStatus,
+): T {
+  return {
+    ...receipt,
+    transaction: {
+      ...receipt.transaction,
+      status,
+    },
+  } as T;
+}
+
 function startEvents(def: WorkflowDefinition): WorkflowElement[] {
   const inCount = new Map<string, number>();
   for (const element of def.elements ?? []) inCount.set(element.id, 0);
@@ -122,6 +218,7 @@ async function cancelSubscription(
   sub: Subscription,
   context: WorkflowDeploymentContext,
   reason: string,
+  transaction: WorkflowDeploymentTransactionReceipt,
   deps: DeploymentSubscriptionDeps,
 ): Promise<WorkflowDeploymentSubscriptionReceipt> {
   sub.status = "cancelled";
@@ -133,6 +230,7 @@ async function cancelSubscription(
     trigger_kind: sub.trigger.kind,
     previous_subscription_id: sub.id,
     operation_key: operationKey(sub.process_id, context.deploy_version, sub.event_id),
+    idempotency_key: operationIdempotencyKey(transaction, sub.event_id, "cancel"),
     status: "cancelled",
     reason,
   };
@@ -142,6 +240,7 @@ async function markSubscriptionUnchanged(
   sub: Subscription,
   def: WorkflowDefinition,
   context: WorkflowDeploymentContext,
+  transaction: WorkflowDeploymentTransactionReceipt,
 ): Promise<WorkflowDeploymentSubscriptionReceipt> {
   const updated = {
     ...sub,
@@ -149,6 +248,7 @@ async function markSubscriptionUnchanged(
     deploy_version: context.deploy_version,
     deployment_id: deploymentId(def.id, context.deploy_version),
     operation_key: operationKey(def.id, context.deploy_version, sub.event_id),
+    idempotency_key: operationIdempotencyKey(transaction, sub.event_id, "unchanged"),
     deployed_at: context.deployed_at,
     deployed_by: context.deployed_by,
   };
@@ -159,6 +259,7 @@ async function markSubscriptionUnchanged(
     trigger_kind: sub.trigger.kind,
     subscription_id: sub.id,
     operation_key: operationKey(def.id, context.deploy_version, sub.event_id),
+    idempotency_key: operationIdempotencyKey(transaction, sub.event_id, "unchanged"),
     status: "unchanged",
     mode: sub.mode,
     reason: "matching_active_subscription",
@@ -171,6 +272,7 @@ export async function materializeWorkflowDeploymentSubscriptions(
   deps: DeploymentSubscriptionDeps = activeDeps,
 ): Promise<WorkflowDeploymentReceipt> {
   const deployment_id = deploymentId(def.id, context.deploy_version);
+  const transaction = buildWorkflowDeploymentTransaction(def, context);
   const desiredEvents = startEvents(def);
   const desiredIds = new Set(desiredEvents.map(event => event.id));
   const active = await activeStartSubscriptions(def.id);
@@ -189,7 +291,7 @@ export async function materializeWorkflowDeploymentSubscriptions(
   for (const sub of active) {
     if (!desiredIds.has(sub.event_id)) {
       try {
-        cancelled.push(await cancelSubscription(sub, context, "not_in_deployed_start_trigger_set", deps));
+        cancelled.push(await cancelSubscription(sub, context, "not_in_deployed_start_trigger_set", transaction, deps));
       } catch (e: any) {
         failed.push({
           event_id: sub.event_id,
@@ -197,6 +299,7 @@ export async function materializeWorkflowDeploymentSubscriptions(
           trigger_kind: sub.trigger.kind,
           previous_subscription_id: sub.id,
           operation_key: operationKey(def.id, context.deploy_version, sub.event_id),
+          idempotency_key: operationIdempotencyKey(transaction, sub.event_id, "failed"),
           status: "failed",
           reason: "cancel_obsolete_subscription_failed",
           error: e.message,
@@ -208,13 +311,14 @@ export async function materializeWorkflowDeploymentSubscriptions(
   for (const event of desiredEvents) {
     const trigger = event.trigger as TriggerDef;
     const operation_key = operationKey(def.id, context.deploy_version, event.id);
+    const create_idempotency_key = operationIdempotencyKey(transaction, event.id, "create");
     const matchingActive = (activeByEvent.get(event.id) ?? []).filter(sub => sub.status === "active");
     const same = matchingActive.find(sub => stableStringify(sub.trigger) === stableStringify(trigger));
     const duplicates = matchingActive.filter(sub => sub !== same);
 
     for (const duplicate of duplicates) {
       try {
-        cancelled.push(await cancelSubscription(duplicate, context, same ? "duplicate_active_subscription" : "trigger_changed", deps));
+        cancelled.push(await cancelSubscription(duplicate, context, same ? "duplicate_active_subscription" : "trigger_changed", transaction, deps));
       } catch (e: any) {
         failed.push({
           event_id: event.id,
@@ -222,6 +326,7 @@ export async function materializeWorkflowDeploymentSubscriptions(
           trigger_kind: duplicate.trigger.kind,
           previous_subscription_id: duplicate.id,
           operation_key,
+          idempotency_key: operationIdempotencyKey(transaction, event.id, "failed"),
           status: "failed",
           reason: "cancel_duplicate_subscription_failed",
           error: e.message,
@@ -231,7 +336,7 @@ export async function materializeWorkflowDeploymentSubscriptions(
 
     if (same) {
       try {
-        unchanged.push(await markSubscriptionUnchanged(same, def, context));
+        unchanged.push(await markSubscriptionUnchanged(same, def, context, transaction));
       } catch (e: any) {
         failed.push({
           event_id: event.id,
@@ -239,6 +344,7 @@ export async function materializeWorkflowDeploymentSubscriptions(
           trigger_kind: trigger.kind,
           subscription_id: same.id,
           operation_key,
+          idempotency_key: operationIdempotencyKey(transaction, event.id, "failed"),
           status: "failed",
           reason: "refresh_subscription_metadata_failed",
           error: e.message,
@@ -258,6 +364,7 @@ export async function materializeWorkflowDeploymentSubscriptions(
         deploy_version: context.deploy_version,
         deployment_id,
         operation_key,
+        idempotency_key: create_idempotency_key,
         deployed_at: context.deployed_at,
         deployed_by: context.deployed_by,
       });
@@ -267,6 +374,7 @@ export async function materializeWorkflowDeploymentSubscriptions(
         trigger_kind: trigger.kind,
         subscription_id: createdSub.subscription_id,
         operation_key,
+        idempotency_key: create_idempotency_key,
         status: "created",
         mode: createdSub.mode,
       });
@@ -276,6 +384,7 @@ export async function materializeWorkflowDeploymentSubscriptions(
         event_label: event.label,
         trigger_kind: trigger.kind,
         operation_key,
+        idempotency_key: operationIdempotencyKey(transaction, event.id, "failed"),
         status: "failed",
         reason: "create_subscription_failed",
         error: e.message,
@@ -288,6 +397,10 @@ export async function materializeWorkflowDeploymentSubscriptions(
     workflow_id: def.id,
     deploy_version: context.deploy_version,
     deployment_id,
+    transaction: {
+      ...transaction,
+      status: failed.length === 0 ? "subscription_diff_applied" : "blocked",
+    },
     source: context.source ?? "workflow.deploy",
     subscriptions: {
       desired: desiredEvents.length,
@@ -325,6 +438,7 @@ export async function rollbackWorkflowDeploymentSideEffects(
         trigger_kind: subscription.trigger.kind,
         previous_subscription_id: subscription.id,
         operation_key: created.operation_key,
+        idempotency_key: operationIdempotencyKey(receipt.transaction, subscription.event_id, "rollback"),
         status: "cancelled",
         reason: "rollback_failed_deploy_materialization",
       });
@@ -335,6 +449,7 @@ export async function rollbackWorkflowDeploymentSideEffects(
         trigger_kind: subscription.trigger.kind,
         previous_subscription_id: subscription.id,
         operation_key: created.operation_key,
+        idempotency_key: operationIdempotencyKey(receipt.transaction, subscription.event_id, "rollback"),
         status: "failed",
         reason: "rollback_failed_deploy_materialization",
         error: e.message,

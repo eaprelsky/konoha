@@ -458,6 +458,7 @@ export async function createSubscriptionProgrammatic(params: {
   deploy_version?: number;
   deployment_id?: string;
   operation_key?: string;
+  idempotency_key?: string;
   deployed_at?: string;
   deployed_by?: string;
 }): Promise<{ subscription_id: string; status: string; mode: "auto" | "manual" }> {
@@ -516,6 +517,7 @@ export async function createSubscriptionProgrammatic(params: {
     ...(params.deploy_version !== undefined ? { deploy_version: params.deploy_version } : {}),
     ...(params.deployment_id ? { deployment_id: params.deployment_id } : {}),
     ...(params.operation_key ? { operation_key: params.operation_key } : {}),
+    ...(params.idempotency_key ? { idempotency_key: params.idempotency_key } : {}),
     ...(params.deployed_at ? { deployed_at: params.deployed_at } : {}),
     ...(params.deployed_by ? { deployed_by: params.deployed_by } : {}),
   };

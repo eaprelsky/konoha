@@ -57,6 +57,7 @@ export interface Subscription {
   deploy_version?: number;
   deployment_id?: string;
   operation_key?: string;
+  idempotency_key?: string;
   deployed_at?: string;
   deployed_by?: string;
 }

@@ -54,7 +54,10 @@ longer the same operation as deploying it for runtime execution.
   `GRAPH_GATEWAY_MISSING_DEFAULT` until one unconditioned default branch is
   present, so reviewers can see when runtime routing will error if no condition
   matches.
-- `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, increments `deploy_version`, records `deployed_at` and optional `deployed_by`, and marks the workflow `executable` when readiness passes.
+- `workflow.deploy` validates the current definition, resolves runtime start
+  triggers, increments `deploy_version`, records `deployed_at` and optional
+  `deployed_by`, marks the workflow `executable`, saves the deployed snapshot,
+  and only then materializes start-event subscriptions.
 - `workflow.deploy` also stores an immutable deployed runtime snapshot keyed by
   workflow id and deploy version. `case.start` binds each new case to that
   snapshot in `workflow_snapshot`, and runtime advancement loads the bound
@@ -143,8 +146,46 @@ or `LIFECYCLE_RETIRED`).
 
 ## Deploy And Retire Action Results
 
-`workflow.deploy` returns the updated workflow definition on success. Failures
-use stable `code` values:
+`workflow.deploy` returns the updated workflow definition on success. The
+response includes `deployment`, whose `transaction` field is the canonical
+deployment transaction receipt:
+
+```json
+{
+  "transaction_id": "sales/lead-qualification:v3:transaction",
+  "idempotency_key": "workflow.deploy:sales/lead-qualification:v3",
+  "workflow_id": "sales/lead-qualification",
+  "deploy_version": 3,
+  "deployment_id": "sales/lead-qualification:v3",
+  "status": "completed",
+  "commit_order": [
+    "validate",
+    "commit_executable_workflow",
+    "save_deployed_snapshot",
+    "materialize_subscription_diff",
+    "persist_deploy_receipt"
+  ],
+  "records": {
+    "workflow": "workflow:sales/lead-qualification",
+    "deployed_snapshot": "workflow:deployed:sales/lead-qualification:v3",
+    "deploy_receipt": "workflow.last_deploy.side_effects"
+  },
+  "retry_policy": {
+    "scope": "workflow_deploy_version",
+    "operation_key_template": "{workflow_id}:v{deploy_version}:{event_id}",
+    "duplicate_effect": "matching_active_subscription_is_unchanged"
+  }
+}
+```
+
+Callers may pass `idempotency_key`; otherwise the server derives
+`workflow.deploy:<workflow_id>:v<deploy_version>`. Per-subscription receipts
+also include deterministic `operation_key` and `idempotency_key` values for
+created, cancelled, unchanged, failed, and rollback operations. The durable
+deploy record is `workflow.last_deploy`; its `side_effects` field stores the
+same transaction/subscription receipt after materialization.
+
+Failures use stable `code` values:
 
 - `WORKFLOW_NOT_FOUND` for unknown workflow ids, with `workflow_id`;
 - `WORKFLOW_RETIRED` when a retired workflow is deployed again;
@@ -152,6 +193,11 @@ use stable `code` values:
   review, including the canonical `validation` receipt;
 - `WORKFLOW_VALIDATION_BLOCKED` when readiness blocks deployment, including the
   canonical `validation` receipt.
+- `WORKFLOW_DEPLOY_SNAPSHOT_FAILED` when the deployed snapshot cannot be saved;
+  no subscription side effects have started.
+- `WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED` when subscription materialization fails;
+  the response includes rollback evidence and the workflow is demoted back to
+  `validated` with `needs_review`.
 
 `workflow.retire` returns a stable receipt:
 

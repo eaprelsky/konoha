@@ -74,6 +74,7 @@ import { applyWorkflowPatch } from "./workflow-patch-service";
 import {
   materializeWorkflowDeploymentSubscriptions,
   rollbackWorkflowDeploymentSideEffects,
+  setWorkflowDeploymentTransactionStatus,
 } from "./workflow-deployment-service";
 
 export interface ActionExecution {
@@ -599,6 +600,7 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   const deployedAt = new Date().toISOString();
   const deployVersion = getWorkflowDeployVersion(current) + 1;
   const deployedBy = args.deployed_by ? String(args.deployed_by) : "system";
+  const idempotencyKey = args.idempotency_key ? String(args.idempotency_key) : undefined;
   const result = await updateWorkflow(id, body, {
     lifecycleState: "executable",
     deploy: {
@@ -646,11 +648,13 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
     deploy_version: deployVersion,
     deployed_at: deployedAt,
     deployed_by: deployedBy,
+    idempotency_key: idempotencyKey,
     source: "workflow.deploy",
   });
 
   if (!deployment.ok) {
     const rollback = await rollbackWorkflowDeploymentSideEffects(deployment);
+    const blockedDeployment = setWorkflowDeploymentTransactionStatus({ ...deployment, rollback }, "blocked");
     const failedDetails = deployment.subscriptions.failed.map(failure =>
       `SUBSCRIPTION_MATERIALIZATION_FAILED: ${failure.event_id}: ${failure.error ?? failure.reason ?? "unknown error"}`,
     );
@@ -661,7 +665,7 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
         checked_at: deployedAt,
         source: "workflow.deploy",
         details: failedDetails.length > 0 ? failedDetails : ["SUBSCRIPTION_MATERIALIZATION_FAILED"],
-        side_effects: { ...deployment, rollback },
+        side_effects: blockedDeployment,
       },
       needsReview: true,
     });
@@ -674,12 +678,13 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
         code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED",
         process_id: id,
         lifecycle_state: "validated",
-        deployment: { ...deployment, rollback },
+        deployment: blockedDeployment,
         workflow: blocked.workflow,
       },
     };
   }
 
+  const completedDeployment = setWorkflowDeploymentTransactionStatus(deployment, "completed");
   const receiptUpdate = await updateWorkflow(id, result.workflow, {
     lifecycleState: "executable",
     deploy: {
@@ -691,14 +696,14 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
       source: "workflow.deploy",
       details: [
         "validation passed",
-        `subscriptions desired=${deployment.subscriptions.desired} created=${deployment.subscriptions.created.length} cancelled=${deployment.subscriptions.cancelled.length} unchanged=${deployment.subscriptions.unchanged.length}`,
+        `subscriptions desired=${completedDeployment.subscriptions.desired} created=${completedDeployment.subscriptions.created.length} cancelled=${completedDeployment.subscriptions.cancelled.length} unchanged=${completedDeployment.subscriptions.unchanged.length}`,
       ],
-      side_effects: deployment,
+      side_effects: completedDeployment,
     },
     needsReview: false,
   });
   if (receiptUpdate && !isWorkflowUpdateConflict(receiptUpdate) && receiptUpdate.errors.length === 0) {
-    return { status: 200, data: { ...receiptUpdate.workflow, normalized, deployment } };
+    return { status: 200, data: { ...receiptUpdate.workflow, normalized, deployment: completedDeployment } };
   }
   return {
     status: 200,

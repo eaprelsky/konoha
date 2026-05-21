@@ -86,13 +86,34 @@ describe("workflow deployment service", () => {
     touched.add(id);
     await createWorkflow(workflow(id));
 
-    const first = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+    const firstIdempotencyKey = `${id}:operator-request:1`;
+    const first = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1", idempotency_key: firstIdempotencyKey });
     expect(first?.status).toBe(200);
     expect((first?.data as any).deployment).toMatchObject({
       ok: true,
       workflow_id: id,
       deploy_version: 1,
       deployment_id: `${id}:v1`,
+      transaction: {
+        transaction_id: `${id}:v1:transaction`,
+        idempotency_key: firstIdempotencyKey,
+        workflow_id: id,
+        deploy_version: 1,
+        deployment_id: `${id}:v1`,
+        status: "completed",
+        commit_order: [
+          "validate",
+          "commit_executable_workflow",
+          "save_deployed_snapshot",
+          "materialize_subscription_diff",
+          "persist_deploy_receipt",
+        ],
+        records: {
+          workflow: `workflow:${id}`,
+          deployed_snapshot: `workflow:deployed:${id}:v1`,
+          deploy_receipt: "workflow.last_deploy.side_effects",
+        },
+      },
       subscriptions: {
         desired: 1,
         created: [expect.objectContaining({
@@ -100,6 +121,7 @@ describe("workflow deployment service", () => {
           trigger_kind: "timer",
           status: "created",
           operation_key: `${id}:v1:start`,
+          idempotency_key: `${firstIdempotencyKey}:subscription:create:start`,
         })],
         cancelled: [],
         unchanged: [],
@@ -115,6 +137,7 @@ describe("workflow deployment service", () => {
       deploy_version: 1,
       deployment_id: `${id}:v1`,
       operation_key: `${id}:v1:start`,
+      idempotency_key: `${firstIdempotencyKey}:subscription:create:start`,
       deployed_by: "operator-1",
     });
 
@@ -125,6 +148,15 @@ describe("workflow deployment service", () => {
       workflow_id: id,
       deploy_version: 2,
       deployment_id: `${id}:v2`,
+      transaction: {
+        idempotency_key: `workflow.deploy:${id}:v2`,
+        status: "completed",
+        retry_policy: {
+          scope: "workflow_deploy_version",
+          operation_key_template: "{workflow_id}:v{deploy_version}:{event_id}",
+          duplicate_effect: "matching_active_subscription_is_unchanged",
+        },
+      },
       subscriptions: {
         desired: 1,
         created: [],
@@ -135,6 +167,7 @@ describe("workflow deployment service", () => {
           status: "unchanged",
           subscription_id: activeAfterFirst[0].id,
           operation_key: `${id}:v2:start`,
+          idempotency_key: `workflow.deploy:${id}:v2:subscription:unchanged:start`,
         })],
         failed: [],
       },
@@ -146,6 +179,7 @@ describe("workflow deployment service", () => {
       deploy_version: 2,
       deployment_id: `${id}:v2`,
       operation_key: `${id}:v2:start`,
+      idempotency_key: `workflow.deploy:${id}:v2:subscription:unchanged:start`,
       deployed_by: "operator-2",
     });
   });
@@ -206,6 +240,10 @@ describe("workflow deployment service", () => {
       ok: false,
       workflow_id: id,
       deploy_version: 1,
+      transaction: {
+        idempotency_key: `workflow.deploy:${id}:v1`,
+        status: "blocked",
+      },
       subscriptions: {
         desired: 1,
         created: [],
@@ -215,6 +253,7 @@ describe("workflow deployment service", () => {
           event_id: "start",
           status: "failed",
           reason: "create_subscription_failed",
+          idempotency_key: `workflow.deploy:${id}:v1:subscription:failed:start`,
           error: "subscription backend unavailable",
         })],
       },
@@ -256,10 +295,15 @@ describe("workflow deployment service", () => {
         deployment: {
           ok: false,
           deploy_version: 1,
+          transaction: {
+            idempotency_key: `workflow.deploy:${id}:v1`,
+            status: "blocked",
+          },
           subscriptions: {
             failed: [expect.objectContaining({
               event_id: "start",
               reason: "create_subscription_failed",
+              idempotency_key: `workflow.deploy:${id}:v1:subscription:failed:start`,
               error: "subscription backend unavailable",
             })],
           },
