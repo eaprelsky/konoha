@@ -12,6 +12,8 @@ Related gates and roadmap issues:
   unbounded logs can block agents and systemd services.
 - #793 defines canonical labels used by this policy.
 - #794 defines the issue-delivery/bootstrap route that feeds reviewer evidence.
+- #756 defines the architecture delivery model and agent responsibilities in
+  `docs/konoha-delivery-model.md`.
 - #753 defines the `staging-core` environment contract used by release staging.
 - #749 defines the Workflow Engine preflight tier contract in
   `docs/workflow-engine-preflight-tiers.md`.

@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 756,
+  "parent_issue": 672,
+  "recommended_model": "developer_reviewer_default_with_explicit_specialist_escalation",
+  "source_documents": [
+    "docs/sdd-worker-pool.md",
+    "docs/staging-environment.md",
+    "docs/release-policy.md",
+    "docs/workflow-engine-preflight-tiers.md",
+    "docs/workflow-runtime-rollback-recovery.md",
+    "docs/workflow-constructor-runtime-release-checklist.md",
+    "docs/github-sdd-connector.md",
+    "docs/agent-operations-runbook.md"
+  ],
+  "principles": [
+    "Default architecture delivery is Developer Kakashi -> Reviewer Shikadai.",
+    "Specialists are optional quality escalations, not mandatory serial gates.",
+    "Automated contract checks are preferred over delegating routine verification to more agents.",
+    "Human/operator decisions own production risk, emergency bypass, destructive data approval, and release signoff.",
+    "Architecture review can block implementation, release, or closure through GitHub state labels.",
+    "Staging QA signoff is evidence-based and uses staging-core isolation before production claims."
+  ],
+  "roles": [
+    {
+      "id": "naruto",
+      "responsibility": "Coordination and issue sequencing",
+      "default_use": "dispatch one ready issue, record closure/next assignment, coordinate owner approval for releases",
+      "must_not_do": ["approve own implementation", "close reviewer-gated issues without Shikadai acceptance"],
+      "quality_signal": "clear issue dispatch, Konoha bus audit, owner/operator decision capture"
+    },
+    {
+      "id": "kakashi",
+      "responsibility": "Developer implementation",
+      "default_use": "implement exactly one issue labeled state:ready-for-dev or state:in-progress plus agent:kakashi",
+      "must_not_do": ["scan unrelated backlog", "notify Shino/Hinata by default", "close architecture issues directly"],
+      "quality_signal": "focused commit, checks, parent receipt, ready-for-review handoff"
+    },
+    {
+      "id": "shikadai",
+      "responsibility": "Reviewer and architecture gate",
+      "default_use": "review implementation, gates, rollback, docs, and architectural integrity before closure",
+      "must_not_do": ["treat specialist QA as mandatory by default", "accept without evidence for required gates"],
+      "quality_signal": "acceptance, changes requested, or blocking finding grounded in checks and file/issue evidence"
+    },
+    {
+      "id": "shino",
+      "responsibility": "Test-plan escalation",
+      "default_use": "only when Shikadai requests state:ready-for-test for QA-heavy, release, or regression scope",
+      "must_not_do": ["be a default post-fix gate", "replace reviewer judgment"],
+      "quality_signal": "focused QA plan, pass/fail report, residual risk"
+    },
+    {
+      "id": "hinata",
+      "responsibility": "Bounded browser/TestBench execution",
+      "default_use": "only after a reviewer-approved browser/TestBench plan exists",
+      "must_not_do": ["run broad unbounded browser work", "start TestBench outside bounded profile"],
+      "quality_signal": "Playwright/TestBench artifacts and screenshots when requested"
+    },
+    {
+      "id": "kiba",
+      "responsibility": "Shared monitor for prod and staging",
+      "default_use": "monitor health, route severity-aware incidents, preserve environment labels",
+      "must_not_do": ["approve release", "execute cross-environment recovery without target guard"],
+      "quality_signal": "healthcheck/resource/incident evidence"
+    },
+    {
+      "id": "akamaru",
+      "responsibility": "Monitor runtime checks and alert routing",
+      "default_use": "perform environment-labeled checks and severity-aware delivery",
+      "must_not_do": ["replace reviewer or owner approval"],
+      "quality_signal": "actionable monitor incident or archived baseline warning"
+    },
+    {
+      "id": "ibiki",
+      "responsibility": "Security and audit escalation",
+      "default_use": "only for security-sensitive review or audit boundary questions requested by Shikadai/Naruto",
+      "must_not_do": ["be a default serial reviewer for every issue"],
+      "quality_signal": "security/audit finding, risk acceptance wording, or approval note"
+    }
+  ],
+  "human_operator_decisions": [
+    "normal production release approval",
+    "emergency bypass risk acceptance",
+    "destructive data cleanup approval",
+    "external connector resend/user-impact acceptance",
+    "production service rollback command approval",
+    "unpausing paused P0 work such as #812"
+  ],
+  "automated_checks_preferred": [
+    "scripts/preflight-portable.sh",
+    "scripts/preflight.sh",
+    "bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py",
+    "bun run scripts/pg-verify.ts",
+    "scripts/staging-smoke.sh --dry-run",
+    "tests/workflow-constructor-runtime-release-checklist.test.ts",
+    "tests/workflow-runtime-rollback-recovery.test.ts"
+  ],
+  "minimum_gates": [
+    {
+      "scope": "p0-p1-workflow-engine",
+      "required": [
+        "Developer implementation by Kakashi",
+        "Shikadai architecture review before closure",
+        "focused success and failure tests",
+        "M1 isolation evidence when storage, staging, factories, or tests are touched",
+        "Action Spine/security checks for user-visible mutations",
+        "#812 terminal-case rule review when dispatch, waits, subscriptions, or runtime effects are touched",
+        "rollback/recovery note from docs/workflow-runtime-rollback-recovery.md",
+        "parent #672 or release parent receipt when the issue feeds a program gate"
+      ],
+      "optional_when_requested": ["Shino test-plan escalation", "Hinata browser/TestBench run", "Ibiki security/audit review"]
+    },
+    {
+      "scope": "release-or-production-readiness",
+      "required": [
+        "docs/release-policy.md gates",
+        "docs/workflow-engine-preflight-tiers.md tier evidence",
+        "docs/workflow-constructor-runtime-release-checklist.md checklist class ids",
+        "staging-core evidence or waiver when applicable",
+        "owner/operator approval for production release"
+      ],
+      "optional_when_requested": ["Shino specialist QA", "Hinata bounded browser/TestBench"]
+    }
+  ],
+  "github_labels": {
+    "developer_intake": ["state:ready-for-dev", "agent:kakashi"],
+    "developer_rework": ["state:in-progress", "agent:kakashi"],
+    "review_handoff": ["state:ready-for-review", "agent:shikadai"],
+    "review_blocked": ["state:blocked", "agent:kakashi"],
+    "optional_specialist_qa": ["state:ready-for-test", "agent:shino"],
+    "done": ["state:done"],
+    "legacy_not_gates": ["needs-testing", "awaiting-test", "P0", "P0: critical"]
+  },
+  "konoha_bus_handoffs": {
+    "take_issue": "Taking issue #<n>: <title>",
+    "ready_for_review": "Ready for review: issue #<n> — commit <hash>. <summary>",
+    "changes_requested": "Changes requested for issue #<n>: <finding>. Follow-up required.",
+    "accepted_closed": "Issue #<n> accepted and closed at <hash>. Taking/awaiting next dispatch.",
+    "specialist_request": "Reviewer-requested QA for issue #<n>: scope=<test-plan|browser|security> commands=<commands> artifacts=<artifacts>",
+    "stale_duplicate": "Duplicate delivery for issue #<n> ignored; actual state is <state/labels>."
+  },
+  "staging_qa_signoff": {
+    "required_when": ["broad Workflow Engine runtime behavior changes", "deploy/subscription changes", "connector/outbox effects", "production release claims"],
+    "default_command": "scripts/staging-smoke.sh --dry-run",
+    "live_command": "set -a; source /opt/shared/.agent-env.staging; set +a; scripts/staging-smoke.sh --live",
+    "waiver": "time-boxed staging waiver from docs/release-policy.md; must not enable production connectors or weaken prod-core",
+    "production_separation": "staging-core uses Redis DB 2, konoha_staging, staging agent ids, and no production workdirs"
+  },
+  "rollback_and_redispatch": {
+    "review_blocker": "Shikadai moves issue to state:blocked + agent:kakashi; Kakashi pushes follow-up and resubmits.",
+    "stale_duplicate_delivery": "Check GitHub labels/state and ignore duplicate watchdog deliveries that are already ready-for-review, done, or assigned to another role.",
+    "worktree_tail": "Unrelated dirty files are not a stop reason; leave them unstaged and commit only the current issue scope.",
+    "runtime_rollback": "Use docs/workflow-runtime-rollback-recovery.md for runtime/data rollback limits.",
+    "worker_pool_rollback": "Use python3 scripts/sdd-worker-pool.py rollback --reason <reason> for bounded specialist missions."
+  },
+  "quality_signals": [
+    "review finding with file/line or issue evidence",
+    "passing focused contract tests",
+    "staging-core smoke or accepted waiver",
+    "Action Spine surface/security check",
+    "pg-verify and storage isolation evidence",
+    "Konoha bus audit message",
+    "GitHub parent receipt"
+  ],
+  "ceremony_to_avoid": [
+    "mandatory Shino/Hinata pass for every Developer fix",
+    "starting optional workers without reviewer request",
+    "adding agents to compensate for missing automated checks",
+    "scanning unrelated backlog while one issue is active",
+    "closing architecture issues before Shikadai acceptance"
+  ]
+}

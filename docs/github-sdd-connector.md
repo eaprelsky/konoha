@@ -3,6 +3,8 @@
 Issue #639 defines the first normalized GitHub issue event shape for SDD
 workflows. The active default delivery lane is the two-role Developer ->
 Reviewer process: Kakashi implements and Shikadai reviews/accepts.
+The role model and escalation rules are canonical in
+`docs/konoha-delivery-model.md`.
 
 ## Normalized Events
 

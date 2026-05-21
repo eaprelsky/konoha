@@ -129,6 +129,8 @@ An emergency release bypass still uses the stronger wording in
 
 Default path remains Developer Kakashi -> Reviewer Shikadai. Do not notify
 Shino, Hinata, or Guy by default.
+The broader architecture delivery model is defined in
+`docs/konoha-delivery-model.md`.
 
 Escalate only when Shikadai explicitly requests it:
 

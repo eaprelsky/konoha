@@ -77,6 +77,9 @@ Guy, and Ibiki are optional specialist workers and must be assigned through
 explicit workflow branches or reviewer/developer escalation, not as a hardcoded
 default fleet.
 
+The architecture-grade delivery model and responsibility table are canonical in
+`docs/konoha-delivery-model.md`.
+
 Mirai is connector-owned; Ino/Inojin are deprecated compatibility aliases.
 Jiraiya is a disabled corporate-memory experiment and must stay parked until an
 explicit product need and operator approval exist. Shikadai is the default

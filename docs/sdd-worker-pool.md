@@ -10,6 +10,8 @@ Guy, Shino, Hinata, and Ibiki are optional specialists. They are not mandatory
 pipeline stages and must not be started just because Kakashi pushed a fix.
 
 Machine-readable contract: `docs/sdd-worker-pool.json`.
+Architecture delivery responsibilities are defined in
+`docs/konoha-delivery-model.md`.
 
 ## Pool Limits
 
