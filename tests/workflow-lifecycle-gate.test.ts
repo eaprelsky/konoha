@@ -179,7 +179,11 @@ describe("workflow lifecycle deploy gate", () => {
     const validation = await executeActionDirect("workflow.validate", { id });
     expect(validation?.status).toBe(200);
     expect((validation?.data as any).readiness).toBe("blocked");
-    expect((validation?.data as any).errors.map((error: any) => error.code)).toContain("RUNTIME_MISSING_ROLE_ASSIGNEE");
+    expect((validation?.data as any).errors).toContainEqual(expect.objectContaining({
+      code: "ROLE_MISSING_ASSIGNEE",
+      legacy_code: "RUNTIME_MISSING_ROLE_ASSIGNEE",
+      class: "role",
+    }));
 
     const deploy = await executeActionDirect("workflow.deploy", { id });
     expect(deploy?.status).toBe(422);
@@ -220,8 +224,12 @@ describe("workflow lifecycle deploy gate", () => {
           },
         },
       });
-      expect((deploy?.data as any).validation.errors.map((error: any) => error.code)).toContain("DEPLOYMENT_AMBIGUOUS_TRIGGER");
-      expect((deploy?.data as any).workflow.last_deploy.details).toContain("DEPLOYMENT_AMBIGUOUS_TRIGGER: Event \"start\" trigger is ambiguous and requires manual override");
+      expect((deploy?.data as any).validation.errors).toContainEqual(expect.objectContaining({
+        code: "TRIGGER_AMBIGUOUS",
+        legacy_code: "DEPLOYMENT_AMBIGUOUS_TRIGGER",
+        class: "trigger",
+      }));
+      expect((deploy?.data as any).workflow.last_deploy.details).toContain("TRIGGER_AMBIGUOUS: Event \"start\" trigger is ambiguous and requires manual override");
     } finally {
       if (oldAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = oldAnthropicKey;

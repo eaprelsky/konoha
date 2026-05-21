@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { validateWorkflow, validateWorkflowReadiness, type WorkflowDefinition } from "../src/workflow-loader";
+import { WORKFLOW_VALIDATION_TAXONOMY_VERSION, validateWorkflow, validateWorkflowReadiness, type WorkflowDefinition } from "../src/workflow-loader";
 import { makeWorkflowDefinition } from "./factories";
 
 describe("workflow-loader validation", () => {
@@ -80,6 +80,7 @@ describe("workflow-loader validation", () => {
 
     expect(receipt).toMatchObject({
       workflow_id: def.id,
+      taxonomy_version: WORKFLOW_VALIDATION_TAXONOMY_VERSION,
       readiness: "ready",
       errors: [],
       warnings: [],
@@ -101,7 +102,11 @@ describe("workflow-loader validation", () => {
     });
 
     expect(receipt.readiness).toBe("blocked");
-    expect(receipt.errors.map(error => error.code)).toContain("RUNTIME_MISSING_ROLE_ASSIGNEE");
+    expect(receipt.errors).toContainEqual(expect.objectContaining({
+      code: "ROLE_MISSING_ASSIGNEE",
+      legacy_code: "RUNTIME_MISSING_ROLE_ASSIGNEE",
+      class: "role",
+    }));
   });
 
   test("blocks readiness for invalid gateway condition", () => {
@@ -145,7 +150,11 @@ describe("workflow-loader validation", () => {
       adapters: [],
     });
 
-    expect(receipt.errors.map(error => error.code)).toContain("DEPLOYMENT_UNSUPPORTED_TRIGGER");
+    expect(receipt.errors).toContainEqual(expect.objectContaining({
+      code: "TRIGGER_UNSUPPORTED_KIND",
+      legacy_code: "DEPLOYMENT_UNSUPPORTED_TRIGGER",
+      class: "trigger",
+    }));
   });
 
   test("blocks readiness for missing adapter binding", () => {
@@ -163,7 +172,11 @@ describe("workflow-loader validation", () => {
       adapters: ["telegram"],
     });
 
-    expect(receipt.errors.map(error => error.code)).toContain("RUNTIME_MISSING_ADAPTER");
+    expect(receipt.errors).toContainEqual(expect.objectContaining({
+      code: "ADAPTER_MISSING",
+      legacy_code: "RUNTIME_MISSING_ADAPTER",
+      class: "adapter",
+    }));
   });
 
   test("blocks readiness for invalid document references", () => {
@@ -181,7 +194,11 @@ describe("workflow-loader validation", () => {
       adapters: [],
     });
 
-    expect(receipt.errors.map(error => error.code)).toContain("RUNTIME_MISSING_DOCUMENT");
+    expect(receipt.errors).toContainEqual(expect.objectContaining({
+      code: "DOCUMENT_MISSING",
+      legacy_code: "RUNTIME_MISSING_DOCUMENT",
+      class: "document",
+    }));
   });
 
   test("blocks readiness for drafts with no start event", () => {

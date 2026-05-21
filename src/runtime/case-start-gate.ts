@@ -2,6 +2,7 @@ import {
   getWorkflowLifecycleState,
   isWorkflowExecutable,
   validateWorkflowReadiness,
+  WORKFLOW_VALIDATION_TAXONOMY_VERSION,
   type WorkflowDefinition,
   type WorkflowValidationReceipt,
 } from "../workflow-loader";
@@ -65,6 +66,14 @@ export async function evaluateCaseStartGate(
         status: workflow.status,
         required_lifecycle_state: "executable",
         admin_override_available: true,
+        taxonomy_version: WORKFLOW_VALIDATION_TAXONOMY_VERSION,
+        validation_issue: {
+          code: "LIFECYCLE_NOT_EXECUTABLE",
+          severity: "error",
+          class: "lifecycle",
+          message: "Workflow lifecycle state must be executable before case.start",
+          details: { required_lifecycle_state: "executable", lifecycle_state: lifecycleState },
+        },
       },
     };
   }

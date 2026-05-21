@@ -22,6 +22,12 @@ longer the same operation as deploying it for runtime execution.
   start gates: `errors[]`, `warnings[]`, `readiness`, stable issue `code`
   values, and gate flags for deployment, case start, release, and reviewer
   review.
+- Validation/readiness receipts include `taxonomy_version: 1`. Each issue has
+  machine-readable `code`, `class`, `severity`, `message`, and optional
+  `legacy_code`, `element_id`, `edge`, and `details`. Product logic must use
+  `code`/`class`; `message` is display text only. The canonical classes are
+  `graph`, `role`, `trigger`, `adapter`, `document`, `deployment`,
+  `migration`, and `lifecycle`.
 - `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, increments `deploy_version`, records `deployed_at` and optional `deployed_by`, and marks the workflow `executable` when readiness passes.
 - `workflow.deploy` also stores an immutable deployed runtime snapshot keyed by
   workflow id and deploy version. `case.start` binds each new case to that
@@ -104,6 +110,10 @@ assistant paths should use `workflow.deploy` instead.
 Readiness failures use `code: "WORKFLOW_READINESS_BLOCKED"` and include the
 full validation receipt. `workflow.deploy` uses `code:
 "WORKFLOW_VALIDATION_BLOCKED"` for the same blocking receipt.
+Lifecycle gate failures keep their outer action/API codes, such as
+`WORKFLOW_NOT_EXECUTABLE` or `WORKFLOW_RETIRED`, and also include a
+`validation_issue` with taxonomy class `lifecycle` (`LIFECYCLE_NOT_EXECUTABLE`
+or `LIFECYCLE_RETIRED`).
 
 ## Deploy And Retire Action Results
 

@@ -176,9 +176,16 @@ export interface WorkflowDefinition {
 export interface ValidationError {
   rule: number;
   message: string;
+  code: string;
+  class: WorkflowValidationClass;
+  element_id?: string;
+  edge?: FlowEdge;
+  details?: Record<string, unknown>;
+  legacy_code?: string;
 }
 
-export type WorkflowValidationClass = "graph" | "runtime" | "deployment" | "migration";
+export const WORKFLOW_VALIDATION_TAXONOMY_VERSION = 1;
+export type WorkflowValidationClass = "graph" | "role" | "trigger" | "adapter" | "document" | "deployment" | "migration" | "lifecycle";
 export type WorkflowValidationSeverity = "error" | "warning";
 export type WorkflowReadiness = "ready" | "warning" | "blocked";
 
@@ -190,6 +197,7 @@ export interface WorkflowValidationIssue {
   element_id?: string;
   edge?: FlowEdge;
   details?: Record<string, unknown>;
+  legacy_code?: string;
 }
 
 export interface WorkflowValidationContext {
@@ -202,6 +210,7 @@ export interface WorkflowValidationContext {
 
 export interface WorkflowValidationReceipt {
   workflow_id: string;
+  taxonomy_version: number;
   readiness: WorkflowReadiness;
   source: string;
   errors: WorkflowValidationIssue[];
@@ -385,10 +394,24 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   const endNodes   = flowEls.filter(el => (outEdges.get(el.id) || []).length === 0);
 
   if (!startNodes.every(n => n.type === "event")) {
-    errors.push({ rule: 1, message: `Process must start with an event. Non-event start nodes: ${startNodes.filter(n => n.type !== "event").map(n => n.id).join(", ")}` });
+    const nonEventStartIds = startNodes.filter(n => n.type !== "event").map(n => n.id);
+    errors.push({
+      rule: 1,
+      code: "GRAPH_NO_START_EVENT",
+      class: "graph",
+      message: `Process must start with an event. Non-event start nodes: ${nonEventStartIds.join(", ")}`,
+      details: { non_event_start_nodes: nonEventStartIds },
+    });
   }
   if (!endNodes.every(n => n.type === "event")) {
-    errors.push({ rule: 1, message: `Process must end with an event. Non-event end nodes: ${endNodes.filter(n => n.type !== "event").map(n => n.id).join(", ")}` });
+    const nonEventEndIds = endNodes.filter(n => n.type !== "event").map(n => n.id);
+    errors.push({
+      rule: 1,
+      code: "GRAPH_NO_TERMINAL_EVENT",
+      class: "graph",
+      message: `Process must end with an event. Non-event end nodes: ${nonEventEndIds.join(", ")}`,
+      details: { non_event_terminal_nodes: nonEventEndIds },
+    });
   }
 
   // Rule 2: Events and functions must alternate — no two events in a row (even through gateways)
@@ -398,10 +421,22 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
     const toEl = byId.get(to);
     if (!fromEl || !toEl) continue;
     if (fromEl.type === "event" && toEl.type === "event") {
-      errors.push({ rule: 2, message: `Event "${from}" directly connected to event "${to}" — events must be separated by a function or gateway` });
+      errors.push({
+        rule: 2,
+        code: "GRAPH_ALTERNATION_VIOLATION",
+        class: "graph",
+        message: `Event "${from}" directly connected to event "${to}" — events must be separated by a function or gateway`,
+        edge: [from, to],
+      });
     }
     if (fromEl.type === "function" && toEl.type === "function") {
-      errors.push({ rule: 2, message: `Function "${from}" directly connected to function "${to}" — functions must be separated by an event or gateway` });
+      errors.push({
+        rule: 2,
+        code: "GRAPH_ALTERNATION_VIOLATION",
+        class: "graph",
+        message: `Function "${from}" directly connected to function "${to}" — functions must be separated by an event or gateway`,
+        edge: [from, to],
+      });
     }
   }
 
@@ -414,16 +449,43 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
     const hasFunctionIn = ins.some(e => e?.type === "function");
     const hasFunctionOut = outs.some(e => e?.type === "function");
     if (hasFunctionIn && hasFunctionOut) {
-      errors.push({ rule: 2, message: `Gateway "${el.id}" has function inputs and function outputs — function→gateway→function violates alternation (add an intermediate event)` });
+      errors.push({
+        rule: 2,
+        code: "GRAPH_ALTERNATION_VIOLATION",
+        class: "graph",
+        element_id: el.id,
+        message: `Gateway "${el.id}" has function inputs and function outputs — function→gateway→function violates alternation (add an intermediate event)`,
+      });
     }
   }
 
   // Rule 3: Roles, documents, systems must be attached only to functions (not events or gateways)
   for (const el of elements) {
     if (el.type !== "function") {
-      if (el.role) errors.push({ rule: 3, message: `Element "${el.id}" (${el.type}) has a role — roles must only be attached to functions` });
-      if (el.system) errors.push({ rule: 3, message: `Element "${el.id}" (${el.type}) has a system — systems must only be attached to functions` });
-      if (el.documents?.length) errors.push({ rule: 3, message: `Element "${el.id}" (${el.type}) has documents — documents must only be attached to functions` });
+      if (el.role) errors.push({
+        rule: 3,
+        code: "GRAPH_METADATA_SCOPE_VIOLATION",
+        class: "graph",
+        element_id: el.id,
+        message: `Element "${el.id}" (${el.type}) has a role — roles must only be attached to functions`,
+        details: { metadata: "role" },
+      });
+      if (el.system) errors.push({
+        rule: 3,
+        code: "GRAPH_METADATA_SCOPE_VIOLATION",
+        class: "graph",
+        element_id: el.id,
+        message: `Element "${el.id}" (${el.type}) has a system — systems must only be attached to functions`,
+        details: { metadata: "system" },
+      });
+      if (el.documents?.length) errors.push({
+        rule: 3,
+        code: "GRAPH_METADATA_SCOPE_VIOLATION",
+        class: "graph",
+        element_id: el.id,
+        message: `Element "${el.id}" (${el.type}) has documents — documents must only be attached to functions`,
+        details: { metadata: "documents" },
+      });
     }
   }
 
@@ -447,7 +509,13 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
     const ins = (inEdges.get(el.id) || []).map(id => byId.get(id));
     const outs = (outEdges.get(el.id) || []).map(id => byId.get(id));
     if (!hasFunctionWithin1Hop(ins, "in") && !hasFunctionWithin1Hop(outs, "out")) {
-      errors.push({ rule: 4, message: `Gateway "${el.id}" is not connected to a function on either side` });
+      errors.push({
+        rule: 4,
+        code: "GRAPH_GATEWAY_CONNECTIVITY_INVALID",
+        class: "graph",
+        element_id: el.id,
+        message: `Gateway "${el.id}" is not connected to a function on either side`,
+      });
     }
   }
 
@@ -455,7 +523,14 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   for (const el of elements) {
     if (el.type !== "function") continue;
     if (!el.role) {
-      errors.push({ rule: 5, message: `Function "${el.id}" ("${el.label}") has no role assigned` });
+      errors.push({
+        rule: 5,
+        code: "ROLE_MISSING",
+        legacy_code: "RUNTIME_MISSING_ROLE",
+        class: "role",
+        element_id: el.id,
+        message: `Function "${el.id}" ("${el.label}") has no role assigned`,
+      });
     }
     // Multiple roles would require decomposition — we enforce single role via the schema (role is a string, not array)
   }
@@ -484,7 +559,12 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
     if (isMessengerTrigger && !activationPolicy) {
       errors.push({
         rule: 7,
+        code: "TRIGGER_ACTIVATION_POLICY_MISSING",
+        legacy_code: "DEPLOYMENT_ACTIVATION_POLICY_INVALID",
+        class: "trigger",
+        element_id: trigger.start_node,
         message: `Messenger start trigger "${trigger.start_node}" (${trigger.event_type}) must define activation_policy for dedup/rate/backpressure readiness`,
+        details: { event_type: trigger.event_type },
       });
       continue;
     }
@@ -501,7 +581,7 @@ function validationIssue(
   severity: WorkflowValidationSeverity,
   issueClass: WorkflowValidationClass,
   message: string,
-  extras: Partial<Pick<WorkflowValidationIssue, "element_id" | "edge" | "details">> = {},
+  extras: Partial<Pick<WorkflowValidationIssue, "element_id" | "edge" | "details" | "legacy_code">> = {},
 ): WorkflowValidationIssue {
   return { code, severity, class: issueClass, message, ...extras };
 }
@@ -526,17 +606,6 @@ function isValidGatewayCondition(condition: string): boolean {
   } catch {
     return false;
   }
-}
-
-function legacyValidationCode(error: ValidationError): string {
-  if (error.rule === 1 && error.message.includes("start")) return "GRAPH_NO_START_EVENT";
-  if (error.rule === 1 && error.message.includes("end")) return "GRAPH_NO_TERMINAL_EVENT";
-  if (error.rule === 2) return "GRAPH_ALTERNATION_VIOLATION";
-  if (error.rule === 3) return "GRAPH_METADATA_SCOPE_VIOLATION";
-  if (error.rule === 4) return "GRAPH_GATEWAY_CONNECTIVITY_INVALID";
-  if (error.rule === 5) return "RUNTIME_MISSING_ROLE";
-  if (error.rule === 7) return "DEPLOYMENT_ACTIVATION_POLICY_INVALID";
-  return `GRAPH_EEPC_RULE_${error.rule}`;
 }
 
 export function validateWorkflowReadiness(
@@ -596,11 +665,16 @@ export function validateWorkflowReadiness(
 
   for (const error of validateWorkflow(def)) {
     issues.push(validationIssue(
-      legacyValidationCode(error),
+      error.code,
       "error",
-      error.rule === 5 ? "runtime" : error.rule === 7 ? "deployment" : "graph",
+      error.class,
       error.message,
-      { details: { rule: error.rule } },
+      {
+        element_id: error.element_id,
+        edge: error.edge,
+        legacy_code: error.legacy_code,
+        details: { ...error.details, rule: error.rule },
+      },
     ));
   }
 
@@ -658,19 +732,19 @@ export function validateWorkflowReadiness(
         const role = rolesById.get(element.role);
         if (!role) {
           issues.push(validationIssue(
-            "RUNTIME_MISSING_ROLE",
+            "ROLE_MISSING",
             "error",
-            "runtime",
+            "role",
             `Function "${element.id}" references missing role "${element.role}"`,
-            { element_id: element.id, details: { role: element.role } },
+            { element_id: element.id, legacy_code: "RUNTIME_MISSING_ROLE", details: { role: element.role } },
           ));
         } else if (role.strategy !== "manual" && (role.assignees ?? []).length === 0) {
           issues.push(validationIssue(
-            "RUNTIME_MISSING_ROLE_ASSIGNEE",
+            "ROLE_MISSING_ASSIGNEE",
             "error",
-            "runtime",
+            "role",
             `Role "${element.role}" has no assignees and is not manual`,
-            { element_id: element.id, details: { role: element.role, strategy: role.strategy } },
+            { element_id: element.id, legacy_code: "RUNTIME_MISSING_ROLE_ASSIGNEE", details: { role: element.role, strategy: role.strategy } },
           ));
         }
       }
@@ -678,11 +752,11 @@ export function validateWorkflowReadiness(
       for (const docId of element.documents ?? []) {
         if (!knownDocIds.has(docId)) {
           issues.push(validationIssue(
-            "RUNTIME_MISSING_DOCUMENT",
+            "DOCUMENT_MISSING",
             "error",
-            "runtime",
+            "document",
             `Function "${element.id}" references missing document "${docId}"`,
-            { element_id: element.id, details: { document: docId } },
+            { element_id: element.id, legacy_code: "RUNTIME_MISSING_DOCUMENT", details: { document: docId } },
           ));
         }
       }
@@ -694,11 +768,11 @@ export function validateWorkflowReadiness(
       for (const system of systems) {
         if (adapterContextProvided && !adapterNames.has(system.connector)) {
           issues.push(validationIssue(
-            "RUNTIME_MISSING_ADAPTER",
+            "ADAPTER_MISSING",
             "error",
-            "runtime",
+            "adapter",
             `Function "${element.id}" references missing adapter "${system.connector}"`,
-            { element_id: element.id, details: { connector: system.connector, operation: system.operation } },
+            { element_id: element.id, legacy_code: "RUNTIME_MISSING_ADAPTER", details: { connector: system.connector, operation: system.operation } },
           ));
         }
       }
@@ -707,11 +781,11 @@ export function validateWorkflowReadiness(
     if (element.type === "event" && element.trigger?.kind) {
       if (element.trigger.kind === "ambiguous") {
         issues.push(validationIssue(
-          "DEPLOYMENT_AMBIGUOUS_TRIGGER",
+          "TRIGGER_AMBIGUOUS",
           "error",
-          "deployment",
+          "trigger",
           `Event "${element.id}" trigger is ambiguous and requires manual override`,
-          { element_id: element.id },
+          { element_id: element.id, legacy_code: "DEPLOYMENT_AMBIGUOUS_TRIGGER" },
         ));
       } else if ((element.trigger.confidence ?? 1) < 0.7) {
         issues.push(validationIssue(
@@ -723,11 +797,11 @@ export function validateWorkflowReadiness(
         ));
       } else if (!supportedTriggers.has(element.trigger.kind)) {
         issues.push(validationIssue(
-          "DEPLOYMENT_UNSUPPORTED_TRIGGER",
+          "TRIGGER_UNSUPPORTED_KIND",
           "error",
-          "deployment",
+          "trigger",
           `Event "${element.id}" uses unsupported trigger kind "${element.trigger.kind}"`,
-          { element_id: element.id, details: { kind: element.trigger.kind } },
+          { element_id: element.id, legacy_code: "DEPLOYMENT_UNSUPPORTED_TRIGGER", details: { kind: element.trigger.kind } },
         ));
       }
       if (terminalEventIds.has(element.id) && !startEventIds.has(element.id) && !element.trigger.manual_override) {
@@ -767,14 +841,15 @@ export function validateWorkflowReadiness(
   const readiness: WorkflowReadiness = errors.length > 0 ? "blocked" : warnings.length > 0 ? "warning" : "ready";
   return {
     workflow_id: def.id,
+    taxonomy_version: WORKFLOW_VALIDATION_TAXONOMY_VERSION,
     readiness,
     source: context.source ?? "workflow.validate",
     errors,
     warnings,
     checked_at: nowIso(),
     gates: {
-      deployment_blocker: errors.some(issue => issue.class === "graph" || issue.class === "runtime" || issue.class === "deployment"),
-      case_start_blocker: errors.some(issue => issue.class === "runtime" || issue.class === "deployment" || issue.code.startsWith("GRAPH_")),
+      deployment_blocker: errors.some(issue => issue.class !== "migration"),
+      case_start_blocker: errors.some(issue => issue.class === "graph" || issue.class === "role" || issue.class === "trigger" || issue.class === "adapter" || issue.class === "document" || issue.class === "deployment" || issue.class === "lifecycle"),
       release_blocker: errors.length > 0,
       reviewer_required: warnings.length > 0 || errors.some(issue => issue.class === "migration"),
     },
@@ -785,24 +860,72 @@ function validateActivationPolicy(policy: WorkflowActivationPolicy, startNode: s
   const errors: ValidationError[] = [];
   const prefix = `Activation policy for start trigger "${startNode}"`;
   if (policy.min_confidence !== undefined && (typeof policy.min_confidence !== "number" || policy.min_confidence < 0 || policy.min_confidence > 1)) {
-    errors.push({ rule: 7, message: `${prefix} has invalid min_confidence; expected number between 0 and 1` });
+    errors.push({
+      rule: 7,
+      code: "TRIGGER_ACTIVATION_POLICY_INVALID",
+      legacy_code: "DEPLOYMENT_ACTIVATION_POLICY_INVALID",
+      class: "trigger",
+      element_id: startNode,
+      message: `${prefix} has invalid min_confidence; expected number between 0 and 1`,
+      details: { field: "min_confidence" },
+    });
   }
   if (policy.dedup_window_sec !== undefined && (!Number.isFinite(policy.dedup_window_sec) || policy.dedup_window_sec <= 0)) {
-    errors.push({ rule: 7, message: `${prefix} has invalid dedup_window_sec; expected positive seconds` });
+    errors.push({
+      rule: 7,
+      code: "TRIGGER_ACTIVATION_POLICY_INVALID",
+      legacy_code: "DEPLOYMENT_ACTIVATION_POLICY_INVALID",
+      class: "trigger",
+      element_id: startNode,
+      message: `${prefix} has invalid dedup_window_sec; expected positive seconds`,
+      details: { field: "dedup_window_sec" },
+    });
   }
   if (policy.rate_limit) {
     if (!Number.isFinite(policy.rate_limit.window_sec) || policy.rate_limit.window_sec <= 0) {
-      errors.push({ rule: 7, message: `${prefix} has invalid rate_limit.window_sec; expected positive seconds` });
+      errors.push({
+        rule: 7,
+        code: "TRIGGER_ACTIVATION_POLICY_INVALID",
+        legacy_code: "DEPLOYMENT_ACTIVATION_POLICY_INVALID",
+        class: "trigger",
+        element_id: startNode,
+        message: `${prefix} has invalid rate_limit.window_sec; expected positive seconds`,
+        details: { field: "rate_limit.window_sec" },
+      });
     }
     if (!Number.isFinite(policy.rate_limit.max_events) || policy.rate_limit.max_events <= 0) {
-      errors.push({ rule: 7, message: `${prefix} has invalid rate_limit.max_events; expected positive count` });
+      errors.push({
+        rule: 7,
+        code: "TRIGGER_ACTIVATION_POLICY_INVALID",
+        legacy_code: "DEPLOYMENT_ACTIVATION_POLICY_INVALID",
+        class: "trigger",
+        element_id: startNode,
+        message: `${prefix} has invalid rate_limit.max_events; expected positive count`,
+        details: { field: "rate_limit.max_events" },
+      });
     }
   }
   if (policy.backpressure?.max_running_cases !== undefined && (!Number.isFinite(policy.backpressure.max_running_cases) || policy.backpressure.max_running_cases <= 0)) {
-    errors.push({ rule: 7, message: `${prefix} has invalid backpressure.max_running_cases; expected positive count` });
+    errors.push({
+      rule: 7,
+      code: "TRIGGER_ACTIVATION_POLICY_INVALID",
+      legacy_code: "DEPLOYMENT_ACTIVATION_POLICY_INVALID",
+      class: "trigger",
+      element_id: startNode,
+      message: `${prefix} has invalid backpressure.max_running_cases; expected positive count`,
+      details: { field: "backpressure.max_running_cases" },
+    });
   }
   if (policy.sampling && (typeof policy.sampling.rate !== "number" || policy.sampling.rate < 0 || policy.sampling.rate > 1)) {
-    errors.push({ rule: 7, message: `${prefix} has invalid sampling.rate; expected number between 0 and 1` });
+    errors.push({
+      rule: 7,
+      code: "TRIGGER_ACTIVATION_POLICY_INVALID",
+      legacy_code: "DEPLOYMENT_ACTIVATION_POLICY_INVALID",
+      class: "trigger",
+      element_id: startNode,
+      message: `${prefix} has invalid sampling.rate; expected number between 0 and 1`,
+      details: { field: "sampling.rate" },
+    });
   }
   return errors;
 }

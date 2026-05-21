@@ -10,6 +10,7 @@ import {
   saveWorkflowDeployedSnapshot,
   validateWorkflowReadiness,
   getWorkflowDeployVersion,
+  WORKFLOW_VALIDATION_TAXONOMY_VERSION,
   type WorkflowDefinition,
   type WorkflowElement,
   type FlowEdge,
@@ -385,6 +386,14 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
         code: "WORKFLOW_RETIRED",
         process_id: id,
         lifecycle_state: currentState,
+        taxonomy_version: WORKFLOW_VALIDATION_TAXONOMY_VERSION,
+        validation_issue: {
+          code: "LIFECYCLE_RETIRED",
+          severity: "error",
+          class: "lifecycle",
+          message: "Retired workflows cannot be deployed again",
+          details: { lifecycle_state: currentState },
+        },
       },
     };
   }
