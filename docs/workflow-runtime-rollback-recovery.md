@@ -75,9 +75,9 @@ an unreachable role/agent.
 
 ```bash
 bun run scripts/pg-verify.ts
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"case.get","category":"inspect","args":{"case_id":"<case_id>"}}'
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"case.cancel","category":"act","args":{"case_id":"<case_id>","reason":"stuck-running-case recovery issue #<incident>"}}'
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workitem.cancel","category":"act","args":{"work_item_id":"<work_item_id>","reason":"case recovery issue #<incident>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"case.get","category":"inspect","args":{"id":"<case_id>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"case.cancel","category":"act","args":{"id":"<case_id>","reason":"stuck-running-case recovery issue #<incident>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workitem.cancel","category":"act","args":{"id":"<work_item_id>"}}'
 ```
 
 Blockers: terminal case has new routed work; `onlyInRedis > 0`; destructive
@@ -91,13 +91,16 @@ Action Spine receipts, and Konoha bus review message.
 Use when waits/subscriptions reference missing or terminal cases.
 
 ```bash
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"event.wait_list","category":"inspect","args":{"case_id":"<case_id>"}}'
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"subscription.list","category":"inspect","args":{"instance_id":"<case_id>"}}'
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"subscription.cancel","category":"act","args":{"subscription_id":"<subscription_id>","reason":"orphaned wait recovery issue #<incident>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"case.get","category":"inspect","args":{"id":"<case_id>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"subscription.list","category":"inspect","args":{}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"subscription.cancel","category":"act","args":{"id":"<subscription_id>"}}'
 ```
 
 Abort if the subscription owner cannot be identified or cancellation would hide
 the #812 terminal-case violation instead of preserving evidence.
+`event.wait_list` is still a planned Action Spine surface; use it only after an
+implementation is accepted, otherwise rely on `case.get` plus
+`subscription.list` evidence.
 
 ### Duplicate Dispatch
 
@@ -122,7 +125,7 @@ healthcheck reports connector `FAIL`.
 ```bash
 KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py
 scripts/telegram-smoke.sh
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"connector.send_message","category":"act","args":{"connector":"<connector>","target":"<target>","text":"<approved recovery message>","idempotency_key":"<case_id>:<work_item_id>:recovery"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"connector.send_message","category":"act","args":{"connector_id":"<connector_id>","endpoint_id":"<endpoint_id>","chat_ref":"<provider_chat_ref>","text":"<approved recovery message>","dry_run":true,"metadata":{"idempotency_key":"<case_id>:<work_item_id>:recovery","incident":"#<incident>"}}}'
 ```
 
 Blockers: no idempotency key; no owner approval for external resend; connector
@@ -147,7 +150,8 @@ For workflow deploy investigation:
 bun run scripts/action-surface-report.ts --check
 python3 scripts/check-route-auth-policy.py
 scripts/staging-smoke.sh --dry-run
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workflow.deploy","category":"act","args":{"workflow_id":"<workflow_id>","dry_run":true}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workflow.get","category":"inspect","args":{"id":"<workflow_id>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workflow.deploy","category":"act","args":{"id":"<workflow_id>"}}'
 ```
 
 Blockers: `onlyInRedis > 0`; active cases exist on the partially deployed
@@ -160,12 +164,15 @@ Use when an accepted workflow update creates invalid graph/runtime behavior.
 
 ```bash
 bun test --timeout 30000 tests/workflow-loader-validation.test.ts tests/eepc-state-machine-regression.test.ts
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workflow.update","category":"act","args":{"workflow_id":"<workflow_id>","patch":"<reviewed rollback patch>","dry_run":true}}'
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workflow.update","category":"act","args":{"workflow_id":"<workflow_id>","patch":"<reviewed rollback patch>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workflow.get","category":"inspect","args":{"id":"<workflow_id>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workflow.update","category":"act","args":{"id":"<workflow_id>","elements":[{"id":"<event_id>","type":"event","label":"<label>"}],"flow":[],"draft":true}}'
 ```
 
-Apply only the reviewed patch. Abort if active cases are unknown or the patch
-would create/route work for terminal cases.
+Apply only the reviewed definition payload. The current `workflow.update`
+Action Spine schema does not accept `patch` or `dry_run`; use `workflow.get`
+before/after evidence and staging/preflight checks as the review guard. Abort if
+active cases are unknown or the payload would create/route work for terminal
+cases.
 
 ### Bad Assistant Action
 
@@ -174,7 +181,7 @@ Use when an assistant proposes or performs an unsafe mutation.
 ```bash
 bun run scripts/action-surface-report.ts --check
 python3 scripts/check-route-auth-policy.py
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"audit.read","category":"inspect","args":{"trace_id":"<trace_id>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"audit.read","category":"inspect","args":{"action_type":"assistant.invoke","limit":50}}'
 ```
 
 Blockers: mutating action bypassed confirmation; audit record is missing.

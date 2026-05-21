@@ -31,7 +31,7 @@
       "id": "subscriptions_event_waits",
       "owner": "Event manager",
       "rollback_limit": "Subscriptions and event waits represent live resume points. They must be cancelled or recreated by explicit runtime actions, not broad key cleanup.",
-      "allowed_recovery": ["subscription.list", "subscription.cancel", "event.wait_list"],
+      "allowed_recovery": ["case.get", "subscription.list", "subscription.cancel", "event.wait_list once implemented"],
       "blocked_recovery": ["delete all subscriptions for a trigger without affected case list"]
     },
     {
@@ -71,9 +71,9 @@
       "signals": ["case status stays running past SLA", "work item has no reachable assignee", "event wait is stale"],
       "commands": [
         "bun run scripts/pg-verify.ts",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"case.get\",\"category\":\"inspect\",\"args\":{\"case_id\":\"<case_id>\"}}'",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"case.cancel\",\"category\":\"act\",\"args\":{\"case_id\":\"<case_id>\",\"reason\":\"stuck-running-case recovery issue #<incident>\"}}'",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workitem.cancel\",\"category\":\"act\",\"args\":{\"work_item_id\":\"<work_item_id>\",\"reason\":\"case recovery issue #<incident>\"}}'"
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"case.get\",\"category\":\"inspect\",\"args\":{\"id\":\"<case_id>\"}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"case.cancel\",\"category\":\"act\",\"args\":{\"id\":\"<case_id>\",\"reason\":\"stuck-running-case recovery issue #<incident>\"}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workitem.cancel\",\"category\":\"act\",\"args\":{\"id\":\"<work_item_id>\"}}'"
       ],
       "evidence": ["case id", "work item ids", "pg-verify output", "Action Spine receipts", "Konoha bus review message"],
       "blockers": ["case is terminal but has new routed work", "pg-verify onlyInRedis > 0", "no owner/reviewer acceptance for destructive cleanup"],
@@ -85,11 +85,11 @@
       "id": "orphaned-waits-subscriptions",
       "owner": "Kakashi",
       "reviewer": "Shikadai",
-      "signals": ["event.wait_list shows waits for missing or terminal cases", "subscription.list shows instance_id with no running case"],
+      "signals": ["case.get shows terminal or missing wait owner", "subscription.list shows instance_id with no running case"],
       "commands": [
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"event.wait_list\",\"category\":\"inspect\",\"args\":{\"case_id\":\"<case_id>\"}}'",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"subscription.list\",\"category\":\"inspect\",\"args\":{\"instance_id\":\"<case_id>\"}}'",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"subscription.cancel\",\"category\":\"act\",\"args\":{\"subscription_id\":\"<subscription_id>\",\"reason\":\"orphaned wait recovery issue #<incident>\"}}'"
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"case.get\",\"category\":\"inspect\",\"args\":{\"id\":\"<case_id>\"}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"subscription.list\",\"category\":\"inspect\",\"args\":{}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"subscription.cancel\",\"category\":\"act\",\"args\":{\"id\":\"<subscription_id>\"}}'"
       ],
       "evidence": ["wait ids", "subscription ids", "case terminal/running state", "cancel receipts"],
       "blockers": ["affected case list is unknown", "subscription belongs to active non-incident case"],
@@ -121,7 +121,7 @@
       "commands": [
         "KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py",
         "scripts/telegram-smoke.sh",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"connector.send_message\",\"category\":\"act\",\"args\":{\"connector\":\"<connector>\",\"target\":\"<target>\",\"text\":\"<approved recovery message>\",\"idempotency_key\":\"<case_id>:<work_item_id>:recovery\"}}'"
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"connector.send_message\",\"category\":\"act\",\"args\":{\"connector_id\":\"<connector_id>\",\"endpoint_id\":\"<endpoint_id>\",\"chat_ref\":\"<provider_chat_ref>\",\"text\":\"<approved recovery message>\",\"dry_run\":true,\"metadata\":{\"idempotency_key\":\"<case_id>:<work_item_id>:recovery\",\"incident\":\"#<incident>\"}}}'"
       ],
       "evidence": ["connector health output", "failed receipt", "idempotency key", "approved resend text"],
       "blockers": ["no idempotency key", "no owner approval for external resend", "production connector disabled by profile"],
@@ -156,7 +156,8 @@
         "bun run scripts/action-surface-report.ts --check",
         "python3 scripts/check-route-auth-policy.py",
         "scripts/staging-smoke.sh --dry-run",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.deploy\",\"category\":\"act\",\"args\":{\"workflow_id\":\"<workflow_id>\",\"dry_run\":true}}'"
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.get\",\"category\":\"inspect\",\"args\":{\"id\":\"<workflow_id>\"}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.deploy\",\"category\":\"act\",\"args\":{\"id\":\"<workflow_id>\"}}'"
       ],
       "evidence": ["deploy receipt", "workflow id", "route auth check", "staging smoke output"],
       "blockers": ["deploy action is not audited", "route auth check fails", "staging-core contract violated"],
@@ -171,14 +172,14 @@
       "signals": ["workflow.update accepted invalid graph", "new cases fail validation", "terminal state is unreachable"],
       "commands": [
         "bun test --timeout 30000 tests/workflow-loader-validation.test.ts tests/eepc-state-machine-regression.test.ts",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.update\",\"category\":\"act\",\"args\":{\"workflow_id\":\"<workflow_id>\",\"patch\":\"<reviewed rollback patch>\",\"dry_run\":true}}'",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.update\",\"category\":\"act\",\"args\":{\"workflow_id\":\"<workflow_id>\",\"patch\":\"<reviewed rollback patch>\"}}'"
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.get\",\"category\":\"inspect\",\"args\":{\"id\":\"<workflow_id>\"}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.update\",\"category\":\"act\",\"args\":{\"id\":\"<workflow_id>\",\"elements\":[{\"id\":\"<event_id>\",\"type\":\"event\",\"label\":\"<label>\"}],\"flow\":[],\"draft\":true}}'"
       ],
-      "evidence": ["validation failure", "rollback patch", "dry-run receipt", "apply receipt"],
-      "blockers": ["patch is not reviewed", "affected running cases are unknown", "terminal-case rule from #812 would be violated"],
+      "evidence": ["validation failure", "reviewed rollback definition", "workflow.get before/after output", "workflow.update receipt"],
+      "blockers": ["rollback definition is not reviewed", "affected running cases are unknown", "terminal-case rule from #812 would be violated"],
       "warnings": ["existing running cases may continue on old snapshot"],
-      "abort_criteria": ["dry-run changes unrelated workflow fields", "operator cannot identify active cases"],
-      "audit": "Store the exact patch and both dry-run/apply receipts."
+      "abort_criteria": ["reviewed definition payload changes unrelated workflow fields", "operator cannot identify active cases"],
+      "audit": "Store the exact reviewed definition payload, workflow.get before/after output, and update receipt."
     },
     {
       "id": "bad-assistant-action",
@@ -188,7 +189,7 @@
       "commands": [
         "bun run scripts/action-surface-report.ts --check",
         "python3 scripts/check-route-auth-policy.py",
-        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"audit.read\",\"category\":\"inspect\",\"args\":{\"trace_id\":\"<trace_id>\"}}'"
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"audit.read\",\"category\":\"inspect\",\"args\":{\"action_type\":\"assistant.invoke\",\"limit\":50}}'"
       ],
       "evidence": ["assistant trace id", "pending confirmation id", "audit.read output", "action policy check"],
       "blockers": ["mutating action bypassed confirmation", "audit record missing"],

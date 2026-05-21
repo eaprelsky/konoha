@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { validateEnvelope } from "../src/act-envelope";
+import { dumpRegistry } from "../src/action-registry";
 
 const repoRoot = join(import.meta.dir, "..");
 
@@ -10,6 +12,10 @@ function read(path: string): string {
 
 function loadRunbook(): any {
   return JSON.parse(read("docs/workflow-runtime-rollback-recovery.json"));
+}
+
+function extractActEnvelopes(text: string): any[] {
+  return [...text.matchAll(/-d '({[^']*"action"[^']*})'/g)].map(match => JSON.parse(match[1]));
 }
 
 describe("Workflow runtime rollback and recovery runbook", () => {
@@ -100,6 +106,31 @@ describe("Workflow runtime rollback and recovery runbook", () => {
 
     expect(gate.allowed_only_with_explicit_scope).toContain("retention.cleanup_apply");
     expect(gate.allowed_only_with_explicit_scope).toContain("case.delete");
+  });
+
+  test("keeps /act command examples aligned with the Action Spine registry", () => {
+    const runbookJson = read("docs/workflow-runtime-rollback-recovery.json");
+    const runbookMarkdown = read("docs/workflow-runtime-rollback-recovery.md");
+    const registry = new Map(dumpRegistry().actions.map(action => [action.id, action]));
+    const envelopes = [
+      ...extractActEnvelopes(runbookJson),
+      ...extractActEnvelopes(runbookMarkdown),
+    ];
+
+    expect(envelopes.length).toBeGreaterThan(10);
+
+    for (const envelope of envelopes) {
+      const errors = validateEnvelope(envelope);
+      expect(errors).toEqual([]);
+
+      const action = registry.get(envelope.action);
+      expect(action).toBeDefined();
+      expect(action?.implementation?.kind).not.toBe("planned");
+
+      const allowedArgs = new Set((action?.args ?? []).map(arg => arg.name));
+      const unknownArgs = Object.keys(envelope.args ?? {}).filter(arg => !allowedArgs.has(arg));
+      expect(unknownArgs).toEqual([]);
+    }
   });
 
   test("docs, release policy, and preflight scripts link the runbook", () => {
