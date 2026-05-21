@@ -75,7 +75,7 @@ export const ACTIONS: ActionDef[] = [
     args: [
       { name: "id", type: "string", required: true, description: "Workflow ID to deploy." },
       { name: "deployed_by", type: "string", required: false, description: "Operator or agent ID recorded in lifecycle deploy metadata." },
-      { name: "idempotency_key", type: "string", required: false, description: "Optional caller deploy transaction key; server derives workflow.deploy:<workflow_id>:v<deploy_version> when omitted." },
+      { name: "idempotency_key", type: "string", required: false, description: "Optional caller deploy request key; effective transaction keys are always scoped by workflow id and deploy version." },
     ],
     implementation: { kind: "direct", note: "Transitions validated workflows to executable through action-executor." },
     autonomy: "confirm",

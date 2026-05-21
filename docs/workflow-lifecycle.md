@@ -178,12 +178,15 @@ deployment transaction receipt:
 }
 ```
 
-Callers may pass `idempotency_key`; otherwise the server derives
-`workflow.deploy:<workflow_id>:v<deploy_version>`. Per-subscription receipts
-also include deterministic `operation_key` and `idempotency_key` values for
-created, cancelled, unchanged, failed, and rollback operations. The durable
-deploy record is `workflow.last_deploy`; its `side_effects` field stores the
-same transaction/subscription receipt after materialization.
+Callers may pass `idempotency_key`, which is stored as
+`caller_idempotency_key`. The effective transaction `idempotency_key` is always
+scoped by deployment id: `workflow.deploy:<workflow_id>:v<deploy_version>` when
+omitted, or `workflow.deploy:<workflow_id>:v<deploy_version>:<caller_key>` when
+provided. Per-subscription receipts also include deterministic `operation_key`
+and deployment-scoped `idempotency_key` values for created, cancelled,
+unchanged, failed, and rollback operations. The durable deploy record is
+`workflow.last_deploy`; its `side_effects` field stores the same
+transaction/subscription receipt after materialization.
 
 Failures use stable `code` values:
 

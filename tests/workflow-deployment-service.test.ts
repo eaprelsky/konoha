@@ -96,7 +96,8 @@ describe("workflow deployment service", () => {
       deployment_id: `${id}:v1`,
       transaction: {
         transaction_id: `${id}:v1:transaction`,
-        idempotency_key: firstIdempotencyKey,
+        idempotency_key: `workflow.deploy:${id}:v1:${firstIdempotencyKey}`,
+        caller_idempotency_key: firstIdempotencyKey,
         workflow_id: id,
         deploy_version: 1,
         deployment_id: `${id}:v1`,
@@ -121,7 +122,7 @@ describe("workflow deployment service", () => {
           trigger_kind: "timer",
           status: "created",
           operation_key: `${id}:v1:start`,
-          idempotency_key: `${firstIdempotencyKey}:subscription:create:start`,
+          idempotency_key: `workflow.deploy:${id}:v1:${firstIdempotencyKey}:subscription:create:start`,
         })],
         cancelled: [],
         unchanged: [],
@@ -137,7 +138,7 @@ describe("workflow deployment service", () => {
       deploy_version: 1,
       deployment_id: `${id}:v1`,
       operation_key: `${id}:v1:start`,
-      idempotency_key: `${firstIdempotencyKey}:subscription:create:start`,
+      idempotency_key: `workflow.deploy:${id}:v1:${firstIdempotencyKey}:subscription:create:start`,
       deployed_by: "operator-1",
     });
 
@@ -216,6 +217,46 @@ describe("workflow deployment service", () => {
     expect(active).toHaveLength(1);
     expect(active[0].id).not.toBe(firstSub.id);
     expect(active[0].trigger).toMatchObject({ kind: "timer", cron: "*/10 * * * *" });
+  });
+
+  test("caller idempotency key is scoped by deploy version for changed-trigger redeploy", async () => {
+    const id = `${RUN}-caller-key-scoped`;
+    const callerKey = "repeat-deploy-request";
+    touched.add(id);
+    await createWorkflow(workflow(id, "*/5 * * * *"));
+
+    const first = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1", idempotency_key: callerKey });
+    expect(first?.status).toBe(200);
+    const firstCreate = (first?.data as any).deployment.subscriptions.created[0];
+    expect(firstCreate).toMatchObject({
+      event_id: "start",
+      operation_key: `${id}:v1:start`,
+      idempotency_key: `workflow.deploy:${id}:v1:${callerKey}:subscription:create:start`,
+    });
+
+    await updateWorkflow(id, workflow(id, "*/10 * * * *"), { draft: true });
+    const second = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1", idempotency_key: callerKey });
+
+    expect(second?.status).toBe(200);
+    expect((second?.data as any).deployment.transaction).toMatchObject({
+      idempotency_key: `workflow.deploy:${id}:v2:${callerKey}`,
+      caller_idempotency_key: callerKey,
+      deploy_version: 2,
+    });
+    const secondCreate = (second?.data as any).deployment.subscriptions.created[0];
+    expect(secondCreate).toMatchObject({
+      event_id: "start",
+      operation_key: `${id}:v2:start`,
+      idempotency_key: `workflow.deploy:${id}:v2:${callerKey}:subscription:create:start`,
+    });
+    expect(secondCreate.idempotency_key).not.toBe(firstCreate.idempotency_key);
+
+    const active = await activeSubscriptionsForProcess(id);
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({
+      operation_key: `${id}:v2:start`,
+      idempotency_key: `workflow.deploy:${id}:v2:${callerKey}:subscription:create:start`,
+    });
   });
 
   test("materialization failures are explicit and do not mark workflow executable", async () => {

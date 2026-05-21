@@ -24,6 +24,7 @@ export type WorkflowDeploymentTransactionStatus =
 export interface WorkflowDeploymentTransactionReceipt {
   transaction_id: string;
   idempotency_key: string;
+  caller_idempotency_key?: string;
   workflow_id: string;
   deploy_version: number;
   deployment_id: string;
@@ -122,8 +123,9 @@ function operationKey(workflowId: string, deployVersion: number, eventId: string
   return `${workflowId}:v${deployVersion}:${eventId}`;
 }
 
-function defaultDeploymentIdempotencyKey(workflowId: string, deployVersion: number): string {
-  return `workflow.deploy:${deploymentId(workflowId, deployVersion)}`;
+function deploymentIdempotencyKey(workflowId: string, deployVersion: number, callerKey?: string): string {
+  const scoped = `workflow.deploy:${deploymentId(workflowId, deployVersion)}`;
+  return callerKey?.trim() ? `${scoped}:${callerKey.trim()}` : scoped;
 }
 
 function operationIdempotencyKey(
@@ -140,10 +142,12 @@ export function buildWorkflowDeploymentTransaction(
   status: WorkflowDeploymentTransactionStatus = "planned",
 ): WorkflowDeploymentTransactionReceipt {
   const deployment_id = deploymentId(def.id, context.deploy_version);
-  const idempotency_key = context.idempotency_key?.trim() || defaultDeploymentIdempotencyKey(def.id, context.deploy_version);
+  const caller_idempotency_key = context.idempotency_key?.trim() || undefined;
+  const idempotency_key = deploymentIdempotencyKey(def.id, context.deploy_version, caller_idempotency_key);
   return {
     transaction_id: `${deployment_id}:transaction`,
     idempotency_key,
+    ...(caller_idempotency_key ? { caller_idempotency_key } : {}),
     workflow_id: def.id,
     deploy_version: context.deploy_version,
     deployment_id,
