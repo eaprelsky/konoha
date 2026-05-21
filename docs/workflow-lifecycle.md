@@ -33,6 +33,17 @@ longer the same operation as deploying it for runtime execution.
   terminal path, ambiguous unconditioned terminal branches, and pass-through
   cycles with no function boundary. Rework cycles remain valid when they pass
   through a function work boundary and retain a path to a terminal event.
+- Gateway conditions use a bounded payload DSL, not arbitrary JavaScript:
+  `payload.<field>` references, string/number/boolean/null/undefined literals,
+  `===`, `!==`, `==`, `!=`, numeric comparisons, `!`, `&&`, `||`, and
+  parentheses. Unsupported tokens, function calls, assignments, and malformed
+  expressions block readiness with stable graph codes. When a workflow declares
+  `payload_fields`, `payload_schema`, or function `output_fields`/`output_schema`,
+  readiness also blocks conditions that reference unknown payload fields. XOR
+  gateways with multiple outgoing conditional branches emit
+  `GRAPH_GATEWAY_MISSING_DEFAULT` until one unconditioned default branch is
+  present, so reviewers can see when runtime routing will error if no condition
+  matches.
 - `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, increments `deploy_version`, records `deployed_at` and optional `deployed_by`, and marks the workflow `executable` when readiness passes.
 - `workflow.deploy` also stores an immutable deployed runtime snapshot keyed by
   workflow id and deploy version. `case.start` binds each new case to that

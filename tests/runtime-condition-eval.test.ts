@@ -18,4 +18,11 @@ describe("runtime condition evaluation", () => {
       { review_route: "approved", closure_allowed: false },
     )).toBe(true);
   });
+
+  test("keeps unsupported gateway guard syntax closed at runtime", () => {
+    expect(evalCondition(
+      "payload.review_route === 'approved'; process.exit()",
+      { review_route: "approved" },
+    )).toBe(false);
+  });
 });

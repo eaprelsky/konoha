@@ -6,6 +6,7 @@ import { syncSchemaToRegistry, cleanupWorkflowRefs } from "./sync/schema-registr
 import { silentCatch, createLogger } from "./logger";
 import { upsertDoc, type DocType } from "./runtime/documents";
 import type { WorkflowActivationPolicy } from "./event-activation-policy";
+import { analyzeGatewayCondition } from "./workflow-gateway-conditions";
 
 const log = createLogger("workflow-loader");
 
@@ -71,6 +72,9 @@ export interface WorkflowElement {
   locked?: boolean;
   // Intent-based execution: outcome/goal for AI agent (vs instruction-based label)
   intent?: string;
+  // Optional payload fields materialized by this function for gateway-readiness checks.
+  output_fields?: string[];
+  output_schema?: { fields?: string[]; properties?: Record<string, unknown>; required?: string[] };
   // Sub-process call: explicit reference to child workflow id
   sub_process_id?: string;
 }
@@ -145,7 +149,8 @@ export interface WorkflowRuntimeSnapshotBinding {
 }
 
 // Flow edge: [from, to] or [from, to, condition]
-// condition is a JS expression evaluated against case payload (e.g. "payload.qualified === true")
+// condition uses the gateway condition DSL evaluated against case payload
+// (e.g. "payload.qualified === true").
 export type FlowEdge = [string, string] | [string, string, string];
 
 export interface WorkflowDefinition {
@@ -155,6 +160,8 @@ export interface WorkflowDefinition {
   description?: string;
   triggers?: WorkflowTrigger[];
   documents?: WorkflowDocumentSeed[];
+  payload_fields?: string[];
+  payload_schema?: { fields?: string[]; properties?: Record<string, unknown>; required?: string[] };
   elements: WorkflowElement[];
   flow: FlowEdge[]; // [from, to] or [from, to, condition]
   parent_id?: string;        // ID of the parent workflow (if this is a sub-process)
@@ -658,14 +665,46 @@ function edgeCondition(edge: FlowEdge): string | undefined {
   return edge.length > 2 ? edge[2] : undefined;
 }
 
-function isValidGatewayCondition(condition: string): boolean {
-  if (!condition.trim()) return false;
-  try {
-    new Function("payload", `"use strict"; return Boolean(${condition});`);
-    return true;
-  } catch {
-    return false;
+function addPayloadField(fields: Set<string>, value: unknown): void {
+  if (typeof value !== "string") return;
+  const field = value.trim();
+  if (field) fields.add(field);
+}
+
+function addPayloadSchemaFields(fields: Set<string>, schema: unknown): void {
+  if (!schema || typeof schema !== "object") return;
+  const record = schema as { fields?: unknown; properties?: unknown; required?: unknown };
+  if (Array.isArray(record.fields)) {
+    for (const field of record.fields) addPayloadField(fields, field);
   }
+  if (Array.isArray(record.required)) {
+    for (const field of record.required) addPayloadField(fields, field);
+  }
+  if (record.properties && typeof record.properties === "object") {
+    for (const field of Object.keys(record.properties as Record<string, unknown>)) addPayloadField(fields, field);
+  }
+}
+
+function collectDeclaredPayloadFields(def: WorkflowDefinition): Set<string> {
+  const fields = new Set<string>();
+  for (const field of def.payload_fields ?? []) addPayloadField(fields, field);
+  addPayloadSchemaFields(fields, def.payload_schema);
+  for (const element of def.elements ?? []) {
+    if (element.type !== "function") continue;
+    for (const field of element.output_fields ?? []) addPayloadField(fields, field);
+    addPayloadSchemaFields(fields, element.output_schema);
+  }
+  return fields;
+}
+
+function isDeclaredPayloadDependency(dependency: string, fields: Set<string>): boolean {
+  if (fields.has(dependency)) return true;
+  const topLevel = dependency.split(".")[0];
+  if (fields.has(topLevel)) return true;
+  for (const field of fields) {
+    if (dependency.startsWith(`${field}.`)) return true;
+  }
+  return false;
 }
 
 function graphNodesThatCanReachTerminals(terminalIds: string[], inEdges: Map<string, FlowEdge[]>): Set<string> {
@@ -890,18 +929,63 @@ export function validateWorkflowReadiness(
     }
   }
 
+  const declaredPayloadFields = collectDeclaredPayloadFields(def);
+  const hasDeclaredPayloadFields = declaredPayloadFields.size > 0;
+
   for (const element of elements) {
     if (element.type !== "gateway") continue;
-    for (const edge of outEdges.get(element.id) ?? []) {
+    const outs = outEdges.get(element.id) ?? [];
+    if ((!element.operator || element.operator === "XOR") && outs.length > 1 && outs.every(edge => edgeCondition(edge) !== undefined)) {
+      issues.push(validationIssue(
+        "GRAPH_GATEWAY_MISSING_DEFAULT",
+        "warning",
+        "graph",
+        `Gateway "${element.id}" has multiple conditional branches but no deterministic default branch`,
+        { element_id: element.id, details: { outgoing_edges: outs.length } },
+      ));
+    }
+    for (const edge of outs) {
       const condition = edgeCondition(edge);
-      if (condition !== undefined && !isValidGatewayCondition(condition)) {
+      if (condition === undefined) continue;
+      const analysis = analyzeGatewayCondition(condition);
+      if (!analysis.ok) {
         issues.push(validationIssue(
-          "GRAPH_INVALID_GATEWAY_CONDITION",
+          analysis.code ?? "GRAPH_INVALID_GATEWAY_CONDITION",
           "error",
           "graph",
           `Gateway "${element.id}" has an invalid outgoing condition`,
-          { element_id: element.id, edge, details: { condition } },
+          {
+            element_id: element.id,
+            edge,
+            details: {
+              condition,
+              reason: analysis.message,
+              dependencies: analysis.dependencies,
+              ...analysis.details,
+            },
+          },
         ));
+        continue;
+      }
+      if (hasDeclaredPayloadFields) {
+        for (const dependency of analysis.dependencies) {
+          if (isDeclaredPayloadDependency(dependency, declaredPayloadFields)) continue;
+          issues.push(validationIssue(
+            "GRAPH_UNKNOWN_PAYLOAD_DEPENDENCY",
+            "error",
+            "graph",
+            `Gateway "${element.id}" condition references unknown payload field "${dependency}"`,
+            {
+              element_id: element.id,
+              edge,
+              details: {
+                condition,
+                dependency,
+                declared_payload_fields: [...declaredPayloadFields].sort(),
+              },
+            },
+          ));
+        }
       }
     }
   }

@@ -20,6 +20,7 @@ import { scheduleWaitReminders } from "../event-waits";
 import { saveCase, loadCase, saveWorkItem, loadWorkItem, CASES_IDX_PROCESS, WORKITEMS_IDX_CASE, WORKITEM_KEY_PREFIX } from "./persistence";
 import type { Case, WorkItem, ActiveBranch } from "./types";
 import { bindWorkflowSnapshotForCase, loadWorkflowForCase } from "./workflow-binding";
+import { evalGatewayCondition } from "../../workflow-gateway-conditions";
 
 const log = createLogger("runtime:advancement");
 const WORKFLOW_KEY_PREFIX = "workflow:";
@@ -51,40 +52,7 @@ export function buildAdjacency(def: WorkflowDefinition): {
 }
 
 export function evalCondition(condition: string, payload: Record<string, unknown>): boolean {
-  const expr = condition.trim();
-  const orParts = expr.split(/\s+\|\|\s+/);
-  if (orParts.length > 1) return orParts.some(part => evalCondition(part, payload));
-  const andParts = expr.split(/\s+&&\s+/);
-  if (andParts.length > 1) return andParts.every(part => evalCondition(part, payload));
-
-  const match = expr.match(
-    /^payload\.([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(===|!==|>=|<=|>|<)\s*(.+)$/,
-  );
-  if (!match) return false;
-  const [, field, op, rawValue] = match;
-  const left = payload[field];
-  let right: unknown;
-  const val = rawValue.trim();
-  if (val === "true")            right = true;
-  else if (val === "false")      right = false;
-  else if (val === "null")       right = null;
-  else if (val === "undefined")  right = undefined;
-  else if (/^-?\d+(\.\d+)?$/.test(val)) right = Number(val);
-  else if ((val.startsWith("'") && val.endsWith("'")) ||
-           (val.startsWith('"') && val.endsWith('"'))) {
-    right = val.slice(1, -1);
-  } else {
-    return false;
-  }
-  switch (op) {
-    case "===": return left === right;
-    case "!==": return left !== right;
-    case ">":   return typeof left === "number" && typeof right === "number" && left > right;
-    case "<":   return typeof left === "number" && typeof right === "number" && left < right;
-    case ">=":  return typeof left === "number" && typeof right === "number" && left >= right;
-    case "<=":  return typeof left === "number" && typeof right === "number" && left <= right;
-    default:    return false;
-  }
+  return evalGatewayCondition(condition, payload);
 }
 
 export function findJoinGateway(
