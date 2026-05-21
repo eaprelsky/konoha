@@ -365,17 +365,76 @@ async function syncWorkflowDocuments(def: WorkflowDefinition): Promise<void> {
 
 // --- eEPC Validation (6 rules from spec 2.1) ---
 
+function parseWorkflowFlow(flow: unknown): { edges: FlowEdge[]; errors: ValidationError[] } {
+  const errors: ValidationError[] = [];
+  if (!Array.isArray(flow)) {
+    return {
+      edges: [],
+      errors: [{
+        rule: 0,
+        code: "GRAPH_INVALID_FLOW_SHAPE",
+        class: "graph",
+        message: "Workflow flow must be an array of [from, to, condition?] edges",
+      }],
+    };
+  }
+
+  const edges: FlowEdge[] = [];
+  for (let index = 0; index < flow.length; index += 1) {
+    const raw = flow[index];
+    if (!Array.isArray(raw) || raw.length < 2 || raw.length > 3) {
+      errors.push({
+        rule: 0,
+        code: "GRAPH_INVALID_EDGE_SHAPE",
+        class: "graph",
+        message: `Flow edge at index ${index} must be [from, to, condition?]`,
+        details: { index },
+      });
+      continue;
+    }
+    const [from, to, condition] = raw;
+    if (typeof from !== "string" || from.trim() === "" || typeof to !== "string" || to.trim() === "" || (raw.length > 2 && typeof condition !== "string")) {
+      errors.push({
+        rule: 0,
+        code: "GRAPH_INVALID_EDGE_SHAPE",
+        class: "graph",
+        message: `Flow edge at index ${index} must use non-empty string endpoints and optional string condition`,
+        details: { index },
+      });
+      continue;
+    }
+    edges.push(raw.length > 2 ? [from, to, condition] : [from, to]);
+  }
+
+  return { edges, errors };
+}
+
 export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   const errors: ValidationError[] = [];
   const warnings: string[] = [];
   const elements = def.elements ?? [];
-  const flow = def.flow ?? [];
+  const parsedFlow = parseWorkflowFlow(def.flow);
+  errors.push(...parsedFlow.errors);
+  const flow = parsedFlow.edges;
 
   const byId = new Map<string, WorkflowElement>(elements.map(e => [e.id, e]));
   const outEdges = new Map<string, string[]>();
   const inEdges = new Map<string, string[]>();
 
+  const seenElementIds = new Set<string>();
+  const reportedDuplicateElementIds = new Set<string>();
   for (const el of elements) {
+    if (seenElementIds.has(el.id) && !reportedDuplicateElementIds.has(el.id)) {
+      reportedDuplicateElementIds.add(el.id);
+      errors.push({
+        rule: 0,
+        code: "GRAPH_DUPLICATE_ELEMENT_ID",
+        class: "graph",
+        element_id: el.id,
+        message: `Element id "${el.id}" is duplicated`,
+      });
+    }
+    seenElementIds.add(el.id);
     outEdges.set(el.id, []);
     inEdges.set(el.id, []);
   }
@@ -407,8 +466,9 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
     const nonEventEndIds = endNodes.filter(n => n.type !== "event").map(n => n.id);
     errors.push({
       rule: 1,
-      code: "GRAPH_NO_TERMINAL_EVENT",
+      code: "GRAPH_INVALID_TERMINAL_STATE",
       class: "graph",
+      legacy_code: "GRAPH_NO_TERMINAL_EVENT",
       message: `Process must end with an event. Non-event end nodes: ${nonEventEndIds.join(", ")}`,
       details: { non_event_terminal_nodes: nonEventEndIds },
     });
@@ -608,13 +668,85 @@ function isValidGatewayCondition(condition: string): boolean {
   }
 }
 
+function graphNodesThatCanReachTerminals(terminalIds: string[], inEdges: Map<string, FlowEdge[]>): Set<string> {
+  const seen = new Set<string>();
+  const stack = [...terminalIds];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    for (const edge of inEdges.get(id) ?? []) stack.push(edgeFrom(edge));
+  }
+  return seen;
+}
+
+function reachableTerminalIds(startId: string, outEdges: Map<string, FlowEdge[]>, terminalEventIds: Set<string>): Set<string> {
+  const terminals = new Set<string>();
+  const seen = new Set<string>();
+  const stack = [startId];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (terminalEventIds.has(id)) terminals.add(id);
+    for (const edge of outEdges.get(id) ?? []) stack.push(edgeTo(edge));
+  }
+  return terminals;
+}
+
+function stronglyConnectedComponents(nodeIds: string[], outEdges: Map<string, FlowEdge[]>): string[][] {
+  let index = 0;
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  const indexByNode = new Map<string, number>();
+  const lowlinkByNode = new Map<string, number>();
+  const components: string[][] = [];
+  const nodeIdSet = new Set(nodeIds);
+
+  function visit(nodeId: string): void {
+    indexByNode.set(nodeId, index);
+    lowlinkByNode.set(nodeId, index);
+    index += 1;
+    stack.push(nodeId);
+    onStack.add(nodeId);
+
+    for (const edge of outEdges.get(nodeId) ?? []) {
+      const to = edgeTo(edge);
+      if (!nodeIdSet.has(to)) continue;
+      if (!indexByNode.has(to)) {
+        visit(to);
+        lowlinkByNode.set(nodeId, Math.min(lowlinkByNode.get(nodeId)!, lowlinkByNode.get(to)!));
+      } else if (onStack.has(to)) {
+        lowlinkByNode.set(nodeId, Math.min(lowlinkByNode.get(nodeId)!, indexByNode.get(to)!));
+      }
+    }
+
+    if (lowlinkByNode.get(nodeId) === indexByNode.get(nodeId)) {
+      const component: string[] = [];
+      while (stack.length > 0) {
+        const member = stack.pop()!;
+        onStack.delete(member);
+        component.push(member);
+        if (member === nodeId) break;
+      }
+      components.push(component.sort());
+    }
+  }
+
+  for (const nodeId of nodeIds) {
+    if (!indexByNode.has(nodeId)) visit(nodeId);
+  }
+
+  return components;
+}
+
 export function validateWorkflowReadiness(
   def: WorkflowDefinition,
   context: WorkflowValidationContext = {},
 ): WorkflowValidationReceipt {
   const issues: WorkflowValidationIssue[] = [];
   const elements = def.elements ?? [];
-  const flow = def.flow ?? [];
+  const flow = parseWorkflowFlow(def.flow).edges;
   const byId = new Map(elements.map(element => [element.id, element]));
   const outEdges = new Map<string, FlowEdge[]>();
   const inEdges = new Map<string, FlowEdge[]>();
@@ -645,6 +777,8 @@ export function validateWorkflowReadiness(
   const flowElements = elements.filter(element => element.type === "event" || element.type === "function" || element.type === "gateway");
   const startEvents = flowElements.filter(element => element.type === "event" && (inEdges.get(element.id)?.length ?? 0) === 0);
   const terminalEvents = flowElements.filter(element => element.type === "event" && (outEdges.get(element.id)?.length ?? 0) === 0);
+  const terminalEventIds = new Set(terminalEvents.map(element => element.id));
+  const startEventIds = new Set(startEvents.map(element => element.id));
 
   if (startEvents.length === 0) {
     issues.push(validationIssue(
@@ -678,8 +812,8 @@ export function validateWorkflowReadiness(
     ));
   }
 
+  const reachable = new Set<string>();
   if (startEvents.length > 0) {
-    const reachable = new Set<string>();
     const stack = startEvents.map(element => element.id);
     while (stack.length > 0) {
       const id = stack.pop()!;
@@ -697,6 +831,62 @@ export function validateWorkflowReadiness(
           { element_id: element.id },
         ));
       }
+    }
+  }
+
+  if (terminalEvents.length > 0) {
+    const canReachTerminal = graphNodesThatCanReachTerminals(terminalEvents.map(element => element.id), inEdges);
+    for (const element of flowElements) {
+      if (reachable.has(element.id) && !canReachTerminal.has(element.id)) {
+        issues.push(validationIssue(
+          "GRAPH_NO_TERMINAL_PATH",
+          "error",
+          "graph",
+          `Element "${element.id}" cannot reach any terminal event`,
+          { element_id: element.id },
+        ));
+      }
+    }
+  }
+
+  for (const cycle of stronglyConnectedComponents(flowElements.map(element => element.id), outEdges)) {
+    const isCycle = cycle.length > 1 || (outEdges.get(cycle[0]) ?? []).some(edge => edgeTo(edge) === cycle[0]);
+    if (!isCycle) continue;
+    const hasFunctionBoundary = cycle.some(id => byId.get(id)?.type === "function");
+    if (!hasFunctionBoundary) {
+      issues.push(validationIssue(
+        "GRAPH_UNSUPPORTED_CYCLE",
+        "error",
+        "graph",
+        `Cycle ${cycle.join(" -> ")} has no function boundary and would spin inside runtime advancement`,
+        { details: { nodes: cycle } },
+      ));
+    }
+  }
+
+  for (const element of flowElements) {
+    if (element.type !== "gateway") continue;
+    if (element.operator && element.operator !== "XOR") continue;
+    const outs = outEdges.get(element.id) ?? [];
+    const unconditionedTerminalBranches = outs
+      .map(edge => ({ edge, terminals: reachableTerminalIds(edgeTo(edge), outEdges, terminalEventIds) }))
+      .filter(branch => edgeCondition(branch.edge) === undefined && branch.terminals.size > 0);
+    if (unconditionedTerminalBranches.length > 1) {
+      issues.push(validationIssue(
+        "GRAPH_AMBIGUOUS_TERMINAL_BRANCH",
+        "error",
+        "graph",
+        `Gateway "${element.id}" has multiple unconditioned branches that can reach terminal events`,
+        {
+          element_id: element.id,
+          details: {
+            branches: unconditionedTerminalBranches.map(branch => ({
+              to: edgeTo(branch.edge),
+              terminal_events: [...branch.terminals].sort(),
+            })),
+          },
+        },
+      ));
     }
   }
 
@@ -723,8 +913,6 @@ export function validateWorkflowReadiness(
   const adapterNames = new Set(context.adapters ?? []);
   const adapterContextProvided = context.adapters !== undefined;
   const supportedTriggers = new Set(["timer", "message", "condition", "delay_after", "system", "manual"]);
-  const terminalEventIds = new Set(terminalEvents.map(element => element.id));
-  const startEventIds = new Set(startEvents.map(element => element.id));
 
   for (const element of elements) {
     if (element.type === "function") {

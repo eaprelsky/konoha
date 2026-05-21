@@ -28,6 +28,11 @@ longer the same operation as deploying it for runtime execution.
   `code`/`class`; `message` is display text only. The canonical classes are
   `graph`, `role`, `trigger`, `adapter`, `document`, `deployment`,
   `migration`, and `lifecycle`.
+  Graph validation blocks malformed edge tuples, duplicate element ids,
+  unreachable elements, non-event terminal states, reachable nodes without a
+  terminal path, ambiguous unconditioned terminal branches, and pass-through
+  cycles with no function boundary. Rework cycles remain valid when they pass
+  through a function work boundary and retain a path to a terminal event.
 - `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, increments `deploy_version`, records `deployed_at` and optional `deployed_by`, and marks the workflow `executable` when readiness passes.
 - `workflow.deploy` also stores an immutable deployed runtime snapshot keyed by
   workflow id and deploy version. `case.start` binds each new case to that
