@@ -1162,8 +1162,11 @@ export function validateWorkflowReadiness(
         }
       }
 
+      const legacySystemBinding = Object.prototype.hasOwnProperty.call(element, "system")
+        ? [{ connector: (element as { system?: unknown }).system }]
+        : [];
       const systems: unknown[] = [
-        ...(element.system ? [{ connector: element.system }] : []),
+        ...legacySystemBinding,
         ...(element.systems ?? []),
       ];
       for (const system of systems) {

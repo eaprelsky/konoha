@@ -105,6 +105,15 @@ describe("workflow adapter and document binding readiness", () => {
       ],
     });
     expect(codes(invalid, { adapters: ["telegram"] })).toContain("ADAPTER_BINDING_INVALID");
+
+    const invalidLegacy = workflow({
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "task", type: "function", label: "Review", role: `${RUN}-operator`, system: "" },
+        { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
+      ],
+    });
+    expect(codes(invalidLegacy, { adapters: ["telegram"] })).toContain("ADAPTER_BINDING_INVALID");
   });
 
   test("accepts registered adapter bindings", () => {
