@@ -8,14 +8,12 @@ import {
   getWorkflowLifecycleState,
   mutateWorkflowAtomically,
   saveWorkflowDeployedSnapshot,
-  validateWorkflowReadiness,
   getWorkflowDeployVersion,
   WORKFLOW_VALIDATION_TAXONOMY_VERSION,
   type WorkflowDefinition,
   type WorkflowElement,
   type FlowEdge,
   type WorkflowLifecycleState,
-  type WorkflowValidationReceipt,
 } from "./workflow-loader";
 import { CaseStartGateError } from "./runtime/case-start-gate";
 import { normalizeElementNames } from "./normalizer";
@@ -31,7 +29,6 @@ import {
   deleteWorkItemsByProcess,
 } from "./runtime/work-items";
 import { createRole, deleteRole, listRoles, updateRole, type AssignmentStrategy } from "./runtime/roles";
-import { listDocs } from "./runtime/documents";
 import {
   createReminder,
   deleteReminder,
@@ -70,7 +67,7 @@ import {
   retentionReportForAction,
 } from "./retention/report";
 import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "./retention/runtime-cleanup";
-import { listAdapters } from "./adapters";
+import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
 
 export interface ActionExecution {
   status: number;
@@ -301,24 +298,6 @@ async function subscribeStartEvents(def: WorkflowDefinition): Promise<void> {
       console.error(`[workflow-deploy] failed to subscribe start event ${el.id}: ${e.message}`);
     }
   }
-}
-
-async function buildWorkflowValidationReceipt(
-  workflow: WorkflowDefinition,
-  source: string,
-): Promise<WorkflowValidationReceipt> {
-  const [roles, documents, runningCases] = await Promise.all([
-    listRoles(),
-    listDocs(),
-    listCases({ process_id: workflow.id, status: "running", limit: 1 }).catch(() => ({ cases: [], total: 0 })),
-  ]);
-  return validateWorkflowReadiness(workflow, {
-    roles,
-    documents,
-    adapters: listAdapters(),
-    running_case_count: runningCases.total,
-    source,
-  });
 }
 
 async function executeWorkflowCreate(args: Record<string, unknown>, opts: WorkflowActionOptions): Promise<ActionExecution> {

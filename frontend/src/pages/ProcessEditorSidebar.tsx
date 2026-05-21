@@ -2,6 +2,7 @@ import { PALETTE } from './ElementShape';
 import { formatDuration } from './MiningOverlay';
 import { ProcessTree } from './ProcessTree';
 import { PropertiesPanel } from './PropertiesPanel';
+import { WorkflowDiagnosticsPanel } from './WorkflowDiagnosticsPanel';
 import type { useProcessEditor } from './useProcessEditor';
 
 type ProcessEditorState = ReturnType<typeof useProcessEditor>;
@@ -54,6 +55,16 @@ export function ProcessEditorSidebar({ s }: { s: ProcessEditorState }) {
           <span style={{ color: '#94a3b8', fontWeight: 600 }}>Подпроцесс:</span> наведите курсор на функцию → нажмите <span style={{ color: '#93c5fd', fontWeight: 700 }}>+</span> в правом нижнем углу
         </div>
       </div>
+
+      {s.wfId.trim() && (
+        <WorkflowDiagnosticsPanel
+          receipt={s.validationReceipt}
+          loading={s.validationLoading}
+          error={s.validationError}
+          onRefresh={() => s.refreshValidation(s.wfId.trim())}
+          onFocusElement={s.focusElement}
+        />
+      )}
 
       {s.selEl && (
         <PropertiesPanel

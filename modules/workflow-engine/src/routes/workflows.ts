@@ -7,6 +7,7 @@ import {
   listWorkflowVersions,
   getWorkflowVersion,
 } from "../../../../src/workflow-loader";
+import { buildWorkflowValidationReceipt } from "../../../../src/workflow-validation-service";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { executeWorkflowAction } from "../../../../src/action-executor";
@@ -35,6 +36,15 @@ router.get("/:id{.+}/cases", requireAuth, async (c) => {
   const offset = parseInt(c.req.query("offset") || "0");
   const result = await listCases({ process_id: id, status, limit, offset });
   return c.json(result);
+});
+
+router.get("/:id{.+}/validation", requireAuth, async (c) => {
+  const id = c.req.param("id")!;
+  const wf = await getWorkflow(id);
+  if (!wf) return c.json({ error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: id }, 404);
+  const source = c.req.query("source") || "workflow.validate";
+  const receipt = await buildWorkflowValidationReceipt(wf, source);
+  return c.json(receipt);
 });
 
 // :id{.+} captures slashes so IDs like "general/reflection" work correctly

@@ -1,4 +1,4 @@
-import type { Workflow, WorkItem, WorkItemFilters, PaginatedWorkItems, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse, DashboardProfile, TelegramStreamHealthSummary, FeatureFlagsResponse } from './types';
+import type { Workflow, WorkflowValidationReceipt, WorkItem, WorkItemFilters, PaginatedWorkItems, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse, DashboardProfile, TelegramStreamHealthSummary, FeatureFlagsResponse } from './types';
 export type { KibaAction, HighlightAction };
 
 export interface AttachmentRef { path: string; name: string; mime?: string; }
@@ -145,6 +145,8 @@ export const api = {
   workflows: {
     list: () => apiFetch<Workflow[]>(`${BASE}/workflows`),
     get: (id: string) => apiFetch<Workflow>(`${BASE}/workflows/${id}`),
+    validate: (id: string, source = 'workflow.deploy') =>
+      apiFetch<WorkflowValidationReceipt>(`${BASE}/workflows/${id}/validation?source=${encodeURIComponent(source)}`),
     versions: (id: string) => apiFetch<{ version: string; saved_at?: string }[]>(`${BASE}/workflows/${id}/versions`),
     create: (body: Partial<Workflow> & { id: string; name: string }, draft = false) =>
       actMutation<Workflow>('workflow.create', { ...body, draft }, [`${BASE}/workflows`, `${BASE}/cases`, `${BASE}/workitems`]),

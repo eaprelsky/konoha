@@ -22,6 +22,9 @@ longer the same operation as deploying it for runtime execution.
   start gates: `errors[]`, `warnings[]`, `readiness`, stable issue `code`
   values, and gate flags for deployment, case start, release, and reviewer
   review.
+- `GET /workflows/:id/validation?source=workflow.deploy` exposes the same
+  canonical receipt for browser diagnostics and operator tooling. Clients must
+  consume the structured receipt fields instead of parsing human messages.
 - Validation/readiness receipts include `taxonomy_version: 1`. Each issue has
   machine-readable `code`, `class`, `severity`, `message`, and optional
   `legacy_code`, `element_id`, `edge`, and `details`. Product logic must use
@@ -177,6 +180,10 @@ ProcessEditor, the process tree, and run controls use the backend
 for `lifecycle_state: "executable"` and does not expose `admin_override`; for
 `draft`, `validated`, `deployed`, or `retired` workflows it stays disabled with
 the same `WORKFLOW_NOT_EXECUTABLE` reason used by the backend gate.
+ProcessEditor also refreshes the canonical validation receipt for the selected
+workflow and renders diagnostics by stable `code`, `class`, target element or
+edge, and gate flags. Deploy and Run controls use those gate flags so frontend
+behavior matches the backend deploy and case-start contracts.
 
 Authorization, confirmation, audit, token handling, and admin recovery controls
 for workflow construction and runtime operations are defined in

@@ -23,6 +23,37 @@ export interface FeatureFlagsResponse {
   features: FeatureFlagState[];
 }
 
+export type WorkflowValidationClass = 'graph' | 'role' | 'trigger' | 'adapter' | 'document' | 'deployment' | 'migration' | 'lifecycle';
+export type WorkflowValidationSeverity = 'error' | 'warning';
+export type WorkflowReadiness = 'ready' | 'warning' | 'blocked';
+
+export interface WorkflowValidationIssue {
+  code: string;
+  severity: WorkflowValidationSeverity;
+  class: WorkflowValidationClass;
+  message: string;
+  element_id?: string;
+  edge?: [string, string, string?];
+  details?: Record<string, unknown>;
+  legacy_code?: string;
+}
+
+export interface WorkflowValidationReceipt {
+  workflow_id: string;
+  taxonomy_version: number;
+  readiness: WorkflowReadiness;
+  source: string;
+  errors: WorkflowValidationIssue[];
+  warnings: WorkflowValidationIssue[];
+  checked_at: string;
+  gates: {
+    deployment_blocker: boolean;
+    case_start_blocker: boolean;
+    release_blocker: boolean;
+    reviewer_required: boolean;
+  };
+}
+
 export interface Workflow {
   id: string;
   name: string;
@@ -35,7 +66,7 @@ export interface Workflow {
     status: 'passed' | 'failed' | 'skipped';
     checked_at: string;
     error_count: number;
-    errors?: Array<{ rule: number; message: string }>;
+    errors?: WorkflowValidationIssue[];
     source: string;
   };
   last_deploy?: {

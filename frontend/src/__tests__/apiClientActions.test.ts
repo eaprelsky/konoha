@@ -29,6 +29,34 @@ describe('api client action mutations', () => {
     globalThis.fetch = originalFetch;
   });
 
+  test('workflow.validate uses canonical validation API route', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      workflow_id: 'wf',
+      taxonomy_version: 1,
+      readiness: 'ready',
+      source: 'workflow.deploy',
+      errors: [],
+      warnings: [],
+      checked_at: '2026-05-21T00:00:00.000Z',
+      gates: {
+        deployment_blocker: false,
+        case_start_blocker: false,
+        release_blocker: false,
+        reviewer_required: false,
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const api = await loadApi();
+
+    const receipt = await api.workflows.validate('wf', 'workflow.deploy');
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/workflows/wf/validation?source=workflow.deploy', expect.any(Object));
+    expect(receipt.readiness).toBe('ready');
+  });
+
   test.each([
     ['workflow.create', (api: ApiClient) => api.workflows.create({ id: 'wf', name: 'Workflow', elements: [], flow: [] })],
     ['workflow.update', (api: ApiClient) => api.workflows.update('wf', { name: 'Updated' })],

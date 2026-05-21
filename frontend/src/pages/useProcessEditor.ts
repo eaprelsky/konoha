@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
-import type { Workflow, WorkflowElement, RoleDef, DocTemplate, ProcessMiningData } from '../api/types';
+import type { Workflow, WorkflowElement, WorkflowValidationReceipt, RoleDef, DocTemplate, ProcessMiningData } from '../api/types';
 import { EW, EH, snap, pinchDist, genId, slugify, type Pos, type EType } from './ArrowRouter';
 import { Inspector } from '../components/Inspector';
 import { DEFAULT_LABELS } from './ElementShape';
@@ -81,6 +81,9 @@ export function useProcessEditor(readOnly = false) {
   const [showMining, setShowMining] = useState(false);
   const [miningData, setMiningData] = useState<ProcessMiningData | null>(null);
   const [miningLoading, setMiningLoading] = useState(false);
+  const [validationReceipt, setValidationReceipt] = useState<WorkflowValidationReceipt | null>(null);
+  const [validationLoading, setValidationLoading] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const svgRef        = useRef<SVGSVGElement>(null);
@@ -101,7 +104,35 @@ export function useProcessEditor(readOnly = false) {
     if (!token) return;
     api.workflows.list().then(setWorkflows).catch(() => {});
   }, [token]);
+  const refreshValidation = useCallback(async (id = wfId.trim()) => {
+    if (!token || !id) {
+      setValidationReceipt(null);
+      setValidationError(null);
+      setValidationLoading(false);
+      return;
+    }
+    setValidationLoading(true);
+    setValidationError(null);
+    try {
+      const receipt = await api.workflows.validate(id, 'workflow.deploy');
+      setValidationReceipt(receipt);
+    } catch (err: any) {
+      setValidationReceipt(null);
+      setValidationError(err.message ?? 'Validation failed');
+    } finally {
+      setValidationLoading(false);
+    }
+  }, [token, wfId]);
   useEffect(() => { refreshList(); }, [refreshList]);
+  useEffect(() => {
+    const id = wfId.trim();
+    if (!id || !workflows.some(w => w.id === id)) {
+      setValidationReceipt(null);
+      setValidationError(null);
+      return;
+    }
+    refreshValidation(id);
+  }, [wfId, workflows, refreshValidation]);
   useEffect(() => {
     if (!token) return;
     api.roles.list().then(setRoles).catch(() => {});
@@ -544,6 +575,7 @@ export function useProcessEditor(readOnly = false) {
   function newProcess() {
     setWfId(''); setWfName(''); setElements([]); setFlow([]); setPositions({});
     setSelected(null); setMultiSelected([]); setConnectFrom(null); setMode('select'); setError(null);
+    setValidationReceipt(null); setValidationError(null);
     setBreadcrumb([]);
   }
 
@@ -608,6 +640,7 @@ export function useProcessEditor(readOnly = false) {
       }
     });
     setPositions(pos);
+    refreshValidation(wf.id);
     if (fromBreadcrumb !== undefined) {
       setBreadcrumb(fromBreadcrumb);
     } else if (wf.parent_id) {
@@ -696,6 +729,7 @@ export function useProcessEditor(readOnly = false) {
         savedAsDraft = true;
       }
       refreshList();
+      await refreshValidation(id);
       if (savedAsDraft) {
         const details = validationMsg ? validationMsg.split('\n').map(s => s.trim()).filter(Boolean) : [];
         setDraftWarning({ text: 'Процесс сохранён как черновик — схема некорректна, недоступна для запуска', details });
@@ -712,9 +746,11 @@ export function useProcessEditor(readOnly = false) {
     try {
       await api.workflows.deploy(wfId.trim());
       refreshList();
+      await refreshValidation(wfId.trim());
       return true;
     } catch (err: any) {
       setError(err.message);
+      await refreshValidation(wfId.trim());
       return false;
     } finally {
       setSaving(false);
@@ -724,8 +760,14 @@ export function useProcessEditor(readOnly = false) {
   async function runCurrentWorkflow(): Promise<boolean> {
     const workflow = workflows.find(w => w.id === wfId.trim());
     const lifecycle = workflowLifecycleView(workflow);
+    const readinessBlocksRun = validationReceipt?.workflow_id === wfId.trim() && validationReceipt.gates.case_start_blocker;
     if (!wfId.trim() || !lifecycle.canStartCase) {
       setError(lifecycle.runBlockedReason ?? 'Процесс недоступен для запуска');
+      return false;
+    }
+    if (readinessBlocksRun) {
+      const firstCode = validationReceipt?.errors[0]?.code ?? 'WORKFLOW_READINESS_BLOCKED';
+      setError(`WORKFLOW_READINESS_BLOCKED: ${firstCode}`);
       return false;
     }
     const subject = window.prompt('Тема нового прогона', `${wfName || wfId} — manual run`);
@@ -756,6 +798,17 @@ export function useProcessEditor(readOnly = false) {
       setMiningData(data);
     } catch { setMiningData(null); }
     finally { setMiningLoading(false); }
+  }
+
+  function focusElement(id: string) {
+    const pos = positions[id];
+    setSelected(id);
+    setMultiSelected([id]);
+    if (!pos || !svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const z = zoomRef.current;
+    setPanX(rect.width / 2 - (pos.x + EW / 2) * z);
+    setPanY(rect.height / 2 - (pos.y + EH / 2) * z);
   }
 
   // ── Sync role/doc entity on inline edit ──────────────────────────────────────
@@ -826,6 +879,7 @@ export function useProcessEditor(readOnly = false) {
     panX, panY, zoom,
     // ui
     error, saving, draftWarning, autosavePending,
+    validationReceipt, validationLoading, validationError, refreshValidation,
     workflows, operatorWorkflows, hiddenWorkflowCount, showHiddenArtifacts, setShowHiddenArtifacts,
     currentWorkflow, currentLifecycle,
     sideW, versions, viewingVersion, setViewingVersion,
@@ -846,7 +900,7 @@ export function useProcessEditor(readOnly = false) {
     zoomIn, zoomOut, zoomReset, zoomFit,
     refreshList, newProcess, startCreatingNew, commitNewProc,
     startRename, commitRename, dupWorkflow, delWorkflow,
-    loadWorkflow, drillDown, toggleMining, applyTsunadePatch, deployWorkflow, runCurrentWorkflow,
+    loadWorkflow, drillDown, toggleMining, focusElement, applyTsunadePatch, deployWorkflow, runCurrentWorkflow,
     addElement, paletteClick, pickFromRegistry, deleteElement, updateElement, removeEdge, applyPatch,
     switchMode, scheduleAutosave, syncEntityOnEdit,
     onResizeMouseDown,

@@ -15,7 +15,16 @@ interface Props {
 
 export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Props) {
   const lifecycle = s.currentLifecycle ?? workflowLifecycleView(s.currentWorkflow);
-  const runnable = lifecycle.canStartCase;
+  const validation = s.validationReceipt?.workflow_id === s.wfId ? s.validationReceipt : null;
+  const deployBlocked = Boolean(validation?.gates.deployment_blocker);
+  const runBlockedByReadiness = Boolean(validation?.gates.case_start_blocker);
+  const runnable = lifecycle.canStartCase && !runBlockedByReadiness;
+  const deployTitle = deployBlocked
+    ? `Deploy заблокирован: ${validation?.errors[0]?.code ?? 'validation'}`
+    : 'Провалидировать, развернуть триггеры и сделать процесс доступным для запуска';
+  const runTitle = runBlockedByReadiness
+    ? `Case start заблокирован: ${validation?.errors[0]?.code ?? 'validation'}`
+    : lifecycle.runTitle;
 
   return (
     <div className="ipe-bar">
@@ -71,15 +80,15 @@ export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Pro
             {s.saving ? 'Сохранение…' : '💾 Сохранить'}
           </button>
           <button
-            title="Провалидировать, развернуть триггеры и сделать процесс доступным для запуска"
+            title={deployTitle}
             onClick={s.deployWorkflow}
-            disabled={s.saving || !s.wfId.trim() || runnable}
+            disabled={s.saving || !s.wfId.trim() || runnable || deployBlocked}
             style={{ padding: '5px 10px', fontWeight: 600 }}
           >
             Deploy
           </button>
           <button
-            title={lifecycle.runTitle}
+            title={runTitle}
             onClick={s.runCurrentWorkflow}
             disabled={s.saving || !s.wfId.trim() || !runnable}
             aria-disabled={s.saving || !s.wfId.trim() || !runnable}
@@ -87,9 +96,9 @@ export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Pro
           >
             Run
           </button>
-          {s.wfId && !runnable && (
-            <span className="run-disabled-hint" title={lifecycle.runBlockedReason}>
-              запуск заблокирован: {lifecycle.label}
+          {s.wfId && (!runnable || deployBlocked) && (
+            <span className="run-disabled-hint" title={runBlockedByReadiness ? runTitle : lifecycle.runBlockedReason}>
+              запуск заблокирован: {runBlockedByReadiness ? validation?.errors[0]?.code : lifecycle.label}
             </span>
           )}
         </>
