@@ -11,12 +11,13 @@ import { publishEvent } from "../../redis";
 import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "../../workflow-loader";
 import { assertCaseStartAllowed, type CaseStartGateOptions } from "../case-start-gate";
 import { getAdapter } from "../../adapters/index";
-import { dispatchWorkItem } from "../../dispatcher";
+import { dispatchWorkItem, isSystemDispatchRole } from "../../dispatcher";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByInstance, type TriggerDef } from "../../event-manager";
 import { emitEvent } from "../event-log";
 import { createLogger } from "../../logger";
 import { createEventWait, loadActiveWaitsForCase } from "../event-waits";
 import { scheduleWaitReminders } from "../event-waits";
+import { enqueueWorkItemDispatchEffect } from "../workitem-dispatch-outbox";
 import { saveCase, loadCase, saveWorkItem, loadWorkItem, CASES_IDX_PROCESS, WORKITEMS_IDX_CASE, WORKITEM_KEY_PREFIX } from "./persistence";
 import type { Case, WorkItem, ActiveBranch } from "./types";
 import { bindWorkflowSnapshotForCase, loadWorkflowForCase } from "./workflow-binding";
@@ -414,7 +415,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       await saveCase(kase);
 
       if (nextEl.role) {
-        dispatchWorkItem({
+        const dispatchParams = {
           role: nextEl.role,
           label: nextEl.label,
           work_item_id: wi.work_item_id,
@@ -424,7 +425,14 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
           docIds: nextEl.documents || [],
           def,
           payload: kase.payload,
-        }).catch(e => log.error("dispatch error", { case_id: kase.case_id, element_id: nextId, error: e.message }));
+        };
+        if (isSystemDispatchRole(nextEl.role)) {
+          await dispatchWorkItem(dispatchParams)
+            .catch(e => log.error("system dispatch error", { case_id: kase.case_id, element_id: nextId, work_item_id: wi.work_item_id, error: e.message }));
+        } else {
+          await enqueueWorkItemDispatchEffect(dispatchParams)
+            .catch(e => log.error("enqueue dispatch effect error", { case_id: kase.case_id, element_id: nextId, work_item_id: wi.work_item_id, error: e.message }));
+        }
       }
 
       const systemBindings = nextEl.systems ?? (nextEl.system ? [{ connector: nextEl.system, operation: "default" }] : []);

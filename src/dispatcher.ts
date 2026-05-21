@@ -20,8 +20,12 @@ const log = createLogger("dispatcher");
 const TG_SEND_SCRIPT = "/home/ubuntu/naruto-tg-send.py";
 const SYSTEM_ROLES = new Set(["Система", "System", "system", "система", "СИСТЕМА"]);
 
+export function isSystemDispatchRole(role: string): boolean {
+  return SYSTEM_ROLES.has(role);
+}
+
 export const dispatcherHooks = {
-  isSystemRole: (role: string) => SYSTEM_ROLES.has(role),
+  isSystemRole: isSystemDispatchRole,
   executeSystemFunction: async (params: import("./system-agent").SystemExecParams) => {
     const { executeSystemFunction } = await import("./system-agent");
     return executeSystemFunction(params);
@@ -38,6 +42,14 @@ export interface DispatchParams {
   docIds: string[];
   def?: WorkflowDefinition;                // full workflow def — for process context (#404)
   payload?: Record<string, unknown>;       // current case payload — forwarded to agent
+}
+
+export interface DispatchReceipt {
+  route: "agent" | "broadcast" | "person" | "system" | "manual";
+  work_item_id: string;
+  role: string;
+  target_ids: string[];
+  route_reason?: string;
 }
 
 /** Build compact process context block for an agent dispatch message (#404). */
@@ -173,8 +185,8 @@ async function findAgentDirect(role: string): Promise<import("./redis").Agent | 
   return capable[loads.indexOf(minLoad)];
 }
 
-/** Dispatch a work item to an agent or person based on role. Fire-and-forget safe. */
-export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
+/** Dispatch a work item to an agent or person based on role. */
+export async function dispatchWorkItem(params: DispatchParams): Promise<DispatchReceipt> {
   const { role, label, work_item_id, case_id, process_id, element_id, docIds } = params;
 
   // 0. System role → system-agent handles timers, doc gen, auto-execute
@@ -190,7 +202,7 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
       systems: element?.systems ?? (element?.system ? [{ connector: element.system, operation: "default" }] : []),
       payload: params.payload,
     });
-    return;
+    return { route: "system", work_item_id, role, target_ids: ["system"], route_reason: "system-role" };
   }
 
   const instruction = await loadInstructionText(docIds, label);
@@ -233,7 +245,7 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
       await sendMessage({ from: "runtime", to: agent.id, type: "task", text });
       log.info("broadcast task sent", { agent_id: agent.id, work_item_id });
     }
-    return;
+    return { route: "broadcast", work_item_id, role, target_ids: resolved.agents.map(agent => agent.id), route_reason: "role-m2m:broadcast" };
   }
 
   if (resolved?.type === "agent") {
@@ -241,17 +253,17 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<void> {
     const text = buildAgentText(resolved.agent.id, routeReason);
     await sendMessage({ from: "runtime", to: resolved.agent.id, type: "task", text });
     log.info("task sent to agent", { agent_id: resolved.agent.id, route_reason: routeReason, work_item_id });
-    return;
+    return { route: "agent", work_item_id, role, target_ids: [resolved.agent.id], route_reason: routeReason };
   }
 
   if (resolved?.type === "person") {
     const tgText = buildPersonText();
-    await tgTransport.execFileAsync("python3", [TG_SEND_SCRIPT, String(resolved.person.tg_id), tgText])
-      .then(() => log.info("telegram sent", { tg_id: resolved.person.tg_id, work_item_id }))
-      .catch(e => log.error("telegram send failed", { work_item_id, error: e.message }));
-    return;
+    await tgTransport.execFileAsync("python3", [TG_SEND_SCRIPT, String(resolved.person.tg_id), tgText]);
+    log.info("telegram sent", { tg_id: resolved.person.tg_id, work_item_id });
+    return { route: "person", work_item_id, role, target_ids: [String(resolved.person.tg_id)], route_reason: "person-directory" };
   }
 
   // No match — work item stays as manual (visible in Work Items UI)
   log.warn("no dispatch target", { role, work_item_id });
+  return { route: "manual", work_item_id, role, target_ids: [], route_reason: "no-target" };
 }

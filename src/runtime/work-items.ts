@@ -16,8 +16,9 @@ import {
 } from "./cases";
 import { publishEvent } from "../redis";
 import { createLogger } from "../logger";
-import { dispatchWorkItem } from "../dispatcher";
+import { dispatchWorkItem, isSystemDispatchRole } from "../dispatcher";
 import { loadWorkflowForCase } from "./cases/workflow-binding";
+import { enqueueWorkItemDispatchEffect } from "./workitem-dispatch-outbox";
 
 const log = createLogger("runtime:work-items");
 
@@ -368,7 +369,7 @@ export async function recoverStuckWorkItems(
           if (def && wi.element_id) {
             const el = def.elements.find(e => e.id === wi.element_id);
             if (el?.role) {
-              await dispatchWorkItem({
+              const dispatchParams = {
                 role: el.role,
                 label: wi.label,
                 work_item_id: wi.work_item_id,
@@ -378,8 +379,13 @@ export async function recoverStuckWorkItems(
                 docIds: el.documents || [],
                 def,
                 payload: kase.payload,
-              });
-              log.info("re-dispatched pending work item", {
+              };
+              if (isSystemDispatchRole(el.role)) {
+                await dispatchWorkItem(dispatchParams);
+              } else {
+                await enqueueWorkItemDispatchEffect(dispatchParams);
+              }
+              log.info(isSystemDispatchRole(el.role) ? "re-dispatched pending system work item" : "queued pending work item re-dispatch effect", {
                 work_item_id: wi.work_item_id,
                 assignee: wi.assignee,
               });

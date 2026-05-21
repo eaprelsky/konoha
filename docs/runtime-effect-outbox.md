@@ -91,6 +91,13 @@ claims receive `RUNTIME_EFFECT_CLAIM_EXPIRED` error evidence and move to
 `retry` or `dead_letter` according to the same attempt budget. Completion and
 failure calls reject stale worker records once ownership has moved.
 
+`workitem.dispatch` is the durable boundary for runtime task notifications.
+Case advancement still creates the work item synchronously, then enqueues a
+dispatch effect with `case_id` and `work_item_id` links. The outbox worker calls
+the existing dispatcher transport and stores a delivery receipt; duplicate
+idempotency keys return the original effect, and retry attempts suppress a second
+notification once a prior delivery receipt exists.
+
 ## Idempotency And Correlation
 
 The idempotency key must be scoped by the source that creates the effect:
