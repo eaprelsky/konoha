@@ -46,7 +46,7 @@ describe("workflow action contract validation", () => {
     expect(missing.valid).toBe(false);
     expect(missing.errors).toContain("Missing required argument: id");
 
-    const valid = validateActionArgs("workflow.deploy", { id: "wf-123" });
+    const valid = validateActionArgs("workflow.deploy", { id: "wf-123", deployed_by: "operator-1" });
     expect(valid.valid).toBe(true);
   });
 

@@ -4,7 +4,7 @@ import { executeAction } from "../src/act-envelope";
 import { executeActionDirect } from "../src/action-executor";
 import { deleteCasesByProcess } from "../src/runtime";
 import { createRole, deleteRole, updateRole } from "../src/runtime/roles";
-import { createWorkflow } from "../src/workflow-loader";
+import { createWorkflow, getWorkflow, listWorkflows } from "../src/workflow-loader";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import type { WorkflowDefinition } from "../src/workflow-loader";
 
@@ -82,6 +82,84 @@ describe("workflow lifecycle deploy gate", () => {
     });
     expect(started?.status).toBe(201);
     expect((started?.data as any).process_id).toBe(id);
+  });
+
+  test("workflow.deploy persists lifecycle schema version, deploy version, and deployed_by", async () => {
+    const id = `${RUN}-deploy-metadata`;
+    touched.add(id);
+    await createWorkflow(workflow(id));
+
+    const firstDeploy = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+    expect(firstDeploy?.status).toBe(200);
+    expect((firstDeploy?.data as any)).toMatchObject({
+      status: "executable",
+      lifecycle_state: "executable",
+      validation_status: "passed",
+      deploy_version: 1,
+      deployed_by: "operator-1",
+      lifecycle: {
+        schema_version: 1,
+        state: "executable",
+        status: "executable",
+        validation_status: "passed",
+        deploy_version: 1,
+        deployed_by: "operator-1",
+      },
+      last_deploy: {
+        status: "succeeded",
+        deploy_version: 1,
+        deployed_by: "operator-1",
+        source: "workflow.deploy",
+      },
+    });
+    expect(typeof (firstDeploy?.data as any).deployed_at).toBe("string");
+
+    const secondDeploy = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-2" });
+    expect(secondDeploy?.status).toBe(200);
+    expect((secondDeploy?.data as any)).toMatchObject({
+      deploy_version: 2,
+      deployed_by: "operator-2",
+      lifecycle: { deploy_version: 2, deployed_by: "operator-2" },
+      last_deploy: { deploy_version: 2, deployed_by: "operator-2" },
+    });
+  });
+
+  test("legacy workflow records are backfilled to canonical lifecycle schema on read", async () => {
+    const id = `${RUN}-legacy-active`;
+    touched.add(id);
+    await redis.set(`workflow:${id}`, JSON.stringify({
+      id,
+      version: "0.9.0",
+      name: "Legacy active workflow",
+      status: "active",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "task", type: "function", label: "Review", role: "reviewer" },
+        { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
+      ],
+      flow: [["start", "task"], ["task", "done"]],
+      last_validation: { status: "passed", checked_at: "2026-05-01T00:00:00.000Z", error_count: 0, source: "legacy" },
+      last_deploy: { status: "succeeded", checked_at: "2026-05-01T00:00:00.000Z", deployed_at: "2026-05-01T00:00:01.000Z", source: "legacy" },
+    }));
+    await redis.sadd("konoha:workflow:index", id);
+
+    const loaded = await getWorkflow(id);
+    expect(loaded).toMatchObject({
+      status: "executable",
+      lifecycle_state: "executable",
+      validation_status: "passed",
+      deploy_version: 1,
+      deployed_at: "2026-05-01T00:00:01.000Z",
+      lifecycle: {
+        schema_version: 1,
+        state: "executable",
+        status: "executable",
+        validation_status: "passed",
+        deploy_version: 1,
+        migrated_from_status: "active",
+      },
+    });
+    expect(typeof loaded?.lifecycle?.backfilled_at).toBe("string");
   });
 
   test("workflow.validate returns structured readiness errors and deploy refuses blockers", async () => {
@@ -250,6 +328,49 @@ describe("workflow lifecycle deploy gate", () => {
     });
     expect(blocked?.status).toBe(409);
     expect((blocked?.data as any).code).toBe("WORKFLOW_NOT_EXECUTABLE");
+  });
+
+  test("workflow.delete retires workflows with durable lifecycle metadata", async () => {
+    const id = `${RUN}-retired`;
+    touched.add(id);
+    await createWorkflow(workflow(id));
+    await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+
+    const deleted = await executeActionDirect("workflow.delete", { id });
+    expect(deleted?.status).toBe(200);
+    expect((deleted?.data as any)).toMatchObject({ ok: true, archived: true, workflow_id: id });
+
+    const retired = await getWorkflow(id);
+    expect(retired).toMatchObject({
+      status: "retired",
+      lifecycle_state: "retired",
+      retired_by: "workflow.delete",
+      lifecycle: {
+        schema_version: 1,
+        state: "retired",
+        status: "retired",
+        retired_by: "workflow.delete",
+      },
+      last_deploy: {
+        status: "retired",
+        source: "workflow.delete",
+      },
+    });
+    expect(typeof retired?.retired_at).toBe("string");
+
+    const listed = await listWorkflows();
+    expect(listed.map(workflow => workflow.id)).not.toContain(id);
+
+    const blocked = await executeActionDirect("case.start", {
+      process_id: id,
+      subject: "Retired workflow run",
+      payload: {},
+    });
+    expect(blocked?.status).toBe(409);
+    expect((blocked?.data as any)).toMatchObject({
+      code: "WORKFLOW_NOT_EXECUTABLE",
+      lifecycle_state: "retired",
+    });
   });
 
   test("case.start supports explicit admin override for tests and migration", async () => {

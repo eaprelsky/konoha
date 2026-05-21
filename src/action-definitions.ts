@@ -57,6 +57,7 @@ export const ACTIONS: ActionDef[] = [
     scope: "workflow",
     args: [
       { name: "id", type: "string", required: true, description: "Workflow ID to deploy." },
+      { name: "deployed_by", type: "string", required: false, description: "Operator or agent ID recorded in lifecycle deploy metadata." },
     ],
     implementation: { kind: "direct", note: "Transitions validated workflows to executable through action-executor." },
     autonomy: "confirm",

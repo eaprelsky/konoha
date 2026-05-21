@@ -14,7 +14,7 @@ Every operation the system exposes — API, MCP, assistant, UI — is described 
 
 ## Version
 
-Current: **v15** (`ACTION_VERSION = 15`)
+Current: **v16** (`ACTION_VERSION = 16`)
 
 Bump the version when the vocabulary changes (new actions, renamed args, removed actions).
 
@@ -65,7 +65,7 @@ argument metadata.
 | `workflow.create` | Create new workflow as draft or validated; never deploys runtime triggers | confirm |
 | `workflow.update` | Update existing workflow as draft or validated; demotes executable workflows until redeploy | confirm |
 | `workflow.validate` | Return the canonical graph/runtime/deploy/migration readiness receipt | auto |
-| `workflow.deploy` | Validate, materialize runtime start triggers, and mark workflow executable | confirm |
+| `workflow.deploy` | Validate, materialize runtime start triggers, record deploy metadata, and mark workflow executable | confirm |
 | `workflow.delete` | Archive workflow + cascade delete cases | confirm |
 | `workflow.list` | List all workflows | auto |
 | `workflow.get` | Get single workflow by ID | auto |

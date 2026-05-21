@@ -9,6 +9,7 @@ import {
   isWorkflowExecutable,
   mutateWorkflowAtomically,
   validateWorkflowReadiness,
+  getWorkflowDeployVersion,
   type WorkflowDefinition,
   type WorkflowElement,
   type FlowEdge,
@@ -466,12 +467,16 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   }
 
   const deployedAt = new Date().toISOString();
+  const deployVersion = getWorkflowDeployVersion(current) + 1;
+  const deployedBy = args.deployed_by ? String(args.deployed_by) : "system";
   const result = await updateWorkflow(id, body, {
     lifecycleState: "executable",
     deploy: {
       status: "succeeded",
       checked_at: deployedAt,
+      deploy_version: deployVersion,
       deployed_at: deployedAt,
+      deployed_by: deployedBy,
       source: "workflow.deploy",
       details: ["validation passed", "start-event subscriptions materialized"],
     },

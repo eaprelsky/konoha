@@ -22,6 +22,14 @@ const asJson = (v: unknown): JSONValue => v as JSONValue;
 const DATABASE_URL = getDatabaseUrl();
 
 let _sql: ReturnType<typeof postgres> | null = null;
+let workflowLifecycleColumnsReady = false;
+
+function asDateOrNull(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 function getSql(): ReturnType<typeof postgres> {
   if (!_sql) {
@@ -46,17 +54,51 @@ async function pgWrite(fn: () => Promise<unknown>): Promise<void> {
 
 // ── Workflows ─────────────────────────────────────────────────────────────────
 
+async function ensureWorkflowLifecycleColumns(sql: ReturnType<typeof postgres>): Promise<void> {
+  if (workflowLifecycleColumnsReady) return;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'executable'`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS lifecycle JSONB NOT NULL DEFAULT '{}'`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS validation_status TEXT NOT NULL DEFAULT 'unknown'`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deploy_version BIGINT NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_by TEXT`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS retired_by TEXT`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS last_validation JSONB`;
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS last_deploy JSONB`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_workflows_lifecycle_state ON workflows(lifecycle_state)`;
+  workflowLifecycleColumnsReady = true;
+}
+
 export async function pgUpsertWorkflow(wf: WorkflowRecord): Promise<void> {
   await pgWrite(async () => {
     const sql = getSql();
+    await ensureWorkflowLifecycleColumns(sql);
+    const lifecycleState = String((wf as any).lifecycle_state || (wf as any).status || 'executable');
+    const deployVersion = Number((wf as any).deploy_version ?? (wf as any).lifecycle?.deploy_version ?? 0);
     await sql`
-      INSERT INTO workflows (id, name, version, elements, flow, triggers, status, parent_id, updated_at)
+      INSERT INTO workflows (
+        id, name, version, elements, flow, triggers, status,
+        lifecycle_state, lifecycle, validation_status, deploy_version,
+        deployed_at, deployed_by, retired_at, retired_by,
+        last_validation, last_deploy, parent_id, updated_at
+      )
       VALUES (
         ${wf.id}, ${wf.name || ''}, ${wf.version || '1.0.0'},
         ${sql.json(asJson(wf.elements ?? []))},
         ${sql.json(asJson(wf.flow ?? []))},
         ${sql.json(asJson((wf as any).triggers ?? []))},
-        ${(wf as any).status || 'active'},
+        ${(wf as any).status || lifecycleState},
+        ${lifecycleState},
+        ${sql.json(asJson((wf as any).lifecycle ?? {}))},
+        ${(wf as any).validation_status || (wf as any).lifecycle?.validation_status || 'unknown'},
+        ${Number.isFinite(deployVersion) ? Math.trunc(deployVersion) : 0},
+        ${asDateOrNull((wf as any).deployed_at || (wf as any).lifecycle?.deployed_at)},
+        ${(wf as any).deployed_by || (wf as any).lifecycle?.deployed_by || null},
+        ${asDateOrNull((wf as any).retired_at || (wf as any).lifecycle?.retired_at)},
+        ${(wf as any).retired_by || (wf as any).lifecycle?.retired_by || null},
+        ${(wf as any).last_validation ? sql.json(asJson((wf as any).last_validation)) : null},
+        ${(wf as any).last_deploy ? sql.json(asJson((wf as any).last_deploy)) : null},
         ${(wf as any).parent_id || null},
         ${wf.updated_at ? new Date(wf.updated_at) : new Date()}
       )
@@ -67,6 +109,16 @@ export async function pgUpsertWorkflow(wf: WorkflowRecord): Promise<void> {
         flow         = EXCLUDED.flow,
         triggers     = EXCLUDED.triggers,
         status       = EXCLUDED.status,
+        lifecycle_state = EXCLUDED.lifecycle_state,
+        lifecycle    = EXCLUDED.lifecycle,
+        validation_status = EXCLUDED.validation_status,
+        deploy_version = EXCLUDED.deploy_version,
+        deployed_at  = EXCLUDED.deployed_at,
+        deployed_by  = EXCLUDED.deployed_by,
+        retired_at   = EXCLUDED.retired_at,
+        retired_by   = EXCLUDED.retired_by,
+        last_validation = EXCLUDED.last_validation,
+        last_deploy  = EXCLUDED.last_deploy,
         parent_id    = EXCLUDED.parent_id,
         updated_at   = EXCLUDED.updated_at
     `;
@@ -299,6 +351,7 @@ async function pgRead<T>(fn: () => Promise<T>): Promise<T | null> {
 export async function pgGetWorkflow(id: string): Promise<Record<string, unknown> | null> {
   return pgRead(async () => {
     const sql = getSql();
+    await ensureWorkflowLifecycleColumns(sql);
     const rows = await sql`SELECT * FROM workflows WHERE id = ${id}`;
     return (rows[0] as Record<string, unknown>) ?? null;
   });
@@ -307,7 +360,12 @@ export async function pgGetWorkflow(id: string): Promise<Record<string, unknown>
 export async function pgListWorkflows(): Promise<Record<string, unknown>[]> {
   return (await pgRead(async () => {
     const sql = getSql();
-    const rows = await sql`SELECT * FROM workflows ORDER BY updated_at ASC`;
+    await ensureWorkflowLifecycleColumns(sql);
+    const rows = await sql`
+      SELECT * FROM workflows
+      WHERE COALESCE(lifecycle_state, status) <> 'retired'
+      ORDER BY updated_at ASC
+    `;
     return rows as Record<string, unknown>[];
   })) ?? [];
 }

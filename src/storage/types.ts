@@ -10,6 +10,16 @@ export interface WorkflowRecord {
   flow: unknown[];
   triggers?: unknown[];
   status?: string;
+  lifecycle_state?: string;
+  lifecycle?: Record<string, unknown>;
+  validation_status?: string;
+  deploy_version?: number;
+  deployed_at?: string;
+  deployed_by?: string;
+  retired_at?: string;
+  retired_by?: string;
+  last_validation?: Record<string, unknown>;
+  last_deploy?: Record<string, unknown>;
   parent_id?: string;
   created_at?: string;
   updated_at?: string;

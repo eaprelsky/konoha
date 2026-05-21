@@ -22,7 +22,11 @@ longer the same operation as deploying it for runtime execution.
   start gates: `errors[]`, `warnings[]`, `readiness`, stable issue `code`
   values, and gate flags for deployment, case start, release, and reviewer
   review.
-- `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, records deploy metadata, and marks the workflow `executable` when readiness passes.
+- `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, increments `deploy_version`, records `deployed_at` and optional `deployed_by`, and marks the workflow `executable` when readiness passes.
+- `workflow.delete` is an archive/retire operation. It removes the workflow
+  from active lists but keeps the Redis and PostgreSQL record with
+  `lifecycle_state: "retired"` so old references and audit reads remain
+  inspectable.
 - Messenger-driven start triggers must include an activation policy covering
   deduplication, throttling/backpressure, and inspectable suppressions; invalid
   or missing policies block validation/deploy readiness.
@@ -30,10 +34,36 @@ longer the same operation as deploying it for runtime execution.
 Workflow records persist:
 
 - `lifecycle_state`
-- `status` for backward-compatible filtering/display
+- `status` as the canonical state for backward-compatible filtering/display
+- `lifecycle` object with `schema_version: 1`, canonical state/status,
+  `validation_status`, `deploy_version`, deploy/retire timestamps, actor fields,
+  and migration provenance when backfilled from legacy records
+- top-level compatibility fields: `validation_status`, `deploy_version`,
+  `deployed_at`, `deployed_by`, `retired_at`, `retired_by`
 - `last_validation`
 - `last_deploy`
 - `needs_review` when deploy is blocked by trigger review
+
+## Migration And Compatibility
+
+Legacy Redis/PG workflow records are normalized on read:
+
+- `status: "active"` becomes `status/lifecycle_state: "executable"`;
+- `status: "needs_review"` becomes `validated`;
+- `status: "archived"` or `"deleted"` becomes `retired`;
+- missing lifecycle metadata is backfilled into `lifecycle` with
+  `migrated_from_status` and `backfilled_at`.
+
+PostgreSQL shadow schema includes explicit lifecycle columns and repeatable
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` backfill statements in
+`src/storage/schema.sql`. Runtime shadow writes also ensure the lifecycle
+columns exist before writing, so older staging/prod databases can be migrated
+without blocking Redis-primary operation.
+
+Rollback follows `docs/workflow-runtime-rollback-recovery.md`: restore a
+workflow snapshot or set a retired workflow back to `validated`, then redeploy
+through `workflow.deploy`. Do not bypass the #812 terminal-case rule; terminal
+cases must not receive new work, waits, subscriptions, or connector effects.
 
 ## Start Gate
 

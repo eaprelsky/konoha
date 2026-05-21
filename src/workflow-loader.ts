@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { redis } from "./redis";
-import { pgUpsertWorkflow, pgDeleteWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw, pgUpsertRole } from "./storage/pg";
+import { pgUpsertWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw, pgUpsertRole } from "./storage/pg";
 import { syncSchemaToRegistry, cleanupWorkflowRefs } from "./sync/schema-registry-sync";
 import { silentCatch, createLogger } from "./logger";
 import { upsertDoc, type DocType } from "./runtime/documents";
@@ -89,6 +89,22 @@ export interface WorkflowDocumentSeed {
 }
 
 export type WorkflowLifecycleState = "draft" | "validated" | "deployed" | "executable" | "retired";
+export type WorkflowValidationStatus = "unknown" | "skipped" | "passed" | "failed";
+
+export interface WorkflowLifecycleMetadata {
+  schema_version: 1;
+  state: WorkflowLifecycleState;
+  status: WorkflowLifecycleState;
+  validation_status: WorkflowValidationStatus;
+  deploy_version: number;
+  validated_at?: string;
+  deployed_at?: string;
+  deployed_by?: string;
+  retired_at?: string;
+  retired_by?: string;
+  migrated_from_status?: string;
+  backfilled_at?: string;
+}
 
 export interface WorkflowValidationMetadata {
   status: "passed" | "failed" | "skipped";
@@ -101,7 +117,9 @@ export interface WorkflowValidationMetadata {
 export interface WorkflowDeployMetadata {
   status: "succeeded" | "blocked" | "retired";
   checked_at: string;
+  deploy_version?: number;
   deployed_at?: string;
+  deployed_by?: string;
   source: string;
   details?: string[];
 }
@@ -130,6 +148,13 @@ export interface WorkflowDefinition {
   parent_function_id?: string; // ID of the function node in the parent that this sub-process represents
   status?: string;
   lifecycle_state?: WorkflowLifecycleState;
+  lifecycle?: WorkflowLifecycleMetadata;
+  validation_status?: WorkflowValidationStatus;
+  deploy_version?: number;
+  deployed_at?: string;
+  deployed_by?: string;
+  retired_at?: string;
+  retired_by?: string;
   last_validation?: WorkflowValidationMetadata;
   last_deploy?: WorkflowDeployMetadata;
   needs_review?: boolean;
@@ -191,6 +216,12 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function isoValue(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
 function validationMetadata(
   errors: ValidationError[],
   source: string,
@@ -205,14 +236,57 @@ function validationMetadata(
   };
 }
 
+function isWorkflowLifecycleState(value: unknown): value is WorkflowLifecycleState {
+  return typeof value === "string" && WORKFLOW_LIFECYCLE_STATES.has(value as WorkflowLifecycleState);
+}
+
+function legacyStatusToLifecycle(status: unknown): WorkflowLifecycleState | null {
+  if (!status || typeof status !== "string") return null;
+  if (isWorkflowLifecycleState(status)) return status;
+  if (status === "active") return "executable";
+  if (status === "needs_review") return "validated";
+  if (status === "archived" || status === "deleted") return "retired";
+  return null;
+}
+
 export function getWorkflowLifecycleState(def: Pick<WorkflowDefinition, "status" | "lifecycle_state">): WorkflowLifecycleState {
-  if (def.lifecycle_state && WORKFLOW_LIFECYCLE_STATES.has(def.lifecycle_state)) return def.lifecycle_state;
-  if (def.status && WORKFLOW_LIFECYCLE_STATES.has(def.status as WorkflowLifecycleState)) {
-    return def.status as WorkflowLifecycleState;
-  }
-  if (def.status === "draft") return "draft";
-  if (def.status === "needs_review") return "validated";
+  if (isWorkflowLifecycleState(def.lifecycle_state)) return def.lifecycle_state;
+  const state = legacyStatusToLifecycle(def.status);
+  if (state) return state;
   return "executable";
+}
+
+export function getWorkflowDeployVersion(def: Pick<WorkflowDefinition, "deploy_version" | "lifecycle" | "last_deploy" | "lifecycle_state" | "status">): number {
+  const explicit = Number(def.last_deploy?.deploy_version ?? def.deploy_version ?? def.lifecycle?.deploy_version);
+  if (Number.isFinite(explicit) && explicit >= 0) return Math.trunc(explicit);
+  const state = getWorkflowLifecycleState(def);
+  return state === "executable" && def.last_deploy?.status === "succeeded" ? 1 : 0;
+}
+
+export function buildWorkflowLifecycleMetadata(
+  def: WorkflowDefinition,
+  state: WorkflowLifecycleState = getWorkflowLifecycleState(def),
+): WorkflowLifecycleMetadata {
+  const previous = def.lifecycle;
+  const validationStatus = (def.last_validation?.status ?? def.validation_status ?? previous?.validation_status ?? "unknown") as WorkflowValidationStatus;
+  const deployedAt = isoValue(def.last_deploy?.deployed_at ?? def.deployed_at ?? previous?.deployed_at);
+  const retiredAt = isoValue(def.retired_at ?? previous?.retired_at);
+  const migratedFromStatus =
+    previous?.migrated_from_status ??
+    (def.status && !isWorkflowLifecycleState(def.status) ? String(def.status) : undefined);
+  return {
+    schema_version: 1,
+    state,
+    status: state,
+    validation_status: validationStatus,
+    deploy_version: getWorkflowDeployVersion(def),
+    ...(def.last_validation?.checked_at ? { validated_at: def.last_validation.checked_at } : {}),
+    ...(deployedAt ? { deployed_at: deployedAt } : {}),
+    ...(def.last_deploy?.deployed_by ?? def.deployed_by ?? previous?.deployed_by ? { deployed_by: String(def.last_deploy?.deployed_by ?? def.deployed_by ?? previous?.deployed_by) } : {}),
+    ...(retiredAt ? { retired_at: retiredAt } : {}),
+    ...(def.retired_by ?? previous?.retired_by ? { retired_by: String(def.retired_by ?? previous?.retired_by) } : {}),
+    ...(migratedFromStatus ? { migrated_from_status: migratedFromStatus, backfilled_at: previous?.backfilled_at ?? nowIso() } : {}),
+  };
 }
 
 export function isWorkflowExecutable(def: WorkflowDefinition): boolean {
@@ -238,6 +312,18 @@ function withLifecycle(
   if (options.validation) next.last_validation = options.validation;
   if (options.clearDeploy) delete next.last_deploy;
   if (options.deploy) next.last_deploy = options.deploy;
+  const lifecycle = buildWorkflowLifecycleMetadata(next, state);
+  next.lifecycle = lifecycle;
+  next.validation_status = lifecycle.validation_status;
+  next.deploy_version = lifecycle.deploy_version;
+  if (lifecycle.deployed_at) next.deployed_at = lifecycle.deployed_at;
+  else delete next.deployed_at;
+  if (lifecycle.deployed_by) next.deployed_by = lifecycle.deployed_by;
+  else delete next.deployed_by;
+  if (lifecycle.retired_at) next.retired_at = lifecycle.retired_at;
+  else delete next.retired_at;
+  if (lifecycle.retired_by) next.retired_by = lifecycle.retired_by;
+  else delete next.retired_by;
   return next;
 }
 
@@ -787,10 +873,18 @@ function normalizeWorkflow(def: WorkflowDefinition): WorkflowDefinition {
   });
   const normalized = { ...def, elements };
   const lifecycle_state = getWorkflowLifecycleState(normalized);
+  const lifecycle = buildWorkflowLifecycleMetadata(normalized, lifecycle_state);
   return {
     ...normalized,
-    status: normalized.status ?? lifecycle_state,
+    status: lifecycle_state,
     lifecycle_state,
+    lifecycle,
+    validation_status: lifecycle.validation_status,
+    deploy_version: lifecycle.deploy_version,
+    deployed_at: lifecycle.deployed_at,
+    deployed_by: lifecycle.deployed_by,
+    retired_at: lifecycle.retired_at,
+    retired_by: lifecycle.retired_by,
   };
 }
 
@@ -1080,12 +1174,32 @@ export async function updateWorkflow(id: string, patch: Partial<WorkflowDefiniti
 export async function archiveWorkflow(id: string): Promise<boolean> {
   const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
   if (!raw) return false;
-  const def: WorkflowDefinition = JSON.parse(raw);
+  const def = normalizeWorkflow(JSON.parse(raw));
+  const retiredAt = nowIso();
+  const retired = withLifecycle(
+    {
+      ...def,
+      retired_at: retiredAt,
+      retired_by: "workflow.delete",
+    },
+    "retired",
+    {
+      deploy: {
+        status: "retired",
+        checked_at: retiredAt,
+        source: "workflow.delete",
+        details: ["workflow archived and retired from new case starts"],
+      },
+      needsReview: false,
+    },
+  );
+  await archiveWorkflowSnapshot(id, def);
+  await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(retired));
   await redis.srem(WORKFLOW_INDEX_KEY, id);
-  await removeFromRoleWorkflowIndex(def);
+  await removeFromRoleWorkflowIndex(retired);
   // Emit orphan warnings for roles/docs that were exclusive to this workflow
-  cleanupWorkflowRefs(def).catch(e => log.error("schema-sync archiveWorkflow cleanup error", { error: e instanceof Error ? e.message : String(e) }));
-  await pgDeleteWorkflow(id);
+  cleanupWorkflowRefs(retired).catch(e => log.error("schema-sync archiveWorkflow cleanup error", { error: e instanceof Error ? e.message : String(e) }));
+  await pgUpsertWorkflow(retired as any);
   // Keep the key in Redis (archived, not deleted) — remove from active index only
   return true;
 }

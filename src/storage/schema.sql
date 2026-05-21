@@ -12,14 +12,77 @@ CREATE TABLE IF NOT EXISTS workflows (
   elements     JSONB NOT NULL DEFAULT '[]',
   flow         JSONB NOT NULL DEFAULT '[]',
   triggers     JSONB NOT NULL DEFAULT '[]',
-  status       TEXT NOT NULL DEFAULT 'active',
+  status       TEXT NOT NULL DEFAULT 'executable',
+  lifecycle_state TEXT NOT NULL DEFAULT 'executable',
+  lifecycle    JSONB NOT NULL DEFAULT '{}',
+  validation_status TEXT NOT NULL DEFAULT 'unknown',
+  deploy_version BIGINT NOT NULL DEFAULT 0,
+  deployed_at  TIMESTAMPTZ,
+  deployed_by  TEXT,
+  retired_at   TIMESTAMPTZ,
+  retired_by   TEXT,
+  last_validation JSONB,
+  last_deploy  JSONB,
   parent_id    TEXT,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
+CREATE INDEX IF NOT EXISTS idx_workflows_lifecycle_state ON workflows(lifecycle_state);
 CREATE INDEX IF NOT EXISTS idx_workflows_parent_id ON workflows(parent_id);
+
+-- Backfill path for pre-#687 databases. Safe to re-run during staging/prod
+-- maintenance and before shadow writes on older schemas.
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'executable';
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS lifecycle JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS validation_status TEXT NOT NULL DEFAULT 'unknown';
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deploy_version BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_at TIMESTAMPTZ;
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS deployed_by TEXT;
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS retired_by TEXT;
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS last_validation JSONB;
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS last_deploy JSONB;
+UPDATE workflows
+SET lifecycle_state = CASE
+  WHEN lifecycle_state IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN lifecycle_state
+  WHEN status = 'draft' THEN 'draft'
+  WHEN status = 'needs_review' THEN 'validated'
+  WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
+  ELSE 'executable'
+END,
+status = CASE
+  WHEN status IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN status
+  WHEN status = 'draft' THEN 'draft'
+  WHEN status = 'needs_review' THEN 'validated'
+  WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
+  ELSE 'executable'
+END,
+lifecycle = CASE
+  WHEN lifecycle = '{}'::jsonb THEN jsonb_build_object(
+    'schema_version', 1,
+    'state', CASE
+      WHEN lifecycle_state IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN lifecycle_state
+      WHEN status = 'draft' THEN 'draft'
+      WHEN status = 'needs_review' THEN 'validated'
+      WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
+      ELSE 'executable'
+    END,
+    'status', CASE
+      WHEN lifecycle_state IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN lifecycle_state
+      WHEN status = 'draft' THEN 'draft'
+      WHEN status = 'needs_review' THEN 'validated'
+      WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
+      ELSE 'executable'
+    END,
+    'validation_status', validation_status,
+    'deploy_version', deploy_version,
+    'migrated_from_status', status,
+    'backfilled_at', NOW()
+  )
+  ELSE lifecycle
+END;
 
 -- ── Workflow snapshots (version history) ─────────────────────────────────────
 
