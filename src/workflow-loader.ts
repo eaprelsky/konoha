@@ -141,6 +141,8 @@ export interface WorkflowUpdateOptions {
   deploy?: WorkflowDeployMetadata;
   needsReview?: boolean;
   source?: string;
+  expectedEditVersion?: number;
+  expectedDeployVersion?: number;
 }
 
 export interface WorkflowArchiveOptions {
@@ -178,6 +180,7 @@ export interface WorkflowDefinition {
   lifecycle_state?: WorkflowLifecycleState;
   lifecycle?: WorkflowLifecycleMetadata;
   validation_status?: WorkflowValidationStatus;
+  edit_version?: number;
   deploy_version?: number;
   deployed_at?: string;
   deployed_by?: string;
@@ -307,6 +310,11 @@ export function getWorkflowDeployVersion(def: Pick<WorkflowDefinition, "deploy_v
   if (Number.isFinite(explicit) && explicit >= 0) return Math.trunc(explicit);
   const state = getWorkflowLifecycleState(def);
   return state === "executable" && def.last_deploy?.status === "succeeded" ? 1 : 0;
+}
+
+export function getWorkflowEditVersion(def: Pick<WorkflowDefinition, "edit_version">): number {
+  const explicit = Number(def.edit_version);
+  return Number.isFinite(explicit) && explicit >= 0 ? Math.trunc(explicit) : 0;
 }
 
 export function buildWorkflowLifecycleMetadata(
@@ -1437,6 +1445,7 @@ function normalizeWorkflow(def: WorkflowDefinition): WorkflowDefinition {
     lifecycle_state,
     lifecycle,
     validation_status: lifecycle.validation_status,
+    edit_version: getWorkflowEditVersion(normalized),
     deploy_version: lifecycle.deploy_version,
     deployed_at: lifecycle.deployed_at,
     deployed_by: lifecycle.deployed_by,
@@ -1622,7 +1631,13 @@ function prepareWorkflowUpdate(
   patch: Partial<WorkflowDefinition>,
   opts: WorkflowUpdateOptions = {},
 ): { workflow: WorkflowDefinition; errors: ValidationError[]; persistable: boolean } {
-  const updated: WorkflowDefinition = { ...current, ...patch, id }; // id is immutable
+  const { edit_version: _ignoredEditVersion, deploy_version: _ignoredDeployVersion, ...safePatch } = patch;
+  const updated: WorkflowDefinition = {
+    ...current,
+    ...safePatch,
+    id,
+    edit_version: getWorkflowEditVersion(current) + 1,
+  }; // id, edit_version, and deploy_version are controlled by the persistence boundary.
   const normalized = normalizeSystems(updated);
 
   if (opts.draft) {
@@ -1685,6 +1700,25 @@ export type AtomicWorkflowMutationResult<TMeta, TAbort = unknown> =
   | { status: "aborted"; meta: TAbort }
   | { status: "updated"; workflow: WorkflowDefinition; errors: ValidationError[]; meta: TMeta };
 
+export interface WorkflowUpdateConflict {
+  conflict: true;
+  status: 409;
+  code: "WORKFLOW_UPDATE_CONFLICT" | "WORKFLOW_MUTATION_CONFLICT";
+  error: string;
+  workflow_id: string;
+  details?: Record<string, unknown>;
+  attempts?: number;
+}
+
+export type WorkflowUpdateResult =
+  | { workflow: WorkflowDefinition; errors: ValidationError[] }
+  | WorkflowUpdateConflict
+  | null;
+
+export function isWorkflowUpdateConflict(result: WorkflowUpdateResult): result is WorkflowUpdateConflict {
+  return Boolean(result && "conflict" in result && result.conflict === true);
+}
+
 export async function mutateWorkflowAtomically<TMeta, TAbort = unknown>(
   id: string,
   mutate: (current: WorkflowDefinition) => AtomicWorkflowMutation<TMeta, TAbort>,
@@ -1733,7 +1767,7 @@ export async function mutateWorkflowAtomically<TMeta, TAbort = unknown>(
 }
 
 export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: boolean; lifecycleState?: WorkflowLifecycleState } = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] }> {
-  def = normalizeSystems(def);
+  def = normalizeSystems({ ...def, edit_version: getWorkflowEditVersion(def) || 1 });
   if (opts.draft) {
     const saved = withLifecycle(def, "draft", {
       validation: validationMetadata([], "workflow.create", "skipped"),
@@ -1761,22 +1795,59 @@ export async function createWorkflow(def: WorkflowDefinition, opts: { draft?: bo
   return { workflow: saved, errors: [] };
 }
 
-export async function updateWorkflow(id: string, patch: Partial<WorkflowDefinition>, opts: WorkflowUpdateOptions = {}): Promise<{ workflow: WorkflowDefinition; errors: ValidationError[] } | null> {
-  const raw = await redis.get(WORKFLOW_KEY_PREFIX + id);
-  if (!raw) return null;
+export async function updateWorkflow(id: string, patch: Partial<WorkflowDefinition>, opts: WorkflowUpdateOptions = {}): Promise<WorkflowUpdateResult> {
+  const result = await mutateWorkflowAtomically<null, WorkflowUpdateConflict>(
+    id,
+    current => {
+      const currentEditVersion = getWorkflowEditVersion(current);
+      if (opts.expectedEditVersion !== undefined && currentEditVersion !== opts.expectedEditVersion) {
+        return {
+          abort: {
+            conflict: true,
+            status: 409,
+            code: "WORKFLOW_UPDATE_CONFLICT",
+            error: "Workflow edit version conflict",
+            workflow_id: id,
+            details: {
+              expected_edit_version: opts.expectedEditVersion,
+              actual_edit_version: currentEditVersion,
+            },
+          },
+        };
+      }
+      const currentDeployVersion = getWorkflowDeployVersion(current);
+      if (opts.expectedDeployVersion !== undefined && currentDeployVersion !== opts.expectedDeployVersion) {
+        return {
+          abort: {
+            conflict: true,
+            status: 409,
+            code: "WORKFLOW_UPDATE_CONFLICT",
+            error: "Workflow deploy version conflict",
+            workflow_id: id,
+            details: {
+              expected_deploy_version: opts.expectedDeployVersion,
+              actual_deploy_version: currentDeployVersion,
+            },
+          },
+        };
+      }
+      return { patch, opts, meta: null };
+    },
+  );
 
-  const current: WorkflowDefinition = JSON.parse(raw);
-
-  // Archive current version before overwriting
-  await archiveWorkflowSnapshot(id, JSON.parse(raw));
-
-  const prepared = prepareWorkflowUpdate(id, current, patch, opts);
-  if (!prepared.persistable || prepared.errors.length > 0) return { workflow: prepared.workflow, errors: prepared.errors };
-
-  await syncWorkflowDocuments(prepared.workflow);
-  await redis.set(WORKFLOW_KEY_PREFIX + id, JSON.stringify(prepared.workflow));
-  await afterWorkflowPersisted(prepared.workflow, current, { notifyReload: opts.draft !== true });
-  return { workflow: prepared.workflow, errors: [] };
+  if (result.status === "not_found") return null;
+  if (result.status === "conflict") {
+    return {
+      conflict: true,
+      status: 409,
+      code: "WORKFLOW_MUTATION_CONFLICT",
+      error: "Workflow mutation conflict",
+      workflow_id: id,
+      attempts: result.attempts,
+    };
+  }
+  if (result.status === "aborted") return result.meta;
+  return { workflow: result.workflow, errors: result.errors };
 }
 
 export async function archiveWorkflow(id: string, opts: WorkflowArchiveOptions = {}): Promise<boolean> {

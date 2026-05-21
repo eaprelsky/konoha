@@ -80,15 +80,22 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   if (res.status === 401) throw new Error('Unauthorized — invalid API token');
   if (!res.ok) {
     let msg = `HTTP ${res.status}: ${res.statusText}`;
+    let body: any = null;
     try {
-      const body = await res.json();
+      body = await res.json();
       if (Array.isArray(body?.details) && body.details.length > 0) {
         msg = body.details.map((d: any) => typeof d === 'string' ? d : (d.message || JSON.stringify(d))).join('\n');
       } else if (typeof body?.error === 'string') {
         msg = body.error;
       }
     } catch { /* body not JSON — keep default message */ }
-    throw new Error(msg);
+    const error = new Error(msg);
+    if (body && typeof body === 'object') {
+      (error as any).code = body.code;
+      (error as any).details = body.details;
+      (error as any).status = res.status;
+    }
+    throw error;
   }
   const data = await res.json() as T;
   if (method === 'GET') _cache.set(path, { data, ts: Date.now() });

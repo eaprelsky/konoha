@@ -704,6 +704,8 @@ async function executeWorkflowPatchFromSchema(
   const actionArgs = {
     id: workflowId,
     patch,
+    ...(typeof rawPatch.expected_edit_version === "number" ? { expected_edit_version: rawPatch.expected_edit_version } : {}),
+    ...(typeof rawPatch.expected_deploy_version === "number" ? { expected_deploy_version: rawPatch.expected_deploy_version } : {}),
     idempotency_key: `assistant:${opts.session_id ?? opts.chat_id}:workflow.patch:${randomUUID()}`,
   };
   const sessionId = opts.session_id ?? opts.chat_id;

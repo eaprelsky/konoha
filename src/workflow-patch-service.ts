@@ -4,6 +4,7 @@ import { listDocs } from "./runtime/documents";
 import { listRoles } from "./runtime/roles";
 import {
   getWorkflowDeployVersion,
+  getWorkflowEditVersion,
   getWorkflowLifecycleState,
   mutateWorkflowAtomically,
   validateWorkflowReadiness,
@@ -31,6 +32,7 @@ export interface WorkflowPatchRequest {
   workflow_id: string;
   patch: WorkflowSchemaPatch;
   expected_deploy_version?: number;
+  expected_edit_version?: number;
   idempotency_key?: string;
 }
 
@@ -387,6 +389,24 @@ export async function applyWorkflowPatch(request: WorkflowPatchRequest): Promise
             error: "Retired workflows cannot be patched",
             workflow_id: workflowId,
             details: { lifecycle_state: lifecycleState },
+          },
+        };
+      }
+      if (
+        request.expected_edit_version !== undefined &&
+        getWorkflowEditVersion(current) !== request.expected_edit_version
+      ) {
+        return {
+          abort: {
+            ok: false,
+            status: 409,
+            code: "WORKFLOW_PATCH_CONFLICT",
+            error: "Workflow edit version does not match expected_edit_version",
+            workflow_id: workflowId,
+            details: {
+              expected_edit_version: request.expected_edit_version,
+              actual_edit_version: getWorkflowEditVersion(current),
+            },
           },
         };
       }

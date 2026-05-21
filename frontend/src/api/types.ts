@@ -58,6 +58,8 @@ export interface Workflow {
   id: string;
   name: string;
   version?: string;
+  edit_version?: number;
+  deploy_version?: number;
   description?: string;
   category?: string;
   status?: string;

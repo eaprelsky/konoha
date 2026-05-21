@@ -9,11 +9,13 @@ import {
   mutateWorkflowAtomically,
   saveWorkflowDeployedSnapshot,
   getWorkflowDeployVersion,
+  isWorkflowUpdateConflict,
   WORKFLOW_VALIDATION_TAXONOMY_VERSION,
   type WorkflowDefinition,
   type WorkflowElement,
   type FlowEdge,
   type WorkflowLifecycleState,
+  type WorkflowUpdateConflict,
 } from "./workflow-loader";
 import { CaseStartGateError } from "./runtime/case-start-gate";
 import { normalizeElementNames } from "./normalizer";
@@ -334,11 +336,18 @@ async function executeWorkflowUpdate(args: Record<string, unknown>): Promise<Act
   const body = { ...args };
   delete body.id;
   delete body.draft;
+  delete body.expected_edit_version;
+  delete body.expected_deploy_version;
 
   const normalized = await normalizeElementsIfNeeded(body);
 
-  const result = await updateWorkflow(id, body as Partial<WorkflowDefinition>, { draft });
+  const result = await updateWorkflow(id, body as Partial<WorkflowDefinition>, {
+    draft,
+    expectedEditVersion: typeof args.expected_edit_version === "number" ? args.expected_edit_version : undefined,
+    expectedDeployVersion: typeof args.expected_deploy_version === "number" ? args.expected_deploy_version : undefined,
+  });
   if (result === null) return { status: 404, data: { error: "Workflow not found" } };
+  if (isWorkflowUpdateConflict(result)) return workflowUpdateConflictExecution(result);
   if (result.errors.length > 0) {
     return {
       status: 422,
@@ -375,6 +384,7 @@ async function executeWorkflowPatch(args: Record<string, unknown>): Promise<Acti
     workflow_id: String(args.id),
     patch: args.patch as Record<string, unknown>,
     expected_deploy_version: args.expected_deploy_version as number | undefined,
+    expected_edit_version: args.expected_edit_version as number | undefined,
     idempotency_key: args.idempotency_key ? String(args.idempotency_key) : undefined,
   });
   return { status: receipt.ok ? 200 : receipt.status, data: receipt };
@@ -382,6 +392,19 @@ async function executeWorkflowPatch(args: Record<string, unknown>): Promise<Acti
 
 function workflowNotFound(id: string): ActionExecution {
   return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: id } };
+}
+
+function workflowUpdateConflictExecution(result: WorkflowUpdateConflict): ActionExecution {
+  return {
+    status: result.status,
+    data: {
+      error: result.error,
+      code: result.code,
+      workflow_id: result.workflow_id,
+      ...(result.details ? { details: result.details } : {}),
+      ...(result.attempts ? { attempts: result.attempts } : {}),
+    },
+  };
 }
 
 async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<ActionExecution> {
@@ -443,6 +466,7 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
       needsReview: true,
     });
     if (result === null) return workflowNotFound(id);
+    if (isWorkflowUpdateConflict(result)) return workflowUpdateConflictExecution(result);
     if (result.errors.length > 0) {
       return {
         status: 422,
@@ -481,6 +505,7 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
       needsReview: validation.gates.reviewer_required,
     });
     if (result === null) return workflowNotFound(id);
+    if (isWorkflowUpdateConflict(result)) return workflowUpdateConflictExecution(result);
     if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
     return {
       status: 422,
@@ -512,6 +537,7 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
     needsReview: false,
   });
   if (result === null) return workflowNotFound(id);
+  if (isWorkflowUpdateConflict(result)) return workflowUpdateConflictExecution(result);
   if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
 
   await subscribeStartEvents(result.workflow);

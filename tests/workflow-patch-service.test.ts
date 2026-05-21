@@ -64,6 +64,8 @@ describe("atomic workflow patch service", () => {
     expect(body.action).toBe("workflow.patch");
     expect(body.workflow_id).toBe(id);
     expect(body.idempotency_key).toBe("first-apply");
+    expect(body.deploy_version).toBe(0);
+    expect(body.workflow.edit_version).toBe(2);
     expect(body.validation.source).toBe("workflow.patch");
     expect(body.validation.readiness).toBe("ready");
     expect(body.changed_resources).toEqual(expect.arrayContaining([
@@ -164,6 +166,60 @@ describe("atomic workflow patch service", () => {
 
     const saved = await getWorkflow(id);
     expect(saved?.name).toBe("Patch target");
+  });
+
+  test("detects expected edit-version conflicts before mutation", async () => {
+    const id = `${RUN}-edit-version-conflict`;
+    await createDraftWorkflow(id);
+    const before = await getWorkflow(id);
+    expect(before?.edit_version).toBe(1);
+
+    const result = await executeActionDirect("workflow.patch", {
+      id,
+      expected_edit_version: 0,
+      patch: {
+        set_name: "Should not persist",
+      },
+    });
+
+    expect(result?.status).toBe(409);
+    const body = result!.data as any;
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe("WORKFLOW_PATCH_CONFLICT");
+    expect(body.details).toMatchObject({
+      expected_edit_version: 0,
+      actual_edit_version: 1,
+    });
+
+    const saved = await getWorkflow(id);
+    expect(saved?.name).toBe("Patch target");
+    expect(saved?.edit_version).toBe(1);
+  });
+
+  test("workflow.update detects expected edit-version conflicts before mutation", async () => {
+    const id = `${RUN}-update-edit-version-conflict`;
+    await createDraftWorkflow(id);
+
+    const result = await executeActionDirect("workflow.update", {
+      id,
+      name: "Should not persist",
+      draft: true,
+      expected_edit_version: 0,
+    });
+
+    expect(result?.status).toBe(409);
+    expect(result!.data).toMatchObject({
+      code: "WORKFLOW_UPDATE_CONFLICT",
+      workflow_id: id,
+      details: {
+        expected_edit_version: 0,
+        actual_edit_version: 1,
+      },
+    });
+
+    const saved = await getWorkflow(id);
+    expect(saved?.name).toBe("Patch target");
+    expect(saved?.edit_version).toBe(1);
   });
 
   test("patching an executable workflow does not mutate deployed runtime snapshots", async () => {

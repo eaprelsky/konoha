@@ -814,12 +814,22 @@ export function useProcessEditor(readOnly = false) {
       const fresh = await api.workflows.list().catch(() => workflows);
       const exists = fresh.find(w => w.id === id);
       const elementsWithPos = elements.map(el => ({ ...el, x: positions[el.id]?.x ?? 0, y: positions[el.id]?.y ?? 0 }));
-      const body = { id, name, elements: elementsWithPos, flow, ...(exists ? {} : { version: '1.0.0' }) } as unknown as Workflow;
+      const body = {
+        id,
+        name,
+        elements: elementsWithPos,
+        flow,
+        ...(exists?.edit_version !== undefined ? { expected_edit_version: exists.edit_version } : {}),
+        ...(exists ? {} : { version: '1.0.0' }),
+      } as unknown as Workflow;
       let savedAsDraft = false, validationMsg: string | null = null;
       try {
         if (exists) await api.workflows.update(id, body, false);
         else        await api.workflows.create(body, false);
       } catch (validationErr: any) {
+        if (validationErr?.code === 'WORKFLOW_UPDATE_CONFLICT' || validationErr?.code === 'WORKFLOW_MUTATION_CONFLICT') {
+          throw validationErr;
+        }
         validationMsg = validationErr.message ?? null;
         if (exists) await api.workflows.update(id, body, true);
         else        await api.workflows.create(body, true);

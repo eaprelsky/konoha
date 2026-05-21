@@ -17,6 +17,14 @@ import { createRole, deleteRole } from "../src/runtime/roles";
 import { redis } from "../src/redis";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 
+async function cleanupWorkflow(id: string) {
+  await deleteCasesByProcess(id).catch(() => {});
+  await redis.del(`workflow:${id}`).catch(() => {});
+  await redis.del(`konoha:workflow:versionctr:${id}`).catch(() => {});
+  await redis.srem(WORKFLOW_INDEX_KEY, id).catch(() => {});
+  await pgDeleteWorkflow(id).catch(() => {});
+}
+
 describe("normalizeAssistantResponse", () => {
   const baseOpts = { chat_id: "test-chat-1" };
 
@@ -209,6 +217,51 @@ describe("normalizeAssistantResponse", () => {
       await redis.srem(WORKFLOW_INDEX_KEY, workflowId).catch(() => 0);
       await pgDeleteWorkflow(workflowId).catch(() => 0);
       await deleteRole(roleId).catch(() => {});
+    }
+  });
+
+  it("marks stale assistant schema patches as failed conflicts without committing", async () => {
+    const workflowId = `assistant-conflict-${Date.now()}`;
+    await createWorkflow({
+      id: workflowId,
+      version: "1.0",
+      name: "Assistant Conflict Test",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+      ],
+      flow: [],
+    }, { draft: true });
+
+    try {
+      const raw = JSON.stringify({
+        reply: "Переименовал процесс",
+        schema_patch: {
+          set_name: "Should Not Commit",
+          expected_edit_version: 0,
+        },
+      });
+      const resp = await normalizeAssistantResponse(raw, {
+        ...baseOpts,
+        current_workflow_id: workflowId,
+        autonomy_overrides: { "workflow.patch": "auto" },
+      });
+
+      expect(resp.action_receipts[0]).toMatchObject({
+        action: "workflow.patch",
+        status: "failed",
+        details: "Workflow edit version does not match expected_edit_version",
+      });
+      expect(resp.edit_result).toMatchObject({
+        kind: "schema_patch",
+        mode: "failed",
+        durable: false,
+        workflow_id: workflowId,
+      });
+      const saved = await getWorkflow(workflowId);
+      expect(saved?.name).toBe("Assistant Conflict Test");
+      expect(saved?.edit_version).toBe(1);
+    } finally {
+      await cleanupWorkflow(workflowId);
     }
   });
 

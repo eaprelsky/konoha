@@ -83,6 +83,7 @@ describe("workflow action contract validation", () => {
     const valid = validateActionArgs("workflow.patch", {
       id: "wf-123",
       patch: { add_flow: [["start", "done"]] },
+      expected_edit_version: 1,
       expected_deploy_version: 1,
       idempotency_key: "request-1",
     });

@@ -35,6 +35,8 @@ export const ACTIONS: ActionDef[] = [
       { name: "elements",    type: "array",   required: false, description: "Updated elements array." },
       { name: "flow",        type: "array",   required: false, description: "Updated flow edges." },
       { name: "draft",       type: "boolean", required: false, description: "Save as draft." },
+      { name: "expected_edit_version", type: "number", required: false, description: "Optional edit-version guard for conflict detection." },
+      { name: "expected_deploy_version", type: "number", required: false, description: "Optional deploy-version guard for conflict detection." },
     ],
     currentEndpoint: "PUT /workflows/:id",
     autonomy: "confirm",
@@ -58,6 +60,7 @@ export const ACTIONS: ActionDef[] = [
     args: [
       { name: "id", type: "string", required: true, description: "Workflow ID to patch." },
       { name: "patch", type: "object", required: true, description: "Schema patch: set_name, add/update/remove elements, add/remove flow, and set_triggers." },
+      { name: "expected_edit_version", type: "number", required: false, description: "Optional edit-version guard for conflict detection." },
       { name: "expected_deploy_version", type: "number", required: false, description: "Optional deploy-version guard for conflict detection." },
       { name: "idempotency_key", type: "string", required: false, description: "Optional caller request key echoed in the patch receipt." },
     ],
