@@ -83,6 +83,16 @@ describe("staging environment contract", () => {
     expect(validateStagingEnv({ ...env, KONOHA_STAGING_ENABLE_EXTERNAL_CONNECTORS: "waiver-753" }, contract).ok).toBe(true);
   });
 
+  test("healthcheck connector env also requires explicit staging waiver", () => {
+    const contract = loadStagingContract();
+    const emptyDefault = stagingDefaults(contract);
+    const healthEnv = { ...emptyDefault, KONOHA_HEALTH_ENABLED_CONNECTORS: "telegram" };
+
+    expect(validateStagingEnv(emptyDefault, contract).ok).toBe(true);
+    expect(validateStagingEnv(healthEnv, contract).errors.join("\n")).toContain("KONOHA_STAGING_ENABLE_EXTERNAL_CONNECTORS");
+    expect(validateStagingEnv({ ...healthEnv, KONOHA_STAGING_ENABLE_EXTERNAL_CONNECTORS: "waiver-753" }, contract).ok).toBe(true);
+  });
+
   test("reset plan is bounded and never uses broad destructive commands", () => {
     const plan = buildResetPlan(loadStagingContract());
 

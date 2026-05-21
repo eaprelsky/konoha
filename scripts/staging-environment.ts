@@ -189,8 +189,11 @@ export function validateStagingEnv(
     errors.push("DATABASE_URL must not use PostgreSQL public schema as the first search_path entry");
   }
 
-  const enabledConnectors = (merged.KONOHA_ENABLED_CONNECTORS || "")
-    .split(",")
+  const enabledConnectors = [
+    merged.KONOHA_ENABLED_CONNECTORS || "",
+    merged.KONOHA_HEALTH_ENABLED_CONNECTORS || "",
+  ]
+    .flatMap(value => value.split(","))
     .map(item => item.trim())
     .filter(Boolean);
   if (enabledConnectors.length > 0 && !merged[contract.connectors.external_enable_waiver_env]) {
