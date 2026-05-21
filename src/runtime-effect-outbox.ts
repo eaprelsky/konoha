@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { createLogger } from "./logger";
 import { redis } from "./redis";
+import { auditLog } from "./assistant-actions";
 
 export const RUNTIME_EFFECT_OUTBOX_SCHEMA_VERSION = 1;
 
@@ -180,6 +181,46 @@ export interface RuntimeEffectStaleRecoveryResult {
   recovered: RuntimeEffectRecord[];
 }
 
+export type RuntimeEffectRecoveryOperation = "retry" | "cancel" | "dead_letter";
+
+export interface RuntimeEffectRecoveryInput {
+  operation: RuntimeEffectRecoveryOperation;
+  actor: string;
+  reason: string;
+  now?: string;
+}
+
+export interface RuntimeEffectRecoveryReceipt {
+  ok: true;
+  operation: RuntimeEffectRecoveryOperation;
+  effect_id: string;
+  actor: string;
+  reason: string;
+  from_status: RuntimeEffectStatus;
+  to_status: RuntimeEffectStatus;
+  noop: boolean;
+  terminal_override: boolean;
+  previous_attempts: number;
+  attempts: number;
+  audited: boolean;
+  recovered_at: string;
+  record: RuntimeEffectRecord;
+}
+
+export class RuntimeEffectRecoveryError extends Error {
+  code: string;
+  status: number;
+  details?: Record<string, unknown>;
+
+  constructor(code: string, message: string, status = 400, details?: Record<string, unknown>) {
+    super(message);
+    this.name = "RuntimeEffectRecoveryError";
+    this.code = code;
+    this.status = status;
+    this.details = details;
+  }
+}
+
 export const DEFAULT_RUNTIME_EFFECT_RETRY_POLICY: RuntimeEffectRetryPolicy = {
   max_attempts: 5,
   backoff: "exponential",
@@ -211,6 +252,12 @@ function hasCorrelationLink(links: RuntimeEffectLinks): boolean {
 
 function assertIso(value: string, field: string): void {
   if (!Number.isFinite(Date.parse(value))) throw new Error(`${field} must be an ISO timestamp`);
+}
+
+function assertRecoveryText(value: string | undefined, field: string): string {
+  const trimmed = value?.trim();
+  if (!trimmed) throw new RuntimeEffectRecoveryError("RUNTIME_EFFECT_RECOVERY_BAD_REQUEST", `${field} is required`, 400);
+  return trimmed;
 }
 
 function normalizeRetryPolicy(policy: Partial<RuntimeEffectRetryPolicy> | undefined): RuntimeEffectRetryPolicy {
@@ -315,6 +362,265 @@ async function saveRuntimeEffectRecord(
   }
   await pipe.exec();
   return record;
+}
+
+async function writeRuntimeEffectRecoveryAudit(receipt: Omit<RuntimeEffectRecoveryReceipt, "record" | "audited">): Promise<boolean> {
+  try {
+    await auditLog({
+      timestamp: receipt.recovered_at,
+      session_id: `runtime-effect-recovery:${receipt.effect_id}`,
+      action_type: `runtime_effect.${receipt.operation}`,
+      parameters: JSON.stringify({
+        effect_id: receipt.effect_id,
+        reason: receipt.reason,
+        from_status: receipt.from_status,
+        to_status: receipt.to_status,
+        noop: receipt.noop,
+        terminal_override: receipt.terminal_override,
+      }),
+      result: "ok",
+      agent_chain: receipt.actor,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function operatorRecoveryError(input: {
+  code: string;
+  message: string;
+  retryable: boolean;
+  now: string;
+  actor: string;
+  reason: string;
+  from_status: RuntimeEffectStatus;
+}): RuntimeEffectError {
+  return {
+    code: input.code,
+    message: input.message,
+    retryable: input.retryable,
+    failed_at: input.now,
+    details: {
+      actor: input.actor,
+      reason: input.reason,
+      previous_status: input.from_status,
+    },
+  };
+}
+
+function hasLiveWorkerClaim(record: RuntimeEffectRecord, now: string): boolean {
+  if (record.status !== "in_flight") return false;
+  if (!record.locked_until) return true;
+  return Date.parse(record.locked_until) > Date.parse(now);
+}
+
+function retryRuntimeEffectForRecovery(
+  record: RuntimeEffectRecord,
+  input: { now: string; actor: string; reason: string },
+): { record: RuntimeEffectRecord; noop: boolean; terminal_override: boolean } {
+  if (record.status === "pending") {
+    return { record, noop: true, terminal_override: false };
+  }
+  if (record.status === "retry") {
+    return {
+      record: {
+        ...record,
+        updated_at: input.now,
+        next_retry_at: input.now,
+        error: operatorRecoveryError({
+          code: "RUNTIME_EFFECT_OPERATOR_RETRY",
+          message: "Runtime effect retry expedited by operator",
+          retryable: true,
+          now: input.now,
+          actor: input.actor,
+          reason: input.reason,
+          from_status: record.status,
+        }),
+      },
+      noop: false,
+      terminal_override: false,
+    };
+  }
+  if (record.status === "failed") {
+    return {
+      record: transitionRuntimeEffectRecord(record, {
+        status: "retry",
+        now: input.now,
+        next_retry_at: input.now,
+        error: {
+          code: "RUNTIME_EFFECT_OPERATOR_RETRY",
+          message: "Runtime effect retry requested by operator",
+          retryable: true,
+          details: { actor: input.actor, reason: input.reason, previous_status: record.status },
+        },
+      }),
+      noop: false,
+      terminal_override: false,
+    };
+  }
+  if (record.status === "dead_letter") {
+    return {
+      record: {
+        ...record,
+        status: "pending",
+        attempts: 0,
+        updated_at: input.now,
+        next_retry_at: undefined,
+        locked_by: undefined,
+        locked_until: undefined,
+        completed_at: undefined,
+        receipt: undefined,
+        error: operatorRecoveryError({
+          code: "RUNTIME_EFFECT_OPERATOR_RETRY",
+          message: "Dead-lettered runtime effect requeued by operator",
+          retryable: true,
+          now: input.now,
+          actor: input.actor,
+          reason: input.reason,
+          from_status: record.status,
+        }),
+      },
+      noop: false,
+      terminal_override: true,
+    };
+  }
+  throw new RuntimeEffectRecoveryError(
+    "RUNTIME_EFFECT_RECOVERY_STATUS_UNSUPPORTED",
+    `Cannot retry runtime effect in status ${record.status}`,
+    409,
+    { status: record.status },
+  );
+}
+
+function cancelRuntimeEffectForRecovery(
+  record: RuntimeEffectRecord,
+  input: { now: string; actor: string; reason: string },
+): { record: RuntimeEffectRecord; noop: boolean; terminal_override: boolean } {
+  if (record.status === "cancelled") {
+    return { record, noop: true, terminal_override: false };
+  }
+  if (record.status !== "pending" && record.status !== "retry") {
+    throw new RuntimeEffectRecoveryError(
+      "RUNTIME_EFFECT_RECOVERY_STATUS_UNSUPPORTED",
+      `Cannot cancel runtime effect in status ${record.status}`,
+      409,
+      { status: record.status },
+    );
+  }
+  return {
+    record: transitionRuntimeEffectRecord(record, {
+      status: "cancelled",
+      now: input.now,
+      receipt: {
+        status: "cancelled",
+        data: { actor: input.actor, reason: input.reason },
+      },
+    }),
+    noop: false,
+    terminal_override: false,
+  };
+}
+
+function deadLetterRuntimeEffectForRecovery(
+  record: RuntimeEffectRecord,
+  input: { now: string; actor: string; reason: string },
+): { record: RuntimeEffectRecord; noop: boolean; terminal_override: boolean } {
+  if (record.status === "dead_letter") {
+    return { record, noop: true, terminal_override: false };
+  }
+  if (record.status !== "pending" && record.status !== "retry" && record.status !== "failed") {
+    throw new RuntimeEffectRecoveryError(
+      "RUNTIME_EFFECT_RECOVERY_STATUS_UNSUPPORTED",
+      `Cannot dead-letter runtime effect in status ${record.status}`,
+      409,
+      { status: record.status },
+    );
+  }
+  return {
+    record: transitionRuntimeEffectRecord(record, {
+      status: "dead_letter",
+      now: input.now,
+      error: {
+        code: "RUNTIME_EFFECT_OPERATOR_DEAD_LETTER",
+        message: "Runtime effect dead-lettered by operator",
+        retryable: false,
+        details: { actor: input.actor, reason: input.reason, previous_status: record.status },
+      },
+    }),
+    noop: false,
+    terminal_override: false,
+  };
+}
+
+export async function recoverRuntimeEffect(
+  effectId: string,
+  input: RuntimeEffectRecoveryInput,
+): Promise<RuntimeEffectRecoveryReceipt> {
+  const now = input.now ?? new Date().toISOString();
+  assertIso(now, "now");
+  const actor = assertRecoveryText(input.actor, "actor");
+  const reason = assertRecoveryText(input.reason, "reason");
+  const operation = input.operation;
+  if (operation !== "retry" && operation !== "cancel" && operation !== "dead_letter") {
+    throw new RuntimeEffectRecoveryError("RUNTIME_EFFECT_RECOVERY_BAD_REQUEST", `Unsupported recovery operation: ${operation}`, 400);
+  }
+
+  const lockKey = runtimeEffectLockKey(effectId);
+  const lockOwner = `recovery:${actor}:${operation}`;
+  const locked = await redis.set(lockKey, lockOwner, "PX", DEFAULT_RUNTIME_EFFECT_LOCK_MS, "NX");
+  if (locked !== "OK") {
+    throw new RuntimeEffectRecoveryError("RUNTIME_EFFECT_RECOVERY_BUSY", "Runtime effect is locked by a worker or another recovery operation", 409);
+  }
+
+  try {
+    const current = await readRuntimeEffectById(effectId);
+    if (!current) {
+      throw new RuntimeEffectRecoveryError("RUNTIME_EFFECT_NOT_FOUND", "Runtime effect not found", 404, { effect_id: effectId });
+    }
+    if (hasLiveWorkerClaim(current, now)) {
+      throw new RuntimeEffectRecoveryError("RUNTIME_EFFECT_RECOVERY_ACTIVE_CLAIM", "Runtime effect has an active worker claim", 409, {
+        locked_by: current.locked_by,
+        locked_until: current.locked_until,
+      });
+    }
+
+    const previousStatus = current.status;
+    const previousAttempts = current.attempts;
+    const recovered = operation === "retry"
+      ? retryRuntimeEffectForRecovery(current, { now, actor, reason })
+      : operation === "cancel"
+        ? cancelRuntimeEffectForRecovery(current, { now, actor, reason })
+        : deadLetterRuntimeEffectForRecovery(current, { now, actor, reason });
+
+    if (!recovered.noop) {
+      await saveRuntimeEffectRecord(recovered.record, current);
+    }
+
+    const receiptBase = {
+      ok: true as const,
+      operation,
+      effect_id: current.effect_id,
+      actor,
+      reason,
+      from_status: previousStatus,
+      to_status: recovered.record.status,
+      noop: recovered.noop,
+      terminal_override: recovered.terminal_override,
+      previous_attempts: previousAttempts,
+      attempts: recovered.record.attempts,
+      recovered_at: now,
+    };
+    const audited = await writeRuntimeEffectRecoveryAudit(receiptBase);
+    return {
+      ...receiptBase,
+      audited,
+      record: recovered.record,
+    };
+  } finally {
+    const owner = await redis.get(lockKey).catch(() => null);
+    if (owner === lockOwner) await redis.del(lockKey);
+  }
 }
 
 export async function enqueueRuntimeEffect(

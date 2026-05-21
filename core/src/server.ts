@@ -31,6 +31,7 @@ import authRouter from "../../src/routes/auth";
 import profileRouter from "../../src/routes/profile";
 import deployRouter from "../../src/routes/deploy";
 import featuresRouter from "../../src/routes/features";
+import runtimeEffectsRouter from "../../src/routes/runtime-effects";
 import testbenchProxyRouter from "../../src/routes/testbench-proxy";
 import { requireFeature } from "../../src/feature-flags";
 import { seedSystemAgents } from "../../src/routes/admin";
@@ -156,6 +157,7 @@ app.route("/whitelist", whitelistRouter);
 app.route("/", githubRouter); // POST /webhooks/github — HMAC verified, no auth middleware
 app.route("/", auditRouter); // GET /audit, POST /github/issues, GET|PUT /config/autonomy
 app.route("/", deployRouter); // POST /deploy, GET /deploy/status, GET|PUT /config/settings
+app.route("/", runtimeEffectsRouter); // Runtime effect recovery API, admin-only
 app.route("/", testbenchProxyRouter); // /testbench/* → proxy to port 3201 (closes #323)
 
 // Register plugin routes

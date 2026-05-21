@@ -50,6 +50,17 @@ RULES = [
         ('app.post("/deploy", requireAdmin',),
     ),
     Rule(
+        "route.auth.runtime_effect_recovery_admin",
+        "src/routes/runtime-effects.ts",
+        (
+            'router.get("/runtime-effects", requireAdmin',
+            'router.get("/runtime-effects/:id", requireAdmin',
+            'router.post("/runtime-effects/:id/retry", requireAdmin',
+            'router.post("/runtime-effects/:id/cancel", requireAdmin',
+            'router.post("/runtime-effects/:id/dead-letter", requireAdmin',
+        ),
+    ),
+    Rule(
         "route.auth.whitelist_mutations_admin",
         "src/routes/whitelist.ts",
         (

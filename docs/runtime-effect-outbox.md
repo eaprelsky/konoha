@@ -151,6 +151,38 @@ effect. Running-case and intermediate subscription effects must use concrete
 `case_id`/`work_item_id` links and must not be confused with deploy-managed
 `instance_id="new"` start subscriptions.
 
+Issue #720 adds the operator recovery surface:
+
+| Operation | Allowed statuses | Result |
+|---|---|---|
+| inspect/list | all statuses | Reads canonical `RuntimeEffectRecord` records without mutation. |
+| retry | `pending`, `retry`, `failed`, `dead_letter` | Keeps `pending` as a no-op, expedites `retry`, moves `failed` to due `retry`, or explicitly requeues `dead_letter` with a terminal-override audit receipt. |
+| cancel | `pending`, `retry` | Moves the effect to `cancelled` with a cancellation receipt. |
+| dead-letter | `pending`, `retry`, `failed` | Moves the effect to `dead_letter` with `RUNTIME_EFFECT_OPERATOR_DEAD_LETTER` evidence. |
+
+The HTTP API is admin-only:
+
+- `GET /runtime-effects?status=pending,retry,failed,dead_letter&limit=50`
+- `GET /runtime-effects/:effect_id`
+- `POST /runtime-effects/:effect_id/retry`
+- `POST /runtime-effects/:effect_id/cancel`
+- `POST /runtime-effects/:effect_id/dead-letter`
+
+Mutation bodies require `reason` and may include `actor`; every mutation returns
+a machine-readable recovery receipt and writes `runtime_effect.<operation>` to
+the `konoha:audit` stream. Active `in_flight` worker claims are not overridden by
+the recovery API.
+
+The local CLI uses the same service:
+
+```bash
+bun run scripts/runtime-effect-recovery.ts list --status pending,retry --limit 50
+bun run scripts/runtime-effect-recovery.ts show <effect_id>
+bun run scripts/runtime-effect-recovery.ts retry <effect_id> --actor kakashi --reason "operator retry after connector recovery"
+bun run scripts/runtime-effect-recovery.ts cancel <effect_id> --actor kakashi --reason "case was cancelled"
+bun run scripts/runtime-effect-recovery.ts dead-letter <effect_id> --actor kakashi --reason "payload is no longer valid"
+```
+
 For runtime recovery procedures, use
 `docs/workflow-runtime-rollback-recovery.md`. For release gates, use
 `docs/workflow-constructor-runtime-release-checklist.md`.

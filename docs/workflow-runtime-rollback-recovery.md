@@ -125,11 +125,15 @@ healthcheck reports connector `FAIL`.
 ```bash
 KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py
 scripts/telegram-smoke.sh
+bun run scripts/runtime-effect-recovery.ts list --status retry,dead_letter --limit 50
+bun run scripts/runtime-effect-recovery.ts show <effect_id>
+bun run scripts/runtime-effect-recovery.ts retry <effect_id> --actor <operator> --reason "<approved recovery reason>"
 curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"connector.send_message","category":"act","args":{"connector_id":"<connector_id>","endpoint_id":"<endpoint_id>","chat_ref":"<provider_chat_ref>","text":"<approved recovery message>","dry_run":true,"metadata":{"idempotency_key":"<case_id>:<work_item_id>:recovery","incident":"#<incident>"}}}'
 ```
 
 Blockers: no idempotency key; no owner approval for external resend; connector
-is disabled by the selected service profile.
+is disabled by the selected service profile; runtime-effect retry lacks an
+operator reason/audit receipt.
 
 ### Partial Deploy Or Failed Deploy
 
