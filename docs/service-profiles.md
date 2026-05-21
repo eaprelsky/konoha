@@ -70,6 +70,10 @@ Use `KONOHA_SERVICE_PROFILE=<profile>` to select a profile. Default is
 - Broad BPMS refactors and the staging rollout in #753 must start from this
   profile contract. They are blocked by `docs/lean-baseline-gate.md` until
   `prod-core` is live-clean or a time-boxed waiver is recorded.
+- The #753 staging deployment contract is `docs/staging-environment.json` and
+  `docs/staging-environment.md`. It binds `staging-core` to port `3210`, Redis
+  DB `2`, PostgreSQL `konoha_staging`, staging-only setup/auth files, and
+  staging-prefixed agent workdirs.
 
 ## Healthcheck Policy
 

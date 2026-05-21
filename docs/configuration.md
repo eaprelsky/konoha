@@ -34,6 +34,30 @@ All configuration is done through environment variables. In production they are 
 | `REDIS_DB` | `0` | Redis database index. Runtime defaults to DB 0; Bun tests set an isolated non-zero DB through `tests/setup.ts`. |
 | `PG_READ` | `false` | Set to `true` to enable Phase 2 migration: read cases/work-items from PostgreSQL instead of Redis. |
 
+## Staging Environment
+
+The staging contract for Workflow Engine development and QA is
+`docs/staging-environment.json`; the operator runbook is
+`docs/staging-environment.md`. Staging uses the `staging-core` service profile,
+port `3210`, Redis DB `2`, and PostgreSQL `konoha_staging` with
+`search_path=konoha_staging,public`.
+
+Validate the template with:
+
+```bash
+bun run scripts/staging-environment.ts check --env-file runtime-config/staging-core.env.example
+scripts/staging-smoke.sh --dry-run
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `KONOHA_ENV` | `staging` | Required staging environment label. |
+| `KONOHA_SERVICE_PROFILE` | `staging-core` | Keeps external connectors and worker fleet disabled by default. |
+| `KONOHA_STAGING_URL` | `http://127.0.0.1:3210` | Staging API URL used by Kiba and staging smoke. |
+| `STAGING_DATABASE_URL` | — | Staging-only PostgreSQL URL; must target `konoha_staging` and staging search path. |
+| `KONOHA_AGENT_WORKDIR_ROOT` | `/opt/shared/agent-workdirs-staging` | Staging-only agent workdir root. |
+| `KONOHA_STAGING_ENABLE_EXTERNAL_CONNECTORS` | — | Required waiver marker before enabling any external connector in staging. |
+
 ---
 
 ## AI / LLM

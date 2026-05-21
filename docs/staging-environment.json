@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 753,
+  "environment": "staging",
+  "service_profile": "staging-core",
+  "env_template": "runtime-config/staging-core.env.example",
+  "deployed_env_file": "/opt/shared/.agent-env.staging",
+  "lean_baseline_gate": {
+    "document": "docs/lean-baseline-gate.md",
+    "required_profile": "staging-core",
+    "waiver_file": "/opt/shared/konoha-staging-waiver.json"
+  },
+  "ports": {
+    "konoha_port": 3210,
+    "konoha_url": "http://127.0.0.1:3210",
+    "konoha_staging_url_env": "KONOHA_STAGING_URL",
+    "forbidden_ports": [3200, 3201, 3202]
+  },
+  "storage": {
+    "redis": {
+      "env": "REDIS_DB",
+      "db": 2,
+      "forbidden_db": 0,
+      "reset_patterns": [
+        "konoha:bus",
+        "konoha:events",
+        "konoha:channel:*",
+        "konoha:agent:*",
+        "konoha:message-idempotency:*",
+        "konoha:event-idempotency:*",
+        "konoha:registry",
+        "konoha:tokens",
+        "workflow:*",
+        "case:*",
+        "workitem:*",
+        "role:*",
+        "doc:*",
+        "reminder:*",
+        "konoha:cases:*",
+        "konoha:workitems:*",
+        "konoha:workflow:*",
+        "konoha:roles:*",
+        "konoha:docs:*",
+        "konoha:reminders:*"
+      ],
+      "forbidden_commands": ["FLUSHALL", "FLUSHDB"]
+    },
+    "postgres": {
+      "runtime_env": "DATABASE_URL",
+      "staging_database_url_env": "STAGING_DATABASE_URL",
+      "database_name": "konoha_staging",
+      "schema": "konoha_staging",
+      "forbidden_schema": "public",
+      "schema_sql": "src/storage/schema.sql",
+      "reset_tables": [
+        "konoha_messages",
+        "konoha_tokens",
+        "konoha_invites",
+        "konoha_agents",
+        "work_items",
+        "cases",
+        "workflow_snapshots",
+        "workflows",
+        "roles",
+        "documents",
+        "reminders"
+      ]
+    }
+  },
+  "connectors": {
+    "enabled_by_default": [],
+    "disabled_by_default": [
+      "telegram",
+      "telegram-bot",
+      "telegram-bus",
+      "telegram-context-packer",
+      "telegram-event-bridge",
+      "telegram-vision-packer",
+      "bitrix24",
+      "yonote",
+      "email"
+    ],
+    "external_enable_waiver_env": "KONOHA_STAGING_ENABLE_EXTERNAL_CONNECTORS",
+    "external_enable_waiver_required": true
+  },
+  "agents": {
+    "village_id": "staging.konoha",
+    "id_prefix": "staging-",
+    "workdir_root": "/opt/shared/agent-workdirs-staging",
+    "runtime_model": "on-demand-simple-team",
+    "allowed_agent_ids": ["staging-kakashi", "staging-shino", "staging-hinata"],
+    "forbidden_production_ids": ["naruto", "sasuke", "kakashi", "shino", "hinata", "guy", "ibiki", "shikadai", "kiba"]
+  },
+  "commands": {
+    "print_env": "bun run scripts/staging-environment.ts env",
+    "check": "bun run scripts/staging-environment.ts check --env-file runtime-config/staging-core.env.example",
+    "init": "set -a; source /opt/shared/.agent-env.staging; set +a; bun run scripts/staging-environment.ts init",
+    "smoke_dry_run": "scripts/staging-smoke.sh --dry-run",
+    "smoke_live": "set -a; source /opt/shared/.agent-env.staging; set +a; scripts/staging-smoke.sh --live",
+    "reset_dry_run": "set -a; source /opt/shared/.agent-env.staging; set +a; bun run scripts/staging-environment.ts reset --dry-run",
+    "reset_apply": "set -a; source /opt/shared/.agent-env.staging; set +a; bun run scripts/staging-environment.ts reset --apply",
+    "pg_verify": "set -a; source /opt/shared/.agent-env.staging; set +a; KONOHA_SERVICE_PROFILE=staging-core REDIS_DB=2 DATABASE_URL=\"$STAGING_DATABASE_URL\" bun run scripts/pg-verify.ts"
+  },
+  "smoke": {
+    "health_paths": ["/health", "/agents"],
+    "requires": [
+      "KONOHA_SERVICE_PROFILE=staging-core",
+      "KONOHA_ENV=staging",
+      "REDIS_DB=2",
+      "KONOHA_PORT=3210",
+      "KONOHA_URL=$KONOHA_STAGING_URL",
+      "DATABASE_URL=$STAGING_DATABASE_URL"
+    ]
+  },
+  "reset_policy": {
+    "dry_run_default": true,
+    "requires": [
+      "KONOHA_SERVICE_PROFILE=staging-core",
+      "KONOHA_ENV=staging",
+      "REDIS_DB!=0",
+      "DATABASE_URL database/schema contains staging"
+    ],
+    "never": [
+      "production Redis DB 0",
+      "PostgreSQL public schema",
+      "DROP DATABASE",
+      "FLUSHDB",
+      "FLUSHALL"
+    ]
+  },
+  "rollback": {
+    "commands": [
+      "sudo systemctl stop konoha-staging.service || true",
+      "sudo systemctl unset-environment KONOHA_SERVICE_PROFILE KONOHA_ENV KONOHA_PORT KONOHA_STAGING_URL STAGING_DATABASE_URL",
+      "set -a; source /opt/shared/.agent-env.staging; set +a; bun run scripts/staging-environment.ts reset --apply"
+    ],
+    "production_services_untouched": [
+      "konoha.service",
+      "telegram-bot.service",
+      "telegram-bus.service",
+      "redis-server.service",
+      "postgresql.service",
+      "nginx.service"
+    ]
+  }
+}

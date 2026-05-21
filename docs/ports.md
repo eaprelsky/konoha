@@ -10,6 +10,7 @@
 | 3201 | konoha-dashboard | n/a | Monitoring UI — DO NOT use for E2E tests |
 | 3202 | E2E test backend | `KONOHA_PORT=3202` | Playwright webServer; isolated instance, reuseExistingServer: false |
 | 3203 | konoha-testbench | `TESTBENCH_PORT` | On-demand bounded Chromium testbench API |
+| 3210 | Konoha staging API/bus | `KONOHA_PORT=3210`, `KONOHA_STAGING_URL` | Isolated `staging-core` lane for #753; Redis DB 2 and `konoha_staging` PostgreSQL |
 
 ## Rules
 

@@ -25,6 +25,7 @@ run_backend_tests() {
   cd "$ROOT"
   bun test --timeout 30000 \
     tests/test-storage-guardrails.test.ts \
+    tests/staging-environment.test.ts \
     tests/test-factory-namespace.test.ts \
     tests/redis-test-isolation-contract.test.ts \
     tests/pg-test-isolation-contract.test.ts \
@@ -78,6 +79,8 @@ run_step "BPMS load profile contract" bun run scripts/bpms-load-regression.ts --
 run_step "BPMS load regression report" run_bpms_load_report
 run_step "data-store drill contract" bun run scripts/data-store-drill.ts --check
 run_step "data-store drill report" run_data_store_drill_report
+run_step "staging environment contract" bun run scripts/staging-environment.ts check --env-file runtime-config/staging-core.env.example
+run_step "staging smoke dry-run" scripts/staging-smoke.sh --dry-run
 run_step "mail integration profile" bun run scripts/mail-integration-profile.ts
 run_step "backend tests" run_backend_tests
 run_step "frontend typecheck/build" run_frontend

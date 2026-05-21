@@ -37,6 +37,15 @@ Before broad BPMS refactors or staging rollout work, also satisfy
 `docs/lean-baseline-gate.md`: `prod-core` must be live-clean, or Naruto must
 record a time-boxed waiver. The #753 staging plan must use `staging-core`, not
 the current full production profile.
+For the #753 staging lane, run the config-only smoke in CI/preflight:
+
+```bash
+scripts/staging-smoke.sh --dry-run
+```
+
+Live staging smoke must source `/opt/shared/.agent-env.staging` and use
+`scripts/staging-smoke.sh --live`; it checks the staging URL and staging
+`pg-verify` path without production Redis DB `0` or PostgreSQL `public`.
 
 Workflow construction/runtime security changes must also satisfy
 `docs/workflow-security-boundary.md`. The release gate runs
