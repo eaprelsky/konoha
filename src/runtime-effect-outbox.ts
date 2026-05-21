@@ -296,6 +296,9 @@ export function transitionRuntimeEffectRecord(
   if ((update.status === "failed" || update.status === "dead_letter" || update.status === "retry") && !update.error) {
     throw new Error(`error is required for ${update.status} status`);
   }
+  if (update.status === "in_flight") {
+    assertAttemptsInRange(record.attempts + 1, record.retry_policy);
+  }
 
   const next: RuntimeEffectRecord = {
     ...record,

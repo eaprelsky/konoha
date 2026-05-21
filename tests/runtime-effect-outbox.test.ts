@@ -176,6 +176,48 @@ describe("runtime effect outbox model", () => {
     });
   });
 
+  test("rejects retry transition to in_flight after max attempts", () => {
+    const maxRetry = buildRuntimeEffectRecord({
+      kind: "event.publish",
+      idempotency_key: "max",
+      payload: {},
+      links: { case_id: "case-1" },
+      status: "retry",
+      attempts: 5,
+      next_retry_at: "2026-05-21T19:56:00.000Z",
+      error: {
+        code: "EVENT_BUS_UNAVAILABLE",
+        message: "bus unavailable",
+        retryable: true,
+        failed_at: "2026-05-21T19:55:00.000Z",
+      },
+    }, "2026-05-21T19:55:00.000Z");
+
+    expect(() => transitionRuntimeEffectRecord(maxRetry, {
+      status: "in_flight",
+      now: "2026-05-21T19:56:00.000Z",
+    })).toThrow("attempts must not exceed retry_policy.dead_letter_after_attempts");
+
+    const deadLetter = transitionRuntimeEffectRecord(maxRetry, {
+      status: "dead_letter",
+      now: "2026-05-21T19:56:00.000Z",
+      error: {
+        code: "EVENT_BUS_UNAVAILABLE",
+        message: "retry budget exhausted",
+        retryable: false,
+      },
+    });
+    expect(deadLetter).toMatchObject({
+      status: "dead_letter",
+      attempts: 5,
+      completed_at: "2026-05-21T19:56:00.000Z",
+      error: {
+        code: "EVENT_BUS_UNAVAILABLE",
+        retryable: false,
+      },
+    });
+  });
+
   test("defines retry/dead-letter state machine and terminal states", () => {
     expect(RUNTIME_EFFECT_OUTBOX_TRANSITIONS).toMatchObject({
       pending: ["in_flight", "cancelled", "dead_letter"],
