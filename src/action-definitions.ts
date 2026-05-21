@@ -666,12 +666,12 @@ export const ACTIONS: ActionDef[] = [
   // ── Subscription (Event Manager) ──────────────────────────────────────────
   {
     id: "subscription.create",
-    description: "Create an event subscription for trigger-based case activation or resumption.",
+    description: "Create an event subscription for runtime case resumption. Deploy-time start subscriptions are materialized only by workflow.deploy.",
     scope: "subscription",
     args: [
       { name: "event_id",    type: "string", required: true,  description: "Event element ID." },
       { name: "process_id",  type: "string", required: true,  description: "Process definition ID." },
-      { name: "instance_id", type: "string", required: true,  description: "Case ID or 'new' for auto-create." },
+      { name: "instance_id", type: "string", required: true,  description: "Case ID for runtime/intermediate subscriptions; 'new' is reserved for workflow.deploy." },
       { name: "trigger",     type: "object", required: true,  description: "Trigger definition (TriggerDef)." },
     ],
     currentEndpoint: "POST /api/event-manager/subscribe",

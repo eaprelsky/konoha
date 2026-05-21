@@ -103,6 +103,19 @@ afterAll(async () => {
 });
 
 describe("workflow deployment service", () => {
+  test("workflow save and update paths do not materialize start-event subscriptions", async () => {
+    const id = `${RUN}-save-update-no-subscribe`;
+    touched.add(id);
+
+    const created = await createWorkflow(workflow(id), { lifecycleState: "executable" });
+    expect(created.errors).toEqual([]);
+    expect(await activeSubscriptionsForProcess(id)).toEqual([]);
+
+    const updated = await updateWorkflow(id, workflow(id, "*/10 * * * *"), { lifecycleState: "executable" });
+    expect(updated).not.toBeNull();
+    expect(await activeSubscriptionsForProcess(id)).toEqual([]);
+  });
+
   test("workflow.deploy returns subscription receipt and redeploy is idempotent for unchanged start triggers", async () => {
     const id = `${RUN}-idempotent`;
     touched.add(id);

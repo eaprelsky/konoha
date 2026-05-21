@@ -35,6 +35,18 @@ export const SUBSCRIPTIONS_KEY = "event-manager:subscriptions";
 export const HISTORY_KEY = "event-manager:history";
 const HISTORY_MAX_ENTRIES = 500;
 const SENDER = "event-manager";
+export const START_EVENT_INSTANCE_ID = "new";
+export const WORKFLOW_DEPLOY_REQUIRED_CODE = "WORKFLOW_DEPLOY_REQUIRED";
+
+export class WorkflowDeployRequiredForStartSubscriptionError extends Error {
+  code = WORKFLOW_DEPLOY_REQUIRED_CODE;
+  status = 409;
+
+  constructor(message = "Start-event subscriptions with instance_id='new' must be materialized by workflow.deploy") {
+    super(message);
+    this.name = "WorkflowDeployRequiredForStartSubscriptionError";
+  }
+}
 
 // ── In-memory cron task registry ─────────────────────────────────────────────
 
@@ -54,6 +66,32 @@ export const activeListeners = new Map<string, ListenerHandle>();
 
 // Maps subscriptionId → condition poll timer
 export const conditionTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+function hasDeploymentSubscriptionMetadata(params: {
+  deploy_version?: number;
+  deployment_id?: string;
+  operation_key?: string;
+  idempotency_key?: string;
+}): boolean {
+  return (
+    Number.isFinite(params.deploy_version) &&
+    typeof params.deployment_id === "string" && params.deployment_id.trim() !== "" &&
+    typeof params.operation_key === "string" && params.operation_key.trim() !== "" &&
+    typeof params.idempotency_key === "string" && params.idempotency_key.trim() !== ""
+  );
+}
+
+export function assertStartSubscriptionManagedByDeploy(params: {
+  instance_id: string;
+  deploy_version?: number;
+  deployment_id?: string;
+  operation_key?: string;
+  idempotency_key?: string;
+}): void {
+  if (params.instance_id !== START_EVENT_INSTANCE_ID) return;
+  if (hasDeploymentSubscriptionMetadata(params)) return;
+  throw new WorkflowDeployRequiredForStartSubscriptionError();
+}
 
 // ── Publish event_fired on the bus ────────────────────────────────────────────
 
@@ -462,6 +500,8 @@ export async function createSubscriptionProgrammatic(params: {
   deployed_at?: string;
   deployed_by?: string;
 }): Promise<{ subscription_id: string; status: string; mode: "auto" | "manual" }> {
+  assertStartSubscriptionManagedByDeploy(params);
+
   const trigger = params.trigger;
   let mode: "auto" | "manual" = "manual";
 

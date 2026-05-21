@@ -15,8 +15,18 @@ import {
   cancelSubscriptionsByProcessAndInstance,
   createSubscriptionProgrammatic,
 } from "../src/event-manager";
+import { WORKFLOW_DEPLOY_REQUIRED_CODE } from "../src/events/subscriptions";
 
 const SUBSCRIPTIONS_KEY = "event-manager:subscriptions";
+
+function deploySubscriptionMeta(processId: string, version: number, eventId: string) {
+  return {
+    deploy_version: version,
+    deployment_id: `${processId}:v${version}`,
+    operation_key: `${processId}:v${version}:${eventId}`,
+    idempotency_key: `workflow.deploy:${processId}:v${version}:subscription:create:${eventId}`,
+  };
+}
 
 describe("cancelSubscriptionsByInstance", () => {
   const instanceId = `test-instance-${randomUUID()}`;
@@ -216,12 +226,14 @@ describe("cancelSubscriptionsByProcessAndInstance", () => {
       process_id: processId,
       instance_id: "new",
       trigger: { kind: "manual", action: "complete", role: "user" } as any,
+      ...deploySubscriptionMeta(processId, 1, "start_evt_1"),
     });
     await createSubscriptionProgrammatic({
       event_id: "start_evt_2",
       process_id: processId,
       instance_id: "new",
       trigger: { kind: "manual", action: "submit", role: "manager" } as any,
+      ...deploySubscriptionMeta(processId, 1, "start_evt_2"),
     });
 
     // Verify both are active
@@ -250,6 +262,7 @@ describe("cancelSubscriptionsByProcessAndInstance", () => {
       process_id: processId,
       instance_id: "new",
       trigger: { kind: "manual", action: "complete", role: "user" } as any,
+      ...deploySubscriptionMeta(processId, 1, "start_evt"),
     });
     await createSubscriptionProgrammatic({
       event_id: "intermediate_evt",
@@ -273,5 +286,17 @@ describe("cancelSubscriptionsByProcessAndInstance", () => {
   it("should return 0 when no matching subs exist", async () => {
     const count = await cancelSubscriptionsByProcessAndInstance("nonexistent-proc", "new");
     expect(count).toBe(0);
+  });
+
+  it("requires deployment metadata for deploy-time start subscriptions", async () => {
+    await expect(createSubscriptionProgrammatic({
+      event_id: "start_evt_guarded",
+      process_id: processId,
+      instance_id: "new",
+      trigger: { kind: "manual", action: "complete", role: "user" } as any,
+    })).rejects.toMatchObject({
+      code: WORKFLOW_DEPLOY_REQUIRED_CODE,
+      status: 409,
+    });
   });
 });

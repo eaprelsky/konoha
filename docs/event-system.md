@@ -125,7 +125,7 @@ Each subscription links a trigger descriptor to a target Konoha agent or process
 
 ### Subscription lifecycle
 
-1. Client calls `POST /api/event-manager/subscribe` with a trigger descriptor + target
+1. Runtime code or an admin client calls `POST /api/event-manager/subscribe` with a trigger descriptor + running case target
 2. Event Manager saves the subscription to Redis
 3. Depending on trigger kind:
    - `timer`: schedules a cron job or a one-time delay job (via BullMQ)
@@ -134,17 +134,28 @@ Each subscription links a trigger descriptor to a target Konoha agent or process
 4. When the trigger fires, Event Manager sends `{ type: "event_fired", subscription_id, payload }` to the target agent via Konoha bus
 5. Client calls `DELETE /api/event-manager/subscribe/:id` when done
 
+Deploy-time start subscriptions are different: `instance_id="new"` is reserved
+for `workflow.deploy`. Workflow create/update paths and direct subscription API
+calls must not create those records; the deployment service creates them with
+`deploy_version`, `deployment_id`, `operation_key`, and `idempotency_key` as part
+of the durable subscription diff.
+
 ### HTTP endpoints
 
 #### POST /api/event-manager/subscribe
+
+Use this endpoint for runtime/intermediate subscriptions where `instance_id` is
+a concrete case ID. A request with `instance_id:"new"` is rejected with
+`WORKFLOW_DEPLOY_REQUIRED`; deploy start triggers through `workflow.deploy`
+instead.
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "trigger": {"kind": "timer", "cron": "0 9 * * 1", "confidence": 0.97},
-    "target": "naruto",
     "process_id": "proc-1",
+    "instance_id": "case-123",
     "event_id": "e1"
   }' \
   http://127.0.0.1:3200/api/event-manager/subscribe

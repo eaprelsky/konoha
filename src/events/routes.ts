@@ -20,7 +20,9 @@ import {
   activateMessageTrigger,
   activateConditionTrigger,
   activateDelayAfterTrigger,
+  START_EVENT_INSTANCE_ID,
   cancelSubscriptionResources,
+  WORKFLOW_DEPLOY_REQUIRED_CODE,
 } from "./subscriptions";
 import { DEFAULT_MAX_RPS, adapterStats, adapterRateLimiters } from "./utils";
 import { randomUUID } from "crypto";
@@ -44,6 +46,14 @@ export function registerEventManagerRoutes(
 
     if (!body?.event_id || !body?.process_id || !body?.instance_id || !body?.trigger) {
       return c.json({ error: "event_id, process_id, instance_id, trigger required" }, 400);
+    }
+    if (body.instance_id === START_EVENT_INSTANCE_ID) {
+      return c.json({
+        error: "Start-event subscriptions with instance_id='new' must be materialized by workflow.deploy",
+        code: WORKFLOW_DEPLOY_REQUIRED_CODE,
+        process_id: body.process_id,
+        event_id: body.event_id,
+      }, 409);
     }
 
     const trigger = body.trigger;

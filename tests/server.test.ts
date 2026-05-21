@@ -57,6 +57,17 @@ async function cleanupTestAgents() {
   // clean per-agent streams
   const streamKeys = await redis.keys(`konoha:agent:*-${RUN}`);
   if (streamKeys.length) await redis.del(...streamKeys);
+  const subscriptions = await redis.hgetall("event-manager:subscriptions").catch(() => ({} as Record<string, string>));
+  for (const [subscriptionId, raw] of Object.entries(subscriptions)) {
+    try {
+      const subscription = JSON.parse(raw) as { process_id?: string; instance_id?: string };
+      if (subscription.process_id?.endsWith(`-${RUN}`) || subscription.instance_id?.endsWith(`-${RUN}`)) {
+        await redis.hdel("event-manager:subscriptions", subscriptionId);
+      }
+    } catch {
+      // Ignore unrelated corrupt test leftovers.
+    }
+  }
   // clean token entries
   const tokenMap = await redis.hgetall("konoha:tokens");
   for (const [tok, agentId] of Object.entries(tokenMap ?? {})) {
@@ -1019,6 +1030,34 @@ describe("Route RBAC policy", () => {
       },
       headers,
     })).status).toBe(403);
+  });
+
+  test("start-event subscription creation is reserved for workflow.deploy", async () => {
+    const blocked = await req("POST", "/event-manager/subscribe", {
+      body: {
+        event_id: "start",
+        process_id: id("deploy-owned-subscription"),
+        instance_id: "new",
+        trigger: { kind: "manual" },
+      },
+    });
+
+    expect(blocked.status).toBe(409);
+    expect(blocked.body).toMatchObject({
+      code: "WORKFLOW_DEPLOY_REQUIRED",
+      event_id: "start",
+    });
+
+    const runtime = await req("POST", "/event-manager/subscribe", {
+      body: {
+        event_id: "intermediate",
+        process_id: id("runtime-subscription"),
+        instance_id: id("case"),
+        trigger: { kind: "manual" },
+      },
+    });
+    expect(runtime.status).toBe(200);
+    expect(runtime.body).toMatchObject({ status: "active", mode: "manual" });
   });
 });
 
