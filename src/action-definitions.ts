@@ -242,7 +242,7 @@ export const ACTIONS: ActionDef[] = [
   },
   {
     id: "trigger.resolve",
-    description: "Run trigger resolver on an event element to auto-detect its trigger kind.",
+    description: "Run trigger resolver on an event element and persist the result with deterministic review-status receipt fields.",
     scope: "trigger",
     args: [
       { name: "workflow_id", type: "string", required: true, description: "Workflow ID." },
@@ -250,7 +250,7 @@ export const ACTIONS: ActionDef[] = [
       { name: "expected_edit_version", type: "number", required: false, description: "Optional edit-version guard for conflict detection." },
       { name: "expected_deploy_version", type: "number", required: false, description: "Optional deploy-version guard for conflict detection." },
     ],
-    implementation: { kind: "direct", note: "Runs trigger resolver for one event element and persists the resolved trigger through action-executor." },
+    implementation: { kind: "direct", note: "Runs trigger resolver for one event element and persists the resolved trigger through action-executor; returns resolution_status, review_status, review_required, and confidence." },
     autonomy: "auto",
     audited: true,
   },

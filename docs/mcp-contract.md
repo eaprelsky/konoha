@@ -40,7 +40,7 @@ that wrap one workflow directly:
 | workflow | workflow.create, workflow.update, workflow.retire, workflow.delete, workflow.list, workflow.get | No bespoke workflow CRUD/retire tools; use generic `konoha_action_*` |
 | element | — | `element.add/update/remove` are available through the generic `konoha_action_*` bridge; no bespoke element editing MCP tools |
 | flow | — | `flow.add/remove` are available through the generic `konoha_action_*` bridge; no bespoke flow editing MCP tools |
-| trigger | — | `trigger.set/resolve` are available through the generic `konoha_action_*` bridge; no bespoke trigger config MCP tools |
+| trigger | — | `trigger.set/resolve` are available through the generic `konoha_action_*` bridge; `trigger.resolve` returns deterministic review-status receipt fields; no bespoke trigger config MCP tools |
 | case | — | `case.start/get/list/close/cancel/delete` are available through the generic `konoha_action_*` bridge; bespoke case MCP tools remain partial wrappers |
 | workitem | workitem.create, workitem.update, workitem.list, workitem.cancel | Partial (only `workitem.complete` via `konoha_complete_task`) |
 | role | role.create, role.list, role.update, role.delete | No role management via MCP |

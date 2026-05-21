@@ -279,6 +279,31 @@ function workflowValidationFailure(
   };
 }
 
+type TriggerResolutionStatus = "resolved" | "ambiguous" | "manual_override" | "failed" | "conflict";
+type TriggerReviewStatus = "not_required" | "required" | "skipped" | "not_evaluated";
+
+function triggerResolveReceipt(
+  trigger: WorkflowElement["trigger"] | undefined,
+  resolutionStatus?: TriggerResolutionStatus,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const confidence = typeof trigger?.confidence === "number" ? trigger.confidence : null;
+  const status = resolutionStatus ?? (trigger?.kind === "ambiguous" ? "ambiguous" : "resolved");
+  let reviewStatus: TriggerReviewStatus = "not_required";
+  if (status === "manual_override") reviewStatus = "skipped";
+  else if (status === "conflict") reviewStatus = "not_evaluated";
+  else if (status === "failed" || status === "ambiguous" || (typeof confidence === "number" && confidence < 0.7)) reviewStatus = "required";
+
+  return {
+    resolution_status: status,
+    review_status: reviewStatus,
+    review_required: reviewStatus === "required",
+    confidence,
+    ...(trigger?.kind ? { trigger_kind: trigger.kind } : {}),
+    ...extra,
+  };
+}
+
 async function normalizeElementsIfNeeded(body: Record<string, unknown>): Promise<boolean> {
   const elements = body.elements;
   if (!Array.isArray(elements) || elements.length === 0) return false;
@@ -1033,7 +1058,15 @@ async function executeTriggerAction(action: string, args: Record<string, unknown
       if (!target) return { status: 404, data: { error: "Element not found", code: "ELEMENT_NOT_FOUND", workflow_id: workflowId, element_id: elementId } };
       if (target.type !== "event") return { status: 400, data: { error: "Trigger target must be an event element", code: "INVALID_TRIGGER_TARGET", workflow_id: workflowId, element_id: elementId } };
       const versionConflict = expectedVersionConflict(current, args, workflowId);
-      if (versionConflict) return versionConflict;
+      if (versionConflict) {
+        return {
+          status: versionConflict.status,
+          data: {
+            ...(versionConflict.data as Record<string, unknown>),
+            ...triggerResolveReceipt(target.trigger, "conflict"),
+          },
+        };
+      }
       if (target.trigger?.manual_override) {
         return {
           status: 200,
@@ -1043,24 +1076,40 @@ async function executeTriggerAction(action: string, args: Record<string, unknown
             trigger: target.trigger,
             skipped: true,
             reason: "manual_override",
+            ...triggerResolveReceipt(target.trigger, "manual_override"),
           },
         };
       }
 
       let trigger: WorkflowElement["trigger"] = { kind: "ambiguous", candidates: [], confidence: 0 };
+      let resolutionStatus: TriggerResolutionStatus | undefined;
+      let resolverError: string | undefined;
       try {
         const [resolved] = await Promise.race([
           resolveBatchProgrammatic([{ id: target.id, label: target.label, manual_override: target.trigger?.manual_override }], processContextFromWorkflow(current)),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("trigger resolver timed out after 60s")), 60_000)),
         ]);
         trigger = normalizeResolvedTrigger(resolved?.trigger) ?? trigger;
+        resolutionStatus = trigger.kind === "ambiguous" ? "ambiguous" : "resolved";
       } catch (e: any) {
-        trigger = { kind: "ambiguous", candidates: [], confidence: 0, error: e.message } as WorkflowElement["trigger"];
+        resolverError = e.message;
+        resolutionStatus = "failed";
+        trigger = { kind: "ambiguous", candidates: [], confidence: 0, error: resolverError } as WorkflowElement["trigger"];
       }
 
       const result = await mutateWorkflowAtomically<{ updated_element: WorkflowElement; trigger: WorkflowElement["trigger"] }, ActionExecution>(workflowId, latest => {
         const versionConflict = expectedVersionConflict(latest, args, workflowId);
-        if (versionConflict) return { abort: versionConflict };
+        if (versionConflict) {
+          return {
+            abort: {
+              status: versionConflict.status,
+              data: {
+                ...(versionConflict.data as Record<string, unknown>),
+                ...triggerResolveReceipt(trigger, "conflict"),
+              },
+            },
+          };
+        }
         const index = (latest.elements ?? []).findIndex(element => element.id === elementId);
         if (index < 0) return { abort: { status: 404, data: { error: "Element not found", code: "ELEMENT_NOT_FOUND", workflow_id: workflowId, element_id: elementId } } };
         const latestElement = latest.elements[index];
@@ -1075,7 +1124,15 @@ async function executeTriggerAction(action: string, args: Record<string, unknown
       if (result.status === "conflict") return mutationConflict(workflowId, result.attempts);
       if (result.status === "aborted") return result.meta;
       if (result.errors.length > 0) return workflowValidationFailure(workflowId, result.errors, { element_id: elementId });
-      return { status: 200, data: { ...result.workflow, updated_element: result.meta.updated_element, trigger: result.meta.trigger } };
+      return {
+        status: 200,
+        data: {
+          ...result.workflow,
+          updated_element: result.meta.updated_element,
+          trigger: result.meta.trigger,
+          ...triggerResolveReceipt(result.meta.trigger, resolutionStatus, resolverError ? { resolver_error: resolverError } : {}),
+        },
+      };
     }
     default:
       return null;

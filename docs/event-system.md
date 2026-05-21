@@ -71,6 +71,16 @@ Response:
 
 Set `manual_override: true` to skip LLM — returns `{ "trigger": null, "skipped": true }`.
 
+The Action Spine `trigger.resolve` executor persists resolver output for one
+event element and returns deterministic review evidence:
+`resolution_status`, `review_status`, `review_required`, `confidence`, and
+`trigger_kind`. High-confidence valid output returns
+`review_status:"not_required"`. Ambiguous or resolver-failure output is
+persisted as `kind:"ambiguous"` with `review_status:"required"`, and
+`workflow.deploy` continues to block it with canonical validation errors such as
+`TRIGGER_AMBIGUOUS` or `DEPLOYMENT_START_TRIGGER_UNRESOLVED` rather than
+materializing runtime subscriptions silently.
+
 #### POST /api/trigger-resolver/resolve-batch
 
 Resolve multiple events in one call. Returns results in the same order as input.

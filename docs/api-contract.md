@@ -38,6 +38,13 @@ Every API endpoint → action ID → autonomy level → audit status. Generated 
 | `/act` direct | `trigger.set` | confirm | yes |
 | `/act` direct | `trigger.resolve` | auto | yes |
 
+`trigger.resolve` receipts include deterministic review evidence:
+`resolution_status` (`resolved`, `ambiguous`, `manual_override`, `failed`, `conflict`),
+`review_status` (`not_required`, `required`, `skipped`, `not_evaluated`),
+`review_required`, `confidence`, and `trigger_kind`. Ambiguous, failed, or
+low-confidence resolver output stays deploy-blocking through canonical workflow
+validation receipts.
+
 ## Case Actions
 
 | Endpoint | Action | Autonomy | Audited |
