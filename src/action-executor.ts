@@ -7,6 +7,7 @@ import {
   archiveWorkflow,
   getWorkflowLifecycleState,
   mutateWorkflowAtomically,
+  saveWorkflowDeployedSnapshot,
   validateWorkflowReadiness,
   getWorkflowDeployVersion,
   type WorkflowDefinition,
@@ -491,6 +492,7 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
 
   await subscribeStartEvents(result.workflow);
+  await saveWorkflowDeployedSnapshot(result.workflow, "workflow.deploy");
   return { status: 200, data: { ...result.workflow, normalized } };
 }
 

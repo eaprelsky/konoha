@@ -7,6 +7,7 @@ import { getWorkflow, type WorkflowElement } from "../workflow-loader";
 import { getMessengerConnectorCatalog, resolveMessengerWorkflowIds, type MessengerChatType, type MessengerMessageType } from "../messenger-connectors";
 import { loadActiveWaitsForCase, resolveEventWaitForNode } from "../runtime/event-waits";
 import { emitEvent } from "../runtime/event-log";
+import { loadWorkflowForCase } from "../runtime/cases/workflow-binding";
 const log = createLogger("routes:events");
 
 const router = new Hono();
@@ -242,7 +243,7 @@ miningRouter.post("/case/:id/confirm-event", async (c) => {
     return c.json({ error: "Only manual triggers can be confirmed", trigger_kind: wait.trigger_kind }, 400);
   }
 
-  const def = await getWorkflow(kase.process_id);
+  const def = await loadWorkflowForCase(kase);
   if (!def) return c.json({ error: "Workflow not found" }, 404);
 
   // Audit trail

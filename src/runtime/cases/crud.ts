@@ -34,6 +34,7 @@ import {
 } from "./persistence";
 import { buildAdjacency, advanceCase } from "./advancement";
 import type { Case, CaseStatus } from "./types";
+import { loadWorkflowForCase } from "./workflow-binding";
 
 const log = createLogger("runtime:cases");
 const PG_READ = process.env.PG_READ === "true";
@@ -405,7 +406,7 @@ export async function handleEventFired(payload: {
     return null;
   }
 
-  const def = await getWorkflow(kase.process_id);
+  const def = await loadWorkflowForCase(kase);
   if (!def) {
     log.error("event_fired: workflow not found", { process_id: kase.process_id, instance_id });
     return null;

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { redis } from "./redis";
-import { pgUpsertWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw, pgUpsertRole } from "./storage/pg";
+import { pgUpsertWorkflow, pgSaveWorkflowSnapshot, pgGetWorkflowSnapshot, pgGetWorkflow, pgListWorkflows as pgListWorkflowsRaw, pgUpsertRole } from "./storage/pg";
 import { syncSchemaToRegistry, cleanupWorkflowRefs } from "./sync/schema-registry-sync";
 import { silentCatch, createLogger } from "./logger";
 import { upsertDoc, type DocType } from "./runtime/documents";
@@ -134,6 +134,14 @@ export interface WorkflowUpdateOptions {
 export interface WorkflowArchiveOptions {
   source?: string;
   retiredBy?: string;
+}
+
+export interface WorkflowRuntimeSnapshotBinding {
+  workflow_id: string;
+  deploy_version: number;
+  snapshot_key: string;
+  bound_at: string;
+  source: string;
 }
 
 // Flow edge: [from, to] or [from, to, condition]
@@ -1011,7 +1019,58 @@ export async function listWorkflows(): Promise<WorkflowDefinition[]> {
 
 const WORKFLOW_VERSION_KEY_PREFIX = "workflow:version:"; // workflow:{id}:v{N}
 const WORKFLOW_VERSION_CTR_PREFIX = "konoha:workflow:versionctr:"; // INCR counter per workflow id
+const WORKFLOW_DEPLOYED_SNAPSHOT_KEY_PREFIX = "workflow:deployed:"; // workflow:deployed:{id}:v{deployVersion}
 const WORKFLOW_CAS_MAX_RETRIES = 16;
+
+function workflowDeployedSnapshotKey(id: string, deployVersion: number): string {
+  return `${WORKFLOW_DEPLOYED_SNAPSHOT_KEY_PREFIX}${id}:v${deployVersion}`;
+}
+
+function workflowDeployedSnapshotNum(deployVersion: number): number {
+  return -deployVersion - 1;
+}
+
+export async function saveWorkflowDeployedSnapshot(
+  def: WorkflowDefinition,
+  source = def.last_deploy?.source ?? "workflow.deploy",
+): Promise<WorkflowRuntimeSnapshotBinding> {
+  const normalized = normalizeWorkflow(def);
+  const deployVersion = getWorkflowDeployVersion(normalized);
+  const snapshotKey = workflowDeployedSnapshotKey(normalized.id, deployVersion);
+  const boundAt = nowIso();
+  const snapshot = {
+    ...normalized,
+    saved_at: boundAt,
+    runtime_snapshot: {
+      workflow_id: normalized.id,
+      deploy_version: deployVersion,
+      source,
+      snapshot_key: snapshotKey,
+    },
+  };
+  await redis.set(snapshotKey, JSON.stringify(snapshot), "NX");
+  await pgSaveWorkflowSnapshot(normalized.id, workflowDeployedSnapshotNum(deployVersion), snapshot as any);
+  return {
+    workflow_id: normalized.id,
+    deploy_version: deployVersion,
+    snapshot_key: snapshotKey,
+    bound_at: boundAt,
+    source,
+  };
+}
+
+export async function getWorkflowDeployedSnapshot(binding: WorkflowRuntimeSnapshotBinding): Promise<WorkflowDefinition | null> {
+  if (binding.workflow_id && binding.snapshot_key) {
+    const raw = await redis.get(binding.snapshot_key);
+    if (raw) return normalizeWorkflow(JSON.parse(raw));
+  }
+  const key = workflowDeployedSnapshotKey(binding.workflow_id, binding.deploy_version);
+  const raw = await redis.get(key);
+  if (raw) return normalizeWorkflow(JSON.parse(raw));
+
+  const row = await pgGetWorkflowSnapshot(binding.workflow_id, workflowDeployedSnapshotNum(binding.deploy_version));
+  return row ? normalizeWorkflow(row as unknown as WorkflowDefinition) : null;
+}
 
 function prepareWorkflowUpdate(
   id: string,

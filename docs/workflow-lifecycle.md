@@ -23,6 +23,15 @@ longer the same operation as deploying it for runtime execution.
   values, and gate flags for deployment, case start, release, and reviewer
   review.
 - `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, increments `deploy_version`, records `deployed_at` and optional `deployed_by`, and marks the workflow `executable` when readiness passes.
+- `workflow.deploy` also stores an immutable deployed runtime snapshot keyed by
+  workflow id and deploy version. `case.start` binds each new case to that
+  snapshot in `workflow_snapshot`, and runtime advancement loads the bound
+  snapshot for work items, event confirmations, event waits, and subprocess
+  returns. Draft edits, validation-only updates, retirement, or later redeploys
+  therefore do not mutate cases that are already running. A later redeploy
+  affects only cases started after that deploy version. Legacy cases without a
+  binding fall back to the current workflow definition until an explicit
+  migration policy exists.
 - `workflow.retire` is the canonical retire operation. It removes the workflow
   from active lists, marks `lifecycle_state: "retired"`, records optional
   `retired_by`, and can run in `retire_only`,

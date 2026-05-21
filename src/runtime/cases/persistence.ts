@@ -11,6 +11,7 @@ import {
   pgGetWorkItem, pgListWorkItems,
 } from "../../storage/pg";
 import type { Case, WorkItem, WorkItemStatus, CaseStatus } from "./types";
+import { payloadWithWorkflowSnapshot, workflowSnapshotBindingFromPayload } from "./workflow-binding";
 
 const PG_READ = process.env.PG_READ === "true";
 
@@ -37,11 +38,13 @@ function isoStr(v: unknown): string {
 
 export function pgRowToCase(row: Record<string, unknown>): Case {
   const raw = (row.payload ?? {}) as Record<string, unknown>;
-  const { __active_branches, ...cleanPayload } = raw;
+  const { __active_branches, __workflow_snapshot, ...cleanPayload } = raw;
+  const workflowSnapshot = workflowSnapshotBindingFromPayload({ __workflow_snapshot });
   return {
     case_id: String(row.case_id),
     process_id: String(row.process_id),
     process_version: String(row.version ?? ''),
+    ...(workflowSnapshot ? { workflow_snapshot: workflowSnapshot } : {}),
     subject: String(row.subject ?? ''),
     status: (row.status ?? 'running') as CaseStatus,
     position: String(row.position ?? ''),
@@ -73,7 +76,8 @@ export function pgRowToWorkItem(row: Record<string, unknown>): WorkItem {
 
 export async function saveCase(c: Case): Promise<void> {
   await redis.set(CASE_KEY_PREFIX + c.case_id, JSON.stringify(c));
-  const pgPayload = c.active_branches ? { ...c.payload, __active_branches: c.active_branches } : c.payload;
+  const withSnapshot = payloadWithWorkflowSnapshot(c.payload, c.workflow_snapshot);
+  const pgPayload = c.active_branches ? { ...withSnapshot, __active_branches: c.active_branches } : withSnapshot;
   pgUpsertCase({ case_id: c.case_id, process_id: c.process_id, version: c.process_version, subject: c.subject, status: c.status, position: c.position, payload: pgPayload, history: c.history, created_at: c.created_at, updated_at: new Date().toISOString() });
   await redis.zadd(CASES_IDX_ALL, new Date(c.created_at).getTime(), c.case_id);
   const allStatuses: CaseStatus[] = ["running", "done", "error", "cancelled"];

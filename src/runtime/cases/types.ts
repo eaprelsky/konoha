@@ -3,6 +3,8 @@
  * Extracted from cases.ts (#507).
  */
 
+import type { WorkflowRuntimeSnapshotBinding } from "../../workflow-loader";
+
 export type CaseStatus = "running" | "done" | "error" | "cancelled";
 export type WorkItemStatus = "pending" | "running" | "done" | "cancelled" | "error";
 
@@ -25,6 +27,7 @@ export interface Case {
   case_id: string;
   process_id: string;
   process_version: string;
+  workflow_snapshot?: WorkflowRuntimeSnapshotBinding;
   subject: string;
   status: CaseStatus;
   position: string;

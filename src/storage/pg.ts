@@ -176,6 +176,20 @@ export async function pgSaveWorkflowSnapshot(
   });
 }
 
+export async function pgGetWorkflowSnapshot(workflowId: string, snapshotNum: number): Promise<Record<string, unknown> | null> {
+  return pgRead(async () => {
+    const sql = getSql();
+    const rows = await sql`
+      SELECT data FROM workflow_snapshots
+      WHERE workflow_id = ${workflowId} AND snapshot_num = ${snapshotNum}
+      LIMIT 1
+    `;
+    const row = rows[0] as Record<string, unknown> | undefined;
+    const data = row?.data;
+    return data && typeof data === "object" ? data as Record<string, unknown> : null;
+  });
+}
+
 // ── Cases ─────────────────────────────────────────────────────────────────────
 
 export async function pgUpsertCase(c: CaseRecord): Promise<void> {

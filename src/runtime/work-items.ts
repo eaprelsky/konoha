@@ -17,6 +17,7 @@ import {
 import { publishEvent } from "../redis";
 import { createLogger } from "../logger";
 import { dispatchWorkItem } from "../dispatcher";
+import { loadWorkflowForCase } from "./cases/workflow-binding";
 
 const log = createLogger("runtime:work-items");
 
@@ -120,8 +121,7 @@ export async function completeWorkItem(
   // Function output is process state: downstream gateways and functions must see it.
   kase.payload = { ...kase.payload, ...output };
 
-  const { getWorkflow } = await import("../workflow-loader");
-  const def = await getWorkflow(kase.process_id);
+  const def = await loadWorkflowForCase(kase);
   if (!def) throw new Error(`Workflow "${kase.process_id}" not found in registry`);
 
   if (kase.active_branches && kase.active_branches.length > 0) {
@@ -362,10 +362,9 @@ export async function recoverStuckWorkItems(
           continue;
         }
 
-        const { getWorkflow } = await import("../workflow-loader");
         const kase = await loadCase(wi.case_id);
         if (kase && kase.status === "running") {
-          const def = await getWorkflow(kase.process_id);
+          const def = await loadWorkflowForCase(kase);
           if (def && wi.element_id) {
             const el = def.elements.find(e => e.id === wi.element_id);
             if (el?.role) {

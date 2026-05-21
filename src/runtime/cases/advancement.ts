@@ -19,6 +19,7 @@ import { createEventWait, loadActiveWaitsForCase } from "../event-waits";
 import { scheduleWaitReminders } from "../event-waits";
 import { saveCase, loadCase, saveWorkItem, loadWorkItem, CASES_IDX_PROCESS, WORKITEMS_IDX_CASE, WORKITEM_KEY_PREFIX } from "./persistence";
 import type { Case, WorkItem, ActiveBranch } from "./types";
+import { bindWorkflowSnapshotForCase, loadWorkflowForCase } from "./workflow-binding";
 
 const log = createLogger("runtime:advancement");
 const WORKFLOW_KEY_PREFIX = "workflow:";
@@ -192,7 +193,7 @@ async function completeParentWorkItem(childCase: Case): Promise<void> {
   const parentCase = await loadCase(wi.case_id);
   if (!parentCase || parentCase.status !== "running") return;
 
-  const parentDef = await getWorkflow(parentCase.process_id);
+  const parentDef = await loadWorkflowForCase(parentCase);
   if (!parentDef) return;
 
   parentCase.payload = { ...parentCase.payload, ...childCase.payload };
@@ -748,6 +749,8 @@ export async function createCaseInner(
 
   const startEl = def.elements.find(e => e.id === startId);
   if (!startEl) throw new Error(`Start node "${startId}" not found in workflow "${process_id}"`);
+  const workflowSnapshot = await bindWorkflowSnapshotForCase(def);
+  const runtimeDef = await loadWorkflowForCase({ process_id, workflow_snapshot: workflowSnapshot }) ?? def;
 
   const case_id = randomUUID();
   const now = new Date().toISOString();
@@ -762,6 +765,7 @@ export async function createCaseInner(
     case_id,
     process_id,
     process_version: def.version,
+    workflow_snapshot: workflowSnapshot,
     subject,
     status: "running",
     position: startId,
@@ -773,5 +777,5 @@ export async function createCaseInner(
 
   await saveCase(kase);
   await emitEvent({ type: "case.created", case_id: kase.case_id, process_id: kase.process_id, timestamp: kase.created_at });
-  return advanceCase(kase, def);
+  return advanceCase(kase, runtimeDef);
 }
