@@ -81,6 +81,101 @@ describe("runtime effect outbox model", () => {
     })).toThrow("links must include");
   });
 
+  test("rejects invalid direct-build retry and dead-letter states", () => {
+    const base = {
+      kind: "event.publish" as const,
+      idempotency_key: "event-1",
+      payload: {},
+      links: { case_id: "case-1" },
+    };
+
+    expect(() => buildRuntimeEffectRecord({
+      ...base,
+      status: "retry",
+    }, "2026-05-21T19:55:00.000Z")).toThrow("next_retry_at is required for retry status");
+
+    expect(() => buildRuntimeEffectRecord({
+      ...base,
+      status: "retry",
+      next_retry_at: "2026-05-21T19:56:00.000Z",
+    }, "2026-05-21T19:55:00.000Z")).toThrow("error is required for retry status");
+
+    expect(() => buildRuntimeEffectRecord({
+      ...base,
+      status: "failed",
+    }, "2026-05-21T19:55:00.000Z")).toThrow("error is required for failed status");
+
+    expect(() => buildRuntimeEffectRecord({
+      ...base,
+      status: "dead_letter",
+    }, "2026-05-21T19:55:00.000Z")).toThrow("error is required for dead_letter status");
+
+    expect(() => buildRuntimeEffectRecord({
+      ...base,
+      status: "in_flight",
+    }, "2026-05-21T19:55:00.000Z")).toThrow("attempts must be at least 1 for in_flight status");
+
+    expect(() => buildRuntimeEffectRecord({
+      ...base,
+      attempts: -1,
+    }, "2026-05-21T19:55:00.000Z")).toThrow("attempts must be a non-negative integer");
+
+    expect(() => buildRuntimeEffectRecord({
+      ...base,
+      attempts: 6,
+    }, "2026-05-21T19:55:00.000Z")).toThrow("attempts must not exceed retry_policy.dead_letter_after_attempts");
+  });
+
+  test("builds valid non-pending records only with required retry/error evidence", () => {
+    const retry = buildRuntimeEffectRecord({
+      kind: "event.publish",
+      idempotency_key: "event-1",
+      payload: {},
+      links: { case_id: "case-1" },
+      status: "retry",
+      attempts: 1,
+      next_retry_at: "2026-05-21T19:56:00.000Z",
+      error: {
+        code: "EVENT_BUS_UNAVAILABLE",
+        message: "bus unavailable",
+        retryable: true,
+        failed_at: "2026-05-21T19:55:00.000Z",
+      },
+    }, "2026-05-21T19:55:00.000Z");
+    expect(retry).toMatchObject({
+      status: "retry",
+      attempts: 1,
+      next_retry_at: "2026-05-21T19:56:00.000Z",
+      error: {
+        code: "EVENT_BUS_UNAVAILABLE",
+        retryable: true,
+      },
+    });
+
+    const deadLetter = buildRuntimeEffectRecord({
+      kind: "event.publish",
+      idempotency_key: "event-2",
+      payload: {},
+      links: { case_id: "case-1" },
+      status: "dead_letter",
+      attempts: 5,
+      error: {
+        code: "EVENT_BUS_REJECTED",
+        message: "bus rejected event",
+        retryable: false,
+        failed_at: "2026-05-21T19:55:00.000Z",
+      },
+    }, "2026-05-21T19:55:00.000Z");
+    expect(deadLetter).toMatchObject({
+      status: "dead_letter",
+      attempts: 5,
+      error: {
+        code: "EVENT_BUS_REJECTED",
+        retryable: false,
+      },
+    });
+  });
+
   test("defines retry/dead-letter state machine and terminal states", () => {
     expect(RUNTIME_EFFECT_OUTBOX_TRANSITIONS).toMatchObject({
       pending: ["in_flight", "cancelled", "dead_letter"],

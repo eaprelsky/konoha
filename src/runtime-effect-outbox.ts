@@ -185,6 +185,34 @@ function normalizeRetryPolicy(policy: Partial<RuntimeEffectRetryPolicy> | undefi
   return merged;
 }
 
+function assertAttemptsInRange(attempts: number, retryPolicy: RuntimeEffectRetryPolicy): void {
+  if (!Number.isInteger(attempts) || attempts < 0) {
+    throw new Error("attempts must be a non-negative integer");
+  }
+  if (attempts > retryPolicy.dead_letter_after_attempts) {
+    throw new Error("attempts must not exceed retry_policy.dead_letter_after_attempts");
+  }
+}
+
+function assertRuntimeEffectStatusInvariants(input: {
+  status: RuntimeEffectStatus;
+  attempts: number;
+  retry_policy: RuntimeEffectRetryPolicy;
+  next_retry_at?: string;
+  error?: RuntimeEffectError;
+}): void {
+  assertAttemptsInRange(input.attempts, input.retry_policy);
+  if (input.status === "retry" && !input.next_retry_at) {
+    throw new Error("next_retry_at is required for retry status");
+  }
+  if ((input.status === "failed" || input.status === "dead_letter" || input.status === "retry") && !input.error) {
+    throw new Error(`error is required for ${input.status} status`);
+  }
+  if (input.status === "in_flight" && input.attempts < 1) {
+    throw new Error("attempts must be at least 1 for in_flight status");
+  }
+}
+
 export function runtimeEffectIdFromIdempotencyKey(idempotencyKey: string): string {
   return `rte_${digest(assertNonEmpty(idempotencyKey, "idempotency_key"))}`;
 }
@@ -218,6 +246,16 @@ export function buildRuntimeEffectRecord(input: RuntimeEffectBuildInput, now = n
   }
   if (input.next_retry_at) assertIso(input.next_retry_at, "next_retry_at");
   if (input.error) assertIso(input.error.failed_at, "error.failed_at");
+  const status = input.status ?? "pending";
+  const attempts = input.attempts ?? 0;
+  const retry_policy = normalizeRetryPolicy(input.retry_policy);
+  assertRuntimeEffectStatusInvariants({
+    status,
+    attempts,
+    retry_policy,
+    next_retry_at: input.next_retry_at,
+    error: input.error,
+  });
 
   return {
     schema_version: RUNTIME_EFFECT_OUTBOX_SCHEMA_VERSION,
@@ -225,9 +263,9 @@ export function buildRuntimeEffectRecord(input: RuntimeEffectBuildInput, now = n
     kind: input.kind,
     payload: input.payload,
     idempotency_key,
-    status: input.status ?? "pending",
-    attempts: input.attempts ?? 0,
-    retry_policy: normalizeRetryPolicy(input.retry_policy),
+    status,
+    attempts,
+    retry_policy,
     links: input.links,
     created_at: now,
     updated_at: now,
