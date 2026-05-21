@@ -10,7 +10,10 @@ import {
   updateWorkflow,
   type WorkflowDefinition,
 } from "../src/workflow-loader";
-import { materializeWorkflowDeploymentSubscriptions } from "../src/workflow-deployment-service";
+import {
+  materializeWorkflowDeploymentSubscriptions,
+  setWorkflowDeploymentSubscriptionDepsForTest,
+} from "../src/workflow-deployment-service";
 import { createTestRedis } from "./redis-test-utils";
 
 const redis = createTestRedis();
@@ -48,18 +51,23 @@ async function activeSubscriptionsForProcess(processId: string): Promise<Array<R
   return (await subscriptionsForProcess(processId)).filter(sub => sub.status === "active");
 }
 
+async function deployedSnapshotKeys(processId: string): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", `workflow:deployed:${processId}:*`, "COUNT", 100) as [string, string[]];
+    keys.push(...batch);
+    cursor = nextCursor;
+  } while (cursor !== "0");
+  return keys;
+}
+
 async function cleanupWorkflow(id: string): Promise<void> {
   await deleteCasesByProcess(id).catch(() => 0);
   await cancelSubscriptionsByProcessAndInstance(id, "new").catch(() => 0);
   const subs = await subscriptionsForProcess(id);
   if (subs.length > 0) await redis.hdel(SUBSCRIPTIONS_KEY, ...subs.map(sub => sub.id));
-  const keys: string[] = [];
-  let cursor = "0";
-  do {
-    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", `workflow:deployed:${id}:*`, "COUNT", 100) as [string, string[]];
-    keys.push(...batch);
-    cursor = nextCursor;
-  } while (cursor !== "0");
+  const keys = await deployedSnapshotKeys(id);
   if (keys.length > 0) await redis.del(...keys);
   await redis.del(`workflow:${id}`);
   await redis.del(`konoha:workflow:versionctr:${id}`);
@@ -214,5 +222,62 @@ describe("workflow deployment service", () => {
     const stored = await getWorkflow(id);
     expect(stored?.lifecycle_state).toBe("validated");
     expect(await activeSubscriptionsForProcess(id)).toEqual([]);
+  });
+
+  test("workflow.deploy commits executable state and snapshot before side effects and rolls back failed materialization", async () => {
+    const id = `${RUN}-ordered-failure`;
+    touched.add(id);
+    await createWorkflow(workflow(id));
+    let observedCommitted = false;
+    const resetDeps = setWorkflowDeploymentSubscriptionDepsForTest({
+      createSubscription: async () => {
+        const committed = await getWorkflow(id);
+        const snapshots = await deployedSnapshotKeys(id);
+        expect(committed?.lifecycle_state).toBe("executable");
+        expect(committed?.last_deploy).toMatchObject({
+          status: "succeeded",
+          deploy_version: 1,
+          source: "workflow.deploy",
+        });
+        expect(snapshots).toContain(`workflow:deployed:${id}:v1`);
+        observedCommitted = true;
+        throw new Error("subscription backend unavailable");
+      },
+    });
+    try {
+      const deployed = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+
+      expect(observedCommitted).toBe(true);
+      expect(deployed?.status).toBe(502);
+      expect((deployed?.data as any)).toMatchObject({
+        code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED",
+        process_id: id,
+        lifecycle_state: "validated",
+        deployment: {
+          ok: false,
+          deploy_version: 1,
+          subscriptions: {
+            failed: [expect.objectContaining({
+              event_id: "start",
+              reason: "create_subscription_failed",
+              error: "subscription backend unavailable",
+            })],
+          },
+          rollback: [],
+        },
+      });
+      const stored = await getWorkflow(id);
+      expect(stored).toMatchObject({
+        lifecycle_state: "validated",
+        needs_review: true,
+        last_deploy: {
+          status: "blocked",
+          source: "workflow.deploy",
+        },
+      });
+      expect(await activeSubscriptionsForProcess(id)).toEqual([]);
+    } finally {
+      resetDeps();
+    }
   });
 });

@@ -71,7 +71,10 @@ import {
 import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "./retention/runtime-cleanup";
 import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
 import { applyWorkflowPatch } from "./workflow-patch-service";
-import { materializeWorkflowDeploymentSubscriptions } from "./workflow-deployment-service";
+import {
+  materializeWorkflowDeploymentSubscriptions,
+  rollbackWorkflowDeploymentSideEffects,
+} from "./workflow-deployment-service";
 
 export interface ActionExecution {
   status: number;
@@ -596,24 +599,69 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   const deployedAt = new Date().toISOString();
   const deployVersion = getWorkflowDeployVersion(current) + 1;
   const deployedBy = args.deployed_by ? String(args.deployed_by) : "system";
-  const deployment = await materializeWorkflowDeploymentSubscriptions(body, {
+  const result = await updateWorkflow(id, body, {
+    lifecycleState: "executable",
+    deploy: {
+      status: "succeeded",
+      checked_at: deployedAt,
+      deploy_version: deployVersion,
+      deployed_at: deployedAt,
+      deployed_by: deployedBy,
+      source: "workflow.deploy",
+      details: ["validation passed", "deployment state committed before subscription materialization"],
+    },
+    needsReview: false,
+  });
+  if (result === null) return workflowNotFound(id);
+  if (isWorkflowUpdateConflict(result)) return workflowUpdateConflictExecution(result);
+  if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
+
+  try {
+    await saveWorkflowDeployedSnapshot(result.workflow, "workflow.deploy");
+  } catch (e: any) {
+    const blocked = await updateWorkflow(id, result.workflow, {
+      lifecycleState: "validated",
+      deploy: {
+        status: "blocked",
+        checked_at: deployedAt,
+        source: "workflow.deploy",
+        details: [`DEPLOYED_SNAPSHOT_FAILED: ${e.message}`],
+      },
+      needsReview: true,
+    });
+    if (blocked === null) return workflowNotFound(id);
+    if (isWorkflowUpdateConflict(blocked)) return workflowUpdateConflictExecution(blocked);
+    return {
+      status: 502,
+      data: {
+        error: "Workflow deploy failed while saving deployed snapshot",
+        code: "WORKFLOW_DEPLOY_SNAPSHOT_FAILED",
+        process_id: id,
+        lifecycle_state: "validated",
+        workflow: blocked.workflow,
+      },
+    };
+  }
+  const deployment = await materializeWorkflowDeploymentSubscriptions(result.workflow, {
     deploy_version: deployVersion,
     deployed_at: deployedAt,
     deployed_by: deployedBy,
     source: "workflow.deploy",
   });
+
   if (!deployment.ok) {
+    const rollback = await rollbackWorkflowDeploymentSideEffects(deployment);
     const failedDetails = deployment.subscriptions.failed.map(failure =>
       `SUBSCRIPTION_MATERIALIZATION_FAILED: ${failure.event_id}: ${failure.error ?? failure.reason ?? "unknown error"}`,
     );
-    const blocked = await updateWorkflow(id, body, {
+    const blocked = await updateWorkflow(id, result.workflow, {
       lifecycleState: "validated",
       deploy: {
         status: "blocked",
         checked_at: deployedAt,
         source: "workflow.deploy",
         details: failedDetails.length > 0 ? failedDetails : ["SUBSCRIPTION_MATERIALIZATION_FAILED"],
-        side_effects: deployment,
+        side_effects: { ...deployment, rollback },
       },
       needsReview: true,
     });
@@ -626,12 +674,13 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
         code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED",
         process_id: id,
         lifecycle_state: "validated",
-        deployment,
+        deployment: { ...deployment, rollback },
         workflow: blocked.workflow,
       },
     };
   }
-  const result = await updateWorkflow(id, body, {
+
+  const receiptUpdate = await updateWorkflow(id, result.workflow, {
     lifecycleState: "executable",
     deploy: {
       status: "succeeded",
@@ -648,12 +697,18 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
     },
     needsReview: false,
   });
-  if (result === null) return workflowNotFound(id);
-  if (isWorkflowUpdateConflict(result)) return workflowUpdateConflictExecution(result);
-  if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
-
-  await saveWorkflowDeployedSnapshot(result.workflow, "workflow.deploy");
-  return { status: 200, data: { ...result.workflow, normalized, deployment } };
+  if (receiptUpdate && !isWorkflowUpdateConflict(receiptUpdate) && receiptUpdate.errors.length === 0) {
+    return { status: 200, data: { ...receiptUpdate.workflow, normalized, deployment } };
+  }
+  return {
+    status: 200,
+    data: {
+      ...result.workflow,
+      normalized,
+      deployment,
+      warning: "deployment side-effect receipt was returned but could not be persisted after executable commit",
+    },
+  };
 }
 
 async function executeWorkflowRetire(action: "workflow.retire" | "workflow.delete", args: Record<string, unknown>): Promise<ActionExecution> {

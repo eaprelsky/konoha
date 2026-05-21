@@ -52,6 +52,17 @@ const defaultDeps: DeploymentSubscriptionDeps = {
   cancelResources: cancelSubscriptionResources,
 };
 
+let activeDeps: DeploymentSubscriptionDeps = defaultDeps;
+
+export function setWorkflowDeploymentSubscriptionDepsForTest(
+  deps: Partial<DeploymentSubscriptionDeps>,
+): () => void {
+  activeDeps = { ...defaultDeps, ...deps };
+  return () => {
+    activeDeps = defaultDeps;
+  };
+}
+
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   if (value && typeof value === "object") {
@@ -157,7 +168,7 @@ async function markSubscriptionUnchanged(
 export async function materializeWorkflowDeploymentSubscriptions(
   def: WorkflowDefinition,
   context: WorkflowDeploymentContext,
-  deps: DeploymentSubscriptionDeps = defaultDeps,
+  deps: DeploymentSubscriptionDeps = activeDeps,
 ): Promise<WorkflowDeploymentReceipt> {
   const deployment_id = deploymentId(def.id, context.deploy_version);
   const desiredEvents = startEvents(def);
@@ -286,4 +297,49 @@ export async function materializeWorkflowDeploymentSubscriptions(
       failed,
     },
   };
+}
+
+export async function rollbackWorkflowDeploymentSideEffects(
+  receipt: WorkflowDeploymentReceipt,
+  deps: DeploymentSubscriptionDeps = activeDeps,
+): Promise<WorkflowDeploymentSubscriptionReceipt[]> {
+  const rolledBack: WorkflowDeploymentSubscriptionReceipt[] = [];
+  for (const created of receipt.subscriptions.created) {
+    if (!created.subscription_id) continue;
+    const raw = await redis.hget(SUBSCRIPTIONS_KEY, created.subscription_id).catch(() => null);
+    if (!raw) continue;
+    let subscription: Subscription;
+    try {
+      subscription = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (subscription.status !== "active") continue;
+    try {
+      subscription.status = "cancelled";
+      await redis.hset(SUBSCRIPTIONS_KEY, subscription.id, JSON.stringify(subscription));
+      await deps.cancelResources(subscription);
+      rolledBack.push({
+        event_id: subscription.event_id,
+        event_label: subscription.event_label,
+        trigger_kind: subscription.trigger.kind,
+        previous_subscription_id: subscription.id,
+        operation_key: created.operation_key,
+        status: "cancelled",
+        reason: "rollback_failed_deploy_materialization",
+      });
+    } catch (e: any) {
+      rolledBack.push({
+        event_id: subscription.event_id,
+        event_label: subscription.event_label,
+        trigger_kind: subscription.trigger.kind,
+        previous_subscription_id: subscription.id,
+        operation_key: created.operation_key,
+        status: "failed",
+        reason: "rollback_failed_deploy_materialization",
+        error: e.message,
+      });
+    }
+  }
+  return rolledBack;
 }
