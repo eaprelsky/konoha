@@ -107,6 +107,44 @@ describe("atomic workflow patch service", () => {
     expect(saved?.flow).toEqual([]);
   });
 
+  test("rejects readiness-invalid patches without persisting adapter bindings", async () => {
+    const id = `${RUN}-readiness-rollback`;
+    await createDraftWorkflow(id);
+    await createRole({ role_id: ROLE_ID, name: "Patch role", strategy: "manual", assignees: [] });
+
+    const result = await executeActionDirect("workflow.patch", {
+      id,
+      patch: {
+        add_elements: [
+          { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+          {
+            id: "review",
+            type: "function",
+            label: "Review",
+            role: ROLE_ID,
+            systems: [{ connector: "missing-adapter", operation: "send" }],
+          },
+          { id: "done", type: "event", label: "Done" },
+        ],
+        add_flow: [["start", "review"], ["review", "done"]],
+      },
+    });
+
+    expect(result?.status).toBe(422);
+    const body = result!.data as any;
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe("WORKFLOW_PATCH_VALIDATION_FAILED");
+    expect(body.validation.errors).toContainEqual(expect.objectContaining({
+      code: "ADAPTER_MISSING",
+      class: "adapter",
+      element_id: "review",
+    }));
+
+    const saved = await getWorkflow(id);
+    expect(saved?.elements).toEqual([]);
+    expect(saved?.flow).toEqual([]);
+  });
+
   test("detects expected deploy-version conflicts before mutation", async () => {
     const id = `${RUN}-version-conflict`;
     await createDraftWorkflow(id);

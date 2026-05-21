@@ -1,15 +1,20 @@
+import { listAdapters } from "./adapters";
+import { listCases } from "./runtime";
+import { listDocs } from "./runtime/documents";
+import { listRoles } from "./runtime/roles";
 import {
   getWorkflowDeployVersion,
   getWorkflowLifecycleState,
   mutateWorkflowAtomically,
+  validateWorkflowReadiness,
   type FlowEdge,
   type WorkflowDefinition,
   type WorkflowElement,
   type WorkflowLifecycleState,
+  type WorkflowValidationContext,
   type WorkflowValidationIssue,
   type WorkflowValidationReceipt,
 } from "./workflow-loader";
-import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
 
 export interface WorkflowSchemaPatch {
   set_name?: string;
@@ -69,6 +74,11 @@ export interface WorkflowPatchFailure {
 interface PatchBuildResult {
   patch: Partial<WorkflowDefinition>;
   changed_resources: WorkflowPatchChange[];
+}
+
+interface WorkflowPatchMeta {
+  changed_resources: WorkflowPatchChange[];
+  validation: WorkflowValidationReceipt;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -339,6 +349,21 @@ function validationIssueDetails(errors: WorkflowValidationIssue[]): string[] {
   return errors.map(error => `${error.code}: ${error.message}`);
 }
 
+async function buildPatchValidationContext(workflowId: string): Promise<WorkflowValidationContext> {
+  const [roles, documents, runningCases] = await Promise.all([
+    listRoles(),
+    listDocs(),
+    listCases({ process_id: workflowId, status: "running", limit: 1 }).catch(() => ({ cases: [], total: 0 })),
+  ]);
+  return {
+    roles,
+    documents,
+    adapters: listAdapters(),
+    running_case_count: runningCases.total,
+    source: "workflow.patch",
+  };
+}
+
 export async function applyWorkflowPatch(request: WorkflowPatchRequest): Promise<WorkflowPatchReceipt | WorkflowPatchFailure> {
   if (!request.workflow_id?.trim()) {
     return { ...patchInvalid("workflow_id must be a non-empty string"), workflow_id: request.workflow_id };
@@ -347,8 +372,9 @@ export async function applyWorkflowPatch(request: WorkflowPatchRequest): Promise
   if (normalized.error) return { ...normalized.error, workflow_id: request.workflow_id };
   const patch = normalized.patch!;
   const workflowId = request.workflow_id.trim();
+  const validationContext = await buildPatchValidationContext(workflowId);
 
-  const result = await mutateWorkflowAtomically<{ changed_resources: WorkflowPatchChange[] }, WorkflowPatchFailure>(
+  const result = await mutateWorkflowAtomically<WorkflowPatchMeta, WorkflowPatchFailure>(
     workflowId,
     current => {
       const lifecycleState = getWorkflowLifecycleState(current);
@@ -385,10 +411,25 @@ export async function applyWorkflowPatch(request: WorkflowPatchRequest): Promise
 
       const built = buildPatch(current, patch);
       if (isWorkflowPatchFailure(built)) return { abort: { ...built, workflow_id: workflowId } };
+      const candidate: WorkflowDefinition = { ...current, ...built.patch, id: workflowId };
+      const validation = validateWorkflowReadiness(candidate, validationContext);
+      if (validation.errors.length > 0) {
+        return {
+          abort: {
+            ok: false,
+            status: 422,
+            code: "WORKFLOW_PATCH_VALIDATION_FAILED",
+            error: "Workflow patch validation failed",
+            workflow_id: workflowId,
+            validation,
+            details: validationIssueDetails(validation.errors),
+          },
+        };
+      }
       return {
         patch: built.patch,
         opts: patchLifecycleOpts(current),
-        meta: { changed_resources: built.changed_resources },
+        meta: { changed_resources: built.changed_resources, validation },
       };
     },
   );
@@ -408,8 +449,10 @@ export async function applyWorkflowPatch(request: WorkflowPatchRequest): Promise
   }
   if (result.status === "aborted") return result.meta;
 
-  const validation = await buildWorkflowValidationReceipt(result.workflow, "workflow.patch");
   if (result.errors.length > 0) {
+    const validation = result.meta.validation.errors.length > 0
+      ? result.meta.validation
+      : validateWorkflowReadiness(result.workflow, validationContext);
     return {
       ok: false,
       status: 422,
@@ -427,7 +470,7 @@ export async function applyWorkflowPatch(request: WorkflowPatchRequest): Promise
     workflow_id: workflowId,
     ...(request.idempotency_key ? { idempotency_key: request.idempotency_key } : {}),
     changed_resources: result.meta.changed_resources,
-    validation,
+    validation: result.meta.validation,
     lifecycle_state: getWorkflowLifecycleState(result.workflow),
     deploy_version: getWorkflowDeployVersion(result.workflow),
     workflow: result.workflow,
