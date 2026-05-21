@@ -588,7 +588,35 @@ function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): Record<st
       patch[key] = schemaPatch[key];
     }
   }
+  const positionUpdates = durablePositionUpdates(schemaPatch.update_positions);
+  if (positionUpdates.length > 0) {
+    const existing = Array.isArray(patch.update_elements)
+      ? patch.update_elements.filter(item => item && typeof item === "object") as Record<string, unknown>[]
+      : [];
+    const byId = new Map<string, Record<string, unknown>>();
+    for (const item of existing) {
+      if (typeof item.id === "string" && item.id.trim()) byId.set(item.id, item);
+    }
+    for (const item of positionUpdates) {
+      const current = byId.get(item.id);
+      byId.set(item.id, current ? { ...current, x: item.x, y: item.y } : item);
+    }
+    patch.update_elements = [...byId.values()];
+  }
   return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function durablePositionUpdates(raw: unknown): Array<{ id: string; x: number; y: number }> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const updates: Array<{ id: string; x: number; y: number }> = [];
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!id.trim() || !value || typeof value !== "object" || Array.isArray(value)) continue;
+    const pos = value as Record<string, unknown>;
+    if (typeof pos.x === "number" && Number.isFinite(pos.x) && typeof pos.y === "number" && Number.isFinite(pos.y)) {
+      updates.push({ id, x: pos.x, y: pos.y });
+    }
+  }
+  return updates;
 }
 
 async function executeWorkflowPatchFromSchema(

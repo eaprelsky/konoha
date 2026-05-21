@@ -91,7 +91,7 @@ describe("normalizeAssistantResponse", () => {
     expect(resp.observable_result.status).toBe("no_effect");
   });
 
-  it("persists targeted schema_patch through workflow.patch before returning success receipt", async () => {
+  it("persists targeted schema_patch positions through workflow.patch before returning success receipt", async () => {
     const workflowId = `assistant-patch-${Date.now()}`;
     const roleId = `${workflowId}-role`;
     await createRole({ role_id: roleId, name: "Assistant patch role", strategy: "manual", assignees: [] });
@@ -110,7 +110,10 @@ describe("normalizeAssistantResponse", () => {
     try {
       const raw = JSON.stringify({
         reply: "Переименовал процесс",
-        schema_patch: { set_name: "Assistant Patch Saved" },
+        schema_patch: {
+          set_name: "Assistant Patch Saved",
+          update_positions: { start: { x: 320, y: 180 } },
+        },
       });
       const resp = await normalizeAssistantResponse(raw, {
         ...baseOpts,
@@ -121,12 +124,16 @@ describe("normalizeAssistantResponse", () => {
       expect(resp.action_receipts[0]).toMatchObject({
         action: "workflow.patch",
         status: "succeeded",
-        changed_resources: [{ kind: "workflow", id: workflowId, change: "updated" }],
       });
+      expect(resp.action_receipts[0].changed_resources).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "workflow", id: workflowId, change: "updated" }),
+        expect.objectContaining({ kind: "element", id: "start", change: "updated" }),
+      ]));
       expect(resp.action_receipts.some(receipt => receipt.action === "workflow.update" && receipt.status === "succeeded")).toBe(false);
       expect(resp.observable_result.status).toBe("succeeded");
       const saved = await getWorkflow(workflowId);
       expect(saved?.name).toBe("Assistant Patch Saved");
+      expect(saved?.elements.find(element => element.id === "start")).toMatchObject({ x: 320, y: 180 });
     } finally {
       await deleteCasesByProcess(workflowId).catch(() => 0);
       await redis.del(`workflow:${workflowId}`).catch(() => 0);

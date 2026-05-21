@@ -29,6 +29,8 @@ export interface WorkflowElement {
   system?: string;           // legacy single system (auto-converted to systems on load)
   systems?: SystemBinding[]; // multi-system bindings (section 13 of spec)
   documents?: string[];
+  x?: number;
+  y?: number;
   operator?: "AND" | "OR" | "XOR"; // for gateways
   // Document node inline content (used when type="document" in frontend schema)
   content_type?: "instruction" | "file";
