@@ -1,9 +1,9 @@
 # Runtime Effect Outbox Data Model
 
 Issue #715 defines the durable data model for workflow runtime side effects.
-The worker that drains this outbox is intentionally deferred to the follow-up
-runtime effect issues; this page is the contract those workers and callers must
-preserve.
+Issue #716 adds the worker/storage contract that drains this outbox with
+bounded retry, dead-letter, idempotency, and lock semantics. This page is the
+contract those workers and callers must preserve.
 
 ## Record Contract
 
@@ -54,6 +54,12 @@ added behind these stable keys without changing the record shape:
 | `runtime:effect:index:work-item:<work_item_id>` | Work-item correlation index. |
 | `runtime:effect:index:deploy-record:<hash>` | Deploy record correlation index. |
 | `runtime:effect:index:subscription:<subscription_id>` | Subscription correlation index. |
+| `runtime:effect:lock:<effect_id>` | Short-lived worker claim lock. |
+
+`enqueueRuntimeEffect()` writes the canonical record, idempotency lookup, status
+index, and all correlation indexes. Re-enqueueing the same source
+`idempotency_key` returns the existing record with `duplicate=true` and does not
+overwrite the original payload.
 
 ## State Machine
 
@@ -72,6 +78,13 @@ Allowed transitions:
 `in_flight` increments `attempts` and may set `locked_by`/`locked_until`.
 `retry` requires `next_retry_at` and a machine-readable `error`. Terminal
 statuses cannot move back to retry or in-flight.
+
+`processRuntimeEffectOutboxOnce()` claims one due `pending` or `retry` record,
+sets a short-lived lock, transitions it to `in_flight`, and runs the supplied
+handler. Handler success transitions to `succeeded` with a receipt. Handler
+failure transitions to `retry` when the error is retryable and the attempt
+budget remains; otherwise it transitions to `dead_letter`. A `retry` record at
+`dead_letter_after_attempts` cannot be claimed again and must be dead-lettered.
 
 ## Idempotency And Correlation
 

@@ -2,11 +2,19 @@ import { describe, expect, test } from "bun:test";
 import {
   buildDeploySubscriptionRuntimeEffect,
   buildRuntimeEffectRecord,
+  claimNextRuntimeEffect,
+  completeRuntimeEffect,
+  enqueueRuntimeEffect,
+  getRuntimeEffect,
+  listRuntimeEffectsByStatus,
+  processRuntimeEffectOutboxOnce,
   RUNTIME_EFFECT_OUTBOX_TRANSITIONS,
   runtimeEffectIdFromIdempotencyKey,
   runtimeEffectStorageKeys,
   transitionRuntimeEffectRecord,
 } from "../src/runtime-effect-outbox";
+
+const RUN = `runtime-effect-outbox-${Date.now()}`;
 
 describe("runtime effect outbox model", () => {
   test("builds deterministic durable records with required outbox fields and indexes", () => {
@@ -343,6 +351,172 @@ describe("runtime effect outbox model", () => {
     expect(runtimeEffectStorageKeys(effect)).toMatchObject({
       deploy_record_index_key: expect.stringMatching(/^runtime:effect:index:deploy-record:[a-f0-9]{24}$/),
       subscription_index_key: "runtime:effect:index:subscription:sub-1",
+    });
+  });
+
+  test("enqueues records durably and suppresses duplicate idempotency keys", async () => {
+    const first = await enqueueRuntimeEffect({
+      kind: "connector.send_message",
+      idempotency_key: `${RUN}:dedup`,
+      payload: { text: "first" },
+      links: { case_id: `${RUN}:case-dedup` },
+    }, "2026-05-21T20:15:00.000Z");
+    const second = await enqueueRuntimeEffect({
+      kind: "connector.send_message",
+      idempotency_key: `${RUN}:dedup`,
+      payload: { text: "second" },
+      links: { case_id: `${RUN}:case-dedup` },
+    }, "2026-05-21T20:15:01.000Z");
+
+    expect(first.duplicate).toBe(false);
+    expect(second.duplicate).toBe(true);
+    expect(second.record.effect_id).toBe(first.record.effect_id);
+    expect(second.record.payload).toEqual({ text: "first" });
+
+    const pending = await listRuntimeEffectsByStatus("pending", { now: "2026-05-21T20:15:02.000Z" });
+    expect(pending.some(record => record.effect_id === first.record.effect_id)).toBe(true);
+    await expect(getRuntimeEffect(first.record.effect_id)).resolves.toMatchObject({
+      effect_id: first.record.effect_id,
+      status: "pending",
+      attempts: 0,
+    });
+    const claimed = await claimNextRuntimeEffect({
+      worker_id: "cleanup-worker",
+      now: "2026-05-21T20:15:03.000Z",
+    });
+    expect(claimed?.effect_id).toBe(first.record.effect_id);
+    await completeRuntimeEffect(claimed!, { data: { cleanup: true } }, "2026-05-21T20:15:04.000Z");
+  });
+
+  test("claims one pending effect with a lock and completes it once", async () => {
+    const enqueued = await enqueueRuntimeEffect({
+      kind: "workitem.dispatch",
+      idempotency_key: `${RUN}:claim-success`,
+      payload: { role: "reviewer" },
+      links: { case_id: `${RUN}:case-claim`, work_item_id: `${RUN}:work-item-claim` },
+    }, "2026-05-21T20:16:00.000Z");
+
+    const claimed = await claimNextRuntimeEffect({
+      worker_id: "worker-1",
+      now: "2026-05-21T20:16:01.000Z",
+      lock_ms: 60_000,
+    });
+    expect(claimed).toMatchObject({
+      effect_id: enqueued.record.effect_id,
+      status: "in_flight",
+      attempts: 1,
+      locked_by: "worker-1",
+      locked_until: "2026-05-21T20:17:01.000Z",
+    });
+
+    const lockedAgain = await claimNextRuntimeEffect({
+      worker_id: "worker-2",
+      now: "2026-05-21T20:16:02.000Z",
+    });
+    expect(lockedAgain?.effect_id).not.toBe(enqueued.record.effect_id);
+
+    const completed = await completeRuntimeEffect(claimed!, { data: { dispatch_id: "dispatch-1" } }, "2026-05-21T20:16:03.000Z");
+    expect(completed).toMatchObject({
+      effect_id: enqueued.record.effect_id,
+      status: "succeeded",
+      receipt: {
+        status: "succeeded",
+        data: { dispatch_id: "dispatch-1" },
+      },
+    });
+
+    const current = await getRuntimeEffect(enqueued.record.effect_id);
+    expect(current).toMatchObject({
+      status: "succeeded",
+      attempts: 1,
+    });
+    expect(current?.locked_by).toBeUndefined();
+  });
+
+  test("worker success, retry, and dead-letter paths preserve bounded attempts", async () => {
+    const success = await enqueueRuntimeEffect({
+      kind: "event.publish",
+      idempotency_key: `${RUN}:worker-success`,
+      payload: { event: "ok" },
+      links: { case_id: `${RUN}:case-worker-success` },
+    }, "2026-05-21T20:17:00.000Z");
+    const successResult = await processRuntimeEffectOutboxOnce({
+      worker_id: "worker-success",
+      now: "2026-05-21T20:17:01.000Z",
+    }, async record => ({
+      receipt: { data: { handled_effect_id: record.effect_id } },
+    }));
+    expect(successResult).toMatchObject({
+      outcome: "succeeded",
+      final_record: {
+        effect_id: success.record.effect_id,
+        status: "succeeded",
+        attempts: 1,
+        completed_at: "2026-05-21T20:17:01.000Z",
+        receipt: {
+          status: "succeeded",
+          data: { handled_effect_id: success.record.effect_id },
+        },
+      },
+    });
+
+    const retry = await enqueueRuntimeEffect({
+      kind: "event.publish",
+      idempotency_key: `${RUN}:worker-retry`,
+      payload: { event: "retry" },
+      links: { case_id: `${RUN}:case-worker-retry` },
+      retry_policy: { retry_delays_ms: [1_000], dead_letter_after_attempts: 2, max_attempts: 2 },
+    }, "2026-05-21T20:18:00.000Z");
+    const retryResult = await processRuntimeEffectOutboxOnce({
+      worker_id: "worker-retry",
+      now: "2026-05-21T20:18:01.000Z",
+    }, async () => {
+      const error = new Error("temporary failure") as Error & { code: string; retryable: boolean };
+      error.code = "TEMPORARY_FAILURE";
+      error.retryable = true;
+      throw error;
+    });
+    expect(retryResult).toMatchObject({
+      outcome: "retry",
+      final_record: {
+        effect_id: retry.record.effect_id,
+        status: "retry",
+        attempts: 1,
+        next_retry_at: "2026-05-21T20:18:02.000Z",
+        error: {
+          code: "TEMPORARY_FAILURE",
+          retryable: true,
+        },
+      },
+    });
+
+    const earlyRetryClaim = await claimNextRuntimeEffect({
+      worker_id: "worker-early",
+      now: "2026-05-21T20:18:01.500Z",
+    });
+    expect(earlyRetryClaim?.effect_id).not.toBe(retry.record.effect_id);
+
+    const deadLetterResult = await processRuntimeEffectOutboxOnce({
+      worker_id: "worker-retry",
+      now: "2026-05-21T20:18:02.000Z",
+    }, async () => {
+      const error = new Error("permanent failure") as Error & { code: string; retryable: boolean };
+      error.code = "PERMANENT_FAILURE";
+      error.retryable = true;
+      throw error;
+    });
+    expect(deadLetterResult).toMatchObject({
+      outcome: "dead_letter",
+      final_record: {
+        effect_id: retry.record.effect_id,
+        status: "dead_letter",
+        attempts: 2,
+        completed_at: "2026-05-21T20:18:02.000Z",
+        error: {
+          code: "PERMANENT_FAILURE",
+          retryable: false,
+        },
+      },
     });
   });
 });
