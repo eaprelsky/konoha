@@ -62,7 +62,7 @@ evidence for the #812 follow-up.
 | PostgreSQL shadow state | PG is evidence until accepted `PG_READ` cutover. | Use `pg-verify`; use `bun run scripts/reconcile-pg-bus.ts --dry-run` before any apply. |
 | Subscriptions and event waits | Live resume points may still fire after code rollback. | List waits/subscriptions by case; cancel exact orphaned subscription ids. |
 | Reminders | Fired reminders and queued sends cannot be unsent. | Update status or delete exact reminder ids through Action Spine/admin API. |
-| Outbox/dispatch effects | External messages and duplicate sends cannot be unsent. | Stop additional sends, keep receipts, reconcile idempotency keys, and record user impact. |
+| Outbox/dispatch effects | External messages and duplicate sends cannot be unsent. | Stop additional sends, keep receipts, reconcile idempotency keys using `docs/runtime-effect-outbox.md`, and record user impact. |
 | Work items | User-visible assignments require audit. | Cancel, complete, or update through `/act`; do not directly edit status. |
 | Running cases | Active cases keep their runtime state after deploy rollback. | Cancel/close/quarantine exact case ids; do not start replacement cases before duplicate-dispatch review. |
 

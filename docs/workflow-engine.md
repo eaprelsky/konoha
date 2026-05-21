@@ -9,6 +9,7 @@
 > Preflight tier contract: `docs/workflow-engine-preflight-tiers.md`.
 > Runtime rollback and recovery: `docs/workflow-runtime-rollback-recovery.md`.
 > Constructor/runtime release checklist: `docs/workflow-constructor-runtime-release-checklist.md`.
+> Runtime effect/outbox model: `docs/runtime-effect-outbox.md`.
 
 ## Overview
 
@@ -172,6 +173,15 @@ cancel only deploy-managed start subscriptions (`instance_id="new"`) and return
 a start-subscription reconciliation receipt. Running-case/intermediate
 subscriptions keep their concrete `case_id` instance and are preserved unless a
 separate runtime cleanup mode deletes the case itself.
+
+Runtime side effects that need retry, dead-letter, or replay semantics use the
+outbox data model in `src/runtime-effect-outbox.ts` and
+`docs/runtime-effect-outbox.md`. The model defines deterministic effect ids,
+idempotency keys, correlation links to cases/work items/deploy records, and a
+bounded state machine for `pending`, `in_flight`, `retry`, `failed`,
+`succeeded`, `dead_letter`, and `cancelled`. Deploy subscription effects reuse
+the deployment-scoped operation keys so retry/rollback evidence remains linked
+to deploy records and active subscriptions.
 
 ---
 
