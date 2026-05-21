@@ -765,8 +765,7 @@ function validateTriggerReadinessIssues(
         if (!nodeCron.validate(trigger.cron)) invalid("timer cron expression is invalid", { field: "cron", cron: trigger.cron });
         return issues;
       }
-      if (trigger.delay_after && isRecord(trigger.delay_after) && isValidDuration(trigger.delay_after.duration)) return issues;
-      invalid("timer trigger requires a valid cron expression or delay_after.duration", { field: "cron" });
+      invalid("timer trigger requires a valid cron expression; delayed triggers must use kind=delay_after", { field: "cron" });
       return issues;
     }
     case "message":

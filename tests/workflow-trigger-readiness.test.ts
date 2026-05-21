@@ -60,6 +60,17 @@ describe("workflow trigger readiness validation", () => {
     expect(codes).not.toContain("DEPLOYMENT_START_TRIGGER_UNRESOLVED");
   });
 
+  test("timer descriptors are cron-only; delayed timers must use delay_after kind", () => {
+    const codes = deployCodes(workflow({
+      kind: "timer",
+      delay_after: { duration: "PT5M" },
+      confidence: 1,
+    } as any));
+
+    expect(codes).toContain("TRIGGER_READINESS_INVALID");
+    expect(deployCodes(workflow({ kind: "delay_after", duration: "PT5M", confidence: 1 }))).not.toContain("TRIGGER_READINESS_INVALID");
+  });
+
   test("missing start trigger blocks deploy readiness before materialization", () => {
     expect(deployCodes(workflow())).toContain("DEPLOYMENT_START_TRIGGER_UNRESOLVED");
   });
