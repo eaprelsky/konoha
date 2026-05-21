@@ -149,10 +149,19 @@ trigger.kind ∈ { "manual", "schedule", "webhook", "telegram", "event", "ambigu
 | Priority | Strategy | Condition |
 |---|---|---|
 | 0 | **System agent** | `isSystemRole(role)` — handled by built-in system-agent (timers, doc gen) |
-| 1 | **Exact name match** | `agent.id === role \|\| agent.name === role` — dispatches directly to the named agent |
-| 2 | **Capability match + load balancing** | `agent.capabilities.includes(role)` — among all matching online agents, picks the one with the fewest in-flight work items |
-| 3 | **Person lookup** | Role matches a person in `/opt/shared/.trusted-users.json` or Redis `people:custom` — sends Telegram message |
-| 4 | **Manual** | No match — work item stays pending in the Work Items UI |
+| 1 | **RoleDef assignment** | `role:{role_id}` exists and has an assignee that resolves to an online-capable agent or Telegram-reachable person; `strategy: "manual"` with no assignees is the explicit manual queue. |
+| 2 | **Exact name match** | `agent.id === role \|\| agent.name === role` for an online-capable agent — dispatches directly to the named agent |
+| 3 | **Capability match + load balancing** | `agent.capabilities.includes(role)` — among all matching online agents, picks the one with the fewest in-flight work items |
+| 4 | **Person lookup** | Role matches a person in `/opt/shared/.trusted-users.json` or Redis `people:custom` — sends Telegram message |
+
+`workflow.validate` and deploy/case-start readiness receipts block unresolved
+function roles with stable role-class codes:
+
+- `ROLE_UNRESOLVABLE` when no system role, RoleDef, online-capable agent,
+  Telegram person, or explicit manual queue exists.
+- `ROLE_MISSING_ASSIGNEE` when a non-manual RoleDef has no assignees.
+- `ROLE_ASSIGNEE_UNRESOLVABLE` when a non-manual RoleDef has assignees but none
+  route to an online-capable agent or Telegram-reachable person.
 
 ---
 

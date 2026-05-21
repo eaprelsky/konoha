@@ -57,11 +57,12 @@ async function listCustomPeople(): Promise<PersonRecord[]> {
   }
 }
 
+export async function listPeople(): Promise<PersonRecord[]> {
+  return [...await listCustomPeople(), ...loadTrustedPeople()];
+}
+
 export async function findPersonByRole(role: string): Promise<PersonRecord | null> {
-  for (const person of await listCustomPeople()) {
-    if (person.name === role || person.position === role) return person;
-  }
-  for (const person of loadTrustedPeople()) {
+  for (const person of await listPeople()) {
     if (person.name === role || person.position === role) return person;
   }
   return null;
@@ -69,10 +70,7 @@ export async function findPersonByRole(role: string): Promise<PersonRecord | nul
 
 export async function findPersonById(id: string): Promise<PersonRecord | null> {
   const normalized = id.replace(/^@/, "");
-  for (const person of await listCustomPeople()) {
-    if (person.id === id || person.name === id || person.tg_username === normalized) return person;
-  }
-  for (const person of loadTrustedPeople()) {
+  for (const person of await listPeople()) {
     if (person.id === id || person.name === id || person.tg_username === normalized) return person;
   }
   return null;

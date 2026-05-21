@@ -291,15 +291,15 @@ describe("workflow lifecycle deploy gate", () => {
     await createRole({
       role_id: roleId,
       name: "Start role",
-      assignees: ["operator-1"],
-      strategy: "round-robin",
+      assignees: [],
+      strategy: "manual",
       required_capabilities: [],
     });
     await createWorkflow(workflow(id, roleId));
     const deploy = await executeActionDirect("workflow.deploy", { id });
     expect(deploy?.status).toBe(200);
 
-    await updateRole(roleId, { assignees: [] });
+    await updateRole(roleId, { strategy: "round-robin" });
     const blocked = await executeActionDirect("case.start", {
       process_id: id,
       subject: "Blocked by readiness",

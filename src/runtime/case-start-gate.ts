@@ -9,6 +9,8 @@ import {
 import { listRoles } from "./roles";
 import { listDocs } from "./documents";
 import { listAdapters } from "../adapters";
+import { listAgents } from "../redis";
+import { listPeople } from "../people-directory";
 
 export interface CaseStartGateFailure {
   status: 409;
@@ -36,14 +38,18 @@ export async function buildCaseStartValidationReceipt(
   workflow: WorkflowDefinition,
   source = "case.start",
 ): Promise<WorkflowValidationReceipt> {
-  const [roles, documents] = await Promise.all([
+  const [roles, documents, agents, people] = await Promise.all([
     listRoles(),
     listDocs(),
+    listAgents(false).catch(() => undefined),
+    listPeople().catch(() => undefined),
   ]);
   return validateWorkflowReadiness(workflow, {
     roles,
     documents,
     adapters: listAdapters(),
+    ...(agents ? { agents } : {}),
+    ...(people ? { people } : {}),
     source,
   });
 }

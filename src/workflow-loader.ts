@@ -224,6 +224,8 @@ export interface WorkflowValidationContext {
   roles?: { role_id: string; assignees?: string[]; strategy?: string }[];
   documents?: { doc_id: string }[];
   adapters?: string[];
+  agents?: { id: string; name?: string; capabilities?: string[]; status?: string }[];
+  people?: { id?: string; name: string; position?: string; tg_username?: string; tg_id?: number }[];
   running_case_count?: number;
   source?: string;
 }
@@ -262,6 +264,7 @@ const TRIGGER_SYSTEM_EVENTS = new Set([
   "all_branches_completed",
 ]);
 const TRIGGER_CONDITION_OPERATORS = new Set([">", "<", ">=", "<=", "==", "!="]);
+const SYSTEM_ROLE_NAMES = new Set(["Система", "System", "system", "система", "СИСТЕМА"]);
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -680,6 +683,10 @@ function validationIssue(
   return { code, severity, class: issueClass, message, ...extras };
 }
 
+function isSystemWorkflowRole(role: string): boolean {
+  return SYSTEM_ROLE_NAMES.has(role);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -736,6 +743,126 @@ function isDeclaredPayloadDependency(dependency: string, fields: Set<string>): b
     if (dependency.startsWith(`${field}.`)) return true;
   }
   return false;
+}
+
+function isOnlineCapableValidationAgent(agent: { status?: string }): boolean {
+  return agent.status === undefined || agent.status === "online";
+}
+
+function agentMatchesRole(
+  role: string,
+  agents: { id: string; name?: string; capabilities?: string[]; status?: string }[],
+): boolean {
+  return agents.some(agent =>
+    isOnlineCapableValidationAgent(agent) &&
+    (agent.id === role || agent.name === role || Boolean(agent.capabilities?.includes(role)))
+  );
+}
+
+function agentMatchesAssignee(
+  assignee: string,
+  agents: { id: string; name?: string; capabilities?: string[]; status?: string }[],
+): boolean {
+  return agents.some(agent => isOnlineCapableValidationAgent(agent) && agent.id === assignee);
+}
+
+function normalizePersonUsername(value: string): string {
+  return value.replace(/^@/, "");
+}
+
+function personMatchesRole(
+  role: string,
+  people: { id?: string; name: string; position?: string; tg_username?: string; tg_id?: number }[],
+): boolean {
+  return people.some(person => Boolean(person.tg_id) && (person.name === role || person.position === role));
+}
+
+function personMatchesAssignee(
+  assignee: string,
+  people: { id?: string; name: string; tg_username?: string; tg_id?: number }[],
+): boolean {
+  const normalized = normalizePersonUsername(assignee);
+  return people.some(person => Boolean(person.tg_id) && (
+    person.id === assignee ||
+    person.name === assignee ||
+    person.tg_username === normalized
+  ));
+}
+
+function roleReadinessIssueForFunction(
+  element: WorkflowElement,
+  context: WorkflowValidationContext,
+): WorkflowValidationIssue | null {
+  if (element.type !== "function" || !element.role) return null;
+  const role = element.role.trim();
+  if (!role) return null;
+  if (isSystemWorkflowRole(role)) return null;
+
+  const agents = context.agents ?? [];
+  const people = context.people ?? [];
+  const rolesById = new Map((context.roles ?? []).map(roleDef => [roleDef.role_id, roleDef]));
+  const roleDef = rolesById.get(role);
+  const hasRoutingContext = context.roles !== undefined || context.agents !== undefined || context.people !== undefined;
+  const hasAssigneeResolutionContext = context.agents !== undefined || context.people !== undefined;
+  if (!hasRoutingContext) return null;
+
+  if (roleDef) {
+    const strategy = roleDef.strategy ?? "manual";
+    const assignees = roleDef.assignees ?? [];
+    if (assignees.length === 0) {
+      if (strategy === "manual") return null;
+      return validationIssue(
+        "ROLE_MISSING_ASSIGNEE",
+        "error",
+        "role",
+        `Role "${role}" has no assignees and is not manual`,
+        { element_id: element.id, legacy_code: "RUNTIME_MISSING_ROLE_ASSIGNEE", details: { role, strategy } },
+      );
+    }
+    if (!hasAssigneeResolutionContext) return null;
+
+    const resolvedAssignee = assignees.find(assignee =>
+      agentMatchesAssignee(assignee, agents) || personMatchesAssignee(assignee, people)
+    );
+    if (resolvedAssignee) return null;
+    if (strategy === "manual") return null;
+
+    return validationIssue(
+      "ROLE_ASSIGNEE_UNRESOLVABLE",
+      "error",
+      "role",
+      `Role "${role}" has assignees but none resolve to an online-capable agent or Telegram-reachable person`,
+      {
+        element_id: element.id,
+        legacy_code: "RUNTIME_UNRESOLVABLE_ROLE_ASSIGNEE",
+        details: {
+          role,
+          strategy,
+          assignees,
+          online_agent_ids: agents.filter(isOnlineCapableValidationAgent).map(agent => agent.id).sort(),
+        },
+      },
+    );
+  }
+
+  if (agentMatchesRole(role, agents)) return null;
+  if (personMatchesRole(role, people)) return null;
+
+  return validationIssue(
+    "ROLE_UNRESOLVABLE",
+    "error",
+    "role",
+    `Function "${element.id}" role "${role}" cannot resolve to a system role, RoleDef, online-capable agent, person, or explicit manual queue`,
+    {
+      element_id: element.id,
+      legacy_code: "RUNTIME_UNRESOLVABLE_ROLE",
+      details: {
+        role,
+        known_roles: [...rolesById.keys()].sort(),
+        online_agent_ids: agents.filter(isOnlineCapableValidationAgent).map(agent => agent.id).sort(),
+      },
+    },
+  );
 }
 
 function isValidDuration(value: unknown): value is string {
@@ -1120,8 +1247,6 @@ export function validateWorkflowReadiness(
     }
   }
 
-  const rolesById = new Map((context.roles ?? []).map(role => [role.role_id, role]));
-  const roleContextProvided = context.roles !== undefined;
   const seededDocIds = new Set((def.documents ?? []).map(doc => doc.doc_id));
   const knownDocIds = new Set([...(context.documents ?? []).map(doc => doc.doc_id), ...seededDocIds]);
   const adapterNames = new Set(context.adapters ?? []);
@@ -1131,26 +1256,8 @@ export function validateWorkflowReadiness(
 
   for (const element of elements) {
     if (element.type === "function") {
-      if (element.role && roleContextProvided) {
-        const role = rolesById.get(element.role);
-        if (!role) {
-          issues.push(validationIssue(
-            "ROLE_MISSING",
-            "error",
-            "role",
-            `Function "${element.id}" references missing role "${element.role}"`,
-            { element_id: element.id, legacy_code: "RUNTIME_MISSING_ROLE", details: { role: element.role } },
-          ));
-        } else if (role.strategy !== "manual" && (role.assignees ?? []).length === 0) {
-          issues.push(validationIssue(
-            "ROLE_MISSING_ASSIGNEE",
-            "error",
-            "role",
-            `Role "${element.role}" has no assignees and is not manual`,
-            { element_id: element.id, legacy_code: "RUNTIME_MISSING_ROLE_ASSIGNEE", details: { role: element.role, strategy: role.strategy } },
-          ));
-        }
-      }
+      const roleIssue = roleReadinessIssueForFunction(element, context);
+      if (roleIssue) issues.push(roleIssue);
 
       for (const rawDocId of element.documents ?? []) {
         if (typeof rawDocId !== "string" || rawDocId.trim() === "") {
