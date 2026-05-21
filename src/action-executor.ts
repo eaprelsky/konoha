@@ -6,7 +6,6 @@ import {
   updateWorkflow,
   archiveWorkflow,
   getWorkflowLifecycleState,
-  isWorkflowExecutable,
   mutateWorkflowAtomically,
   validateWorkflowReadiness,
   getWorkflowDeployVersion,
@@ -16,6 +15,7 @@ import {
   type WorkflowLifecycleState,
   type WorkflowValidationReceipt,
 } from "./workflow-loader";
+import { CaseStartGateError } from "./runtime/case-start-gate";
 import { normalizeElementNames } from "./normalizer";
 import { deleteCasesByProcess, createCase, getCase, listCases, forceCloseCase, cancelCase, deleteCase } from "./runtime";
 import { resolveBatchProgrammatic, type ProcessContext } from "./trigger-resolver";
@@ -767,47 +767,18 @@ async function executeCaseAction(action: string, args: Record<string, unknown>):
       const invalid = validationFailure("case.start", args);
       if (invalid) return invalid;
       const processId = String(args.process_id);
-      const workflow = await getWorkflow(processId);
-      if (!workflow) return { status: 404, data: { error: `Workflow ${processId} not found` } };
-      const lifecycleState = getWorkflowLifecycleState(workflow);
-      if (!isWorkflowExecutable(workflow) && args.admin_override !== true) {
-        return {
-          status: 409,
-          data: {
-            error: "Workflow is not executable",
-            code: "WORKFLOW_NOT_EXECUTABLE",
-            process_id: processId,
-            lifecycle_state: lifecycleState,
-            status: workflow.status,
-            required_lifecycle_state: "executable",
-            admin_override_available: true,
-          },
-        };
-      }
-      if (args.admin_override !== true) {
-        const validation = await buildWorkflowValidationReceipt(workflow, "case.start");
-        if (validation.errors.length > 0) {
-          return {
-            status: 409,
-            data: {
-              error: "Workflow readiness blocks case start",
-              code: "WORKFLOW_READINESS_BLOCKED",
-              process_id: processId,
-              lifecycle_state: lifecycleState,
-              validation,
-            },
-          };
-        }
-      }
       try {
         const kase = await createCase(
           processId,
           String(args.subject),
           (args.payload as Record<string, unknown>) ?? {},
           args.start_node ? String(args.start_node) : undefined,
+          undefined,
+          { adminOverride: args.admin_override === true, source: "case.start" },
         );
         return { status: 201, data: kase };
       } catch (e: any) {
+        if (e instanceof CaseStartGateError) return { status: e.status, data: e.data };
         const isNotFound = e.message?.includes("not found");
         return { status: isNotFound ? 404 : 400, data: { error: e.message } };
       }

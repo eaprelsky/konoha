@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { createLogger } from "../logger";
 import { requireAdmin } from "../middleware/auth";
 import { createCase } from "../runtime";
+import { CaseStartGateError } from "../runtime/case-start-gate";
 import { upsertAgentDef } from "../agent-lifecycle";
 import type { AgentDef } from "../agent-lifecycle";
 import { listAdapters, getAdapter } from "../adapters/index";
@@ -460,6 +461,7 @@ router.post("/trigger/:process_id{.+}", async (c) => {
     const kase = await createCase(process_id, subject, payload);
     return c.json({ case_id: kase.case_id, status: kase.status }, 201);
   } catch (e: any) {
+    if (e instanceof CaseStartGateError) return c.json(e.data as any, e.status as any);
     return c.json({ error: e.message }, 400);
   }
 });

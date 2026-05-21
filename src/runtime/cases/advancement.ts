@@ -9,6 +9,7 @@ import { randomUUID } from "crypto";
 import { redis } from "../../redis";
 import { publishEvent } from "../../redis";
 import { getWorkflow, WORKFLOW_INDEX_KEY, type WorkflowDefinition, type WorkflowElement } from "../../workflow-loader";
+import { assertCaseStartAllowed, type CaseStartGateOptions } from "../case-start-gate";
 import { getAdapter } from "../../adapters/index";
 import { dispatchWorkItem } from "../../dispatcher";
 import { createSubscriptionProgrammatic, cancelSubscriptionsByInstance, type TriggerDef } from "../../event-manager";
@@ -727,6 +728,7 @@ export async function createCaseInner(
   payload: Record<string, unknown> = {},
   start_node?: string,
   parentWorkItemId?: string,
+  options: CaseStartGateOptions = {},
 ): Promise<Case> {
   let def = await getWorkflow(process_id);
   if (!def) {
@@ -734,6 +736,7 @@ export async function createCaseInner(
     def = await getWorkflow(process_id);
   }
   if (!def) throw new Error(`Workflow "${process_id}" not found in registry`);
+  await assertCaseStartAllowed(def, options);
 
   let startId = start_node;
   if (!startId) {

@@ -68,10 +68,13 @@ cases must not receive new work, waits, subscriptions, or connector effects.
 ## Start Gate
 
 `case.start` rejects every workflow whose `lifecycle_state` is not
-`executable`. Executable workflows are rechecked with the same readiness
-contract before a case is created, so runtime drift such as a now-empty
-non-manual role blocks new starts instead of silently creating work that cannot
-be handled. The lifecycle rejection is structured:
+`executable`. The gate is enforced at the runtime case-creation boundary, so
+direct `createCase()`, `POST /cases`, `POST /trigger/:process_id`, action
+envelopes, and event/subscription auto-start paths share the same contract.
+Executable workflows are rechecked with the same readiness contract before a
+case is created, so runtime drift such as a now-empty non-manual role blocks
+new starts instead of silently creating work that cannot be handled. The
+lifecycle rejection is structured:
 
 ```json
 {

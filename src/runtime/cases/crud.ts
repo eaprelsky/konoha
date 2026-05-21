@@ -5,6 +5,7 @@
 
 import { redis } from "../../redis";
 import { getWorkflow, isWorkflowExecutable, type WorkflowDefinition } from "../../workflow-loader";
+import { CaseStartGateError, type CaseStartGateOptions } from "../case-start-gate";
 import { pgDeleteCase, pgDeleteCasesByProcess, pgDeleteWorkItem } from "../../storage/pg";
 import { emitEvent } from "../event-log";
 import { cancelSubscriptionsByInstance } from "../../event-manager";
@@ -45,10 +46,11 @@ export async function createCase(
   payload: Record<string, unknown> = {},
   start_node?: string,
   parentWorkItemId?: string,
+  options: CaseStartGateOptions = {},
 ): Promise<Case> {
   // Delegate to advancement.ts createCaseInner via dynamic import to avoid circular dep
   const { createCaseInner } = await import("./advancement");
-  return createCaseInner(process_id, subject, payload, start_node, parentWorkItemId);
+  return createCaseInner(process_id, subject, payload, start_node, parentWorkItemId, options);
 }
 
 export async function getCase(case_id: string): Promise<Case | null> {
@@ -251,8 +253,28 @@ export async function processEventWithActivation(
       }
 
       const subject = eventSubject(source, payload);
-      const kase = await createCase(def.id, subject, payload, trigger.start_node);
-      cases.push(kase);
+      try {
+        const kase = await createCase(def.id, subject, payload, trigger.start_node);
+        cases.push(kase);
+      } catch (e: any) {
+        if (e instanceof CaseStartGateError) {
+          log.warn("processEvent: case start blocked", {
+            workflow_id: def.id,
+            event_type: eventType,
+            source,
+            error: e.message,
+            code: e.data.code,
+            lifecycle_state: e.data.lifecycle_state,
+          });
+        } else {
+          log.error("processEvent: create case failed", {
+            workflow_id: def.id,
+            event_type: eventType,
+            source,
+            error: e?.message,
+          });
+        }
+      }
     }
   }
 
@@ -354,6 +376,16 @@ export async function handleEventFired(payload: {
       log.info("event_fired: new case created", { case_id: kase.case_id, process_id, event_id });
       return kase;
     } catch (e: any) {
+      if (e instanceof CaseStartGateError) {
+        log.warn("event_fired: case start blocked", {
+          process_id,
+          event_id,
+          error: e.message,
+          code: e.data.code,
+          lifecycle_state: e.data.lifecycle_state,
+        });
+        return null;
+      }
       log.error("event_fired: create case failed", { process_id, event_id, error: e.message });
       return null;
     }
