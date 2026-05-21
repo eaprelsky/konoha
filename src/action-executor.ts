@@ -220,6 +220,13 @@ async function resolveTriggers(
     ]);
   } catch (e: any) {
     console.warn(`[workflow-deploy] trigger resolver failed (${e.message}), marking all events for manual review`);
+    for (let i = 0; i < updatedElements.length; i++) {
+      const el = updatedElements[i];
+      if (el.type !== "event") continue;
+      if (eventsToResolve.some(event => event.id === el.id)) {
+        updatedElements[i] = { ...el, trigger: { kind: "ambiguous", confidence: 0 } };
+      }
+    }
     return { elements: updatedElements, needs_review: true };
   }
 
@@ -392,18 +399,32 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   }
 
   if (needs_review) {
+    const validation = await buildWorkflowValidationReceipt(body, "workflow.deploy");
     const result = await updateWorkflow(id, body, {
       lifecycleState: "validated",
       deploy: {
         status: "blocked",
-        checked_at: new Date().toISOString(),
+        checked_at: validation.checked_at,
         source: "workflow.deploy",
-        details: ["trigger resolution needs manual review"],
+        details: validation.errors.length > 0
+          ? validation.errors.map(error => `${error.code}: ${error.message}`)
+          : ["DEPLOYMENT_TRIGGER_REVIEW_REQUIRED: trigger resolution needs manual review"],
       },
       needsReview: true,
     });
     if (result === null) return { status: 404, data: { error: "Workflow not found" } };
-    if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
+    if (result.errors.length > 0) {
+      return {
+        status: 422,
+        data: {
+          error: "Validation failed",
+          code: "WORKFLOW_VALIDATION_BLOCKED",
+          process_id: id,
+          validation,
+          details: result.errors,
+        },
+      };
+    }
     return {
       status: 409,
       data: {
@@ -411,6 +432,7 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
         code: "WORKFLOW_DEPLOY_NEEDS_REVIEW",
         process_id: id,
         lifecycle_state: "validated",
+        validation,
         workflow: { ...result.workflow, normalized },
       },
     };

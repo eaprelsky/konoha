@@ -112,6 +112,44 @@ describe("workflow lifecycle deploy gate", () => {
     });
   });
 
+  test("workflow.deploy trigger review path returns canonical validation receipt", async () => {
+    const id = `${RUN}-trigger-review`;
+    touched.add(id);
+    await createWorkflow({
+      ...workflow(id),
+      elements: [
+        { id: "start", type: "event", label: "Unresolved start" },
+        { id: "task", type: "function", label: "Review", role: "reviewer" },
+        { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
+      ],
+    });
+
+    const oldAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    try {
+      const deploy = await executeActionDirect("workflow.deploy", { id });
+
+      expect(deploy?.status).toBe(409);
+      expect((deploy?.data as any)).toMatchObject({
+        code: "WORKFLOW_DEPLOY_NEEDS_REVIEW",
+        process_id: id,
+        validation: {
+          readiness: "blocked",
+          source: "workflow.deploy",
+          gates: {
+            deployment_blocker: true,
+            release_blocker: true,
+          },
+        },
+      });
+      expect((deploy?.data as any).validation.errors.map((error: any) => error.code)).toContain("DEPLOYMENT_AMBIGUOUS_TRIGGER");
+      expect((deploy?.data as any).workflow.last_deploy.details).toContain("DEPLOYMENT_AMBIGUOUS_TRIGGER: Event \"start\" trigger is ambiguous and requires manual override");
+    } finally {
+      if (oldAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = oldAnthropicKey;
+    }
+  });
+
   test("workflow.update surfaces canonical validation receipt on blocking edits", async () => {
     const id = `${RUN}-update-receipt`;
     touched.add(id);

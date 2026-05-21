@@ -614,6 +614,14 @@ export function validateWorkflowReadiness(
           `Event "${element.id}" trigger is ambiguous and requires manual override`,
           { element_id: element.id },
         ));
+      } else if ((element.trigger.confidence ?? 1) < 0.7) {
+        issues.push(validationIssue(
+          "DEPLOYMENT_TRIGGER_REVIEW_REQUIRED",
+          "error",
+          "deployment",
+          `Event "${element.id}" trigger confidence is below deployment threshold and requires manual review`,
+          { element_id: element.id, details: { confidence: element.trigger.confidence } },
+        ));
       } else if (!supportedTriggers.has(element.trigger.kind)) {
         issues.push(validationIssue(
           "DEPLOYMENT_UNSUPPORTED_TRIGGER",
