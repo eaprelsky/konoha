@@ -251,4 +251,35 @@ describe("adapter invoke outbox", () => {
       element_id: "task",
     }));
   });
+
+  test("malformed adapter execution values fail closed before deploy", () => {
+    for (const [suffix, execution] of [
+      ["boolean", true],
+      ["object", { mode: "async_effect" }],
+      ["null", null],
+    ] as const) {
+      const workflow: WorkflowDefinition = makeWorkflowDefinition({
+        id: `${RUN}:workflow-malformed-execution-${suffix}`,
+        elements: [
+          { id: "start", type: "event", label: "Start" },
+          {
+            id: "task",
+            type: "function",
+            label: "Task",
+            role: "reviewer",
+            systems: [{ connector: "telegram", operation: "send_message", execution } as any],
+          },
+          { id: "done", type: "event", label: "Done" },
+        ],
+        flow: [["start", "task"], ["task", "done"]],
+      });
+
+      const receipt = validateWorkflowReadiness(workflow, { adapters: ["telegram"] });
+      expect(receipt.errors).toContainEqual(expect.objectContaining({
+        code: "ADAPTER_BINDING_INVALID",
+        class: "adapter",
+        element_id: "task",
+      }));
+    }
+  });
 });

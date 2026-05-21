@@ -1195,8 +1195,9 @@ export function validateWorkflowReadiness(
         }
         const connector = system.connector.trim();
         const operation = typeof system.operation === "string" ? system.operation : undefined;
-        const execution = typeof system.execution === "string" ? system.execution : undefined;
-        if (execution !== undefined && execution !== "sync" && execution !== "async_effect") {
+        const hasExecution = Object.prototype.hasOwnProperty.call(system, "execution");
+        const execution = hasExecution ? system.execution : undefined;
+        if (hasExecution && (execution !== "sync" && execution !== "async_effect")) {
           issues.push(validationIssue(
             "ADAPTER_BINDING_INVALID",
             "error",
