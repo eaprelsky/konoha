@@ -25,7 +25,21 @@ type ConditionNode =
 
 const IDENTIFIER_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const COMPARISON_OPERATORS = new Set(["===", "!==", "==", "!=", ">=", "<=", ">", "<"]);
-const UNSAFE_PAYLOAD_SEGMENTS = new Set(["__proto__", "prototype", "constructor"]);
+const UNSAFE_PAYLOAD_SEGMENTS = new Set([
+  "__defineGetter__",
+  "__defineSetter__",
+  "__lookupGetter__",
+  "__lookupSetter__",
+  "__proto__",
+  "constructor",
+  "hasOwnProperty",
+  "isPrototypeOf",
+  "propertyIsEnumerable",
+  "prototype",
+  "toLocaleString",
+  "toString",
+  "valueOf",
+]);
 
 function isComparisonOperator(value: string): value is "===" | "!==" | "==" | "!=" | ">=" | "<=" | ">" | "<" {
   return COMPARISON_OPERATORS.has(value);
@@ -252,7 +266,7 @@ function collectDependencies(node: ConditionNode, dependencies = new Set<string>
 function valueAtPath(payload: Record<string, unknown>, path: string): unknown {
   let current: unknown = payload;
   for (const segment of path.split(".")) {
-    if (current === null || typeof current !== "object" || !(segment in current)) return undefined;
+    if (current === null || typeof current !== "object" || !Object.hasOwn(current, segment)) return undefined;
     current = (current as Record<string, unknown>)[segment];
   }
   return current;

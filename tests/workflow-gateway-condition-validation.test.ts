@@ -103,6 +103,24 @@ describe("workflow gateway condition validation", () => {
     expect(codes(def)).toContain("GRAPH_UNSUPPORTED_GATEWAY_CONDITION");
   });
 
+  test("rejects Object prototype payload segments before dependency inference", () => {
+    const def = gatewayWorkflow({
+      flow: [
+        ["start", "prepare"],
+        ["prepare", "prepared"],
+        ["prepared", "route"],
+        ["route", "path_a", "payload.toString !== undefined"],
+        ["path_a", "handle_a"],
+        ["handle_a", "done_a"],
+        ["route", "path_default"],
+        ["path_default", "handle_default"],
+        ["handle_default", "done_default"],
+      ],
+    });
+
+    expect(codes(def)).toContain("GRAPH_UNSUPPORTED_GATEWAY_CONDITION");
+  });
+
   test("reports unknown payload dependencies when a payload contract is declared", () => {
     const def = gatewayWorkflow({
       payload_fields: ["path"],

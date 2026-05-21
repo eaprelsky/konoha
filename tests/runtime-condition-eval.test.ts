@@ -25,4 +25,9 @@ describe("runtime condition evaluation", () => {
       { review_route: "approved" },
     )).toBe(false);
   });
+
+  test("does not resolve inherited Object prototype fields from payload", () => {
+    expect(evalCondition("payload.toString !== undefined", {})).toBe(false);
+    expect(evalCondition("payload.status === 'ready'", { status: "ready" })).toBe(true);
+  });
 });
