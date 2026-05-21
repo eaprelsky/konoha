@@ -19,6 +19,13 @@ import { createLogger, silentCatch } from "../logger";
 import type { Subscription, TriggerDef, TimerTrigger, MessageTrigger, ConditionTrigger, DelayAfterTrigger } from "./types";
 import { delayQueue } from "./queue";
 import {
+  enqueueRuntimeEffect,
+  type RuntimeEffectEnqueueResult,
+  type RuntimeEffectHandlerResult,
+  type RuntimeEffectRecord,
+  type RuntimeEffectRetryPolicy,
+} from "../runtime-effect-outbox";
+import {
   parseDurationMs,
   resolveDelayMs,
   computeNextFireAt,
@@ -66,6 +73,72 @@ export const activeListeners = new Map<string, ListenerHandle>();
 
 // Maps subscriptionId → condition poll timer
 export const conditionTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+export const subscriptionOutboxHooks = {
+  scheduleSubscriptionResources,
+  cancelSubscriptionResources,
+};
+
+function subscriptionLinks(sub: Subscription) {
+  return {
+    workflow_id: sub.process_id,
+    subscription_id: sub.id,
+    event_id: sub.event_id,
+    ...(sub.instance_id !== START_EVENT_INSTANCE_ID ? { case_id: sub.instance_id } : {}),
+    ...(sub.deployment_id ? { deployment_id: sub.deployment_id } : {}),
+    ...(sub.deploy_version !== undefined ? { deploy_version: sub.deploy_version } : {}),
+  };
+}
+
+export function subscriptionCreateIdempotencyKey(subscriptionId: string): string {
+  return `subscription.create:${subscriptionId}`;
+}
+
+export function subscriptionCancelIdempotencyKey(subscriptionId: string, reason = "runtime-cleanup"): string {
+  return `subscription.cancel:${subscriptionId}:${reason}`;
+}
+
+export async function enqueueSubscriptionCreateEffect(
+  sub: Subscription,
+  now = new Date().toISOString(),
+  retryPolicy?: Partial<RuntimeEffectRetryPolicy>,
+): Promise<RuntimeEffectEnqueueResult> {
+  return enqueueRuntimeEffect({
+    kind: "subscription.create",
+    idempotency_key: subscriptionCreateIdempotencyKey(sub.id),
+    payload: {
+      operation: "activate",
+      subscription_id: sub.id,
+      subscription: sub as unknown as Record<string, unknown>,
+      trigger_kind: sub.trigger.kind,
+      mode: sub.mode,
+    },
+    links: subscriptionLinks(sub),
+    ...(retryPolicy ? { retry_policy: retryPolicy } : {}),
+  }, now);
+}
+
+export async function enqueueSubscriptionCancelEffect(
+  sub: Subscription,
+  reason = "runtime-cleanup",
+  now = new Date().toISOString(),
+  retryPolicy?: Partial<RuntimeEffectRetryPolicy>,
+): Promise<RuntimeEffectEnqueueResult> {
+  return enqueueRuntimeEffect({
+    kind: "subscription.cancel",
+    idempotency_key: subscriptionCancelIdempotencyKey(sub.id, reason),
+    payload: {
+      operation: "cancel_resources",
+      subscription_id: sub.id,
+      subscription: sub as unknown as Record<string, unknown>,
+      trigger_kind: sub.trigger.kind,
+      mode: sub.mode,
+      reason,
+    },
+    links: subscriptionLinks(sub),
+    ...(retryPolicy ? { retry_policy: retryPolicy } : {}),
+  }, now);
+}
 
 function hasDeploymentSubscriptionMetadata(params: {
   deploy_version?: number;
@@ -405,6 +478,101 @@ export async function cancelSubscriptionResources(sub: Subscription): Promise<vo
   }
 }
 
+export async function scheduleSubscriptionResources(sub: Subscription): Promise<{ scheduled: boolean; resource: string; reason?: string }> {
+  if (sub.status !== "active") return { scheduled: false, resource: "none", reason: "subscription_not_active" };
+  if (sub.mode !== "auto") return { scheduled: false, resource: "none", reason: "manual_mode" };
+
+  if (sub.trigger.kind === "timer") {
+    scheduleCron(sub);
+    return { scheduled: true, resource: "cron" };
+  }
+  if (sub.trigger.kind === "message") {
+    await activateMessageTrigger(sub);
+    return { scheduled: true, resource: "message_listener" };
+  }
+  if (sub.trigger.kind === "condition") {
+    await activateConditionTrigger(sub);
+    return { scheduled: true, resource: "condition_poller" };
+  }
+  if (sub.trigger.kind === "delay_after") {
+    await activateDelayAfterTrigger(sub);
+    return { scheduled: true, resource: "delay_after_job" };
+  }
+  return { scheduled: false, resource: "none", reason: "unsupported_trigger" };
+}
+
+function subscriptionEffectFail(code: string, message: string, details?: Record<string, unknown>): never {
+  throw Object.assign(new Error(message), { code, retryable: false, details });
+}
+
+function subscriptionPayloadId(record: RuntimeEffectRecord): string {
+  const value = record.payload.subscription_id;
+  if (typeof value !== "string" || !value.trim()) {
+    subscriptionEffectFail("SUBSCRIPTION_EFFECT_PAYLOAD_INVALID", "subscription effect payload.subscription_id is required", { key: "subscription_id" });
+  }
+  if (record.links.subscription_id && record.links.subscription_id !== value) {
+    subscriptionEffectFail("SUBSCRIPTION_EFFECT_LINK_MISMATCH", "subscription effect subscription_id does not match links", {
+      link_subscription_id: record.links.subscription_id,
+      payload_subscription_id: value,
+    });
+  }
+  return value;
+}
+
+async function subscriptionFromEffect(record: RuntimeEffectRecord): Promise<Subscription> {
+  const subscriptionId = subscriptionPayloadId(record);
+  const raw = await redis.hget(SUBSCRIPTIONS_KEY, subscriptionId).catch(() => null);
+  if (raw) {
+    const current = JSON.parse(raw) as Subscription;
+    if (record.links.event_id && current.event_id !== record.links.event_id) {
+      subscriptionEffectFail("SUBSCRIPTION_EFFECT_LINK_MISMATCH", "subscription effect event_id does not match stored subscription", {
+        link_event_id: record.links.event_id,
+        subscription_event_id: current.event_id,
+      });
+    }
+    return current;
+  }
+  const snapshot = record.payload.subscription;
+  if (snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)) {
+    const sub = snapshot as Subscription;
+    if (sub.id === subscriptionId) return sub;
+  }
+  subscriptionEffectFail("SUBSCRIPTION_EFFECT_SUBSCRIPTION_MISSING", `Subscription "${subscriptionId}" not found`, { subscription_id: subscriptionId });
+}
+
+export async function handleSubscriptionRuntimeEffect(record: RuntimeEffectRecord): Promise<RuntimeEffectHandlerResult> {
+  if (record.kind !== "subscription.create" && record.kind !== "subscription.cancel") {
+    subscriptionEffectFail("RUNTIME_EFFECT_KIND_UNSUPPORTED", `Unsupported subscription runtime effect kind: ${record.kind}`, { kind: record.kind });
+  }
+  const sub = await subscriptionFromEffect(record);
+  if (record.kind === "subscription.create") {
+    const result = await subscriptionOutboxHooks.scheduleSubscriptionResources(sub);
+    return {
+      receipt: {
+        data: {
+          operation: "activate",
+          subscription_id: sub.id,
+          trigger_kind: sub.trigger.kind,
+          mode: sub.mode,
+          ...result,
+        },
+      },
+    };
+  }
+
+  await subscriptionOutboxHooks.cancelSubscriptionResources(sub);
+  return {
+    receipt: {
+      data: {
+        operation: "cancel_resources",
+        subscription_id: sub.id,
+        trigger_kind: sub.trigger.kind,
+        reason: typeof record.payload.reason === "string" ? record.payload.reason : "runtime-cleanup",
+      },
+    },
+  };
+}
+
 // ── Restore delay_after subscription ─────────────────────────────────────────
 
 export async function restoreDelayAfterSub(sub: Subscription): Promise<void> {
@@ -565,20 +733,12 @@ export async function createSubscriptionProgrammatic(params: {
   await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
 
   if (mode === "auto") {
-    if (trigger.kind === "timer") {
-      scheduleCron(sub);
-    } else if (trigger.kind === "message") {
-      await activateMessageTrigger(sub).catch(e =>
-        log.error(`[event-manager] message listener setup failed sub=${sub.id}: ${e.message}`),
-      );
-    } else if (trigger.kind === "condition") {
-      await activateConditionTrigger(sub).catch(e =>
-        log.error(`[event-manager] condition poller setup failed sub=${sub.id}: ${e.message}`),
-      );
-    } else if (trigger.kind === "delay_after") {
-      await activateDelayAfterTrigger(sub).catch(e =>
-        log.error(`[event-manager] delay_after queue failed sub=${sub.id}: ${e.message}`),
-      );
+    try {
+      await enqueueSubscriptionCreateEffect(sub);
+    } catch (e) {
+      sub.status = "cancelled";
+      await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
+      throw e;
     }
   }
 
@@ -602,9 +762,14 @@ export async function cancelSubscriptionsByInstance(instance_id: string): Promis
   for (const sub of matching) {
     sub.status = "cancelled";
     await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
-    await cancelSubscriptionResources(sub).catch(e =>
-      log.warn(`[event-manager] cancel resources error sub=${sub.id}: ${e.message}`),
-    );
+    if (sub.mode === "auto") {
+      await enqueueSubscriptionCancelEffect(sub, "instance-cancel").catch(async e => {
+        log.warn(`[event-manager] enqueue cancel resources effect failed sub=${sub.id}: ${e.message}; falling back to direct cleanup`);
+        await cancelSubscriptionResources(sub).catch(err =>
+          log.warn(`[event-manager] cancel resources fallback error sub=${sub.id}: ${err.message}`),
+        );
+      });
+    }
     log.info(`[event-manager] cancelled sub=${sub.id} for instance_id=${instance_id}`);
   }
 
@@ -630,9 +795,14 @@ export async function cancelSubscriptionsByProcessAndInstance(
   for (const sub of matching) {
     sub.status = "cancelled";
     await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
-    await cancelSubscriptionResources(sub).catch(e =>
-      log.warn(`[event-manager] cancel resources error sub=${sub.id}: ${e.message}`),
-    );
+    if (sub.mode === "auto") {
+      await enqueueSubscriptionCancelEffect(sub, "process-instance-cancel").catch(async e => {
+        log.warn(`[event-manager] enqueue cancel resources effect failed sub=${sub.id}: ${e.message}; falling back to direct cleanup`);
+        await cancelSubscriptionResources(sub).catch(err =>
+          log.warn(`[event-manager] cancel resources fallback error sub=${sub.id}: ${err.message}`),
+        );
+      });
+    }
     log.info(
       `[event-manager] cancelled stale start-event sub=${sub.id} process_id=${process_id} event_id=${sub.event_id}`,
     );

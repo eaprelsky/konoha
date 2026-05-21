@@ -106,6 +106,19 @@ case payload, or drive gateway conditions. Async-effect adapter records include
 worker executes the adapter with retry/dead-letter policy and stores a delivered
 receipt so a retry after successful delivery does not repeat the side effect.
 
+`subscription.create` and `subscription.cancel` are used for scheduler/listener
+resource side effects after subscription state has already been written. Creating
+or cancelling a subscription still updates the durable subscription record
+synchronously; the outbox effect activates cron/listener/delay resources or
+cleans them up with retry/dead-letter evidence. Manual subscriptions and direct
+admin paths that require immediate state semantics stay direct and do not enqueue
+resource effects.
+
+`reminder.schedule` is used after a reminder record is saved. The reminder stays
+the durable source of truth, while the worker creates the BullMQ scheduler job
+with a stable idempotency key and retry/dead-letter evidence. Startup recovery may
+still schedule missing pending reminder jobs directly as a recovery path.
+
 ## Idempotency And Correlation
 
 The idempotency key must be scoped by the source that creates the effect:
@@ -115,6 +128,10 @@ The idempotency key must be scoped by the source that creates the effect:
 - work-item dispatch effects should include `case_id` and `work_item_id`;
 - adapter invoke effects should include `case_id`, `work_item_id`, binding key,
   connector, and operation;
+- subscription resource effects should include `subscription_id`, `event_id`,
+  workflow/process id, and case id when the subscription is instance-bound;
+- reminder schedule effects should include `reminder_id` as the action trace and
+  case/work-item links when the reminder is process-bound;
 - connector effects should include connector/message identifiers before an
   external send is attempted;
 - event publication effects should include the originating event or action

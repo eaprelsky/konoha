@@ -8,6 +8,13 @@ import { Queue, Worker } from "bullmq";
 import { redis, REDIS_CONNECTION_OPTS } from "../redis";
 import { pgUpsertReminder, pgDeleteReminder, pgGetReminder, pgListReminders } from "../storage/pg";
 import { createLogger } from "../logger";
+import {
+  enqueueRuntimeEffect,
+  type RuntimeEffectEnqueueResult,
+  type RuntimeEffectHandlerResult,
+  type RuntimeEffectRecord,
+  type RuntimeEffectRetryPolicy,
+} from "../runtime-effect-outbox";
 
 const log = createLogger("runtime:reminders");
 
@@ -83,6 +90,10 @@ async function loadReminder(reminder_id: string): Promise<Reminder | null> {
 const reminderQueue = new Queue(REMINDER_QUEUE_NAME, { connection: REDIS_CONNECTION_OPTS });
 let reminderWorker: Worker | null = null;
 
+export const reminderScheduleOutboxHooks = {
+  scheduleReminderJob,
+};
+
 async function fireReminder(reminder_id: string): Promise<void> {
   const r = await loadReminder(reminder_id);
   if (!r || r.status !== "pending") return;
@@ -139,6 +150,90 @@ async function scheduleReminderJob(r: Reminder): Promise<void> {
   log.info("queued reminder", { reminder_id: r.reminder_id, delay_ms: delayMs });
 }
 
+export function reminderScheduleIdempotencyKey(reminderId: string): string {
+  return `reminder.schedule:${reminderId}`;
+}
+
+export async function enqueueReminderScheduleEffect(
+  reminder: Reminder,
+  now = new Date().toISOString(),
+  retryPolicy?: Partial<RuntimeEffectRetryPolicy>,
+): Promise<RuntimeEffectEnqueueResult> {
+  return enqueueRuntimeEffect({
+    kind: "reminder.schedule",
+    idempotency_key: reminderScheduleIdempotencyKey(reminder.reminder_id),
+    payload: {
+      operation: "schedule",
+      reminder_id: reminder.reminder_id,
+      scheduled_at: reminder.scheduled_at,
+      status: reminder.status,
+      channel: reminder.channel,
+      recipient: reminder.recipient,
+    },
+    links: {
+      ...(reminder.process_id ? { workflow_id: reminder.process_id } : {}),
+      ...(reminder.case_id ? { case_id: reminder.case_id } : {}),
+      ...(reminder.work_item_id ? { work_item_id: reminder.work_item_id } : {}),
+      ...(reminder.element_id ? { event_id: reminder.element_id } : {}),
+      action_type: "reminder.schedule",
+      action_trace_id: reminder.reminder_id,
+    },
+    ...(retryPolicy ? { retry_policy: retryPolicy } : {}),
+  }, now);
+}
+
+function reminderEffectFail(code: string, message: string, details?: Record<string, unknown>): never {
+  throw Object.assign(new Error(message), { code, retryable: false, details });
+}
+
+function reminderIdFromEffect(record: RuntimeEffectRecord): string {
+  const value = record.payload.reminder_id;
+  if (typeof value !== "string" || !value.trim()) {
+    reminderEffectFail("REMINDER_SCHEDULE_PAYLOAD_INVALID", "reminder.schedule payload.reminder_id is required", { key: "reminder_id" });
+  }
+  if (record.links.action_trace_id && record.links.action_trace_id !== value) {
+    reminderEffectFail("REMINDER_SCHEDULE_LINK_MISMATCH", "reminder.schedule reminder_id does not match action_trace_id", {
+      action_trace_id: record.links.action_trace_id,
+      payload_reminder_id: value,
+    });
+  }
+  return value;
+}
+
+export async function handleReminderScheduleEffect(record: RuntimeEffectRecord): Promise<RuntimeEffectHandlerResult> {
+  if (record.kind !== "reminder.schedule") {
+    reminderEffectFail("RUNTIME_EFFECT_KIND_UNSUPPORTED", `Unsupported reminder runtime effect kind: ${record.kind}`, { kind: record.kind });
+  }
+  const reminderId = reminderIdFromEffect(record);
+  const reminder = await loadReminder(reminderId);
+  if (!reminder) {
+    reminderEffectFail("REMINDER_SCHEDULE_REMINDER_MISSING", `Reminder "${reminderId}" not found`, { reminder_id: reminderId });
+  }
+  if (reminder.status !== "pending") {
+    return {
+      receipt: {
+        data: {
+          reminder_id: reminder.reminder_id,
+          scheduled: false,
+          status: reminder.status,
+          reason: "reminder_not_pending",
+        },
+      },
+    };
+  }
+  await reminderScheduleOutboxHooks.scheduleReminderJob(reminder);
+  return {
+    receipt: {
+      data: {
+        reminder_id: reminder.reminder_id,
+        scheduled: true,
+        scheduled_at: reminder.scheduled_at,
+        channel: reminder.channel,
+      },
+    },
+  };
+}
+
 export async function createReminder(params: {
   type: ReminderType;
   recipient: string;
@@ -167,7 +262,14 @@ export async function createReminder(params: {
     updated_at: now,
   };
   await saveReminder(r);
-  await scheduleReminderJob(r);
+  try {
+    await enqueueReminderScheduleEffect(r);
+  } catch (e) {
+    await deleteReminder(r.reminder_id).catch(err =>
+      log.warn("failed to rollback reminder after schedule effect enqueue failure", { reminder_id: r.reminder_id, error: err?.message }),
+    );
+    throw e;
+  }
   return r;
 }
 
