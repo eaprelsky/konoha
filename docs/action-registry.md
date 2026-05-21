@@ -65,6 +65,7 @@ argument metadata.
 | `workflow.create` | Create new workflow as draft or validated; never deploys runtime triggers | confirm |
 | `workflow.update` | Update existing workflow as draft or validated; demotes executable workflows until redeploy | confirm |
 | `workflow.validate` | Return the canonical graph/runtime/deploy/migration readiness receipt | auto |
+| `workflow.patch` | Apply a server-side schema patch atomically with validation, CAS persistence, conflict guard, and no partial writes | confirm |
 | `workflow.deploy` | Validate, materialize runtime start triggers, record deploy metadata, and mark workflow executable | confirm |
 | `workflow.retire` | Retire workflow from new starts and optionally clean generated runtime artifacts | confirm |
 | `workflow.delete` | Compatibility archive route for `workflow.retire` with default runtime cleanup | confirm |

@@ -138,6 +138,7 @@ export interface WorkflowUpdateOptions {
   lifecycleState?: WorkflowLifecycleState;
   deploy?: WorkflowDeployMetadata;
   needsReview?: boolean;
+  source?: string;
 }
 
 export interface WorkflowArchiveOptions {
@@ -1625,7 +1626,7 @@ function prepareWorkflowUpdate(
   if (opts.draft) {
     return {
       workflow: withLifecycle(normalized, "draft", {
-        validation: validationMetadata([], "workflow.update", "skipped"),
+        validation: validationMetadata([], opts.source ?? "workflow.update", "skipped"),
         clearDeploy: true,
       }),
       errors: [],
@@ -1634,7 +1635,7 @@ function prepareWorkflowUpdate(
   }
 
   const errors = validateWorkflow(normalized);
-  const validation = validationMetadata(errors, opts.lifecycleState === "executable" ? "workflow.deploy" : "workflow.update");
+  const validation = validationMetadata(errors, opts.source ?? (opts.lifecycleState === "executable" ? "workflow.deploy" : "workflow.update"));
   if (errors.length > 0) {
     return { workflow: withLifecycle(normalized, "draft", { validation, clearDeploy: true }), errors, persistable: false };
   }

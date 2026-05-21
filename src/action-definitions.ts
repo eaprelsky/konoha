@@ -52,6 +52,20 @@ export const ACTIONS: ActionDef[] = [
     audited: true,
   },
   {
+    id: "workflow.patch",
+    description: "Apply a server-side workflow schema patch atomically, validate the resulting definition, and persist or reject it as one unit.",
+    scope: "workflow",
+    args: [
+      { name: "id", type: "string", required: true, description: "Workflow ID to patch." },
+      { name: "patch", type: "object", required: true, description: "Schema patch: set_name, add/update/remove elements, add/remove flow, and set_triggers." },
+      { name: "expected_deploy_version", type: "number", required: false, description: "Optional deploy-version guard for conflict detection." },
+      { name: "idempotency_key", type: "string", required: false, description: "Optional caller request key echoed in the patch receipt." },
+    ],
+    implementation: { kind: "direct", note: "Uses the atomic workflow patch service and CAS persistence boundary." },
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
     id: "workflow.deploy",
     description: "Validate and deploy a workflow definition, materializing runtime start triggers and marking it executable when readiness passes.",
     scope: "workflow",

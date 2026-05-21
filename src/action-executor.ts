@@ -68,6 +68,7 @@ import {
 } from "./retention/report";
 import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "./retention/runtime-cleanup";
 import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
+import { applyWorkflowPatch } from "./workflow-patch-service";
 
 export interface ActionExecution {
   status: number;
@@ -366,6 +367,19 @@ async function executeWorkflowValidate(args: Record<string, unknown>): Promise<A
   return { status: 200, data: validation };
 }
 
+async function executeWorkflowPatch(args: Record<string, unknown>): Promise<ActionExecution> {
+  const invalid = validationFailure("workflow.patch", args);
+  if (invalid) return invalid;
+
+  const receipt = await applyWorkflowPatch({
+    workflow_id: String(args.id),
+    patch: args.patch as Record<string, unknown>,
+    expected_deploy_version: args.expected_deploy_version as number | undefined,
+    idempotency_key: args.idempotency_key ? String(args.idempotency_key) : undefined,
+  });
+  return { status: receipt.ok ? 200 : receipt.status, data: receipt };
+}
+
 function workflowNotFound(id: string): ActionExecution {
   return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: id } };
 }
@@ -626,6 +640,8 @@ export async function executeWorkflowAction(
       return executeWorkflowUpdate(args);
     case "workflow.validate":
       return executeWorkflowValidate(args);
+    case "workflow.patch":
+      return executeWorkflowPatch(args);
     case "workflow.deploy":
       return executeWorkflowDeploy(args);
     case "workflow.retire":

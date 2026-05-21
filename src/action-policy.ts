@@ -13,7 +13,7 @@ export interface ActionSecurityPolicy {
 const MUTATION_VERBS = new Set([
   "add", "apply", "create", "update", "delete", "remove", "close", "complete",
   "cancel", "start", "stop", "restart", "register", "set",
-  "deploy", "retire", "validate",
+  "deploy", "retire", "validate", "patch",
   "resolve", "send", "send_message", "invoke", "upsert", "approve", "reject",
   "upsert_user", "remove_user", "add_group", "remove_group",
   "update_status", "update_profile",

@@ -11,6 +11,7 @@ describe("workflow action contract validation", () => {
     const ids = wfActions.map(a => a.id).sort();
     expect(ids).toContain("workflow.create");
     expect(ids).toContain("workflow.update");
+    expect(ids).toContain("workflow.patch");
     expect(ids).toContain("workflow.deploy");
     expect(ids).toContain("workflow.retire");
     expect(ids).toContain("workflow.delete");
@@ -70,6 +71,21 @@ describe("workflow action contract validation", () => {
     expect(missing.errors).toContain("Missing required argument: id");
 
     const valid = validateActionArgs("workflow.validate", { id: "wf-123" });
+    expect(valid.valid).toBe(true);
+  });
+
+  it("workflow.patch requires id and patch contract", () => {
+    const missing = validateActionArgs("workflow.patch", {});
+    expect(missing.valid).toBe(false);
+    expect(missing.errors).toContain("Missing required argument: id");
+    expect(missing.errors).toContain("Missing required argument: patch");
+
+    const valid = validateActionArgs("workflow.patch", {
+      id: "wf-123",
+      patch: { add_flow: [["start", "done"]] },
+      expected_deploy_version: 1,
+      idempotency_key: "request-1",
+    });
     expect(valid.valid).toBe(true);
   });
 

@@ -22,6 +22,13 @@ longer the same operation as deploying it for runtime execution.
   start gates: `errors[]`, `warnings[]`, `readiness`, stable issue `code`
   values, and gate flags for deployment, case start, release, and reviewer
   review.
+- `workflow.patch` is the durable server-side constructor edit boundary for
+  schema patches. It applies element, flow, trigger, name, and description
+  mutations through the same atomic workflow CAS boundary, validates the full
+  resulting workflow, and either persists the complete patch or rejects it
+  without partial writes. Patching an executable workflow demotes the editable
+  definition to `validated`; deployed runtime snapshots already bound to
+  running cases are not changed.
 - `GET /workflows/:id/validation?source=workflow.deploy` exposes the same
   canonical receipt for browser diagnostics and operator tooling. Clients must
   consume the structured receipt fields instead of parsing human messages.
