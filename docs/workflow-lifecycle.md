@@ -137,6 +137,11 @@ existing retire actor metadata.
 The process editor shows the current lifecycle state. A saved draft or validated
 workflow is not presented as executable; the operator must run Deploy before
 starting new cases.
+ProcessEditor, the process tree, and run controls use the backend
+`lifecycle_state` contract directly. The Run control calls `case.start` only
+for `lifecycle_state: "executable"` and does not expose `admin_override`; for
+`draft`, `validated`, `deployed`, or `retired` workflows it stays disabled with
+the same `WORKFLOW_NOT_EXECUTABLE` reason used by the backend gate.
 
 Authorization, confirmation, audit, token handling, and admin recovery controls
 for workflow construction and runtime operations are defined in

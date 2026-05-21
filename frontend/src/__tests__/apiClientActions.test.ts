@@ -19,9 +19,8 @@ function lastAction(fetchMock: ReturnType<typeof vi.fn>) {
 }
 
 async function loadApi(): Promise<ApiClient> {
-  // Bun's vitest shim keeps vi.mock() state across test files; a query suffix
-  // forces this test to import the real API client instead of a sibling mock.
-  const mod = await import(`../api/client.ts?apiClientActions=${Date.now()}-${Math.random()}`);
+  vi.resetModules();
+  const mod = await import('../api/client');
   return mod.api as ApiClient;
 }
 
@@ -36,6 +35,7 @@ describe('api client action mutations', () => {
     ['workflow.delete', (api: ApiClient) => api.workflows.delete('wf')],
     ['workitem.create', (api: ApiClient) => api.workitems.create({ label: 'Task', assignee: 'operator' })],
     ['workitem.complete', (api: ApiClient) => api.workitems.complete('wi-1')],
+    ['case.start', (api: ApiClient) => api.cases.start({ process_id: 'wf', subject: 'Manual run', payload: {} })],
     ['case.close', (api: ApiClient) => api.cases.close('case-1')],
     ['agent.start', (api: ApiClient) => api.agents.start('agent-1')],
     ['agent.stop', (api: ApiClient) => api.agents.stop('agent-1')],

@@ -98,6 +98,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
       roles: s.roles,
       docs: s.docs,
       adapters: s.adapters,
+      lifecycleState: s.currentLifecycle.state,
     });
 
     Inspector.setOperatorState(operatorState);
@@ -116,6 +117,7 @@ export function ProcessEditor({ initialId }: { initialId?: string }) {
     s.multiSelected, s.hoveredEl, s.connectFrom, s.editingId, s.gatewayPickerId, s.mode,
     s.breadcrumb, s.viewingVersion, s.panX, s.panY, s.zoom, s.saving, s.autosavePending,
     s.draftWarning, s.triggerResolving, s.undoStack, s.redoStack, s.roles, s.docs, s.adapters,
+    s.currentLifecycle.state,
   ]);
 
   // Sync selected element to Inspector

@@ -4,6 +4,7 @@
  */
 import type { useProcessEditor } from './useProcessEditor';
 import { VersionSelector } from './VersionSelector';
+import { workflowLifecycleView } from '../workflowLifecycle';
 
 interface Props {
   s: ReturnType<typeof useProcessEditor>;
@@ -13,9 +14,8 @@ interface Props {
 }
 
 export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Props) {
-  const workflow = s.workflows.find(w => w.id === s.wfId);
-  const lifecycle = workflow?.lifecycle_state ?? workflow?.status ?? (s.wfId ? 'draft' : '');
-  const runnable = lifecycle === 'executable';
+  const lifecycle = s.currentLifecycle ?? workflowLifecycleView(s.currentWorkflow);
+  const runnable = lifecycle.canStartCase;
 
   return (
     <div className="ipe-bar">
@@ -48,18 +48,10 @@ export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Pro
       <div className="sep" />
       {s.wfId && (
         <span
-          title={runnable ? 'Процесс развёрнут и доступен для запуска' : 'Процесс не исполняемый: сохраните, провалидируйте и выполните deploy перед запуском'}
-          style={{
-            fontSize: 11,
-            color: runnable ? '#86efac' : '#fbbf24',
-            background: runnable ? '#052e16' : '#1c1408',
-            border: `1px solid ${runnable ? '#166534' : '#78350f'}`,
-            borderRadius: 4,
-            padding: '3px 8px',
-            flexShrink: 0,
-          }}
+          className={`workflow-lifecycle-badge tone-${lifecycle.tone}`}
+          title={lifecycle.runTitle}
         >
-          {lifecycle}
+          {lifecycle.label}
         </span>
       )}
       <div className="sep" />
@@ -86,6 +78,20 @@ export function EditorToolbar({ s, readOnly, setReadOnly, onToggleMobSide }: Pro
           >
             Deploy
           </button>
+          <button
+            title={lifecycle.runTitle}
+            onClick={s.runCurrentWorkflow}
+            disabled={s.saving || !s.wfId.trim() || !runnable}
+            aria-disabled={s.saving || !s.wfId.trim() || !runnable}
+            style={{ padding: '5px 10px', fontWeight: 600 }}
+          >
+            Run
+          </button>
+          {s.wfId && !runnable && (
+            <span className="run-disabled-hint" title={lifecycle.runBlockedReason}>
+              запуск заблокирован: {lifecycle.label}
+            </span>
+          )}
         </>
       )}
 

@@ -1,5 +1,6 @@
 import type { DocTemplate, RoleDef, WorkflowElement } from './api/types';
 import type { Pos } from './pages/ArrowRouter';
+import { workflowLifecycleView, type WorkflowLifecycleState } from './workflowLifecycle';
 
 export const OPERATOR_STATE_VERSION = 'konoha.operator_state/v1';
 
@@ -42,6 +43,8 @@ export interface OperatorStateWorkflowEdge {
 export interface OperatorStateWorkflow {
   id: string;
   name: string;
+  lifecycle_state: WorkflowLifecycleState;
+  runnable: boolean;
   is_known: boolean;
   viewing_version: string | null;
   breadcrumb: Array<{ id: string; name: string }>;
@@ -151,6 +154,7 @@ export interface BuildProcessEditorOperatorStateInput {
   roles: RoleDef[];
   docs: DocTemplate[];
   adapters: string[];
+  lifecycleState?: WorkflowLifecycleState;
 }
 
 function uniqueSelectedIds(selected: string | null, multiSelected: string[]): string[] {
@@ -165,8 +169,20 @@ function buildAffordanceActions(input: BuildProcessEditorOperatorStateInput, sel
     .filter(Boolean) as WorkflowElement[];
   const hasLockedSelection = selectedElements.some((el) => el.locked);
   const selectedEvent = primarySelected?.type === 'event' ? primarySelected : null;
+  const lifecycle = workflowLifecycleView({ lifecycle_state: input.lifecycleState ?? 'draft' });
 
   const actions: OperatorAffordanceDescriptor[] = [
+    {
+      id: 'case.start.current',
+      action_id: 'case.start',
+      scope: 'workflow',
+      label: 'Start workflow run',
+      description: 'Create a new case from the current workflow through the backend case.start gate.',
+      availability: input.wfId && lifecycle.canStartCase ? 'available' : 'unavailable',
+      ...(input.wfId && lifecycle.canStartCase
+        ? { suggested_args: { process_id: input.wfId, subject: `${input.wfName || input.wfId} — manual run`, payload: {} } }
+        : { reason: input.wfId ? lifecycle.runBlockedReason : 'No workflow is loaded.' }),
+    },
     {
       id: 'workflow.get.current',
       action_id: 'workflow.get',
@@ -274,6 +290,7 @@ export function buildProcessEditorOperatorState(
 ): OperatorStateEnvelope {
   const selectedIds = uniqueSelectedIds(input.selected, input.multiSelected);
   const hasLocalChanges = input.undoDepth > 0 || input.autosavePending || input.saving;
+  const lifecycle = workflowLifecycleView({ lifecycle_state: input.lifecycleState ?? 'draft' });
   const affordanceActions = buildAffordanceActions(input, selectedIds);
 
   return {
@@ -297,6 +314,8 @@ export function buildProcessEditorOperatorState(
           workflow: {
             id: input.wfId,
             name: input.wfName || input.wfId,
+            lifecycle_state: lifecycle.state,
+            runnable: lifecycle.canStartCase,
             is_known: input.isKnown,
             viewing_version: input.viewingVersion,
             breadcrumb: input.breadcrumb,

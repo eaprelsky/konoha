@@ -12,6 +12,7 @@ import { DEFAULT_LABELS } from './ElementShape';
 import { applyPatchToState } from './applyPatchHelper';
 import { filterOperatorWorkflows, useOperatorViewMode } from '../utils/operatorView';
 import { workflowMatchesSearch } from './processSearch';
+import { workflowLifecycleView } from '../workflowLifecycle';
 
 export type Mode = 'select' | 'connect';
 
@@ -720,6 +721,27 @@ export function useProcessEditor(readOnly = false) {
     }
   }
 
+  async function runCurrentWorkflow(): Promise<boolean> {
+    const workflow = workflows.find(w => w.id === wfId.trim());
+    const lifecycle = workflowLifecycleView(workflow);
+    if (!wfId.trim() || !lifecycle.canStartCase) {
+      setError(lifecycle.runBlockedReason ?? 'Процесс недоступен для запуска');
+      return false;
+    }
+    const subject = window.prompt('Тема нового прогона', `${wfName || wfId} — manual run`);
+    if (!subject?.trim()) return false;
+    setSaving(true); setError(null);
+    try {
+      await api.cases.start({ process_id: wfId.trim(), subject: subject.trim(), payload: {} });
+      return true;
+    } catch (err: any) {
+      setError(err.message);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // Keep saveRef current
   saveRef.current = save;
   panXRef.current = panX; panYRef.current = panY; zoomRef.current = zoom;
@@ -777,6 +799,8 @@ export function useProcessEditor(readOnly = false) {
     ? operatorWorkflows.filter(w => workflowMatchesSearch(w, sideSearch))
     : operatorWorkflows;
   const isKnown = workflows.some(w => w.id === wfId.trim());
+  const currentWorkflow = workflows.find(w => w.id === wfId.trim()) ?? null;
+  const currentLifecycle = workflowLifecycleView(currentWorkflow ?? (wfId.trim() ? { lifecycle_state: 'draft' as const } : null));
 
   function buildTree(wfs: Workflow[]): WfNode[] {
     const map = new Map<string, WfNode>(wfs.map(w => [w.id, { ...w, children: [] }]));
@@ -803,6 +827,7 @@ export function useProcessEditor(readOnly = false) {
     // ui
     error, saving, draftWarning, autosavePending,
     workflows, operatorWorkflows, hiddenWorkflowCount, showHiddenArtifacts, setShowHiddenArtifacts,
+    currentWorkflow, currentLifecycle,
     sideW, versions, viewingVersion, setViewingVersion,
     roles, docs, adapters, wsFiles, breadcrumb,
     showChat, setShowChat, picker, setPicker,
@@ -821,7 +846,7 @@ export function useProcessEditor(readOnly = false) {
     zoomIn, zoomOut, zoomReset, zoomFit,
     refreshList, newProcess, startCreatingNew, commitNewProc,
     startRename, commitRename, dupWorkflow, delWorkflow,
-    loadWorkflow, drillDown, toggleMining, applyTsunadePatch, deployWorkflow,
+    loadWorkflow, drillDown, toggleMining, applyTsunadePatch, deployWorkflow, runCurrentWorkflow,
     addElement, paletteClick, pickFromRegistry, deleteElement, updateElement, removeEdge, applyPatch,
     switchMode, scheduleAutosave, syncEntityOnEdit,
     onResizeMouseDown,

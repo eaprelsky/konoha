@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect } from 'react';
 import type { Workflow } from '../api/types';
 import type { WfNode } from './useProcessEditor';
 import { workflowDisplayName, workflowTitle } from './processSearch';
+import { workflowLifecycleView } from '../workflowLifecycle';
 
 interface CtxMenu {
   x: number;
@@ -79,9 +80,18 @@ export function ProcessTree({
   function renderWorkflowLabel(wf: Workflow) {
     const label = workflowDisplayName(wf);
     const showId = Boolean(wf.name && wf.name !== wf.id);
+    const lifecycle = workflowLifecycleView(wf);
     return (
       <span className="proc-item-text">
-        <span className="proc-item-name">{label}</span>
+        <span className="proc-item-name-row">
+          <span className="proc-item-name">{label}</span>
+          <span
+            className={`proc-lifecycle-badge tone-${lifecycle.tone}`}
+            title={lifecycle.runTitle}
+          >
+            {lifecycle.label}
+          </span>
+        </span>
         {showId && <span className="proc-item-id">{wf.id}</span>}
       </span>
     );

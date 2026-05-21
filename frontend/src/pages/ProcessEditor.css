@@ -3,10 +3,17 @@
   .ipe-bar .sep { width:1px; height:22px; background:#475569; flex-shrink:0; }
   .ipe-bar button { padding:5px 12px; border:1px solid #475569; background:#334155; color:white; border-radius:4px; cursor:pointer; font-size:12px; font-weight:500; white-space:nowrap; }
   .ipe-bar button:hover { background:#475569; }
+  .ipe-bar button:disabled { opacity:.45; cursor:not-allowed; }
+  .ipe-bar button:disabled:hover { background:#334155; }
   .ipe-bar button.active { background:#6366f1; border-color:#6366f1; }
   .ipe-bar button.btn-save { background:#16a34a; border-color:#16a34a; }
   .ipe-bar button.btn-save:hover { background:#15803d; }
   .ipe-bar .hint { font-size:11px; color:#fbbf24; }
+  .workflow-lifecycle-badge { font-size:11px; border-radius:4px; padding:3px 8px; flex-shrink:0; border:1px solid #475569; background:#0f172a; color:#cbd5e1; }
+  .workflow-lifecycle-badge.tone-success { color:#86efac; background:#052e16; border-color:#166534; }
+  .workflow-lifecycle-badge.tone-warning { color:#fbbf24; background:#1c1408; border-color:#78350f; }
+  .workflow-lifecycle-badge.tone-danger { color:#fca5a5; background:#450a0a; border-color:#991b1b; }
+  .run-disabled-hint { font-size:11px; color:#fbbf24; background:#1c1408; border:1px solid #78350f; border-radius:4px; padding:3px 8px; flex-shrink:0; }
   .ipe-body { display:flex; flex:1; overflow:hidden; }
   .ipe-side { flex-shrink:0; background:white; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:14px; min-width:160px; max-width:480px; }
   .ipe-side h3 { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; margin:0 0 6px; letter-spacing:.05em; }
@@ -34,8 +41,13 @@
   .proc-item:hover { background:#eff6ff; border-color:#bfdbfe; }
   .proc-item.active { background:#eff6ff; border-color:#6366f1; font-weight:600; }
   .proc-item-text { flex:1; min-width:0; display:flex; flex-direction:column; line-height:1.2; }
+  .proc-item-name-row { display:flex; align-items:center; gap:6px; min-width:0; }
   .proc-item-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .proc-item-id { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#64748b; font-family:monospace; font-size:10px; font-weight:400; }
+  .proc-lifecycle-badge { flex-shrink:0; border-radius:4px; padding:1px 5px; font-size:9px; font-weight:700; line-height:1.4; border:1px solid #cbd5e1; color:#475569; background:#f8fafc; }
+  .proc-lifecycle-badge.tone-success { color:#166534; background:#dcfce7; border-color:#86efac; }
+  .proc-lifecycle-badge.tone-warning { color:#92400e; background:#fef3c7; border-color:#fbbf24; }
+  .proc-lifecycle-badge.tone-danger { color:#991b1b; background:#fee2e2; border-color:#fca5a5; }
   .proc-row-acts { display:none; gap:2px; }
   .proc-item:hover .proc-row-acts { display:flex; }
   .proc-row-acts button { padding:1px 4px; font-size:11px; border:1px solid #ddd; background:white; border-radius:3px; cursor:pointer; line-height:1.4; }

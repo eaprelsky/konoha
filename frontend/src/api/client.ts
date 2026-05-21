@@ -207,6 +207,8 @@ export const api = {
     get: (id: string) => apiFetch<Case>(`${BASE}/cases/${id}`),
     close: (id: string) =>
       actMutation<Case>('case.close', { id }, [`${BASE}/cases`, `${BASE}/workitems`]),
+    start: (params: { process_id: string; subject: string; payload?: Record<string, unknown>; start_node?: string }) =>
+      actMutation<Case>('case.start', params, [`${BASE}/cases`, `${BASE}/workitems`]),
   },
 
   /** Alias for cases — use "прогон" terminology in new UI */
