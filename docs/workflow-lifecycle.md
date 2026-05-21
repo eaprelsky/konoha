@@ -18,6 +18,10 @@ longer the same operation as deploying it for runtime execution.
 - `workflow.create` with `draft=true` stores `draft` and records skipped validation metadata.
 - `workflow.create` without `draft=true` validates and stores `validated`.
 - `workflow.update` stores `draft` or `validated` and clears old deploy metadata; editing an executable workflow requires a new deploy before it can start new cases.
+- `workflow.validate` returns the canonical readiness receipt used by deploy and
+  start gates: `errors[]`, `warnings[]`, `readiness`, stable issue `code`
+  values, and gate flags for deployment, case start, release, and reviewer
+  review.
 - `workflow.deploy` validates the current definition, resolves runtime start triggers, materializes start-event subscriptions, records deploy metadata, and marks the workflow `executable` when readiness passes.
 - Messenger-driven start triggers must include an activation policy covering
   deduplication, throttling/backpressure, and inspectable suppressions; invalid
@@ -34,7 +38,10 @@ Workflow records persist:
 ## Start Gate
 
 `case.start` rejects every workflow whose `lifecycle_state` is not
-`executable`. The rejection is structured:
+`executable`. Executable workflows are rechecked with the same readiness
+contract before a case is created, so runtime drift such as a now-empty
+non-manual role blocks new starts instead of silently creating work that cannot
+be handled. The lifecycle rejection is structured:
 
 ```json
 {
@@ -49,6 +56,10 @@ Workflow records persist:
 
 Tests and migrations may pass `admin_override=true` explicitly. Product and
 assistant paths should use `workflow.deploy` instead.
+
+Readiness failures use `code: "WORKFLOW_READINESS_BLOCKED"` and include the
+full validation receipt. `workflow.deploy` uses `code:
+"WORKFLOW_VALIDATION_BLOCKED"` for the same blocking receipt.
 
 ## Operator Contract
 

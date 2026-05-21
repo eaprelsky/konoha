@@ -41,6 +41,17 @@ export const ACTIONS: ActionDef[] = [
     audited: true,
   },
   {
+    id: "workflow.validate",
+    description: "Return the canonical workflow validation receipt with graph, runtime, deployment, and migration readiness errors and warnings.",
+    scope: "workflow",
+    args: [
+      { name: "id", type: "string", required: true, description: "Workflow ID to validate." },
+    ],
+    implementation: { kind: "direct", note: "Builds the same readiness receipt used by workflow.deploy and case.start gates." },
+    autonomy: "auto",
+    audited: true,
+  },
+  {
     id: "workflow.deploy",
     description: "Validate and deploy a workflow definition, materializing runtime start triggers and marking it executable when readiness passes.",
     scope: "workflow",

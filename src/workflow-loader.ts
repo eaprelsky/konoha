@@ -140,6 +140,43 @@ export interface ValidationError {
   message: string;
 }
 
+export type WorkflowValidationClass = "graph" | "runtime" | "deployment" | "migration";
+export type WorkflowValidationSeverity = "error" | "warning";
+export type WorkflowReadiness = "ready" | "warning" | "blocked";
+
+export interface WorkflowValidationIssue {
+  code: string;
+  severity: WorkflowValidationSeverity;
+  class: WorkflowValidationClass;
+  message: string;
+  element_id?: string;
+  edge?: FlowEdge;
+  details?: Record<string, unknown>;
+}
+
+export interface WorkflowValidationContext {
+  roles?: { role_id: string; assignees?: string[]; strategy?: string }[];
+  documents?: { doc_id: string }[];
+  adapters?: string[];
+  running_case_count?: number;
+  source?: string;
+}
+
+export interface WorkflowValidationReceipt {
+  workflow_id: string;
+  readiness: WorkflowReadiness;
+  source: string;
+  errors: WorkflowValidationIssue[];
+  warnings: WorkflowValidationIssue[];
+  checked_at: string;
+  gates: {
+    deployment_blocker: boolean;
+    case_start_blocker: boolean;
+    release_blocker: boolean;
+    reviewer_required: boolean;
+  };
+}
+
 const WORKFLOW_KEY_PREFIX = "workflow:";
 export const WORKFLOW_INDEX_KEY = "konoha:workflow:index";
 const WORKFLOW_LIFECYCLE_STATES = new Set<WorkflowLifecycleState>([
@@ -358,6 +395,283 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationError[] {
   }
 
   return errors;
+}
+
+function validationIssue(
+  code: string,
+  severity: WorkflowValidationSeverity,
+  issueClass: WorkflowValidationClass,
+  message: string,
+  extras: Partial<Pick<WorkflowValidationIssue, "element_id" | "edge" | "details">> = {},
+): WorkflowValidationIssue {
+  return { code, severity, class: issueClass, message, ...extras };
+}
+
+function edgeFrom(edge: FlowEdge): string {
+  return edge[0];
+}
+
+function edgeTo(edge: FlowEdge): string {
+  return edge[1];
+}
+
+function edgeCondition(edge: FlowEdge): string | undefined {
+  return edge.length > 2 ? edge[2] : undefined;
+}
+
+function isValidGatewayCondition(condition: string): boolean {
+  if (!condition.trim()) return false;
+  try {
+    new Function("payload", `"use strict"; return Boolean(${condition});`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function legacyValidationCode(error: ValidationError): string {
+  if (error.rule === 1 && error.message.includes("start")) return "GRAPH_NO_START_EVENT";
+  if (error.rule === 1 && error.message.includes("end")) return "GRAPH_NO_TERMINAL_EVENT";
+  if (error.rule === 2) return "GRAPH_ALTERNATION_VIOLATION";
+  if (error.rule === 3) return "GRAPH_METADATA_SCOPE_VIOLATION";
+  if (error.rule === 4) return "GRAPH_GATEWAY_CONNECTIVITY_INVALID";
+  if (error.rule === 5) return "RUNTIME_MISSING_ROLE";
+  if (error.rule === 7) return "DEPLOYMENT_ACTIVATION_POLICY_INVALID";
+  return `GRAPH_EEPC_RULE_${error.rule}`;
+}
+
+export function validateWorkflowReadiness(
+  def: WorkflowDefinition,
+  context: WorkflowValidationContext = {},
+): WorkflowValidationReceipt {
+  const issues: WorkflowValidationIssue[] = [];
+  const elements = def.elements ?? [];
+  const flow = def.flow ?? [];
+  const byId = new Map(elements.map(element => [element.id, element]));
+  const outEdges = new Map<string, FlowEdge[]>();
+  const inEdges = new Map<string, FlowEdge[]>();
+  for (const element of elements) {
+    outEdges.set(element.id, []);
+    inEdges.set(element.id, []);
+  }
+
+  for (const edge of flow) {
+    const from = edgeFrom(edge);
+    const to = edgeTo(edge);
+    const fromElement = byId.get(from);
+    const toElement = byId.get(to);
+    if (!fromElement || !toElement) {
+      issues.push(validationIssue(
+        "GRAPH_INVALID_EDGE_ENDPOINT",
+        "error",
+        "graph",
+        `Flow edge ${from} -> ${to} references a missing element`,
+        { edge, details: { missing: [!fromElement ? from : undefined, !toElement ? to : undefined].filter(Boolean) } },
+      ));
+      continue;
+    }
+    outEdges.get(from)?.push(edge);
+    inEdges.get(to)?.push(edge);
+  }
+
+  const flowElements = elements.filter(element => element.type === "event" || element.type === "function" || element.type === "gateway");
+  const startEvents = flowElements.filter(element => element.type === "event" && (inEdges.get(element.id)?.length ?? 0) === 0);
+  const terminalEvents = flowElements.filter(element => element.type === "event" && (outEdges.get(element.id)?.length ?? 0) === 0);
+
+  if (startEvents.length === 0) {
+    issues.push(validationIssue(
+      "GRAPH_NO_START_EVENT",
+      "error",
+      "graph",
+      "Workflow must have at least one start event",
+    ));
+  }
+  if (terminalEvents.length === 0) {
+    issues.push(validationIssue(
+      "GRAPH_NO_TERMINAL_EVENT",
+      "error",
+      "graph",
+      "Workflow must have at least one terminal event",
+    ));
+  }
+
+  for (const error of validateWorkflow(def)) {
+    issues.push(validationIssue(
+      legacyValidationCode(error),
+      "error",
+      error.rule === 5 ? "runtime" : error.rule === 7 ? "deployment" : "graph",
+      error.message,
+      { details: { rule: error.rule } },
+    ));
+  }
+
+  if (startEvents.length > 0) {
+    const reachable = new Set<string>();
+    const stack = startEvents.map(element => element.id);
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (reachable.has(id)) continue;
+      reachable.add(id);
+      for (const edge of outEdges.get(id) ?? []) stack.push(edgeTo(edge));
+    }
+    for (const element of flowElements) {
+      if (!reachable.has(element.id)) {
+        issues.push(validationIssue(
+          "GRAPH_UNREACHABLE_ELEMENT",
+          "error",
+          "graph",
+          `Element "${element.id}" is not reachable from any start event`,
+          { element_id: element.id },
+        ));
+      }
+    }
+  }
+
+  for (const element of elements) {
+    if (element.type !== "gateway") continue;
+    for (const edge of outEdges.get(element.id) ?? []) {
+      const condition = edgeCondition(edge);
+      if (condition !== undefined && !isValidGatewayCondition(condition)) {
+        issues.push(validationIssue(
+          "GRAPH_INVALID_GATEWAY_CONDITION",
+          "error",
+          "graph",
+          `Gateway "${element.id}" has an invalid outgoing condition`,
+          { element_id: element.id, edge, details: { condition } },
+        ));
+      }
+    }
+  }
+
+  const rolesById = new Map((context.roles ?? []).map(role => [role.role_id, role]));
+  const roleContextProvided = context.roles !== undefined;
+  const seededDocIds = new Set((def.documents ?? []).map(doc => doc.doc_id));
+  const knownDocIds = new Set([...(context.documents ?? []).map(doc => doc.doc_id), ...seededDocIds]);
+  const adapterNames = new Set(context.adapters ?? []);
+  const adapterContextProvided = context.adapters !== undefined;
+  const supportedTriggers = new Set(["timer", "message", "condition", "delay_after", "system", "manual"]);
+  const terminalEventIds = new Set(terminalEvents.map(element => element.id));
+  const startEventIds = new Set(startEvents.map(element => element.id));
+
+  for (const element of elements) {
+    if (element.type === "function") {
+      if (element.role && roleContextProvided) {
+        const role = rolesById.get(element.role);
+        if (!role) {
+          issues.push(validationIssue(
+            "RUNTIME_MISSING_ROLE",
+            "error",
+            "runtime",
+            `Function "${element.id}" references missing role "${element.role}"`,
+            { element_id: element.id, details: { role: element.role } },
+          ));
+        } else if (role.strategy !== "manual" && (role.assignees ?? []).length === 0) {
+          issues.push(validationIssue(
+            "RUNTIME_MISSING_ROLE_ASSIGNEE",
+            "error",
+            "runtime",
+            `Role "${element.role}" has no assignees and is not manual`,
+            { element_id: element.id, details: { role: element.role, strategy: role.strategy } },
+          ));
+        }
+      }
+
+      for (const docId of element.documents ?? []) {
+        if (!knownDocIds.has(docId)) {
+          issues.push(validationIssue(
+            "RUNTIME_MISSING_DOCUMENT",
+            "error",
+            "runtime",
+            `Function "${element.id}" references missing document "${docId}"`,
+            { element_id: element.id, details: { document: docId } },
+          ));
+        }
+      }
+
+      const systems = [
+        ...(element.system ? [{ connector: element.system }] : []),
+        ...(element.systems ?? []),
+      ];
+      for (const system of systems) {
+        if (adapterContextProvided && !adapterNames.has(system.connector)) {
+          issues.push(validationIssue(
+            "RUNTIME_MISSING_ADAPTER",
+            "error",
+            "runtime",
+            `Function "${element.id}" references missing adapter "${system.connector}"`,
+            { element_id: element.id, details: { connector: system.connector, operation: system.operation } },
+          ));
+        }
+      }
+    }
+
+    if (element.type === "event" && element.trigger?.kind) {
+      if (element.trigger.kind === "ambiguous") {
+        issues.push(validationIssue(
+          "DEPLOYMENT_AMBIGUOUS_TRIGGER",
+          "error",
+          "deployment",
+          `Event "${element.id}" trigger is ambiguous and requires manual override`,
+          { element_id: element.id },
+        ));
+      } else if (!supportedTriggers.has(element.trigger.kind)) {
+        issues.push(validationIssue(
+          "DEPLOYMENT_UNSUPPORTED_TRIGGER",
+          "error",
+          "deployment",
+          `Event "${element.id}" uses unsupported trigger kind "${element.trigger.kind}"`,
+          { element_id: element.id, details: { kind: element.trigger.kind } },
+        ));
+      }
+      if (terminalEventIds.has(element.id) && !startEventIds.has(element.id) && !element.trigger.manual_override) {
+        issues.push(validationIssue(
+          "DEPLOYMENT_TERMINAL_EVENT_HAS_TRIGGER",
+          "error",
+          "deployment",
+          `Terminal event "${element.id}" must not materialize waits or subscriptions`,
+          { element_id: element.id },
+        ));
+      }
+    }
+
+    if (element.type === "event" && startEventIds.has(element.id) && !element.trigger?.kind && !element.trigger?.manual_override) {
+      issues.push(validationIssue(
+        "DEPLOYMENT_START_TRIGGER_UNRESOLVED",
+        "warning",
+        "deployment",
+        `Start event "${element.id}" has no materialized trigger`,
+        { element_id: element.id },
+      ));
+    }
+  }
+
+  if ((context.running_case_count ?? 0) > 0) {
+    issues.push(validationIssue(
+      "MIGRATION_RUNNING_CASES_PRESENT",
+      "warning",
+      "migration",
+      "Workflow has running cases; incompatible schema changes require migration review",
+      { details: { running_case_count: context.running_case_count } },
+    ));
+  }
+
+  const errors = issues.filter(issue => issue.severity === "error");
+  const warnings = issues.filter(issue => issue.severity === "warning");
+  const readiness: WorkflowReadiness = errors.length > 0 ? "blocked" : warnings.length > 0 ? "warning" : "ready";
+  return {
+    workflow_id: def.id,
+    readiness,
+    source: context.source ?? "workflow.validate",
+    errors,
+    warnings,
+    checked_at: nowIso(),
+    gates: {
+      deployment_blocker: errors.some(issue => issue.class === "graph" || issue.class === "runtime" || issue.class === "deployment"),
+      case_start_blocker: errors.some(issue => issue.class === "runtime" || issue.class === "deployment" || issue.code.startsWith("GRAPH_")),
+      release_blocker: errors.length > 0,
+      reviewer_required: warnings.length > 0 || errors.some(issue => issue.class === "migration"),
+    },
+  };
 }
 
 function validateActivationPolicy(policy: WorkflowActivationPolicy, startNode: string): ValidationError[] {

@@ -36,6 +36,7 @@ Main routes:
 - `POST /workflows?draft=true` — create new workflow draft
 - `POST /workflows` — create a validated workflow definition; this does not deploy runtime triggers
 - `PUT /workflows/:id` — update workflow as draft or validated; updates do not imply deployment
+- `/act` with `workflow.validate` — return the canonical validation receipt with blocking `errors[]`, non-blocking `warnings[]`, `readiness`, and stable machine-readable codes for editor/operator display
 - `/act` with `workflow.deploy` — validate, materialize runtime start triggers, and make the workflow executable
 - `DELETE /workflows/:id` — delete workflow
 

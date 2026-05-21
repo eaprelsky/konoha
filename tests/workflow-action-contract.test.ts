@@ -50,6 +50,15 @@ describe("workflow action contract validation", () => {
     expect(valid.valid).toBe(true);
   });
 
+  it("workflow.validate requires id", () => {
+    const missing = validateActionArgs("workflow.validate", {});
+    expect(missing.valid).toBe(false);
+    expect(missing.errors).toContain("Missing required argument: id");
+
+    const valid = validateActionArgs("workflow.validate", { id: "wf-123" });
+    expect(valid.valid).toBe(true);
+  });
+
   it("workflow.delete accepts valid args", () => {
     const result = validateActionArgs("workflow.delete", { id: "wf-123" });
     expect(result.valid).toBe(true);

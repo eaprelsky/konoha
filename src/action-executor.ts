@@ -8,10 +8,12 @@ import {
   getWorkflowLifecycleState,
   isWorkflowExecutable,
   mutateWorkflowAtomically,
+  validateWorkflowReadiness,
   type WorkflowDefinition,
   type WorkflowElement,
   type FlowEdge,
   type WorkflowLifecycleState,
+  type WorkflowValidationReceipt,
 } from "./workflow-loader";
 import { normalizeElementNames } from "./normalizer";
 import { deleteCasesByProcess, createCase, getCase, listCases, forceCloseCase, cancelCase, deleteCase } from "./runtime";
@@ -26,6 +28,7 @@ import {
   deleteWorkItemsByProcess,
 } from "./runtime/work-items";
 import { createRole, deleteRole, listRoles, updateRole, type AssignmentStrategy } from "./runtime/roles";
+import { listDocs } from "./runtime/documents";
 import {
   createReminder,
   deleteReminder,
@@ -64,6 +67,7 @@ import {
   retentionReportForAction,
 } from "./retention/report";
 import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "./retention/runtime-cleanup";
+import { listAdapters } from "./adapters";
 
 export interface ActionExecution {
   status: number;
@@ -267,6 +271,24 @@ async function subscribeStartEvents(def: WorkflowDefinition): Promise<void> {
   }
 }
 
+async function buildWorkflowValidationReceipt(
+  workflow: WorkflowDefinition,
+  source: string,
+): Promise<WorkflowValidationReceipt> {
+  const [roles, documents, runningCases] = await Promise.all([
+    listRoles(),
+    listDocs(),
+    listCases({ process_id: workflow.id, status: "running", limit: 1 }).catch(() => ({ cases: [], total: 0 })),
+  ]);
+  return validateWorkflowReadiness(workflow, {
+    roles,
+    documents,
+    adapters: listAdapters(),
+    running_case_count: runningCases.total,
+    source,
+  });
+}
+
 async function executeWorkflowCreate(args: Record<string, unknown>, opts: WorkflowActionOptions): Promise<ActionExecution> {
   const body = toWorkflowCreateArgs(args, opts);
   const invalid = validationFailure("workflow.create", body);
@@ -276,7 +298,17 @@ async function executeWorkflowCreate(args: Record<string, unknown>, opts: Workfl
   const normalized = await normalizeElementsIfNeeded(body);
 
   const result = await createWorkflow(body as unknown as WorkflowDefinition, { draft });
-  if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
+  if (result.errors.length > 0) {
+    return {
+      status: 422,
+      data: {
+        error: "Validation failed",
+        code: "WORKFLOW_VALIDATION_BLOCKED",
+        validation: await buildWorkflowValidationReceipt(result.workflow, "workflow.create"),
+        details: result.errors,
+      },
+    };
+  }
 
   return { status: 201, data: { ...result.workflow, normalized } };
 }
@@ -295,9 +327,32 @@ async function executeWorkflowUpdate(args: Record<string, unknown>): Promise<Act
 
   const result = await updateWorkflow(id, body as Partial<WorkflowDefinition>, { draft });
   if (result === null) return { status: 404, data: { error: "Workflow not found" } };
-  if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
+  if (result.errors.length > 0) {
+    return {
+      status: 422,
+      data: {
+        error: "Validation failed",
+        code: "WORKFLOW_VALIDATION_BLOCKED",
+        workflow_id: id,
+        validation: await buildWorkflowValidationReceipt(result.workflow, "workflow.update"),
+        details: result.errors,
+      },
+    };
+  }
 
   return { status: 200, data: { ...result.workflow, normalized } };
+}
+
+async function executeWorkflowValidate(args: Record<string, unknown>): Promise<ActionExecution> {
+  const invalid = validationFailure("workflow.validate", args);
+  if (invalid) return invalid;
+
+  const id = String(args.id);
+  const workflow = await getWorkflow(id);
+  if (!workflow) return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: id } };
+
+  const validation = await buildWorkflowValidationReceipt(workflow, "workflow.validate");
+  return { status: 200, data: validation };
 }
 
 async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<ActionExecution> {
@@ -356,6 +411,33 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
         code: "WORKFLOW_DEPLOY_NEEDS_REVIEW",
         process_id: id,
         lifecycle_state: "validated",
+        workflow: { ...result.workflow, normalized },
+      },
+    };
+  }
+
+  const validation = await buildWorkflowValidationReceipt(body, "workflow.deploy");
+  if (validation.errors.length > 0) {
+    const result = await updateWorkflow(id, body, {
+      lifecycleState: "validated",
+      deploy: {
+        status: "blocked",
+        checked_at: validation.checked_at,
+        source: "workflow.deploy",
+        details: validation.errors.map(error => `${error.code}: ${error.message}`),
+      },
+      needsReview: validation.gates.reviewer_required,
+    });
+    if (result === null) return { status: 404, data: { error: "Workflow not found" } };
+    if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
+    return {
+      status: 422,
+      data: {
+        error: "Workflow deploy blocked by validation",
+        code: "WORKFLOW_VALIDATION_BLOCKED",
+        process_id: id,
+        lifecycle_state: "validated",
+        validation,
         workflow: { ...result.workflow, normalized },
       },
     };
@@ -472,6 +554,8 @@ export async function executeWorkflowAction(
       return executeWorkflowCreate(args, opts);
     case "workflow.update":
       return executeWorkflowUpdate(args);
+    case "workflow.validate":
+      return executeWorkflowValidate(args);
     case "workflow.deploy":
       return executeWorkflowDeploy(args);
     case "workflow.delete":
@@ -672,6 +756,21 @@ async function executeCaseAction(action: string, args: Record<string, unknown>):
             admin_override_available: true,
           },
         };
+      }
+      if (args.admin_override !== true) {
+        const validation = await buildWorkflowValidationReceipt(workflow, "case.start");
+        if (validation.errors.length > 0) {
+          return {
+            status: 409,
+            data: {
+              error: "Workflow readiness blocks case start",
+              code: "WORKFLOW_READINESS_BLOCKED",
+              process_id: processId,
+              lifecycle_state: lifecycleState,
+              validation,
+            },
+          };
+        }
       }
       try {
         const kase = await createCase(

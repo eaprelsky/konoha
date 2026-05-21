@@ -49,7 +49,7 @@ runtime behavior and have a contract test if the document is a source of truth.
 | `constructor-editor` | workflow editor, constructor UI, assistant editor UX, schema patch UI | fast-local tier; browser-e2e when UI behavior changes; isolated integration for release | production-smoke only for normal production release or deployed UI change |
 | `workflow-runtime` | cases, dispatcher, gateways, waits, reminders, work items | fast-local and isolated integration tiers | production-smoke and `pg-verify` when persisted runtime entities change |
 | `action-spine-mutation` | action ids, args, security, MCP action bridge, compatibility mutations | `bun run scripts/action-surface-report.ts --check`, `python3 scripts/check-route-auth-policy.py`, focused executor tests | production-smoke only when deployed action affects production runtime |
-| `deployment-subscription` | `workflow.deploy`, triggers, subscriptions, partial deploys | staging smoke dry-run and Action Spine surface check | production-smoke and `pg-verify` |
+| `deployment-subscription` | `workflow.validate`, `workflow.deploy`, triggers, subscriptions, partial deploys | staging smoke dry-run, validation receipt negative cases, and Action Spine surface check | production-smoke and `pg-verify` |
 | `storage-pg-shadow` | Redis state, PG shadow writes, `PG_READ`, factories, retention | M1 storage guardrails and Redis/PG isolation contracts | `pg-verify` and production preflight |
 | `connector-outbox-effects` | Telegram, messenger connectors, outbox, external dispatch | messenger/connector contract tests and Action Spine surface check | Telegram smoke and healthcheck connector profile |
 | `docs-only-exception` | docs, runbooks, architecture policy, machine-readable docs | focused doc contract test and `json.tool` when JSON changes | none unless release notes/tag are created |
@@ -90,6 +90,8 @@ Blockers:
 - Action Spine mutation lacks auth/audit/confirmation evidence;
 - runtime change can route new work, waits, subscriptions, or dispatch effects
   to closed/terminal cases;
+- workflow deploy/start changes do not surface the canonical `workflow.validate`
+  receipt with stable blocking error codes;
 - `pg-verify` reports `onlyInRedis > 0`;
 - tests or staging touch Redis DB `0`, PostgreSQL `public`, or production
   connectors without an accepted destructive/connector waiver;

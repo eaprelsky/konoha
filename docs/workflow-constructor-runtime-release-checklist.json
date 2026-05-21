@@ -102,12 +102,12 @@
     },
     {
       "id": "deployment-subscription",
-      "applies_to": ["workflow.deploy", "runtime subscriptions", "trigger materialization", "partial deploy recovery"],
-      "required_contracts": ["deploy receipt", "subscription ownership", "staging-core smoke"],
-      "portable_ci": ["staging smoke dry-run", "action surface contract"],
+      "applies_to": ["workflow.validate", "workflow.deploy", "runtime subscriptions", "trigger materialization", "partial deploy recovery"],
+      "required_contracts": ["validation receipt", "deploy receipt", "subscription ownership", "staging-core smoke"],
+      "portable_ci": ["staging smoke dry-run", "validation receipt negative cases", "action surface contract"],
       "production_only": ["production-smoke", "pg-verify"],
       "required_artifacts": ["deploy/action receipt", "subscription diff or non-applicability note", "partial-deploy rollback command"],
-      "blockers": ["deploy creates subscriptions for invalid definition", "subscription owner unknown", "partial deploy lacks abort criteria"],
+      "blockers": ["deploy creates subscriptions for invalid definition", "validation receipt lacks stable blocking error codes", "subscription owner unknown", "partial deploy lacks abort criteria"],
       "warnings": ["live staging unavailable with time-boxed waiver"]
     },
     {

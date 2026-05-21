@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { validateWorkflow, type WorkflowDefinition } from "../src/workflow-loader";
+import { validateWorkflow, validateWorkflowReadiness, type WorkflowDefinition } from "../src/workflow-loader";
 import { makeWorkflowDefinition } from "./factories";
 
 describe("workflow-loader validation", () => {
@@ -61,6 +61,145 @@ describe("workflow-loader validation", () => {
 
     const errors = validateWorkflow(def);
     expect(errors.some((error) => error.rule === 5 && error.message.includes("has no role assigned"))).toBe(true);
+  });
+
+  test("returns canonical readiness receipt for valid workflows", () => {
+    const def = makeWorkflowDefinition({
+      elements: [
+        { id: "event_start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "fn_1", type: "function", label: "Review request", role: "Operator" },
+        { id: "event_end", type: "event", label: "Done" },
+      ],
+    });
+
+    const receipt = validateWorkflowReadiness(def, {
+      roles: [{ role_id: "Operator", assignees: ["agent-1"], strategy: "round-robin" }],
+      documents: [],
+      adapters: [],
+    });
+
+    expect(receipt).toMatchObject({
+      workflow_id: def.id,
+      readiness: "ready",
+      errors: [],
+      warnings: [],
+      gates: {
+        deployment_blocker: false,
+        case_start_blocker: false,
+        release_blocker: false,
+        reviewer_required: false,
+      },
+    });
+  });
+
+  test("blocks readiness for missing role assignee", () => {
+    const def = makeWorkflowDefinition();
+    const receipt = validateWorkflowReadiness(def, {
+      roles: [{ role_id: "Operator", assignees: [], strategy: "round-robin" }],
+      documents: [],
+      adapters: [],
+    });
+
+    expect(receipt.readiness).toBe("blocked");
+    expect(receipt.errors.map(error => error.code)).toContain("RUNTIME_MISSING_ROLE_ASSIGNEE");
+  });
+
+  test("blocks readiness for invalid gateway condition", () => {
+    const def = makeWorkflowDefinition({
+      elements: [
+        { id: "event_start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "fn_1", type: "function", label: "Review request", role: "Operator" },
+        { id: "g_decide", type: "gateway", label: "Decide", operator: "XOR" },
+        { id: "event_done", type: "event", label: "Done" },
+        { id: "event_rejected", type: "event", label: "Rejected" },
+      ],
+      flow: [
+        ["event_start", "fn_1"],
+        ["fn_1", "g_decide"],
+        ["g_decide", "event_done", "payload. ==="],
+        ["g_decide", "event_rejected", "payload.approved === false"],
+      ],
+    });
+
+    const receipt = validateWorkflowReadiness(def, {
+      roles: [{ role_id: "Operator", assignees: ["agent-1"], strategy: "round-robin" }],
+      documents: [],
+      adapters: [],
+    });
+
+    expect(receipt.errors.map(error => error.code)).toContain("GRAPH_INVALID_GATEWAY_CONDITION");
+  });
+
+  test("blocks readiness for unsupported trigger", () => {
+    const def = makeWorkflowDefinition({
+      elements: [
+        { id: "event_start", type: "event", label: "Start", trigger: { kind: "webhook" } as any },
+        { id: "fn_1", type: "function", label: "Review request", role: "Operator" },
+        { id: "event_end", type: "event", label: "Done" },
+      ],
+    });
+
+    const receipt = validateWorkflowReadiness(def, {
+      roles: [{ role_id: "Operator", assignees: ["agent-1"], strategy: "round-robin" }],
+      documents: [],
+      adapters: [],
+    });
+
+    expect(receipt.errors.map(error => error.code)).toContain("DEPLOYMENT_UNSUPPORTED_TRIGGER");
+  });
+
+  test("blocks readiness for missing adapter binding", () => {
+    const def = makeWorkflowDefinition({
+      elements: [
+        { id: "event_start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "fn_1", type: "function", label: "Review request", role: "Operator", systems: [{ connector: "missing-adapter", operation: "send" }] },
+        { id: "event_end", type: "event", label: "Done" },
+      ],
+    });
+
+    const receipt = validateWorkflowReadiness(def, {
+      roles: [{ role_id: "Operator", assignees: ["agent-1"], strategy: "round-robin" }],
+      documents: [],
+      adapters: ["telegram"],
+    });
+
+    expect(receipt.errors.map(error => error.code)).toContain("RUNTIME_MISSING_ADAPTER");
+  });
+
+  test("blocks readiness for invalid document references", () => {
+    const def = makeWorkflowDefinition({
+      elements: [
+        { id: "event_start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "fn_1", type: "function", label: "Review request", role: "Operator", documents: ["missing.doc"] },
+        { id: "event_end", type: "event", label: "Done" },
+      ],
+    });
+
+    const receipt = validateWorkflowReadiness(def, {
+      roles: [{ role_id: "Operator", assignees: ["agent-1"], strategy: "round-robin" }],
+      documents: [],
+      adapters: [],
+    });
+
+    expect(receipt.errors.map(error => error.code)).toContain("RUNTIME_MISSING_DOCUMENT");
+  });
+
+  test("blocks readiness for drafts with no start event", () => {
+    const def = makeWorkflowDefinition({
+      elements: [
+        { id: "fn_1", type: "function", label: "Review request", role: "Operator" },
+        { id: "event_end", type: "event", label: "Done" },
+      ],
+      flow: [["fn_1", "event_end"]],
+    });
+
+    const receipt = validateWorkflowReadiness(def, {
+      roles: [{ role_id: "Operator", assignees: ["agent-1"], strategy: "round-robin" }],
+      documents: [],
+      adapters: [],
+    });
+
+    expect(receipt.errors.map(error => error.code)).toContain("GRAPH_NO_START_EVENT");
   });
 });
 
