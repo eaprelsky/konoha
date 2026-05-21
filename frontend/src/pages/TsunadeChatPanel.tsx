@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { WorkflowElement, ProcessMiningData } from '../api/types';
+import type { AssistantEditMode, WorkflowElement, ProcessMiningData } from '../api/types';
 import { api } from '../api/client';
 import type { Pos } from './ArrowRouter';
 import { useHighlight } from '../components/HighlightOverlay';
@@ -14,6 +14,30 @@ export interface SchemaPatch {
   update_positions?: Record<string, Pos>;
   add_elements?: { id?: string; x?: number; y?: number; type?: string; label?: string; [key: string]: unknown }[];
   remove_elements?: string[];
+  add_flow?: [string, string, string?][];
+  remove_flow?: [string, string, string?][];
+}
+
+export interface SchemaPatchPanelDecision {
+  apply: boolean;
+  text: string;
+}
+
+export function schemaPatchPanelDecision(
+  patch: SchemaPatch | undefined,
+  mode: AssistantEditMode | undefined,
+): SchemaPatchPanelDecision | null {
+  if (!patch) return null;
+  if (mode === 'pending_confirmation') {
+    return { apply: false, text: 'Изменение подготовлено и ждёт подтверждения.' };
+  }
+  if (mode === 'failed') {
+    return { apply: false, text: 'Изменение отклонено серверной проверкой. Холст не изменён.' };
+  }
+  if (mode === 'committed') {
+    return { apply: true, text: 'Схема сохранена на сервере.' };
+  }
+  return { apply: true, text: 'Предпросмотр схемы применён локально. Нажмите 💾 для сохранения.' };
 }
 
 export interface TsunadeChatPanelProps {
@@ -129,27 +153,10 @@ export function TsunadeChatPanel({
       if (!chatId) setChatId(res.chat_id);
       setChatMsgs(prev => [...prev, { role: 'assistant', text: res.reply }]);
       const patch = res.schema_patch as SchemaPatch | undefined;
-      if (patch) {
-        const editMode = res.edit_result?.mode ?? 'preview';
-        const failedOrPending = editMode === 'failed' || editMode === 'pending_confirmation';
-        if (!failedOrPending) onApplyPatch(patch);
-        const hasChanges = !failedOrPending && (patch.update_elements?.length || patch.update_positions
-          || patch.add_elements?.length || patch.remove_elements?.length);
-        if (hasChanges) {
-          setChatMsgs(prev => [...prev, {
-            role: 'system',
-            text: editMode === 'committed'
-              ? 'Схема сохранена на сервере.'
-              : 'Предпросмотр схемы применён локально. Нажмите 💾 для сохранения.',
-          }]);
-        } else if (failedOrPending) {
-          setChatMsgs(prev => [...prev, {
-            role: 'system',
-            text: editMode === 'pending_confirmation'
-              ? 'Изменение подготовлено и ждёт подтверждения.'
-              : 'Изменение отклонено серверной проверкой. Холст не изменён.',
-          }]);
-        }
+      const patchDecision = schemaPatchPanelDecision(patch, res.edit_result?.mode);
+      if (patchDecision) {
+        if (patchDecision.apply) onApplyPatch(patch!);
+        setChatMsgs(prev => [...prev, { role: 'system', text: patchDecision.text }]);
       }
       if (Array.isArray(res.pending_confirmations) && res.pending_confirmations.length > 0) {
         const newConfs = res.pending_confirmations.map((item: any) => ({
