@@ -20,6 +20,7 @@ export interface RoleDef {
   assignees: string[];
   strategy: AssignmentStrategy;
   required_capabilities?: string[];
+  origin?: "operator" | "workflow_skeleton";
   created_at: string;
   updated_at: string;
 }
@@ -30,21 +31,32 @@ function isoStr(v: unknown): string {
 }
 
 function pgRowToRole(row: Record<string, unknown>): RoleDef {
+  const description = row.description ? String(row.description) : undefined;
+  const origin = description === "__workflow_skeleton__" ? "workflow_skeleton" : "operator";
   return {
     role_id: String(row.id),
     name: String(row.name ?? ''),
-    description: row.description ? String(row.description) : undefined,
+    description: origin === "workflow_skeleton" ? undefined : description,
     assignees: Array.isArray(row.assignees) ? row.assignees as string[] : [],
     strategy: (row.strategy ?? 'manual') as AssignmentStrategy,
+    origin,
     created_at: isoStr(row.created_at),
     updated_at: isoStr(row.updated_at),
   };
 }
 
 async function saveRole(r: RoleDef): Promise<void> {
-  await redis.set(ROLE_KEY_PREFIX + r.role_id, JSON.stringify(r));
+  const stored: RoleDef = { ...r, origin: r.origin ?? "operator" };
+  await redis.set(ROLE_KEY_PREFIX + stored.role_id, JSON.stringify(stored));
   await redis.zadd(ROLES_IDX_ALL, new Date(r.created_at).getTime(), r.role_id);
-  pgUpsertRole({ id: r.role_id, name: r.name, description: r.description, assignees: r.assignees || [], strategy: r.strategy, updated_at: new Date().toISOString() });
+  pgUpsertRole({
+    id: stored.role_id,
+    name: stored.name,
+    description: stored.origin === "workflow_skeleton" ? "__workflow_skeleton__" : stored.description,
+    assignees: stored.assignees || [],
+    strategy: stored.strategy,
+    updated_at: new Date().toISOString(),
+  });
 }
 
 export async function loadRole(role_id: string): Promise<RoleDef | null> {
@@ -58,7 +70,7 @@ export async function loadRole(role_id: string): Promise<RoleDef | null> {
 
 export async function createRole(params: Omit<RoleDef, "created_at" | "updated_at">): Promise<RoleDef> {
   const now = new Date().toISOString();
-  const r: RoleDef = { ...params, created_at: now, updated_at: now };
+  const r: RoleDef = { ...params, origin: params.origin ?? "operator", created_at: now, updated_at: now };
   await saveRole(r);
   return r;
 }
@@ -79,8 +91,19 @@ export async function updateRole(role_id: string, patch: Partial<Pick<RoleDef, "
   if (patch.name !== undefined)                   r.name = patch.name;
   if (patch.description !== undefined)            r.description = patch.description;
   if (patch.assignees !== undefined)              r.assignees = patch.assignees;
-  if (patch.strategy !== undefined)               r.strategy = patch.strategy;
+  if (patch.strategy !== undefined) {
+    r.strategy = patch.strategy;
+  }
   if (patch.required_capabilities !== undefined)  r.required_capabilities = patch.required_capabilities;
+  if (
+    patch.name !== undefined ||
+    patch.description !== undefined ||
+    patch.assignees !== undefined ||
+    patch.strategy !== undefined ||
+    patch.required_capabilities !== undefined
+  ) {
+    r.origin = "operator";
+  }
   r.updated_at = new Date().toISOString();
   await saveRole(r);
   if (patch.assignees !== undefined) {

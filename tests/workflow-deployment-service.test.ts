@@ -1,8 +1,9 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { executeActionDirect } from "../src/action-executor";
 import { cancelSubscriptionsByProcessAndInstance, createSubscriptionProgrammatic } from "../src/event-manager";
 import { SUBSCRIPTIONS_KEY } from "../src/events/subscriptions";
 import { deleteCasesByProcess } from "../src/runtime";
+import { createRole, deleteRole } from "../src/runtime/roles";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import {
   createWorkflow,
@@ -24,22 +25,23 @@ import { createTestRedis } from "./redis-test-utils";
 const redis = createTestRedis();
 const RUN = `workflow-deploy-service-${Date.now()}`;
 const touched = new Set<string>();
+const REVIEWER_ROLE = `${RUN}-reviewer`;
 
-function workflow(id: string, cron = "*/5 * * * *"): WorkflowDefinition {
+function workflow(id: string, cron = "*/5 * * * *", role = REVIEWER_ROLE): WorkflowDefinition {
   return {
     id,
     version: "1.0.0",
     name: `Deployment service ${id}`,
     elements: [
       { id: "start", type: "event", label: "Start", trigger: { kind: "timer", cron, confidence: 1 } },
-      { id: "task", type: "function", label: "Review", role: "reviewer" },
+      { id: "task", type: "function", label: "Review", role },
       { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
     ],
     flow: [["start", "task"], ["task", "done"]],
   };
 }
 
-function workflowWithTwoStartEvents(id: string): WorkflowDefinition {
+function workflowWithTwoStartEvents(id: string, role = REVIEWER_ROLE): WorkflowDefinition {
   return {
     id,
     version: "1.0.0",
@@ -47,7 +49,7 @@ function workflowWithTwoStartEvents(id: string): WorkflowDefinition {
     elements: [
       { id: "start-a", type: "event", label: "Start A", trigger: { kind: "timer", cron: "*/5 * * * *", confidence: 1 } },
       { id: "start-b", type: "event", label: "Start B", trigger: { kind: "timer", cron: "*/10 * * * *", confidence: 1 } },
-      { id: "task", type: "function", label: "Review", role: "reviewer" },
+      { id: "task", type: "function", label: "Review", role },
       { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
     ],
     flow: [["start-a", "task"], ["start-b", "task"], ["task", "done"]],
@@ -116,8 +118,19 @@ async function cleanupWorkflow(id: string): Promise<void> {
   await pgDeleteWorkflow(id).catch(() => {});
 }
 
+beforeAll(async () => {
+  await createRole({
+    role_id: REVIEWER_ROLE,
+    name: "Deployment reviewer",
+    assignees: [],
+    strategy: "manual",
+    required_capabilities: [],
+  });
+});
+
 afterAll(async () => {
   for (const id of touched) await cleanupWorkflow(id);
+  await deleteRole(REVIEWER_ROLE).catch(() => {});
   redis.disconnect();
 });
 

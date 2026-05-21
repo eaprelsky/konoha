@@ -67,8 +67,11 @@ describe("workflow lifecycle deploy gate", () => {
 
   test("workflow.deploy marks a validated workflow executable and case.start succeeds", async () => {
     const id = `${RUN}-deploy`;
+    const roleId = `${RUN}-deploy-role`;
     touched.add(id);
-    await createWorkflow(workflow(id));
+    touchedRoles.add(roleId);
+    await createRole({ role_id: roleId, name: "Deploy role", assignees: [], strategy: "manual", required_capabilities: [] });
+    await createWorkflow(workflow(id, roleId));
 
     const deployed = await executeActionDirect("workflow.deploy", { id });
     expect(deployed?.status).toBe(200);
@@ -86,8 +89,11 @@ describe("workflow lifecycle deploy gate", () => {
 
   test("workflow.deploy persists lifecycle schema version, deploy version, and deployed_by", async () => {
     const id = `${RUN}-deploy-metadata`;
+    const roleId = `${RUN}-deploy-metadata-role`;
     touched.add(id);
-    await createWorkflow(workflow(id));
+    touchedRoles.add(roleId);
+    await createRole({ role_id: roleId, name: "Deploy metadata role", assignees: [], strategy: "manual", required_capabilities: [] });
+    await createWorkflow(workflow(id, roleId));
 
     const firstDeploy = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
     expect(firstDeploy?.status).toBe(200);

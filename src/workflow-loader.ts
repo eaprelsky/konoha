@@ -221,7 +221,7 @@ export interface WorkflowValidationIssue {
 }
 
 export interface WorkflowValidationContext {
-  roles?: { role_id: string; assignees?: string[]; strategy?: string }[];
+  roles?: { role_id: string; assignees?: string[]; strategy?: string; origin?: string }[];
   documents?: { doc_id: string }[];
   adapters?: string[];
   agents?: { id: string; name?: string; capabilities?: string[]; status?: string }[];
@@ -806,7 +806,7 @@ function roleReadinessIssueForFunction(
   const hasAssigneeResolutionContext = context.agents !== undefined || context.people !== undefined;
   if (!hasRoutingContext) return null;
 
-  if (roleDef) {
+  if (roleDef && roleDef.origin !== "workflow_skeleton") {
     const strategy = roleDef.strategy ?? "manual";
     const assignees = roleDef.assignees ?? [];
     if (assignees.length === 0) {
@@ -838,6 +838,7 @@ function roleReadinessIssueForFunction(
         details: {
           role,
           strategy,
+          origin: roleDef.origin,
           assignees,
           online_agent_ids: agents.filter(isOnlineCapableValidationAgent).map(agent => agent.id).sort(),
         },
@@ -1604,12 +1605,20 @@ export async function updateRoleWorkflowIndex(def: WorkflowDefinition): Promise<
         assignees: [],
         strategy: "manual" as const,
         required_capabilities: [],
+        origin: "workflow_skeleton" as const,
         created_at: now,
         updated_at: now,
       };
       await redis.set(`role:${roleId}`, JSON.stringify(skeleton));
       await redis.zadd("konoha:roles:all", Date.now(), roleId);
-      pgUpsertRole({ id: roleId, name: roleId, description: '', assignees: [], strategy: 'manual', updated_at: skeleton.updated_at });
+      pgUpsertRole({
+        id: roleId,
+        name: roleId,
+        description: "__workflow_skeleton__",
+        assignees: [],
+        strategy: "manual",
+        updated_at: skeleton.updated_at,
+      });
       log.info("Auto-created skeleton role", { role: roleId, workflow: def.id });
     } else {
       // Role key exists — ensure it's in the sorted set (fix orphaned roles, #316)

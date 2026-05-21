@@ -149,7 +149,7 @@ trigger.kind ∈ { "manual", "schedule", "webhook", "telegram", "event", "ambigu
 | Priority | Strategy | Condition |
 |---|---|---|
 | 0 | **System agent** | `isSystemRole(role)` — handled by built-in system-agent (timers, doc gen) |
-| 1 | **RoleDef assignment** | `role:{role_id}` exists and has an assignee that resolves to an online-capable agent or Telegram-reachable person; `strategy: "manual"` with no assignees is the explicit manual queue. |
+| 1 | **RoleDef assignment** | `role:{role_id}` exists and has an assignee that resolves to an online-capable agent or Telegram-reachable person; operator-created `strategy: "manual"` with no assignees is the explicit manual queue. Workflow-loader skeleton roles are placeholders: they neither create a manual queue nor mask direct agent/person/capability resolution. |
 | 2 | **Exact name match** | `agent.id === role \|\| agent.name === role` for an online-capable agent — dispatches directly to the named agent |
 | 3 | **Capability match + load balancing** | `agent.capabilities.includes(role)` — among all matching online agents, picks the one with the fewest in-flight work items |
 | 4 | **Person lookup** | Role matches a person in `/opt/shared/.trusted-users.json` or Redis `people:custom` — sends Telegram message |

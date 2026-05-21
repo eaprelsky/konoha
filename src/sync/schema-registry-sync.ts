@@ -53,6 +53,7 @@ export async function syncSchemaToRegistry(
           description: "",
           assignees: [],
           strategy: "manual",
+          origin: "workflow_skeleton",
         });
         result.roles_created.push(roleId);
         log.info("Auto-created role for workflow", { role: roleId, workflow: def.id });

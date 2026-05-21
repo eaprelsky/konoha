@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { executeActionDirect } from "../src/action-executor";
 import { deleteCasesByProcess } from "../src/runtime";
-import { createRole, deleteRole } from "../src/runtime/roles";
+import { createRole, deleteRole, loadRole } from "../src/runtime/roles";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import { createWorkflow, validateWorkflowReadiness, type WorkflowDefinition } from "../src/workflow-loader";
 import { makeWorkflowDefinition } from "./factories";
@@ -51,6 +51,22 @@ describe("workflow role readiness", () => {
     expect(validateWorkflowReadiness(workflow("manual-review"), {
       roles: [{ role_id: "manual-review", assignees: [], strategy: "manual" }],
       agents: [],
+      people: [],
+    }).errors.filter(error => error.class === "role")).toEqual([]);
+
+    expect(validateWorkflowReadiness(workflow("implicit-manual-review"), {
+      roles: [{ role_id: "implicit-manual-review", assignees: [], strategy: "manual", origin: "workflow_skeleton" }],
+      agents: [],
+      people: [],
+    }).errors).toContainEqual(expect.objectContaining({
+      code: "ROLE_UNRESOLVABLE",
+      class: "role",
+      element_id: "task",
+    }));
+
+    expect(validateWorkflowReadiness(workflow("kakashi"), {
+      roles: [{ role_id: "kakashi", assignees: [], strategy: "manual", origin: "workflow_skeleton" }],
+      agents: [{ id: "kakashi", name: "SDD team lead", capabilities: ["developer"], status: "online" }],
       people: [],
     }).errors.filter(error => error.class === "role")).toEqual([]);
 
@@ -168,6 +184,51 @@ describe("workflow role readiness", () => {
       code: "ROLE_ASSIGNEE_UNRESOLVABLE",
       class: "role",
       element_id: "task",
+    }));
+  });
+
+  test("auto-created skeleton roles do not bypass workflow.deploy role readiness", async () => {
+    const workflowId = `${RUN}-implicit-role-deploy`;
+    const roleId = `${RUN}-implicit-missing-role`;
+    touchedWorkflows.add(workflowId);
+    touchedRoles.add(roleId);
+
+    await createWorkflow(workflow(roleId, {
+      id: workflowId,
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "timer", cron: "*/5 * * * *", confidence: 1 } },
+        { id: "task", type: "function", label: "Review", role: roleId },
+        { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
+      ],
+    }));
+    await expect(loadRole(roleId)).resolves.toMatchObject({
+      role_id: roleId,
+      strategy: "manual",
+      assignees: [],
+      origin: "workflow_skeleton",
+    });
+
+    const deployed = await executeActionDirect("workflow.deploy", { id: workflowId, deployed_by: "operator-1" });
+
+    expect(deployed?.status).toBe(422);
+    expect((deployed?.data as any)).toMatchObject({
+      code: "WORKFLOW_VALIDATION_BLOCKED",
+      process_id: workflowId,
+      validation: {
+        readiness: "blocked",
+        gates: {
+          deployment_blocker: true,
+          case_start_blocker: true,
+        },
+      },
+    });
+    expect((deployed?.data as any).validation.errors).toContainEqual(expect.objectContaining({
+      code: "ROLE_UNRESOLVABLE",
+      class: "role",
+      element_id: "task",
+      details: expect.objectContaining({
+        role: roleId,
+      }),
     }));
   });
 });
