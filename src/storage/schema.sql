@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS workflows (
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
-CREATE INDEX IF NOT EXISTS idx_workflows_lifecycle_state ON workflows(lifecycle_state);
 CREATE INDEX IF NOT EXISTS idx_workflows_parent_id ON workflows(parent_id);
 
 -- Backfill path for pre-#687 databases. Safe to re-run during staging/prod
@@ -44,45 +43,36 @@ ALTER TABLE workflows ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS retired_by TEXT;
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS last_validation JSONB;
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS last_deploy JSONB;
+WITH workflow_lifecycle_backfill AS (
+  SELECT id, CASE
+    WHEN status = 'draft' THEN 'draft'
+    WHEN status = 'needs_review' THEN 'validated'
+    WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
+    WHEN status IN ('validated', 'deployed', 'executable') THEN status
+    WHEN lifecycle_state IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN lifecycle_state
+    ELSE 'executable'
+  END AS canonical_state
+  FROM workflows
+)
 UPDATE workflows
-SET lifecycle_state = CASE
-  WHEN lifecycle_state IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN lifecycle_state
-  WHEN status = 'draft' THEN 'draft'
-  WHEN status = 'needs_review' THEN 'validated'
-  WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
-  ELSE 'executable'
-END,
-status = CASE
-  WHEN status IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN status
-  WHEN status = 'draft' THEN 'draft'
-  WHEN status = 'needs_review' THEN 'validated'
-  WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
-  ELSE 'executable'
-END,
+SET lifecycle_state = workflow_lifecycle_backfill.canonical_state,
+status = workflow_lifecycle_backfill.canonical_state,
 lifecycle = CASE
   WHEN lifecycle = '{}'::jsonb THEN jsonb_build_object(
     'schema_version', 1,
-    'state', CASE
-      WHEN lifecycle_state IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN lifecycle_state
-      WHEN status = 'draft' THEN 'draft'
-      WHEN status = 'needs_review' THEN 'validated'
-      WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
-      ELSE 'executable'
-    END,
-    'status', CASE
-      WHEN lifecycle_state IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN lifecycle_state
-      WHEN status = 'draft' THEN 'draft'
-      WHEN status = 'needs_review' THEN 'validated'
-      WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
-      ELSE 'executable'
-    END,
+    'state', workflow_lifecycle_backfill.canonical_state,
+    'status', workflow_lifecycle_backfill.canonical_state,
     'validation_status', validation_status,
     'deploy_version', deploy_version,
     'migrated_from_status', status,
     'backfilled_at', NOW()
   )
   ELSE lifecycle
-END;
+END
+FROM workflow_lifecycle_backfill
+WHERE workflows.id = workflow_lifecycle_backfill.id;
+
+CREATE INDEX IF NOT EXISTS idx_workflows_lifecycle_state ON workflows(lifecycle_state);
 
 -- ── Workflow snapshots (version history) ─────────────────────────────────────
 

@@ -67,6 +67,36 @@ async function ensureWorkflowLifecycleColumns(sql: ReturnType<typeof postgres>):
   await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS last_validation JSONB`;
   await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS last_deploy JSONB`;
   await sql`CREATE INDEX IF NOT EXISTS idx_workflows_lifecycle_state ON workflows(lifecycle_state)`;
+  await sql`
+    WITH workflow_lifecycle_backfill AS (
+      SELECT id, CASE
+        WHEN status = 'draft' THEN 'draft'
+        WHEN status = 'needs_review' THEN 'validated'
+        WHEN status IN ('archived', 'deleted', 'retired') THEN 'retired'
+        WHEN status IN ('validated', 'deployed', 'executable') THEN status
+        WHEN lifecycle_state IN ('draft', 'validated', 'deployed', 'executable', 'retired') THEN lifecycle_state
+        ELSE 'executable'
+      END AS canonical_state
+      FROM workflows
+    )
+    UPDATE workflows
+    SET lifecycle_state = workflow_lifecycle_backfill.canonical_state,
+        status = workflow_lifecycle_backfill.canonical_state,
+        lifecycle = CASE
+          WHEN lifecycle = '{}'::jsonb THEN jsonb_build_object(
+            'schema_version', 1,
+            'state', workflow_lifecycle_backfill.canonical_state,
+            'status', workflow_lifecycle_backfill.canonical_state,
+            'validation_status', validation_status,
+            'deploy_version', deploy_version,
+            'migrated_from_status', status,
+            'backfilled_at', NOW()
+          )
+          ELSE lifecycle
+        END
+    FROM workflow_lifecycle_backfill
+    WHERE workflows.id = workflow_lifecycle_backfill.id
+  `;
   workflowLifecycleColumnsReady = true;
 }
 
