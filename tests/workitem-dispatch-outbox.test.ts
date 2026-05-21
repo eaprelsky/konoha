@@ -15,11 +15,13 @@ import { makeWorkflowDefinition } from "./factories";
 import { createCase, deleteCasesByProcess } from "../src/runtime";
 import { createWorkflow } from "../src/workflow-loader";
 import { pgDeleteWorkflow } from "../src/storage/pg";
+import { createRole, deleteRole } from "../src/runtime/roles";
 
 const RUN = `workitem-dispatch-outbox-${Date.now()}`;
 
 const calls: DispatchParams[] = [];
 const workflows = new Set<string>();
+const roles = new Set<string>();
 
 function params(overrides: Partial<DispatchParams> = {}): DispatchParams {
   const workflow = makeWorkflowDefinition({
@@ -54,6 +56,17 @@ beforeEach(() => {
       work_item_id: dispatchParams.work_item_id,
       role: dispatchParams.role,
       target_ids: ["reviewer-agent"],
+      target_type: "agent",
+      target_id: "reviewer-agent",
+      strategy: "direct-match",
+      dispatch_status: "queued",
+      targets: [{
+        target_type: "agent",
+        target_id: "reviewer-agent",
+        strategy: "direct-match",
+        status: "queued",
+        route_reason: "direct-match",
+      }],
       route_reason: "direct-match",
     };
   };
@@ -64,6 +77,7 @@ afterAll(async () => {
     await deleteCasesByProcess(id).catch(() => {});
     await pgDeleteWorkflow(id).catch(() => {});
   }));
+  await Promise.all([...roles].map(role => deleteRole(role).catch(() => {})));
 });
 
 describe("work item dispatch outbox", () => {
@@ -123,6 +137,17 @@ describe("work item dispatch outbox", () => {
       dispatch: {
         route: "agent",
         target_ids: ["reviewer-agent"],
+        target_type: "agent",
+        target_id: "reviewer-agent",
+        strategy: "direct-match",
+        dispatch_status: "queued",
+        targets: [{
+          target_type: "agent",
+          target_id: "reviewer-agent",
+          strategy: "direct-match",
+          status: "queued",
+          route_reason: "direct-match",
+        }],
       },
     });
     expect(second.receipt?.data).toMatchObject({
@@ -130,6 +155,10 @@ describe("work item dispatch outbox", () => {
       dispatch: {
         route: "agent",
         target_ids: ["reviewer-agent"],
+        target_type: "agent",
+        target_id: "reviewer-agent",
+        strategy: "direct-match",
+        dispatch_status: "queued",
       },
     });
   });
@@ -187,11 +216,14 @@ describe("work item dispatch outbox", () => {
   });
 
   test("runtime case advancement enqueues dispatch instead of sending immediately", async () => {
+    const roleId = `${RUN}:runtime-reviewer`;
+    roles.add(roleId);
+    await createRole({ role_id: roleId, name: "Runtime reviewer", assignees: [], strategy: "manual" });
     const workflow = makeWorkflowDefinition({
       id: `${RUN}:runtime-workflow`,
       elements: [
         { id: "start", type: "event", label: "Start" },
-        { id: "review", type: "function", label: "Review request", role: "reviewer" },
+        { id: "review", type: "function", label: "Review request", role: roleId },
         { id: "done", type: "event", label: "Done" },
       ],
       flow: [["start", "review"], ["review", "done"]],
@@ -216,7 +248,7 @@ describe("work item dispatch outbox", () => {
         work_item_id: workItemId,
       },
       payload: {
-        role: "reviewer",
+        role: roleId,
         label: "Review request",
         case_id: kase.case_id,
         work_item_id: workItemId,
@@ -226,17 +258,20 @@ describe("work item dispatch outbox", () => {
   });
 
   test("AND branch functions enqueue dispatch effects for each created work item", async () => {
+    const roleId = `${RUN}:branch-reviewer`;
+    roles.add(roleId);
+    await createRole({ role_id: roleId, name: "Branch reviewer", assignees: [], strategy: "manual" });
     const workflow = makeWorkflowDefinition({
       id: `${RUN}:and-branch-workflow`,
       elements: [
         { id: "start", type: "event", label: "Start" },
-        { id: "prep", type: "function", label: "Prepare", role: "reviewer" },
+        { id: "prep", type: "function", label: "Prepare", role: roleId },
         { id: "ready", type: "event", label: "Ready" },
         { id: "split", type: "gateway", label: "Split", operator: "AND" },
         { id: "branch_a_ready", type: "event", label: "Branch A Ready" },
-        { id: "branch_a", type: "function", label: "Review A", role: "reviewer" },
+        { id: "branch_a", type: "function", label: "Review A", role: roleId },
         { id: "branch_b_ready", type: "event", label: "Branch B Ready" },
-        { id: "branch_b", type: "function", label: "Review B", role: "reviewer" },
+        { id: "branch_b", type: "function", label: "Review B", role: roleId },
         { id: "join", type: "gateway", label: "Join", operator: "AND" },
         { id: "done", type: "event", label: "Done" },
       ],
@@ -281,7 +316,7 @@ describe("work item dispatch outbox", () => {
           event_id: branch.element_id,
         },
         payload: {
-          role: "reviewer",
+          role: roleId,
           case_id: advanced.case!.case_id,
           work_item_id: branch.work_item_id,
           payload: { b: false, a: false, prep: true },

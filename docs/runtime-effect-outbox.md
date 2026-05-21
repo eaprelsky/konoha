@@ -96,7 +96,13 @@ Case advancement still creates the work item synchronously, then enqueues a
 dispatch effect with `case_id` and `work_item_id` links. The outbox worker calls
 the existing dispatcher transport and stores a delivery receipt; duplicate
 idempotency keys return the original effect, and retry attempts suppress a second
-notification once a prior delivery receipt exists.
+notification once a prior delivery receipt exists. Dispatch receipts include
+stable target evidence for operator review: `target_type`, `target_id`,
+`strategy`, `dispatch_status`, and a `targets[]` array for broadcast or manual
+fallback cases. `dispatch_status` is `queued` after a transport handoff,
+`manual` when no reachable target exists and the work item remains in the manual
+queue, and `failed` in retry/dead-letter error details when transport handoff
+throws before a delivery receipt can be persisted.
 
 `adapter.invoke` is only used for adapter bindings explicitly marked
 `execution: "async_effect"`. Default `sync` adapter bindings continue to run in

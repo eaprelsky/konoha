@@ -178,6 +178,13 @@ mutate roles directly: they create a pending confirmation for `role.create` or
 `role.update`, and only the operator-confirmed Action Spine call changes the
 RoleDef.
 
+Runtime work-item dispatch receipts use the same role assignment semantics.
+Every `workitem.dispatch` receipt records `target_type`, `target_id`, assignment
+`strategy`, `dispatch_status`, and per-target details for broadcast/manual
+fallback. Operators can distinguish tasks handed to an agent/person/system
+(`queued`), tasks left in the manual queue (`manual`), and retry/dead-letter
+transport failures (`failed`) without inferring from route-specific logs.
+
 ---
 
 ## Event Subscriptions

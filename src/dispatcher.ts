@@ -49,7 +49,72 @@ export interface DispatchReceipt {
   work_item_id: string;
   role: string;
   target_ids: string[];
+  target_type: "agent" | "person" | "system" | "manual";
+  target_id: string;
+  strategy: AssignmentStrategy | "direct-match" | "person-directory" | "system-role" | "no-target";
+  dispatch_status: "queued" | "manual" | "failed";
+  targets: DispatchReceiptTarget[];
   route_reason?: string;
+}
+
+export interface DispatchReceiptTarget {
+  target_type: DispatchReceipt["target_type"];
+  target_id: string;
+  strategy: DispatchReceipt["strategy"];
+  status: DispatchReceipt["dispatch_status"];
+  route_reason?: string;
+}
+
+function buildDispatchReceipt(params: {
+  route: DispatchReceipt["route"];
+  work_item_id: string;
+  role: string;
+  target_type: DispatchReceipt["target_type"];
+  target_ids: string[];
+  strategy: DispatchReceipt["strategy"];
+  dispatch_status: DispatchReceipt["dispatch_status"];
+  route_reason?: string;
+  targets?: DispatchReceiptTarget[];
+}): DispatchReceipt {
+  const targetIds = params.target_ids.length > 0 ? params.target_ids : [params.role];
+  const targets = params.targets ?? targetIds.map(targetId => ({
+    target_type: params.target_type,
+    target_id: targetId,
+    strategy: params.strategy,
+    status: params.dispatch_status,
+    ...(params.route_reason ? { route_reason: params.route_reason } : {}),
+  }));
+  return {
+    route: params.route,
+    work_item_id: params.work_item_id,
+    role: params.role,
+    target_ids: params.target_ids,
+    target_type: params.target_type,
+    target_id: targets[0]?.target_id ?? params.role,
+    strategy: params.strategy,
+    dispatch_status: params.dispatch_status,
+    targets,
+    ...(params.route_reason ? { route_reason: params.route_reason } : {}),
+  };
+}
+
+function dispatchDeliveryError(receipt: DispatchReceipt, cause: unknown): Error & {
+  code: string;
+  retryable: boolean;
+  details: { dispatch: DispatchReceipt };
+} {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const error = new Error(`work item dispatch failed: ${message}`) as Error & {
+    code: string;
+    retryable: boolean;
+    details: { dispatch: DispatchReceipt };
+    cause?: unknown;
+  };
+  error.code = "WORKITEM_DISPATCH_FAILED";
+  error.retryable = true;
+  error.details = { dispatch: receipt };
+  error.cause = cause;
+  return error;
 }
 
 /** Build compact process context block for an agent dispatch message (#404). */
@@ -192,17 +257,39 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<Dispatch
   // 0. System role → system-agent handles timers, doc gen, auto-execute
   if (dispatcherHooks.isSystemRole(role)) {
     const element = params.def?.elements.find(el => el.id === element_id);
-    await dispatcherHooks.executeSystemFunction({
-      label,
+    try {
+      await dispatcherHooks.executeSystemFunction({
+        label,
+        work_item_id,
+        case_id,
+        process_id,
+        element_id,
+        docIds,
+        systems: element?.systems ?? (element?.system ? [{ connector: element.system, operation: "default" }] : []),
+        payload: params.payload,
+      });
+    } catch (e) {
+      throw dispatchDeliveryError(buildDispatchReceipt({
+        route: "system",
+        work_item_id,
+        role,
+        target_type: "system",
+        target_ids: ["system"],
+        strategy: "system-role",
+        dispatch_status: "failed",
+        route_reason: "system-role",
+      }), e);
+    }
+    return buildDispatchReceipt({
+      route: "system",
       work_item_id,
-      case_id,
-      process_id,
-      element_id,
-      docIds,
-      systems: element?.systems ?? (element?.system ? [{ connector: element.system, operation: "default" }] : []),
-      payload: params.payload,
+      role,
+      target_type: "system",
+      target_ids: ["system"],
+      strategy: "system-role",
+      dispatch_status: "queued",
+      route_reason: "system-role",
     });
-    return { route: "system", work_item_id, role, target_ids: ["system"], route_reason: "system-role" };
   }
 
   const instruction = await loadInstructionText(docIds, label);
@@ -240,30 +327,121 @@ export async function dispatchWorkItem(params: DispatchParams): Promise<Dispatch
 
   if (resolved?.type === "broadcast") {
     // Broadcast: send to ALL online assignees
+    const targets: DispatchReceiptTarget[] = resolved.agents.map(agent => ({
+      target_type: "agent",
+      target_id: agent.id,
+      strategy: "broadcast",
+      status: "queued",
+      route_reason: "role-m2m:broadcast",
+    }));
+    const deliveredTargetIds = new Set<string>();
     for (const agent of resolved.agents) {
       const text = buildAgentText(agent.id, "broadcast");
-      await sendMessage({ from: "runtime", to: agent.id, type: "task", text });
+      try {
+        await sendMessage({ from: "runtime", to: agent.id, type: "task", text });
+      } catch (e) {
+        throw dispatchDeliveryError(buildDispatchReceipt({
+          route: "broadcast",
+          work_item_id,
+          role,
+          target_type: "agent",
+          target_ids: resolved.agents.map(item => item.id),
+          strategy: "broadcast",
+          dispatch_status: "failed",
+          route_reason: "role-m2m:broadcast",
+          targets: targets.map(target => ({
+            ...target,
+            status: deliveredTargetIds.has(target.target_id) ? "queued" : "failed",
+          })),
+        }), e);
+      }
+      deliveredTargetIds.add(agent.id);
       log.info("broadcast task sent", { agent_id: agent.id, work_item_id });
     }
-    return { route: "broadcast", work_item_id, role, target_ids: resolved.agents.map(agent => agent.id), route_reason: "role-m2m:broadcast" };
+    return buildDispatchReceipt({
+      route: "broadcast",
+      work_item_id,
+      role,
+      target_type: "agent",
+      target_ids: resolved.agents.map(agent => agent.id),
+      strategy: "broadcast",
+      dispatch_status: "queued",
+      route_reason: "role-m2m:broadcast",
+      targets,
+    });
   }
 
   if (resolved?.type === "agent") {
     const routeReason = resolved.strategy ? `role-m2m:${resolved.strategy}` : "direct-match";
     const text = buildAgentText(resolved.agent.id, routeReason);
-    await sendMessage({ from: "runtime", to: resolved.agent.id, type: "task", text });
+    const strategy = resolved.strategy ?? "direct-match";
+    try {
+      await sendMessage({ from: "runtime", to: resolved.agent.id, type: "task", text });
+    } catch (e) {
+      throw dispatchDeliveryError(buildDispatchReceipt({
+        route: "agent",
+        work_item_id,
+        role,
+        target_type: "agent",
+        target_ids: [resolved.agent.id],
+        strategy,
+        dispatch_status: "failed",
+        route_reason: routeReason,
+      }), e);
+    }
     log.info("task sent to agent", { agent_id: resolved.agent.id, route_reason: routeReason, work_item_id });
-    return { route: "agent", work_item_id, role, target_ids: [resolved.agent.id], route_reason: routeReason };
+    return buildDispatchReceipt({
+      route: "agent",
+      work_item_id,
+      role,
+      target_type: "agent",
+      target_ids: [resolved.agent.id],
+      strategy,
+      dispatch_status: "queued",
+      route_reason: routeReason,
+    });
   }
 
   if (resolved?.type === "person") {
     const tgText = buildPersonText();
-    await tgTransport.execFileAsync("python3", [TG_SEND_SCRIPT, String(resolved.person.tg_id), tgText]);
+    const targetId = String(resolved.person.tg_id);
+    try {
+      await tgTransport.execFileAsync("python3", [TG_SEND_SCRIPT, targetId, tgText]);
+    } catch (e) {
+      throw dispatchDeliveryError(buildDispatchReceipt({
+        route: "person",
+        work_item_id,
+        role,
+        target_type: "person",
+        target_ids: [targetId],
+        strategy: "person-directory",
+        dispatch_status: "failed",
+        route_reason: "person-directory",
+      }), e);
+    }
     log.info("telegram sent", { tg_id: resolved.person.tg_id, work_item_id });
-    return { route: "person", work_item_id, role, target_ids: [String(resolved.person.tg_id)], route_reason: "person-directory" };
+    return buildDispatchReceipt({
+      route: "person",
+      work_item_id,
+      role,
+      target_type: "person",
+      target_ids: [targetId],
+      strategy: "person-directory",
+      dispatch_status: "queued",
+      route_reason: "person-directory",
+    });
   }
 
   // No match — work item stays as manual (visible in Work Items UI)
   log.warn("no dispatch target", { role, work_item_id });
-  return { route: "manual", work_item_id, role, target_ids: [], route_reason: "no-target" };
+  return buildDispatchReceipt({
+    route: "manual",
+    work_item_id,
+    role,
+    target_type: "manual",
+    target_ids: [],
+    strategy: "no-target",
+    dispatch_status: "manual",
+    route_reason: "no-target",
+  });
 }

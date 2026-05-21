@@ -19,6 +19,7 @@ const state = {
   sentMessages: [] as Array<{ from: string; to: string; type: string; text: string }>,
   telegramExecs: [] as Array<{ cmd: string; args: string[] }>,
   systemExecutions: [] as Array<Record<string, unknown>>,
+  sendMessageError: null as Error | null,
 };
 
 mock.module("../src/redis", () => ({
@@ -36,6 +37,7 @@ mock.module("../src/redis", () => ({
     return onlineOnly ? state.agents : state.agents;
   },
   async sendMessage(message: { from: string; to: string; type: string; text: string }) {
+    if (state.sendMessageError) throw state.sendMessageError;
     state.sentMessages.push(message);
     return "mock-stream-id";
   },
@@ -82,6 +84,7 @@ function resetState() {
   state.sentMessages = [];
   state.telegramExecs = [];
   state.systemExecutions = [];
+  state.sendMessageError = null;
 }
 
 beforeEach(resetState);
@@ -106,7 +109,7 @@ describe("dispatcher coverage", () => {
       strategy: "load-balancing",
     });
 
-    await dispatchWorkItem({
+    const receipt = await dispatchWorkItem({
       role: "operator",
       label: "Review request",
       work_item_id: "wi-load",
@@ -120,6 +123,24 @@ describe("dispatcher coverage", () => {
     expect(state.sentMessages[0].to).toBe("sasuke");
     expect(state.sentMessages[0].text).toContain("Роль: operator (role-m2m:load-balancing)");
     expect(state.sentMessages[0].text).toContain("Функция: Review request");
+    expect(receipt).toMatchObject({
+      route: "agent",
+      work_item_id: "wi-load",
+      role: "operator",
+      target_ids: ["sasuke"],
+      target_type: "agent",
+      target_id: "sasuke",
+      strategy: "load-balancing",
+      dispatch_status: "queued",
+      route_reason: "role-m2m:load-balancing",
+      targets: [{
+        target_type: "agent",
+        target_id: "sasuke",
+        strategy: "load-balancing",
+        status: "queued",
+        route_reason: "role-m2m:load-balancing",
+      }],
+    });
   });
 
   test("routes a business workflow role to an assigned agent alias", async () => {
@@ -195,7 +216,7 @@ describe("dispatcher coverage", () => {
       strategy: "broadcast",
     });
 
-    await dispatchWorkItem({
+    const receipt = await dispatchWorkItem({
       role: "operator",
       label: "Broadcast task",
       work_item_id: "wi-broadcast",
@@ -209,6 +230,17 @@ describe("dispatcher coverage", () => {
     expect(state.sentMessages.map((item) => item.to)).toEqual(["naruto", "sasuke"]);
     expect(state.sentMessages.every((item) => item.text.includes("Rоль") === false)).toBe(true);
     expect(state.sentMessages.every((item) => item.text.includes("broadcast"))).toBe(true);
+    expect(receipt).toMatchObject({
+      route: "broadcast",
+      target_type: "agent",
+      target_id: "naruto",
+      strategy: "broadcast",
+      dispatch_status: "queued",
+      targets: [
+        { target_type: "agent", target_id: "naruto", strategy: "broadcast", status: "queued" },
+        { target_type: "agent", target_id: "sasuke", strategy: "broadcast", status: "queued" },
+      ],
+    });
   });
 
   test("falls back to capability-matched agent and builds process context with payload", async () => {
@@ -255,7 +287,7 @@ describe("dispatcher coverage", () => {
     state.personByRole = { name: "QA Human", tg_id: 4242, tg_username: "qa-human" };
     state.instructionText = "Call the customer back.";
 
-    await dispatchWorkItem({
+    const receipt = await dispatchWorkItem({
       role: "Support",
       label: "Contact customer",
       work_item_id: "wi-person",
@@ -272,12 +304,20 @@ describe("dispatcher coverage", () => {
     expect(state.telegramExecs[0].args[1]).toBe("4242");
     expect(state.telegramExecs[0].args[2]).toContain("Новая задача: Contact customer");
     expect(state.telegramExecs[0].args[2]).toContain("Call the customer back.");
+    expect(receipt).toMatchObject({
+      route: "person",
+      target_type: "person",
+      target_id: "4242",
+      strategy: "person-directory",
+      dispatch_status: "queued",
+      targets: [{ target_type: "person", target_id: "4242", strategy: "person-directory", status: "queued" }],
+    });
   });
 
   test("delegates system roles to system-agent execution", async () => {
     state.systemRole = true;
 
-    await dispatchWorkItem({
+    const receipt = await dispatchWorkItem({
       role: "System",
       label: "Подождать 5 минут",
       work_item_id: "wi-system",
@@ -302,6 +342,79 @@ describe("dispatcher coverage", () => {
     expect(state.systemExecutions[0].payload).toEqual({ action_args: { "issue.close": { issue_number: 803, dry_run: true } } });
     expect(state.sentMessages).toHaveLength(0);
     expect(state.telegramExecs).toHaveLength(0);
+    expect(receipt).toMatchObject({
+      route: "system",
+      target_type: "system",
+      target_id: "system",
+      strategy: "system-role",
+      dispatch_status: "queued",
+      targets: [{ target_type: "system", target_id: "system", strategy: "system-role", status: "queued" }],
+    });
+  });
+
+  test("returns manual target details when no dispatch target is reachable", async () => {
+    const receipt = await dispatchWorkItem({
+      role: "missing-role",
+      label: "Manual fallback task",
+      work_item_id: "wi-manual",
+      case_id: "case-manual",
+      process_id: "proc-manual",
+      element_id: "fn_manual",
+      docIds: [],
+    });
+
+    expect(state.sentMessages).toHaveLength(0);
+    expect(state.telegramExecs).toHaveLength(0);
+    expect(receipt).toMatchObject({
+      route: "manual",
+      target_ids: [],
+      target_type: "manual",
+      target_id: "missing-role",
+      strategy: "no-target",
+      dispatch_status: "manual",
+      route_reason: "no-target",
+      targets: [{
+        target_type: "manual",
+        target_id: "missing-role",
+        strategy: "no-target",
+        status: "manual",
+        route_reason: "no-target",
+      }],
+    });
+  });
+
+  test("failed agent delivery exposes target details for outbox retry evidence", async () => {
+    state.agents = [{ id: "kakashi", name: "Kakashi" }];
+    state.sendMessageError = new Error("bus unavailable");
+
+    await expect(dispatchWorkItem({
+      role: "kakashi",
+      label: "Review request",
+      work_item_id: "wi-failed",
+      case_id: "case-failed",
+      process_id: "proc-failed",
+      element_id: "fn_failed",
+      docIds: [],
+    })).rejects.toMatchObject({
+      code: "WORKITEM_DISPATCH_FAILED",
+      retryable: true,
+      details: {
+        dispatch: {
+          route: "agent",
+          target_type: "agent",
+          target_id: "kakashi",
+          strategy: "direct-match",
+          dispatch_status: "failed",
+          targets: [{
+            target_type: "agent",
+            target_id: "kakashi",
+            strategy: "direct-match",
+            status: "failed",
+            route_reason: "direct-match",
+          }],
+        },
+      },
+    });
   });
 });
 
