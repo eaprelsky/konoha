@@ -177,7 +177,7 @@ describe("operator benchmark harness", () => {
     expect(result.audit_entries.some((entry) => entry.action_type === "workflow.create" && entry.result === "requires_confirm")).toBe(true);
   });
 
-  it("captures workflow patch receipts without materializing unrelated side effects", async () => {
+  it("captures preview-only schema patches without durable success receipts", async () => {
     const result = await runOperatorBenchmarkScenario({
       id: `tsunade-patch-${RUN}`,
       operator: "tsunade",
@@ -191,17 +191,13 @@ describe("operator benchmark harness", () => {
       }),
     });
 
-    expect(getPrimaryObservableStatus(result)).toBe("succeeded");
+    expect(getPrimaryObservableStatus(result)).toBe("no_effect");
     expect(result.response.schema_patch).toEqual({
       update_elements: [{ id: "start_event", label: "Заявка зарегистрирована" }],
     });
-    expect(result.response.action_receipts[0]).toMatchObject({
-      action: "workflow.update",
-      status: "succeeded",
-      changed_resources: [{ kind: "element", id: "start_event", change: "updated" }],
-    });
+    expect(result.response.action_receipts.some((receipt) => receipt.action === "workflow.update" && receipt.status === "succeeded")).toBe(false);
     expect(result.materialized_workflows).toHaveLength(0);
-    expect(result.audit_entries.some((entry) => entry.action_type === "workflow.update" && entry.result === "ok")).toBe(true);
+    expect(result.audit_entries.some((entry) => entry.action_type === "workflow.update" && entry.result === "ok")).toBe(false);
   });
 
   it("captures workflow open as an observable navigate action", async () => {

@@ -27,7 +27,7 @@ Assistant responses now expose:
 
 Each receipt includes:
 
-- `action` — canonical action id such as `workflow.create` or `workflow.update`
+- `action` — canonical action id such as `workflow.create` or `workflow.patch`
 - `status` — `succeeded`, `pending_confirmation`, `failed`, or `partial`
 - `summary` — user-visible summary
 - `changed_resources[]` — concrete workflow/element/flow resources affected
@@ -35,7 +35,9 @@ Each receipt includes:
 
 ## Current coverage
 
-- `schema_patch` now yields a `workflow.update` receipt plus audit event
+- Targeted `schema_patch` commits now route through the server-side `workflow.patch` Action Spine boundary and yield a success receipt only after durable persistence succeeds
+- Untargeted/client-only `schema_patch` remains preview-only and yields no durable success receipt
+- Readiness or validation failures return failed `workflow.patch` receipts and must not be treated as saved canvas state
 - `create_workflow` yields a `workflow.create` receipt
 - confirm-required workflow creation yields `pending_confirmation` receipts and aggregate result status instead of magical silence
 

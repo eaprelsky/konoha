@@ -13,6 +13,7 @@ import {
 } from "./operator-state";
 import { redis } from "./redis";
 import { WORKFLOW_INDEX_KEY, getWorkflow, type WorkflowDefinition } from "./workflow-loader";
+import { pgDeleteWorkflow } from "./storage/pg";
 
 export interface OperatorBenchmarkScenario {
   id: string;
@@ -46,6 +47,18 @@ function extractRequestedWorkflowIds(rawOutput: string): string[] {
     if (createWorkflow && typeof createWorkflow === "object" && typeof (createWorkflow as Record<string, unknown>).id === "string") {
       return [(createWorkflow as Record<string, unknown>).id as string];
     }
+    const schemaPatch = parsed.schema_patch;
+    if (schemaPatch && typeof schemaPatch === "object") {
+      const patch = schemaPatch as Record<string, unknown>;
+      const id = typeof patch.id === "string"
+        ? patch.id
+        : typeof patch.workflow_id === "string"
+        ? patch.workflow_id
+        : typeof patch.process_id === "string"
+        ? patch.process_id
+        : null;
+      if (id) return [id];
+    }
   } catch {}
   return [];
 }
@@ -68,6 +81,7 @@ async function cleanupWorkflowArtifacts(workflowIds: string[]): Promise<void> {
     await redis.del(`workflow:${workflowId}`).catch(() => {});
     await redis.srem(WORKFLOW_INDEX_KEY, workflowId).catch(() => {});
     await redis.del(`konoha:workflow:versionctr:${workflowId}`).catch(() => {});
+    await pgDeleteWorkflow(workflowId).catch(() => {});
   }
 }
 

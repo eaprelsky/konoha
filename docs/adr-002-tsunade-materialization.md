@@ -212,7 +212,7 @@ User: "Создай процесс согласования договоров"
         1. Receives clean structured response (no raw JSON)
         2. Actions_taken triggers UI reactions:
            - workflow.create → navigate to editor
-           - schema_patch → apply patch
+           - schema_patch → preview locally, or apply after `workflow.patch` durable success
            - highlight → show highlight
         3. Confirmation UX for destructive actions
 ```

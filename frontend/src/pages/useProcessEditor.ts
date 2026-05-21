@@ -351,14 +351,28 @@ export function useProcessEditor(readOnly = false) {
     function onPatch(e: Event) {
       applyPatch((e as CustomEvent).detail);
     }
+    function onPatchSaved(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      const workflowId = typeof detail?.workflow_id === 'string'
+        ? detail.workflow_id
+        : typeof detail?.changed_resources?.find === 'function'
+        ? detail.changed_resources.find((item: any) => item?.kind === 'workflow')?.id
+        : null;
+      if (workflowId && workflowId === wfId.trim()) {
+        refreshList();
+        refreshValidation(workflowId);
+      }
+    }
     window.addEventListener('konoha:schema_patch', onPatch);
+    window.addEventListener('konoha:workflow_patch_saved', onPatchSaved);
     return () => {
       window.removeEventListener('konoha:schema_patch', onPatch);
+      window.removeEventListener('konoha:workflow_patch_saved', onPatchSaved);
       if ((window as any).__konoha_apply_schema_patch === applyPatch) {
         delete (window as any).__konoha_apply_schema_patch;
       }
     };
-  }, [readOnly, elements, flow, positions]);
+  }, [readOnly, elements, flow, positions, wfId, refreshList, refreshValidation]);
 
   // ── Zoom controls (issue #414) ───────────────────────────────────────────────
   function zoomBy(factor: number) {

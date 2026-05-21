@@ -62,6 +62,23 @@ function formatReceiptSummary(receipt: any): string {
   return `[${status}] ${summary}`;
 }
 
+function schemaPatchDurability(ev: any): 'saved' | 'pending' | 'failed' | 'preview' {
+  const receipts = Array.isArray(ev?.action_receipts) ? ev.action_receipts : [];
+  const patchReceipt = receipts.find((receipt: any) => receipt?.action === 'workflow.patch');
+  if (!patchReceipt) return 'preview';
+  if (patchReceipt.status === 'succeeded') return 'saved';
+  if (patchReceipt.status === 'pending_confirmation') return 'pending';
+  if (patchReceipt.status === 'failed') return 'failed';
+  return 'preview';
+}
+
+function schemaPatchSystemText(state: 'saved' | 'pending' | 'failed' | 'preview'): string {
+  if (state === 'saved') return 'Схема сохранена на сервере.';
+  if (state === 'pending') return 'Изменение подготовлено и ждёт подтверждения.';
+  if (state === 'failed') return 'Изменение отклонено серверной проверкой. Холст не изменён.';
+  return 'Предпросмотр схемы применён локально. Нажмите 💾 для сохранения.';
+}
+
 export interface UseAssistantChatResult {
   msgs: Msg[];
   input: string;
@@ -363,12 +380,15 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
               setMsgs(prev => [...prev.slice(0, -1), { role: 'assistant', text: extractStreamingText(full) }]);
             } else if (ev.type === 'parsed') {
               const replyText = typeof ev.reply === 'string' ? ev.reply : null;
+              const patchState = ev.schema_patch ? schemaPatchDurability(ev) : null;
               setMsgs(prev => {
                 const updated = replyText != null
                   ? [...prev.slice(0, -1), { role: 'assistant' as const, text: replyText }]
                   : [...prev];
-                if (ev.schema_patch || ev.created_workflow) {
-                  updated.push({ role: 'system' as const, text: 'Схема обновлена. Нажмите 💾 для сохранения.' });
+                if (patchState) {
+                  updated.push({ role: 'system' as const, text: schemaPatchSystemText(patchState) });
+                } else if (ev.created_workflow) {
+                  updated.push({ role: 'system' as const, text: 'Схема сохранена на сервере.' });
                 }
                 if (Array.isArray(ev.pending_confirmations) && ev.pending_confirmations.length > 0) {
                   const newConfs: PendingConfirmation[] = ev.pending_confirmations.map((item: any) => ({
@@ -401,10 +421,14 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
                 }
                 return updated;
               });
-              if (ev.schema_patch) {
-                const applySchemaPatch = (window as any).__konoha_apply_schema_patch;
-                if (typeof applySchemaPatch === 'function') applySchemaPatch(ev.schema_patch);
+              if (ev.schema_patch && patchState !== 'failed' && patchState !== 'pending') {
                 window.dispatchEvent(new CustomEvent('konoha:schema_patch', { detail: ev.schema_patch }));
+                if (patchState === 'saved') {
+                  const receipt = Array.isArray(ev.action_receipts)
+                    ? ev.action_receipts.find((item: any) => item?.action === 'workflow.patch')
+                    : null;
+                  window.dispatchEvent(new CustomEvent('konoha:workflow_patch_saved', { detail: receipt }));
+                }
               }
               if (ev.created_workflow) {
                 window.dispatchEvent(new CustomEvent('konoha:workflow_created', { detail: ev.created_workflow }));

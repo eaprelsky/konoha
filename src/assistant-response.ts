@@ -65,6 +65,8 @@ export interface NormalizeOptions {
   session_id?: string;
   /** Deterministic autonomy overrides used by operator eval harnesses and tests */
   autonomy_overrides?: Partial<Record<string, AutonomyLevel>>;
+  /** Current workflow visible in the editor; used to make schema_patch durable. */
+  current_workflow_id?: string;
 }
 
 // ── Normalization ─────────────────────────────────────────────────────────────
@@ -98,8 +100,23 @@ export async function normalizeAssistantResponse(
     // Extract schema patch
     if (parsed.schema_patch && typeof parsed.schema_patch === "object") {
       schemaPatch = parsed.schema_patch;
-      const schemaPatchReceipt = await buildSchemaPatchReceipt(parsed.schema_patch, opts);
-      actionReceipts.push(schemaPatchReceipt);
+      if (executeActions) {
+        const patchAction = await executeWorkflowPatchFromSchema(parsed.schema_patch, opts);
+        if (patchAction) {
+          actionsTaken.push(patchAction);
+          if (patchAction.status === "executed") {
+            actionReceipts.push(buildWorkflowPatchReceipt(patchAction, opts, "succeeded"));
+            reply = reply + `\n\nИзменение процесса сохранено через workflow.patch.`;
+          } else if (patchAction.status === "needs_confirm") {
+            pendingConfirmations.push(await buildPendingConfirmation("workflow.patch", patchAction.params, opts));
+            actionReceipts.push(buildWorkflowPatchReceipt(patchAction, opts, "pending_confirmation"));
+            reply = reply + `\n\nТребуется подтверждение перед сохранением изменения процесса.`;
+          } else if (patchAction.status === "failed") {
+            actionReceipts.push(buildWorkflowPatchReceipt(patchAction, opts, "failed"));
+            reply = reply + `\n\n⚠️ Изменение процесса не сохранено: ${patchAction.error}`;
+          }
+        }
+      }
     }
 
     const openWorkflow = extractOpenWorkflow(parsed.open_workflow);
@@ -542,6 +559,151 @@ async function executeCaseStart(
   }
 }
 
+function schemaPatchTargetId(patch: Record<string, unknown>, opts: NormalizeOptions): string | null {
+  const raw = typeof patch.id === "string"
+    ? patch.id
+    : typeof patch.workflow_id === "string"
+    ? patch.workflow_id
+    : typeof patch.process_id === "string"
+    ? patch.process_id
+    : opts.current_workflow_id;
+  const id = raw?.trim();
+  return id || null;
+}
+
+function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): Record<string, unknown> | null {
+  const supportedKeys = [
+    "set_name",
+    "set_description",
+    "add_elements",
+    "update_elements",
+    "remove_elements",
+    "add_flow",
+    "remove_flow",
+    "set_triggers",
+  ];
+  const patch: Record<string, unknown> = {};
+  for (const key of supportedKeys) {
+    if (Object.prototype.hasOwnProperty.call(schemaPatch, key)) {
+      patch[key] = schemaPatch[key];
+    }
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+async function executeWorkflowPatchFromSchema(
+  schemaPatch: unknown,
+  opts: NormalizeOptions,
+): Promise<AssistantAction | null> {
+  if (!schemaPatch || typeof schemaPatch !== "object" || Array.isArray(schemaPatch)) return null;
+  const rawPatch = schemaPatch as Record<string, unknown>;
+  const workflowId = schemaPatchTargetId(rawPatch, opts);
+  const patch = toDurableWorkflowPatch(rawPatch);
+
+  if (!workflowId || !patch) {
+    return {
+      action: "workflow.patch",
+      params: {
+        ...(workflowId ? { id: workflowId } : {}),
+        ...(patch ? { patch } : {}),
+        preview_only: true,
+      },
+      status: "skipped",
+      description: "Schema patch is preview-only because it has no durable workflow.patch target or supported server mutation",
+    };
+  }
+
+  const actionArgs = {
+    id: workflowId,
+    patch,
+    idempotency_key: `assistant:${opts.session_id ?? opts.chat_id}:workflow.patch:${randomUUID()}`,
+  };
+  const sessionId = opts.session_id ?? opts.chat_id;
+  const agentChain = opts.agent_id ?? "tsunade";
+  const autonomy = opts.autonomy_overrides?.["workflow.patch"]
+    ?? opts.autonomy_overrides?.["workflow.update"]
+    ?? await checkAutonomy("workflow.patch");
+
+  if (autonomy === "disabled") {
+    await auditLog({
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      action_type: "workflow.patch",
+      parameters: JSON.stringify(actionArgs),
+      result: "blocked",
+      agent_chain: agentChain,
+    }).catch(() => {});
+    return {
+      action: "workflow.patch",
+      params: actionArgs,
+      status: "failed",
+      description: "Apply workflow schema patch",
+      error: "workflow.patch is disabled by assistant permissions",
+    };
+  }
+
+  if (autonomy === "confirm") {
+    await auditLog({
+      timestamp: new Date().toISOString(),
+      session_id: sessionId,
+      action_type: "workflow.patch",
+      parameters: JSON.stringify(actionArgs),
+      result: "requires_confirm",
+      agent_chain: agentChain,
+    }).catch(() => {});
+    return {
+      action: "workflow.patch",
+      params: actionArgs,
+      status: "needs_confirm",
+      description: "Apply workflow schema patch requires confirmation",
+    };
+  }
+
+  try {
+    const result = await executeAction({
+      action: "workflow.patch",
+      category: "act",
+      args: actionArgs,
+      meta: {
+        session_id: sessionId,
+        agent_chain: agentChain,
+        idempotency_key: actionArgs.idempotency_key,
+      },
+    }, {
+      skipAutonomy: true,
+      session_id: sessionId,
+      agent_chain: agentChain,
+    });
+
+    if (!result.ok || !result.data || typeof result.data !== "object") {
+      return {
+        action: "workflow.patch",
+        params: actionArgs,
+        status: "failed",
+        description: "Apply workflow schema patch",
+        error: result.error ?? "Unknown action execution error",
+        ...(result.data && typeof result.data === "object" ? { result: result.data as Record<string, unknown> } : {}),
+      };
+    }
+
+    return {
+      action: "workflow.patch",
+      params: actionArgs,
+      status: "executed",
+      description: `Applied workflow schema patch to "${workflowId}"`,
+      result: result.data as Record<string, unknown>,
+    };
+  } catch (e: any) {
+    return {
+      action: "workflow.patch",
+      params: actionArgs,
+      status: "failed",
+      description: "Apply workflow schema patch",
+      error: e.message,
+    };
+  }
+}
+
 async function buildPendingConfirmation(
   action: string,
   params: Record<string, unknown>,
@@ -759,84 +921,62 @@ async function findNextPendingWorkItem(caseId: unknown): Promise<Record<string, 
   };
 }
 
-async function buildSchemaPatchReceipt(
-  schemaPatch: unknown,
+function buildWorkflowPatchReceipt(
+  action: AssistantAction,
   opts: NormalizeOptions,
-): Promise<ActionReceipt> {
-  const patch = schemaPatch as Record<string, unknown>;
-  const changedResources: ActionReceiptResource[] = [];
-
-  if (Array.isArray(patch.update_elements)) {
-    for (const item of patch.update_elements) {
-      if (item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string") {
-        changedResources.push({
-          kind: "element",
-          id: (item as Record<string, unknown>).id as string,
-          change: "updated",
-        });
-      }
-    }
+  status: ActionReceipt["status"],
+): ActionReceipt {
+  const result = action.result && typeof action.result === "object" ? action.result : {};
+  const workflowId = typeof result.workflow_id === "string"
+    ? result.workflow_id
+    : typeof action.params.id === "string"
+    ? action.params.id
+    : "workflow.patch";
+  const rawChanges = Array.isArray(result.changed_resources)
+    ? result.changed_resources as Record<string, unknown>[]
+    : [];
+  const changedResources: ActionReceiptResource[] = rawChanges
+    .map(change => {
+      const rawKind = typeof change.kind === "string" ? change.kind : "workflow";
+      const kind = rawKind === "flow" ? "flow" : rawKind === "workflow" ? "workflow" : "element";
+      const rawChange = typeof change.change === "string" ? change.change : "updated";
+      const mappedChange =
+        status === "pending_confirmation"
+          ? "pending"
+          : status === "failed"
+          ? "failed"
+          : rawChange === "created"
+          ? "created"
+          : "updated";
+      return {
+        kind,
+        id: typeof change.id === "string" ? change.id : workflowId,
+        change: mappedChange,
+      };
+    });
+  if (changedResources.length === 0) {
+    changedResources.push({
+      kind: "workflow",
+      id: workflowId,
+      change: status === "succeeded" ? "updated" : status === "pending_confirmation" ? "pending" : "failed",
+    });
   }
-  if (patch.update_positions && typeof patch.update_positions === "object") {
-    for (const id of Object.keys(patch.update_positions as Record<string, unknown>)) {
-      changedResources.push({ kind: "element", id, change: "updated" });
-    }
-  }
-  if (Array.isArray(patch.add_elements)) {
-    for (const item of patch.add_elements) {
-      if (item && typeof item === "object") {
-        const id = typeof (item as Record<string, unknown>).id === "string"
-          ? (item as Record<string, unknown>).id as string
-          : `new-element-${changedResources.length + 1}`;
-        changedResources.push({
-          kind: "element",
-          id,
-          ...(typeof (item as Record<string, unknown>).label === "string" ? { label: (item as Record<string, unknown>).label as string } : {}),
-          change: "created",
-        });
-      }
-    }
-  }
-  if (Array.isArray(patch.remove_elements)) {
-    for (const id of patch.remove_elements) {
-      if (typeof id === "string") {
-        changedResources.push({ kind: "element", id, change: "updated" });
-      }
-    }
-  }
-  if (Array.isArray(patch.add_flow)) {
-    for (const edge of patch.add_flow) {
-      if (Array.isArray(edge) && typeof edge[0] === "string" && typeof edge[1] === "string") {
-        changedResources.push({ kind: "flow", id: `${edge[0]}:${edge[1]}`, change: "created" });
-      }
-    }
-  }
-  if (Array.isArray(patch.remove_flow)) {
-    for (const edge of patch.remove_flow) {
-      if (Array.isArray(edge) && typeof edge[0] === "string" && typeof edge[1] === "string") {
-        changedResources.push({ kind: "flow", id: `${edge[0]}:${edge[1]}`, change: "updated" });
-      }
-    }
-  }
-
-  await auditLog({
-    timestamp: new Date().toISOString(),
-    session_id: opts.session_id ?? opts.chat_id,
-    action_type: "workflow.update",
-    parameters: JSON.stringify(schemaPatch),
-    result: "ok",
-    agent_chain: opts.agent_id ?? "tsunade",
-  }).catch(() => {});
 
   return {
     id: randomUUID(),
-    action: "workflow.update",
-    status: "succeeded",
-    summary: `Подготовлено изменение схемы: ${changedResources.length} объект(ов) затронуто.`,
+    action: "workflow.patch",
+    status,
+    summary:
+      status === "succeeded"
+        ? `Изменение процесса сохранено: ${changedResources.length} объект(ов) затронуто.`
+        : status === "pending_confirmation"
+        ? `Изменение процесса ожидает подтверждения.`
+        : `Изменение процесса отклонено серверной проверкой.`,
+    ...(action.error ? { details: action.error } : {}),
     changed_resources: changedResources,
     audit: {
       session_id: opts.session_id ?? opts.chat_id,
-      action_type: "workflow.update",
+      action_type: "workflow.patch",
     },
   };
 }

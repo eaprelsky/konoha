@@ -11,8 +11,9 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { normalizeAssistantResponse, buildSseParsedEvent } from "../src/assistant-response";
 import { buildWorkflowObservableResult } from "../src/workflow-action-contract";
-import { createWorkflow, WORKFLOW_INDEX_KEY } from "../src/workflow-loader";
+import { createWorkflow, getWorkflow, WORKFLOW_INDEX_KEY } from "../src/workflow-loader";
 import { deleteCasesByProcess } from "../src/runtime";
+import { createRole, deleteRole } from "../src/runtime/roles";
 import { redis } from "../src/redis";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 
@@ -80,14 +81,100 @@ describe("normalizeAssistantResponse", () => {
     expect(resp.reply).toBe("Done");
   });
 
-  it("extracts schema_patch from LLM output", async () => {
+  it("keeps schema_patch preview-only when no durable workflow target exists", async () => {
     const patch = { add_elements: [{ id: "new_el", type: "function", label: "Step" }] };
     const raw = JSON.stringify({ reply: "Добавил шаг", schema_patch: patch });
     const resp = await normalizeAssistantResponse(raw, baseOpts);
     expect(resp.schema_patch).toEqual(patch);
-    expect(resp.action_receipts).toHaveLength(1);
-    expect(resp.action_receipts[0]?.action).toBe("workflow.update");
-    expect(resp.observable_result.status).toBe("succeeded");
+    expect(resp.action_receipts).toHaveLength(0);
+    expect(resp.actions_taken[0]).toMatchObject({ action: "workflow.patch", status: "skipped" });
+    expect(resp.observable_result.status).toBe("no_effect");
+  });
+
+  it("persists targeted schema_patch through workflow.patch before returning success receipt", async () => {
+    const workflowId = `assistant-patch-${Date.now()}`;
+    const roleId = `${workflowId}-role`;
+    await createRole({ role_id: roleId, name: "Assistant patch role", strategy: "manual", assignees: [] });
+    await createWorkflow({
+      id: workflowId,
+      version: "1.0",
+      name: "Assistant Patch Test",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "review", type: "function", label: "Review", role: roleId },
+        { id: "done", type: "event", label: "Done" },
+      ],
+      flow: [["start", "review"], ["review", "done"]],
+    }, { draft: true });
+
+    try {
+      const raw = JSON.stringify({
+        reply: "Переименовал процесс",
+        schema_patch: { set_name: "Assistant Patch Saved" },
+      });
+      const resp = await normalizeAssistantResponse(raw, {
+        ...baseOpts,
+        current_workflow_id: workflowId,
+        autonomy_overrides: { "workflow.patch": "auto" },
+      });
+
+      expect(resp.action_receipts[0]).toMatchObject({
+        action: "workflow.patch",
+        status: "succeeded",
+        changed_resources: [{ kind: "workflow", id: workflowId, change: "updated" }],
+      });
+      expect(resp.action_receipts.some(receipt => receipt.action === "workflow.update" && receipt.status === "succeeded")).toBe(false);
+      expect(resp.observable_result.status).toBe("succeeded");
+      const saved = await getWorkflow(workflowId);
+      expect(saved?.name).toBe("Assistant Patch Saved");
+    } finally {
+      await deleteCasesByProcess(workflowId).catch(() => 0);
+      await redis.del(`workflow:${workflowId}`).catch(() => 0);
+      await redis.srem(WORKFLOW_INDEX_KEY, workflowId).catch(() => 0);
+      await pgDeleteWorkflow(workflowId).catch(() => 0);
+      await deleteRole(roleId).catch(() => {});
+    }
+  });
+
+  it("does not persist readiness-invalid assistant schema patches", async () => {
+    const workflowId = `assistant-patch-invalid-${Date.now()}`;
+    await createWorkflow({
+      id: workflowId,
+      version: "1.0",
+      name: "Assistant Patch Invalid",
+      elements: [],
+      flow: [],
+    }, { draft: true });
+
+    try {
+      const raw = JSON.stringify({
+        reply: "Добавил шаг",
+        schema_patch: {
+          add_elements: [
+            { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+            { id: "task", type: "function", label: "Task", systems: [{ connector: "missing-adapter", operation: "send" }] },
+            { id: "done", type: "event", label: "Done" },
+          ],
+          add_flow: [["start", "task"], ["task", "done"]],
+        },
+      });
+      const resp = await normalizeAssistantResponse(raw, {
+        ...baseOpts,
+        current_workflow_id: workflowId,
+        autonomy_overrides: { "workflow.patch": "auto" },
+      });
+
+      expect(resp.action_receipts[0]).toMatchObject({ action: "workflow.patch", status: "failed" });
+      expect(resp.observable_result.status).toBe("failed");
+      const saved = await getWorkflow(workflowId);
+      expect(saved?.elements).toEqual([]);
+      expect(saved?.flow).toEqual([]);
+    } finally {
+      await deleteCasesByProcess(workflowId).catch(() => 0);
+      await redis.del(`workflow:${workflowId}`).catch(() => 0);
+      await redis.srem(WORKFLOW_INDEX_KEY, workflowId).catch(() => 0);
+      await pgDeleteWorkflow(workflowId).catch(() => 0);
+    }
   });
 
   it("extracts highlight UI actions", async () => {

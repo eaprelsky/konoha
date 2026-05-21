@@ -41,12 +41,12 @@ The tier contract separates fast local tests, isolated integration, browser e2e,
 staging-core smoke/load evidence, production smoke, `pg-verify`, healthcheck,
 and optional specialist QA. The production suite covers:
 - `workflow.create` materialization and observable receipts.
-- `workflow.update` schema patches through API and operator evals.
+- `workflow.patch` durable assistant edits through the server Action Spine boundary, with client-only schema patches treated as preview-only.
 - `workflow.open` navigation actions and receipts.
 - Confirmation-required `workflow.create` without side effects.
 - Deterministic eEPC state-machine semantics: start/end, manual function pause/resume, XOR branch selection, AND split/join, manual waits, event idempotency, and sub-process spawning.
 - Wait hardening: terminal events and plain pass-through events do not create `EventWait` rows; active waits are unique per `case_id + element_id`.
-- Browser boundary: `AssistantWidget` consumes a canonical `/api/ai/chat` parsed event and applies the schema patch to `ProcessEditor`.
+- Browser boundary: `AssistantWidget` consumes a canonical `/api/ai/chat` parsed event, applies preview/saved schema patches distinctly, and does not apply failed durable patches.
 - Operational boundary: system health, Telegram stream smoke, and Redis/PostgreSQL shadow verification.
 
 ---

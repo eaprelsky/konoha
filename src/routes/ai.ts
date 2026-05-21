@@ -267,6 +267,24 @@ function toAssistantWorkflowResponse(normalized: AssistantResponse) {
   };
 }
 
+function extractCurrentWorkflowId(schema: unknown, operatorState: unknown): string | undefined {
+  if (schema && typeof schema === "object" && !Array.isArray(schema)) {
+    const id = (schema as Record<string, unknown>).id;
+    if (typeof id === "string" && id.trim()) return id.trim();
+  }
+  if (operatorState && typeof operatorState === "object" && !Array.isArray(operatorState)) {
+    const currentProcess = (operatorState as Record<string, unknown>).current_process;
+    if (currentProcess && typeof currentProcess === "object" && !Array.isArray(currentProcess)) {
+      const workflow = (currentProcess as Record<string, unknown>).workflow;
+      if (workflow && typeof workflow === "object" && !Array.isArray(workflow)) {
+        const id = (workflow as Record<string, unknown>).id;
+        if (typeof id === "string" && id.trim()) return id.trim();
+      }
+    }
+  }
+  return undefined;
+}
+
 const router = new Hono();
 
 // --- Kiba Admin Chat API ---
@@ -477,6 +495,7 @@ router.post("/ai/chat", async (c) => {
   const userContent = body.attachments?.length
     ? buildContent(userMsg, body.attachments)
     : buildInlineContent(userMsg, body.images);
+  const currentWorkflowId = extractCurrentWorkflowId(body.schema, body.operator_state);
 
   const messages: Anthropic.MessageParam[] = [
     ...history,
@@ -524,6 +543,7 @@ router.post("/ai/chat", async (c) => {
               execute_actions: mode === "process",
               agent_id: mode === "admin" ? "kiba" : "tsunade",
               session_id: chatId,
+              current_workflow_id: currentWorkflowId,
             });
             ctrl.enqueue(sse(JSON.stringify(buildSseParsedEvent(normalized))));
           } catch { /* not JSON — delta stream is fine as-is */ }
@@ -583,6 +603,7 @@ router.post("/ai/chat", async (c) => {
         execute_actions: true,
         agent_id: "tsunade",
         session_id: chatId,
+        current_workflow_id: currentWorkflowId,
       });
       await redis.rpush(histKey, JSON.stringify({ role: "user", content: body.message }));
       await redis.rpush(histKey, JSON.stringify({ role: "assistant", content: rawReply }));

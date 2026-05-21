@@ -8,6 +8,7 @@
 export type WorkflowActionType =
   | "workflow.create"
   | "workflow.update"
+  | "workflow.patch"
   | "workflow.open"
   | "workflow.save"
   | "workflow.confirm"

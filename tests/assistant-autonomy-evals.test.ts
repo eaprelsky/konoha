@@ -4,6 +4,8 @@ import {
   getPrimaryObservableStatus,
 } from "../src/operator-evals";
 import { OPERATOR_STATE_VERSION, type OperatorStateEnvelope } from "../src/operator-state";
+import { createWorkflow } from "../src/workflow-loader";
+import { createRole, deleteRole } from "../src/runtime/roles";
 
 const RUN = Date.now().toString(36);
 
@@ -54,8 +56,21 @@ function buildOperatorState(title: string): OperatorStateEnvelope {
 }
 
 describe("assistant autonomy evals", () => {
-  it("workflow.update with auto autonomy succeeds", async () => {
+  it("workflow.patch with auto autonomy persists through the server action", async () => {
     const workflowId = `autonomy-eval-update-${RUN}`;
+    const roleId = `${workflowId}-role`;
+    await createRole({ role_id: roleId, name: "Autonomy eval role", strategy: "manual", assignees: [] });
+    await createWorkflow({
+      id: workflowId,
+      version: "1.0",
+      name: "Autonomy Eval Space",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "review", type: "function", label: "Review", role: roleId },
+        { id: "done", type: "event", label: "End" },
+      ],
+      flow: [["start", "review"], ["review", "done"]],
+    }, { draft: true });
     const result = await runOperatorBenchmarkScenario({
       id: `tsunade-update-${RUN}`,
       operator: "tsunade",
@@ -65,16 +80,18 @@ describe("assistant autonomy evals", () => {
         reply: "Updated workflow.",
         schema_patch: { set_name: "Updated Workflow", id: workflowId },
       }),
-      autonomy_overrides: { "workflow.update": "auto" },
+      autonomy_overrides: { "workflow.patch": "auto" },
     });
 
     expect(getPrimaryObservableStatus(result)).toBe("succeeded");
     expect(result.response.action_receipts.length).toBeGreaterThan(0);
-    expect(result.response.action_receipts.some(r => r.action === "workflow.update")).toBe(true);
-    expect(result.audit_entries.some(e => e.action_type === "workflow.update")).toBe(true);
+    expect(result.response.action_receipts.some(r => r.action === "workflow.patch")).toBe(true);
+    expect(result.audit_entries.some(e => e.action_type === "workflow.patch")).toBe(true);
+    expect(result.materialized_workflows[0]?.name).toBe("Updated Workflow");
+    await deleteRole(roleId).catch(() => {});
   });
 
-  it("schema_patch generates workflow.update receipt with succeeded status", async () => {
+  it("schema_patch without a durable target remains preview-only", async () => {
     const result = await runOperatorBenchmarkScenario({
       id: `tsunade-schema-patch-${RUN}`,
       operator: "tsunade",
@@ -86,9 +103,9 @@ describe("assistant autonomy evals", () => {
       }),
     });
 
-    expect(getPrimaryObservableStatus(result)).toBe("succeeded");
-    expect(result.response.action_receipts.some(r => r.action === "workflow.update" && r.status === "succeeded")).toBe(true);
-    expect(result.audit_entries.some(e => e.action_type === "workflow.update")).toBe(true);
+    expect(getPrimaryObservableStatus(result)).toBe("no_effect");
+    expect(result.response.action_receipts.some(r => r.action === "workflow.update" && r.status === "succeeded")).toBe(false);
+    expect(result.audit_entries.some(e => e.action_type === "workflow.update")).toBe(false);
   });
 
   it("workflow.create with auto materializes the workflow", async () => {

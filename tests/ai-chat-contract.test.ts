@@ -1,5 +1,8 @@
 import { afterAll, describe, expect, mock, test } from "bun:test";
 import { createTestRedis } from "./redis-test-utils";
+import { createWorkflow, WORKFLOW_INDEX_KEY } from "../src/workflow-loader";
+import { pgDeleteWorkflow } from "../src/storage/pg";
+import { createRole, deleteRole } from "../src/runtime/roles";
 
 process.env.KONOHA_PORT = "0";
 process.env.ANTHROPIC_API_KEY ||= "test-anthropic-key";
@@ -8,7 +11,7 @@ mock.module("../src/llm", () => ({
   generateText: async () => JSON.stringify({
     reply: "Готово: обновила схему.",
     schema_patch: {
-      update_elements: [{ id: "f1", label: "Согласовать заявку" }],
+      set_name: "Contract workflow updated",
     },
   }),
 }));
@@ -24,12 +27,31 @@ function adminHeaders() {
 afterAll(async () => {
   await redis.del("tsunade:chat:test-ai-chat-contract");
   await redis.del("tsunade:chat:test-ai-chat-contract-delete");
+  await redis.hdel("konoha:config:autonomy", "workflow.patch");
+  await redis.del("workflow:wf-contract");
+  await redis.srem(WORKFLOW_INDEX_KEY, "wf-contract");
+  await pgDeleteWorkflow("wf-contract").catch(() => {});
+  await deleteRole("wf-contract-role").catch(() => {});
   redis.disconnect();
   delete process.env.KONOHA_PORT;
 });
 
 describe("POST /api/ai/chat workflow contract", () => {
   test("returns canonical workflow envelope for non-streaming process chat", async () => {
+    await redis.hset("konoha:config:autonomy", "workflow.patch", "auto");
+    await createRole({ role_id: "wf-contract-role", name: "Workflow contract role", strategy: "manual", assignees: [] });
+    await createWorkflow({
+      id: "wf-contract",
+      version: "1.0",
+      name: "Contract workflow",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "review", type: "function", label: "Review", role: "wf-contract-role" },
+        { id: "done", type: "event", label: "Done" },
+      ],
+      flow: [["start", "review"], ["review", "done"]],
+    }, { draft: true });
+
     const res = await app.fetch(new Request("http://localhost/api/ai/chat", {
       method: "POST",
       headers: adminHeaders(),
@@ -48,11 +70,13 @@ describe("POST /api/ai/chat workflow contract", () => {
 
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.reply).toBe("Готово: обновила схему.");
-    expect(body.schema_patch.update_elements[0].id).toBe("f1");
-    expect(body.action_receipts[0].action).toBe("workflow.update");
+    expect(body.reply).toContain("Готово: обновила схему.");
+    expect(body.reply).toContain("workflow.patch");
+    expect(body.schema_patch.set_name).toBe("Contract workflow updated");
+    expect(body.action_receipts[0].action).toBe("workflow.patch");
     expect(body.observable_result.status).toBe("succeeded");
     expect(body.pending_confirmations).toEqual([]);
+    await redis.hdel("konoha:config:autonomy", "workflow.patch");
   });
 
   test("deprecated Tsunade chat routes return 404 (legacy retirement)", async () => {

@@ -59,6 +59,12 @@ function contextToText(context: AssistantInvocationArgs["context"]): string {
   return JSON.stringify(context, null, 2);
 }
 
+function extractWorkflowIdFromSchema(schema: unknown): string | undefined {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return undefined;
+  const id = (schema as Record<string, unknown>).id;
+  return typeof id === "string" && id.trim() ? id.trim() : undefined;
+}
+
 async function buildWorkflowListContext(): Promise<string> {
   const workflows = await listWorkflows().catch(() => []);
   if (workflows.length === 0) return "";
@@ -157,6 +163,7 @@ export async function invokeAssistant(args: AssistantInvocationArgs): Promise<As
       execute_actions: args.execute_actions !== false,
       agent_id: "tsunade",
       session_id: traceId,
+      current_workflow_id: extractWorkflowIdFromSchema(args.schema),
     });
     await persistTurn(historyKey, maxHistory, message, rawResponse, persistHistory);
     return {
