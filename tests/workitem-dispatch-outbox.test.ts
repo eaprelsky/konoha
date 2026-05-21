@@ -224,4 +224,69 @@ describe("work item dispatch outbox", () => {
       },
     });
   });
+
+  test("AND branch functions enqueue dispatch effects for each created work item", async () => {
+    const workflow = makeWorkflowDefinition({
+      id: `${RUN}:and-branch-workflow`,
+      elements: [
+        { id: "start", type: "event", label: "Start" },
+        { id: "prep", type: "function", label: "Prepare", role: "reviewer" },
+        { id: "ready", type: "event", label: "Ready" },
+        { id: "split", type: "gateway", label: "Split", operator: "AND" },
+        { id: "branch_a_ready", type: "event", label: "Branch A Ready" },
+        { id: "branch_a", type: "function", label: "Review A", role: "reviewer" },
+        { id: "branch_b_ready", type: "event", label: "Branch B Ready" },
+        { id: "branch_b", type: "function", label: "Review B", role: "reviewer" },
+        { id: "join", type: "gateway", label: "Join", operator: "AND" },
+        { id: "done", type: "event", label: "Done" },
+      ],
+      flow: [
+        ["start", "prep"],
+        ["prep", "ready"],
+        ["ready", "split"],
+        ["split", "branch_a_ready"],
+        ["branch_a_ready", "branch_a"],
+        ["split", "branch_b_ready"],
+        ["branch_b_ready", "branch_b"],
+        ["branch_a", "join"],
+        ["branch_b", "join"],
+        ["join", "done"],
+      ],
+    });
+    workflows.add(workflow.id);
+    const created = await createWorkflow(workflow, { lifecycleState: "executable" });
+    expect(created.errors).toHaveLength(0);
+
+    const initial = await createCase(workflow.id, "branch dispatch outbox case", { b: false, a: false, prep: true });
+    const prepWorkItemId = initial.history.find(entry => entry.element_id === "prep")?.work_item_id;
+    expect(prepWorkItemId).toBeDefined();
+    calls.length = 0;
+
+    const { completeWorkItem } = await import("../src/runtime/work-items");
+    const advanced = await completeWorkItem(prepWorkItemId!, { prep: true });
+    const branchIds = advanced.case?.active_branches?.map(branch => branch.element_id).sort();
+    expect(branchIds).toEqual(["branch_a", "branch_b"]);
+    expect(calls).toHaveLength(0);
+
+    for (const branch of advanced.case?.active_branches ?? []) {
+      const idempotencyKey = `workitem.dispatch:${advanced.case!.case_id}:${branch.work_item_id}`;
+      await expect(getRuntimeEffect(runtimeEffectIdFromIdempotencyKey(idempotencyKey))).resolves.toMatchObject({
+        kind: "workitem.dispatch",
+        idempotency_key: idempotencyKey,
+        status: "pending",
+        links: {
+          workflow_id: workflow.id,
+          case_id: advanced.case!.case_id,
+          work_item_id: branch.work_item_id,
+          event_id: branch.element_id,
+        },
+        payload: {
+          role: "reviewer",
+          case_id: advanced.case!.case_id,
+          work_item_id: branch.work_item_id,
+          payload: { b: false, a: false, prep: true },
+        },
+      });
+    }
+  });
 });

@@ -110,6 +110,34 @@ async function createWorkItemForElement(
   return wi;
 }
 
+async function dispatchWorkItemForElement(
+  kase: Case,
+  def: WorkflowDefinition,
+  elementId: string,
+  el: WorkflowElement,
+  wi: WorkItem,
+): Promise<void> {
+  if (!el.role) return;
+  const dispatchParams = {
+    role: el.role,
+    label: el.label,
+    work_item_id: wi.work_item_id,
+    case_id: kase.case_id,
+    process_id: kase.process_id,
+    element_id: elementId,
+    docIds: el.documents || [],
+    def,
+    payload: kase.payload,
+  };
+  if (isSystemDispatchRole(el.role)) {
+    await dispatchWorkItem(dispatchParams)
+      .catch(e => log.error("system dispatch error", { case_id: kase.case_id, element_id: elementId, work_item_id: wi.work_item_id, error: e.message }));
+  } else {
+    await enqueueWorkItemDispatchEffect(dispatchParams)
+      .catch(e => log.error("enqueue dispatch effect error", { case_id: kase.case_id, element_id: elementId, work_item_id: wi.work_item_id, error: e.message }));
+  }
+}
+
 async function subscribeEventNode(kase: Case, el: WorkflowElement): Promise<void> {
   const trigger = el.trigger;
   if (!trigger?.kind || trigger.kind === "manual" || trigger.kind === "ambiguous" || trigger.manual_override) {
@@ -265,6 +293,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
             if (branchEl?.type !== "function") continue;
             const wi = await createWorkItemForElement(kase, branchElId, branchEl);
             kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
+            await dispatchWorkItemForElement(kase, def, branchElId, branchEl, wi);
             const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
             if (branchBindings.length > 0) {
               const labelSlug = branchEl.label.toLowerCase().replace(/\s+/g, "_");
@@ -414,26 +443,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       kase.history.push({ element_id: nextId, element_type: "function", label: nextEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
       await saveCase(kase);
 
-      if (nextEl.role) {
-        const dispatchParams = {
-          role: nextEl.role,
-          label: nextEl.label,
-          work_item_id: wi.work_item_id,
-          case_id: kase.case_id,
-          process_id: kase.process_id,
-          element_id: nextId,
-          docIds: nextEl.documents || [],
-          def,
-          payload: kase.payload,
-        };
-        if (isSystemDispatchRole(nextEl.role)) {
-          await dispatchWorkItem(dispatchParams)
-            .catch(e => log.error("system dispatch error", { case_id: kase.case_id, element_id: nextId, work_item_id: wi.work_item_id, error: e.message }));
-        } else {
-          await enqueueWorkItemDispatchEffect(dispatchParams)
-            .catch(e => log.error("enqueue dispatch effect error", { case_id: kase.case_id, element_id: nextId, work_item_id: wi.work_item_id, error: e.message }));
-        }
-      }
+      await dispatchWorkItemForElement(kase, def, nextId, nextEl, wi);
 
       const systemBindings = nextEl.systems ?? (nextEl.system ? [{ connector: nextEl.system, operation: "default" }] : []);
       if (systemBindings.length > 0) {
@@ -612,6 +622,7 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
 
           const wi = await createWorkItemForElement(kase, branchElId, branchEl);
           kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
+          await dispatchWorkItemForElement(kase, def, branchElId, branchEl, wi);
 
           const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
           if (branchBindings.length > 0) {
