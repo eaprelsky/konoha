@@ -15,6 +15,8 @@ Related gates and roadmap issues:
 - #753 defines the `staging-core` environment contract used by release staging.
 - #749 defines the Workflow Engine preflight tier contract in
   `docs/workflow-engine-preflight-tiers.md`.
+- #750 defines Workflow Engine runtime rollback and recovery in
+  `docs/workflow-runtime-rollback-recovery.md`.
 - #682, #733, #734, #735, and #736 are the M1 storage isolation/preflight
   foundation required before broad Workflow Engine release claims.
 
@@ -173,6 +175,8 @@ Workflow/runtime data rollback limits:
   workflows, cases, Redis keys, PostgreSQL tables, and operator command.
 - `PG_READ=true` remains gated by the persistence roadmap and `pg-verify`
   evidence; bloat-only `onlyInPG` is retention debt, not a data-loss rollback.
+- Runtime recovery procedures, exact commands, destructive data gates, and the
+  #812 terminal-case rule live in `docs/workflow-runtime-rollback-recovery.md`.
 
 ## Ownership
 
@@ -211,6 +215,7 @@ Every release request or bypass must record:
    `docs/workflow-engine-preflight-tiers.md`.
 6. Run `python3 scripts/pre-release-gate.py` and resolve blockers.
 7. Update version/changelog/tag/GitHub release for versioned releases.
-8. Record rollback command and data rollback limits.
+8. Record rollback command and data rollback limits; for Workflow
+   Engine/runtime changes, cite `docs/workflow-runtime-rollback-recovery.md`.
 9. Naruto asks owner approval; Kakashi executes only after approval.
 10. Report final status to Konoha bus and the release/issue record.

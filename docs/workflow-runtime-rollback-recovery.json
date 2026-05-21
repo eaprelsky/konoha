@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 750,
+  "parent_issue": 686,
+  "release_policy": "docs/release-policy.md",
+  "preflight_tiers": "docs/workflow-engine-preflight-tiers.md",
+  "security_boundary": "docs/workflow-security-boundary.md",
+  "action_surface": "docs/action-surface.json",
+  "staging_contract": "docs/staging-environment.json",
+  "terminal_case_rule": {
+    "source_issue": 812,
+    "status": "paused by Yegor; do not unpause or close from this runbook",
+    "rule": "Closed, done, cancelled, error, or otherwise terminal Workflow Engine cases must not receive new routed work, new tasks, new event waits, or subscription resumes. Recovery must quarantine and audit any attempted dispatch to a terminal/closed case instead of routing it."
+  },
+  "runtime_state_boundaries": [
+    {
+      "id": "redis_active_state",
+      "owner": "Workflow runtime",
+      "rollback_limit": "Redis is the active runtime store for cases, work items, subscriptions, waits, reminders, streams, and in-flight dispatch receipts. Code rollback does not rewind those objects.",
+      "allowed_recovery": ["inspect", "action-spine cancel/close/update", "idempotent reconciler dry-run before apply"],
+      "blocked_recovery": ["FLUSHDB", "FLUSHALL", "broad key deletes", "manual stream surgery without incident owner and reviewer acceptance"]
+    },
+    {
+      "id": "postgres_shadow_state",
+      "owner": "Persistence shadow",
+      "rollback_limit": "PostgreSQL is shadow/durable evidence until a separately accepted PG_READ cutover. onlyInRedis is a blocker; onlyInPG is retention debt when Redis is complete.",
+      "allowed_recovery": ["pg-verify", "reconcile-pg-bus dry-run", "approved idempotent reconcile apply"],
+      "blocked_recovery": ["DROP DATABASE", "DROP SCHEMA public", "manual production public schema mutation without incident issue"]
+    },
+    {
+      "id": "subscriptions_event_waits",
+      "owner": "Event manager",
+      "rollback_limit": "Subscriptions and event waits represent live resume points. They must be cancelled or recreated by explicit runtime actions, not broad key cleanup.",
+      "allowed_recovery": ["subscription.list", "subscription.cancel", "event.wait_list"],
+      "blocked_recovery": ["delete all subscriptions for a trigger without affected case list"]
+    },
+    {
+      "id": "reminders",
+      "owner": "Reminder service",
+      "rollback_limit": "Scheduled reminders may already have fired or may be queued. Rollback cannot unsend reminder effects.",
+      "allowed_recovery": ["reminder.list", "reminder.update_status", "reminder.delete with explicit reminder id"],
+      "blocked_recovery": ["broad reminder queue purge"]
+    },
+    {
+      "id": "outbox_dispatch_effects",
+      "owner": "Outbox and connector adapters",
+      "rollback_limit": "External sends and duplicate dispatches cannot be unsent. Recovery must stop additional sends, record duplicates, and reconcile receipts.",
+      "allowed_recovery": ["connector health smoke", "outbox dead-letter review", "idempotency receipt audit"],
+      "blocked_recovery": ["resend without idempotency receipt review"]
+    },
+    {
+      "id": "work_items",
+      "owner": "Workflow runtime",
+      "rollback_limit": "Work items are user-visible assignments. Cancel, complete, or update them only through Action Spine/admin APIs so audit records exist.",
+      "allowed_recovery": ["workitem.list", "workitem.cancel", "workitem.update"],
+      "blocked_recovery": ["direct status mutation without audit"]
+    },
+    {
+      "id": "running_cases",
+      "owner": "Workflow runtime",
+      "rollback_limit": "Running cases must be completed, cancelled, or quarantined explicitly. A code revert does not change active case status.",
+      "allowed_recovery": ["case.list", "case.get", "case.cancel", "case.close"],
+      "blocked_recovery": ["starting replacement cases before terminal-case checks and duplicate-dispatch review"]
+    }
+  ],
+  "recovery_scenarios": [
+    {
+      "id": "stuck-running-case",
+      "owner": "Kakashi",
+      "reviewer": "Shikadai",
+      "signals": ["case status stays running past SLA", "work item has no reachable assignee", "event wait is stale"],
+      "commands": [
+        "bun run scripts/pg-verify.ts",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"case.get\",\"category\":\"inspect\",\"args\":{\"case_id\":\"<case_id>\"}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"case.cancel\",\"category\":\"act\",\"args\":{\"case_id\":\"<case_id>\",\"reason\":\"stuck-running-case recovery issue #<incident>\"}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workitem.cancel\",\"category\":\"act\",\"args\":{\"work_item_id\":\"<work_item_id>\",\"reason\":\"case recovery issue #<incident>\"}}'"
+      ],
+      "evidence": ["case id", "work item ids", "pg-verify output", "Action Spine receipts", "Konoha bus review message"],
+      "blockers": ["case is terminal but has new routed work", "pg-verify onlyInRedis > 0", "no owner/reviewer acceptance for destructive cleanup"],
+      "warnings": ["onlyInPG bloat", "optional connector disabled by profile"],
+      "abort_criteria": ["case changed state during triage", "duplicate external dispatch risk is not bounded"],
+      "audit": "Attach commands, receipts, before/after case state, and reviewer acceptance to the incident or release issue."
+    },
+    {
+      "id": "orphaned-waits-subscriptions",
+      "owner": "Kakashi",
+      "reviewer": "Shikadai",
+      "signals": ["event.wait_list shows waits for missing or terminal cases", "subscription.list shows instance_id with no running case"],
+      "commands": [
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"event.wait_list\",\"category\":\"inspect\",\"args\":{\"case_id\":\"<case_id>\"}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"subscription.list\",\"category\":\"inspect\",\"args\":{\"instance_id\":\"<case_id>\"}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"subscription.cancel\",\"category\":\"act\",\"args\":{\"subscription_id\":\"<subscription_id>\",\"reason\":\"orphaned wait recovery issue #<incident>\"}}'"
+      ],
+      "evidence": ["wait ids", "subscription ids", "case terminal/running state", "cancel receipts"],
+      "blockers": ["affected case list is unknown", "subscription belongs to active non-incident case"],
+      "warnings": ["wait was already removed by runtime"],
+      "abort_criteria": ["subscription owner cannot be identified", "terminal-case rule from #812 would be violated"],
+      "audit": "Record each cancelled subscription id and the case status that justified cancellation."
+    },
+    {
+      "id": "duplicate-dispatch",
+      "owner": "Naruto",
+      "reviewer": "Shikadai",
+      "signals": ["two task messages for one work_item_id", "duplicate connector receipt", "agent reports already handled work item"],
+      "commands": [
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workitem.list\",\"category\":\"inspect\",\"args\":{\"case_id\":\"<case_id>\"}}'",
+        "KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py",
+        "bun run scripts/action-surface-report.ts --check"
+      ],
+      "evidence": ["work_item_id", "message stream ids", "connector receipts", "agent acknowledgment", "healthcheck summary"],
+      "blockers": ["duplicate was delivered to external connector and may have user impact", "case is terminal but received a new task"],
+      "warnings": ["duplicate was internal-only and idempotently ignored"],
+      "abort_criteria": ["cannot prove which dispatch was first", "operator would need to send another external message"],
+      "audit": "Keep both dispatch receipts; do not delete duplicate messages from streams."
+    },
+    {
+      "id": "failed-connector",
+      "owner": "Naruto",
+      "reviewer": "Shikadai",
+      "signals": ["connector send failure", "outbox/dead-letter entry", "healthcheck connector FAIL"],
+      "commands": [
+        "KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py",
+        "scripts/telegram-smoke.sh",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"connector.send_message\",\"category\":\"act\",\"args\":{\"connector\":\"<connector>\",\"target\":\"<target>\",\"text\":\"<approved recovery message>\",\"idempotency_key\":\"<case_id>:<work_item_id>:recovery\"}}'"
+      ],
+      "evidence": ["connector health output", "failed receipt", "idempotency key", "approved resend text"],
+      "blockers": ["no idempotency key", "no owner approval for external resend", "production connector disabled by profile"],
+      "warnings": ["retry queued but connector remains degraded"],
+      "abort_criteria": ["external recipient ambiguity", "operator cannot confirm duplicate-send risk"],
+      "audit": "Record resend approval, exact target, idempotency key, and connector receipt."
+    },
+    {
+      "id": "partial-deploy",
+      "owner": "Kakashi",
+      "reviewer": "Shikadai",
+      "signals": ["new workflow definition exists but subscriptions or snapshots are incomplete", "staging smoke passes but production smoke fails after deploy"],
+      "commands": [
+        "git revert <bad_commit>",
+        "git push origin main",
+        "scripts/preflight-portable.sh",
+        "scripts/preflight.sh",
+        "bun run scripts/pg-verify.ts"
+      ],
+      "evidence": ["bad commit", "revert commit", "preflight logs", "pg-verify output", "affected workflow ids"],
+      "blockers": ["onlyInRedis > 0 after rollback", "active cases exist on the partially deployed workflow and need case-level recovery"],
+      "warnings": ["onlyInPG bloat after revert", "staging waiver was used"],
+      "abort_criteria": ["rollback commit fails tests", "manual data cleanup would be required without approval"],
+      "audit": "Link revert commit and affected workflow ids in the review issue."
+    },
+    {
+      "id": "failed-deploy",
+      "owner": "Kakashi",
+      "reviewer": "Shikadai",
+      "signals": ["workflow.deploy action fails", "deploy snapshot missing", "start trigger not materialized"],
+      "commands": [
+        "bun run scripts/action-surface-report.ts --check",
+        "python3 scripts/check-route-auth-policy.py",
+        "scripts/staging-smoke.sh --dry-run",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.deploy\",\"category\":\"act\",\"args\":{\"workflow_id\":\"<workflow_id>\",\"dry_run\":true}}'"
+      ],
+      "evidence": ["deploy receipt", "workflow id", "route auth check", "staging smoke output"],
+      "blockers": ["deploy action is not audited", "route auth check fails", "staging-core contract violated"],
+      "warnings": ["dry-run only because no live staging exists"],
+      "abort_criteria": ["deploy would create subscriptions for an invalid definition", "reviewer has not accepted waiver"],
+      "audit": "Attach deploy dry-run output and action-surface check to the issue."
+    },
+    {
+      "id": "invalid-workflow-update",
+      "owner": "Kakashi",
+      "reviewer": "Shikadai",
+      "signals": ["workflow.update accepted invalid graph", "new cases fail validation", "terminal state is unreachable"],
+      "commands": [
+        "bun test --timeout 30000 tests/workflow-loader-validation.test.ts tests/eepc-state-machine-regression.test.ts",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.update\",\"category\":\"act\",\"args\":{\"workflow_id\":\"<workflow_id>\",\"patch\":\"<reviewed rollback patch>\",\"dry_run\":true}}'",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"workflow.update\",\"category\":\"act\",\"args\":{\"workflow_id\":\"<workflow_id>\",\"patch\":\"<reviewed rollback patch>\"}}'"
+      ],
+      "evidence": ["validation failure", "rollback patch", "dry-run receipt", "apply receipt"],
+      "blockers": ["patch is not reviewed", "affected running cases are unknown", "terminal-case rule from #812 would be violated"],
+      "warnings": ["existing running cases may continue on old snapshot"],
+      "abort_criteria": ["dry-run changes unrelated workflow fields", "operator cannot identify active cases"],
+      "audit": "Store the exact patch and both dry-run/apply receipts."
+    },
+    {
+      "id": "bad-assistant-action",
+      "owner": "Naruto",
+      "reviewer": "Shikadai",
+      "signals": ["assistant proposes destructive action without confirmation", "unexpected workflow mutation receipt", "operator rejects pending confirmation"],
+      "commands": [
+        "bun run scripts/action-surface-report.ts --check",
+        "python3 scripts/check-route-auth-policy.py",
+        "curl -sS -X POST \"$KONOHA_URL/act\" -H \"Authorization: Bearer $KONOHA_TOKEN\" -H \"Content-Type: application/json\" -d '{\"action\":\"audit.read\",\"category\":\"inspect\",\"args\":{\"trace_id\":\"<trace_id>\"}}'"
+      ],
+      "evidence": ["assistant trace id", "pending confirmation id", "audit.read output", "action policy check"],
+      "blockers": ["mutating action bypassed confirmation", "audit record missing"],
+      "warnings": ["proposal was rejected before side effects"],
+      "abort_criteria": ["trace is missing or redacted beyond reviewability"],
+      "audit": "Attach trace id, action receipt, and rejection/confirmation record."
+    },
+    {
+      "id": "pg-redis-divergence",
+      "owner": "Kakashi",
+      "reviewer": "Shikadai",
+      "signals": ["pg-verify onlyInRedis > 0", "pg-verify onlyInPG grows after deploy", "shadow write failures"],
+      "commands": [
+        "bun run scripts/pg-verify.ts",
+        "bun run scripts/reconcile-pg-bus.ts --dry-run",
+        "bun run scripts/reconcile-pg-bus.ts"
+      ],
+      "evidence": ["pg-verify before/after", "reconcile dry-run output", "approved reconcile receipt"],
+      "blockers": ["onlyInRedis > 0 before release", "reconcile dry-run touches unexpected recipients or tables"],
+      "warnings": ["onlyInPG bloat with onlyInRedis=0"],
+      "abort_criteria": ["dry-run plan does not match incident scope", "reviewer has not accepted apply"],
+      "audit": "Keep dry-run output before apply; apply is allowed only after reviewer acceptance."
+    }
+  ],
+  "destructive_data_gate": {
+    "default": "dry-run first; no destructive production data command is part of the normal runbook",
+    "requires": [
+      "owner/operator acceptance",
+      "Shikadai reviewer acceptance",
+      "incident or release issue number",
+      "dry-run evidence",
+      "exact affected workflow ids, case ids, Redis keys, PostgreSQL tables, or connector receipts",
+      "rollback or abort command",
+      "Konoha bus audit message"
+    ],
+    "never_allowed_as_broad_recovery": ["FLUSHDB", "FLUSHALL", "DROP DATABASE", "DROP SCHEMA public", "redis-cli --scan | xargs redis-cli del"],
+    "allowed_only_with_explicit_scope": ["retention.cleanup_apply", "retention.runtime_cleanup", "case.delete", "reminder.delete"]
+  },
+  "audit_artifacts": [
+    "GitHub issue comment with commands and commit hash",
+    "Konoha bus message to Naruto and Shikadai",
+    "preflight or focused tier output",
+    "pg-verify output",
+    "healthcheck summary",
+    "Action Spine receipts",
+    "staging smoke output when workflow runtime behavior changed"
+  ]
+}

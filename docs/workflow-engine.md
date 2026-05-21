@@ -7,6 +7,7 @@
 > Legacy retirement inventory: `docs/legacy-retirement.md`.
 > Security and audit boundary: `docs/workflow-security-boundary.md`.
 > Preflight tier contract: `docs/workflow-engine-preflight-tiers.md`.
+> Runtime rollback and recovery: `docs/workflow-runtime-rollback-recovery.md`.
 
 ## Overview
 
@@ -208,6 +209,17 @@ PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/reconcile-pg-bus.ts
 ```
 
 The bus reconciler copies `konoha:registry` into `konoha_agents` and per-agent Redis streams into `konoha_messages`. Message inserts are idempotent by `(recipient, stream_id)` and use the recipient implied by the stream key, which preserves broadcast/role fanout history correctly.
+
+### Rollback and recovery
+
+Runtime rollback and recovery procedures live in
+`docs/workflow-runtime-rollback-recovery.md`. Redis remains the active runtime
+store, PostgreSQL remains shadow evidence until accepted `PG_READ` cutover, and
+code rollback does not revert active cases, work items, subscriptions, waits,
+reminders, dispatch receipts, or external connector effects. The runbook also
+records the #812 terminal-case rule: closed, done, cancelled, error, or
+otherwise terminal cases must not receive new work, new tasks, new waits, or
+subscription resumes during recovery.
 
 ---
 

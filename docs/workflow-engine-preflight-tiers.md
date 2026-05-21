@@ -8,7 +8,8 @@ Kakashi, Shikadai, Naruto, Shino, and Hinata should use it.
 These tiers inherit `docs/release-policy.md`, the #753 staging-core contract,
 and the M1 isolation work from #682, #733, #734, #735, and #736. They do not
 replace #686. #686 remains the final Workflow Engine release gate/runbook that
-collects evidence from these tiers plus later runtime recovery work.
+collects evidence from these tiers plus the #750 runtime recovery runbook in
+`docs/workflow-runtime-rollback-recovery.md`.
 
 ## Tier Selection
 
@@ -68,7 +69,8 @@ connectors or weaken `prod-core`.
 
 ## Relationship To #686
 
-#749 is the M1 preflight scaffold. #750 and #751 add later runtime recovery and
+#749 is the M1 preflight scaffold. #750 adds runtime rollback/recovery evidence
+through `docs/workflow-runtime-rollback-recovery.md`; #751 adds
 constructor/runtime checklist evidence. #686 is the final Workflow Engine
 release gate/runbook and should reference the tier ids from
 `docs/workflow-engine-preflight-tiers.json` instead of redefining separate

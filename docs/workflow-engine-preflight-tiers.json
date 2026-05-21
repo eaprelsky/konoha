@@ -3,6 +3,7 @@
   "updated_for_issue": 749,
   "parent_issue": 686,
   "release_policy": "docs/release-policy.md",
+  "runtime_recovery_runbook": "docs/workflow-runtime-rollback-recovery.md",
   "staging_contract": "docs/staging-environment.json",
   "m1_isolation_evidence": [
     "tests/test-storage-guardrails.test.ts",
