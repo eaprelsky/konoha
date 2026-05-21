@@ -13,7 +13,7 @@ import { normalizeAssistantResponse, buildSseParsedEvent } from "../src/assistan
 import { buildWorkflowObservableResult } from "../src/workflow-action-contract";
 import { createWorkflow, getWorkflow, WORKFLOW_INDEX_KEY } from "../src/workflow-loader";
 import { deleteCasesByProcess } from "../src/runtime";
-import { createRole, deleteRole } from "../src/runtime/roles";
+import { createRole, deleteRole, loadRole } from "../src/runtime/roles";
 import { redis } from "../src/redis";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 
@@ -491,44 +491,62 @@ describe("normalizeAssistantResponse", () => {
 
   it("executes case.start and returns observable run navigation", async () => {
     const processId = `assistant-start-${Date.now()}`;
+    const roleId = `${processId}-reviewer`;
+    await createRole({ role_id: roleId, name: "Reviewer", assignees: [], strategy: "manual" });
     await createWorkflow({
       id: processId,
       version: "1.0",
       name: "Assistant Start Test",
       elements: [
         { id: "e1", type: "event", label: "Start" },
-        { id: "f1", type: "function", label: "Review", role: "reviewer" },
+        { id: "f1", type: "function", label: "Review", role: roleId },
         { id: "e2", type: "event", label: "Done" },
       ],
       flow: [["e1", "f1"], ["f1", "e2"]],
     }, { lifecycleState: "executable" });
 
-    const resp = await normalizeAssistantResponse(JSON.stringify({
-      reply: "Запускаю процесс.",
-      start_case: {
-        process_id: processId,
-        subject: "Demo run",
-        payload: { source: "assistant-test" },
-      },
-    }), { ...baseOpts, execute_actions: true, agent_id: "tsunade", session_id: "test-session" });
+    try {
+      const resp = await normalizeAssistantResponse(JSON.stringify({
+        reply: "Запускаю процесс.",
+        start_case: {
+          process_id: processId,
+          subject: "Demo run",
+          payload: { source: "assistant-test" },
+        },
+      }), { ...baseOpts, execute_actions: true, agent_id: "tsunade", session_id: "test-session" });
 
-    expect(resp.actions_taken[0]).toMatchObject({ action: "case.start", status: "executed" });
-    expect(resp.action_receipts[0]).toMatchObject({
-      action: "case.start",
-      status: "succeeded",
-    });
-    expect(resp.action_receipts[0].changed_resources.some(resource => resource.kind === "case" && resource.change === "started")).toBe(true);
-    expect(resp.action_receipts[0].changed_resources.some(resource => resource.kind === "work_item" && resource.change === "pending")).toBe(true);
-    expect(resp.action_receipts[0].summary).toContain("Следующая задача: Review -> reviewer");
-    expect(resp.ui_actions[0]).toMatchObject({ type: "navigate" });
-    expect(String(resp.ui_actions[0].path)).toContain("/monitor?case_id=");
-    expect(resp.observable_result.status).toBe("succeeded");
+      expect(resp.actions_taken[0]).toMatchObject({ action: "case.start", status: "executed" });
+      expect(resp.action_receipts[0]).toMatchObject({
+        action: "case.start",
+        status: "succeeded",
+      });
+      expect(resp.action_receipts[0].changed_resources.some(resource => resource.kind === "case" && resource.change === "started")).toBe(true);
+      expect(resp.action_receipts[0].changed_resources.some(resource => resource.kind === "work_item" && resource.change === "pending")).toBe(true);
+      expect(resp.action_receipts[0].summary).toContain(`Следующая задача: Review -> ${roleId}`);
+      expect(resp.ui_actions[0]).toMatchObject({ type: "navigate" });
+      expect(String(resp.ui_actions[0].path)).toContain("/monitor?case_id=");
+      expect(resp.observable_result.status).toBe("succeeded");
+    } finally {
+      await deleteCasesByProcess(processId).catch(() => 0);
+      await cleanupWorkflow(processId);
+      await deleteRole(roleId).catch(() => {});
+    }
   });
 
   it("starts the sales demo case and returns the next business-role work item", async () => {
     const processId = `assistant-sales-demo-${Date.now()}`;
     const rawWorkflow = readFileSync(join(import.meta.dir, "..", "workflows", "sales", "lead-qualification.json"), "utf-8");
-    await createWorkflow({ ...JSON.parse(rawWorkflow), id: processId }, { lifecycleState: "executable" });
+    const triageRole = `${processId}-lead-triage`;
+    const salesRole = `${processId}-sales-owner`;
+    const workflow = JSON.parse(rawWorkflow);
+    workflow.elements = workflow.elements.map((element: any) => {
+      if (element.role === "lead_triage_specialist") return { ...element, role: triageRole };
+      if (element.role === "sales_owner") return { ...element, role: salesRole };
+      return element;
+    });
+    await createRole({ role_id: triageRole, name: "Lead triage", assignees: [], strategy: "manual" });
+    await createRole({ role_id: salesRole, name: "Sales owner", assignees: [], strategy: "manual" });
+    await createWorkflow({ ...workflow, id: processId }, { lifecycleState: "executable" });
 
     try {
       const resp = await normalizeAssistantResponse(JSON.stringify({
@@ -547,7 +565,7 @@ describe("normalizeAssistantResponse", () => {
       const receipt = resp.action_receipts.find(item => item.action === "case.start");
       expect(resp.actions_taken[0]).toMatchObject({ action: "case.start", status: "executed" });
       expect(receipt).toMatchObject({ action: "case.start", status: "succeeded" });
-      expect(receipt?.summary).toContain("Следующая задача: Разобрать входящий сигнал -> lead_triage_specialist");
+      expect(receipt?.summary).toContain(`Следующая задача: Разобрать входящий сигнал -> ${triageRole}`);
       expect(receipt?.summary).not.toContain("sasuke");
       expect(receipt?.changed_resources.some(resource =>
         resource.kind === "work_item"
@@ -562,6 +580,148 @@ describe("normalizeAssistantResponse", () => {
       await redis.del(`workflow:${processId}`).catch(() => 0);
       await redis.srem(WORKFLOW_INDEX_KEY, processId).catch(() => 0);
       await pgDeleteWorkflow(processId).catch(() => 0);
+      await deleteRole(triageRole).catch(() => {});
+      await deleteRole(salesRole).catch(() => {});
+    }
+  });
+
+  it("turns validation-grounded role assignment suggestions into pending role.update confirmations", async () => {
+    const workflowId = `assistant-role-suggestion-${Date.now()}`;
+    const roleId = `${workflowId}-reviewer`;
+    await createWorkflow({
+      id: workflowId,
+      version: "1.0",
+      name: "Assistant Role Suggestion",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "review", type: "function", label: "Review", role: roleId },
+        { id: "done", type: "event", label: "Done" },
+      ],
+      flow: [["start", "review"], ["review", "done"]],
+    }, { draft: true });
+
+    try {
+      await expect(loadRole(roleId)).resolves.toMatchObject({
+        role_id: roleId,
+        origin: "workflow_skeleton",
+        assignees: [],
+      });
+
+      const resp = await normalizeAssistantResponse(JSON.stringify({
+        role_assignment: {
+          workflow_id: workflowId,
+          role: roleId,
+          assignee: "operator-1",
+          strategy: "round-robin",
+          element_id: "review",
+        },
+      }), {
+        ...baseOpts,
+        execute_actions: true,
+        agent_id: "tsunade",
+        session_id: "assistant-role-session",
+      });
+
+      expect(resp.actions_taken).toHaveLength(1);
+      expect(resp.actions_taken[0]).toMatchObject({
+        action: "role.update",
+        status: "needs_confirm",
+        params: {
+          id: roleId,
+          assignees: ["operator-1"],
+          strategy: "round-robin",
+        },
+        result: {
+          workflow_id: workflowId,
+          role: roleId,
+          validation_issue_code: "ROLE_UNRESOLVABLE",
+          element_id: "review",
+        },
+      });
+      expect(resp.actions_taken[0].params).not.toHaveProperty("_assistant_grounding");
+      expect(resp.pending_confirmations).toHaveLength(1);
+      expect(resp.pending_confirmations[0]).toMatchObject({
+        action: "role.update",
+        params: {
+          id: roleId,
+          assignees: ["operator-1"],
+          strategy: "round-robin",
+        },
+      });
+      expect(resp.action_receipts[0]).toMatchObject({
+        action: "role.update",
+        status: "pending_confirmation",
+        changed_resources: [
+          {
+            kind: "role",
+            id: roleId,
+            label: "round-robin -> operator-1",
+            change: "pending",
+          },
+        ],
+      });
+      expect(resp.observable_result.status).toBe("pending_confirmation");
+      await expect(loadRole(roleId)).resolves.toMatchObject({
+        role_id: roleId,
+        origin: "workflow_skeleton",
+        assignees: [],
+      });
+    } finally {
+      await cleanupWorkflow(workflowId);
+      await deleteRole(roleId).catch(() => {});
+    }
+  });
+
+  it("rejects assistant role assignment suggestions that are not grounded in current validation role errors", async () => {
+    const workflowId = `assistant-role-not-grounded-${Date.now()}`;
+    const roleId = `${workflowId}-manual`;
+    await createRole({ role_id: roleId, name: "Manual reviewer", assignees: [], strategy: "manual" });
+    await createWorkflow({
+      id: workflowId,
+      version: "1.0",
+      name: "Assistant Role Not Grounded",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "review", type: "function", label: "Review", role: roleId },
+        { id: "done", type: "event", label: "Done" },
+      ],
+      flow: [["start", "review"], ["review", "done"]],
+    }, { draft: true });
+
+    try {
+      const resp = await normalizeAssistantResponse(JSON.stringify({
+        reply: "Назначу роль.",
+        role_assignment: {
+          workflow_id: workflowId,
+          role: roleId,
+          assignee: "operator-1",
+        },
+      }), {
+        ...baseOpts,
+        execute_actions: true,
+        agent_id: "tsunade",
+        session_id: "assistant-role-not-grounded-session",
+      });
+
+      expect(resp.pending_confirmations).toHaveLength(0);
+      expect(resp.actions_taken).toHaveLength(1);
+      expect(resp.actions_taken[0]).toMatchObject({
+        action: "role.update",
+        status: "failed",
+        error: `No current workflow.validate role error for role "${roleId}"`,
+      });
+      expect(resp.action_receipts[0]).toMatchObject({
+        action: "role.update",
+        status: "failed",
+        changed_resources: [
+          { kind: "role", id: roleId, change: "failed" },
+        ],
+      });
+      expect(resp.observable_result.status).toBe("failed");
+      await expect(loadRole(roleId)).resolves.toMatchObject({ role_id: roleId, assignees: [] });
+    } finally {
+      await cleanupWorkflow(workflowId);
+      await deleteRole(roleId).catch(() => {});
     }
   });
 });

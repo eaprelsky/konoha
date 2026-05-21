@@ -169,6 +169,15 @@ agent/person or explicitly mark it as a manual queue; both paths use the
 canonical Action Spine `role.create`/`role.update` contracts and refresh the
 same `workflow.validate` receipt after the mutation.
 
+Assistant role assignment suggestions use the same boundary. A Tsunade response
+may return `role_assignment` or `role_assignment_suggestions`, but the server
+accepts them only when the named workflow currently has a canonical
+`workflow.validate` role error (`ROLE_UNRESOLVABLE`, `ROLE_MISSING_ASSIGNEE`, or
+`ROLE_ASSIGNEE_UNRESOLVABLE`) for that role/element. Accepted suggestions never
+mutate roles directly: they create a pending confirmation for `role.create` or
+`role.update`, and only the operator-confirmed Action Spine call changes the
+RoleDef.
+
 ---
 
 ## Event Subscriptions

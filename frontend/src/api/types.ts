@@ -225,7 +225,7 @@ export type WorkflowActionStatus = 'executed' | 'needs_confirm' | 'failed' | 'sk
 export type WorkflowActionType = 'workflow.create' | 'workflow.update' | 'workflow.patch' | 'workflow.deploy' | 'workflow.open' | 'workflow.save' | 'workflow.confirm' | 'case.start';
 export type WorkflowReceiptStatus = 'succeeded' | 'pending_confirmation' | 'failed' | 'partial';
 export type WorkflowObservableStatus = WorkflowReceiptStatus | 'no_effect';
-export type WorkflowResourceKind = 'workflow' | 'element' | 'flow' | 'confirmation' | 'case' | 'work_item';
+export type WorkflowResourceKind = 'workflow' | 'element' | 'flow' | 'confirmation' | 'case' | 'work_item' | 'role';
 export type WorkflowResourceChange = 'created' | 'updated' | 'opened' | 'started' | 'pending' | 'failed';
 
 export interface WorkflowAssistantAction {

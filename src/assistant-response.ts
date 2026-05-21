@@ -15,6 +15,10 @@ import { executeAction } from "./act-envelope";
 import { auditLog, checkAutonomy } from "./assistant-actions";
 import type { AutonomyLevel } from "./assistant-actions";
 import { listWorkItems } from "./runtime/work-items";
+import { listRoles } from "./runtime/roles";
+import { validateActionArgs } from "./action-registry";
+import { getWorkflow } from "./workflow-loader";
+import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
 import {
   buildWorkflowObservableResult,
   type WorkflowActionReceipt as ActionReceipt,
@@ -269,6 +273,32 @@ export async function normalizeAssistantResponse(
       } else if (action.status === "failed") {
         actionReceipts.push(buildCaseStartReceipt(action, opts, "failed"));
         reply = reply + `\n\n⚠️ Ошибка запуска процесса: ${action.error}`;
+      }
+    }
+
+    const roleAssignments = extractRoleAssignmentSuggestions(parsed);
+    if (roleAssignments.length > 0 && executeActions) {
+      for (const suggestion of roleAssignments) {
+        const action = await prepareRoleAssignmentSuggestion(suggestion, opts);
+        actionsTaken.push(action);
+        if (action.status === "needs_confirm") {
+          pendingConfirmations.push(await buildPendingConfirmation(action.action, action.params, opts));
+          actionReceipts.push(buildRoleAssignmentReceipt(action, opts, "pending_confirmation"));
+        } else if (action.status === "failed") {
+          actionReceipts.push(buildRoleAssignmentReceipt(action, opts, "failed"));
+        }
+      }
+      if (roleAssignments.length === 1) {
+        const action = actionsTaken[actionsTaken.length - 1];
+        reply = reply + (action.status === "needs_confirm"
+          ? `\n\nПредложение назначения роли ожидает подтверждения оператора.`
+          : `\n\n⚠️ Предложение назначения роли отклонено: ${action.error}`);
+      } else {
+        const pending = actionReceipts.filter(receipt => receipt.action === "role.create" || receipt.action === "role.update")
+          .filter(receipt => receipt.status === "pending_confirmation").length;
+        const failed = actionReceipts.filter(receipt => receipt.action === "role.create" || receipt.action === "role.update")
+          .filter(receipt => receipt.status === "failed").length;
+        reply = reply + `\n\nПредложения назначения ролей: ${pending} ожидает подтверждения, ${failed} отклонено.`;
       }
     }
   }
@@ -593,6 +623,201 @@ async function executeCaseStart(
       error: e.message,
     };
   }
+}
+
+interface RoleAssignmentSuggestion {
+  workflow_id?: string;
+  role?: string;
+  assignee?: string;
+  assignees?: string[];
+  strategy?: string;
+  manual_queue?: boolean;
+  element_id?: string;
+}
+
+const ROLE_ASSIGNMENT_VALIDATION_CODES = new Set([
+  "ROLE_UNRESOLVABLE",
+  "ROLE_MISSING_ASSIGNEE",
+  "ROLE_ASSIGNEE_UNRESOLVABLE",
+]);
+
+function extractRoleAssignmentSuggestions(parsed: Record<string, unknown>): RoleAssignmentSuggestion[] {
+  const raw = parsed.role_assignment_suggestions ?? parsed.role_assignments ?? parsed.role_assignment ?? parsed["role.assign"];
+  const values = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? [raw] : [];
+  return values
+    .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+    .map(value => {
+      const workflowId = typeof value.workflow_id === "string"
+        ? value.workflow_id
+        : typeof value.process_id === "string"
+        ? value.process_id
+        : typeof value.id === "string"
+        ? value.id
+        : undefined;
+      const assignees = Array.isArray(value.assignees)
+        ? value.assignees.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map(item => item.trim())
+        : undefined;
+      return {
+        ...(workflowId ? { workflow_id: workflowId.trim() } : {}),
+        ...(typeof value.role === "string" ? { role: value.role.trim() } : {}),
+        ...(typeof value.role_id === "string" && !value.role ? { role: value.role_id.trim() } : {}),
+        ...(typeof value.assignee === "string" ? { assignee: value.assignee.trim() } : {}),
+        ...(assignees ? { assignees } : {}),
+        ...(typeof value.strategy === "string" ? { strategy: value.strategy.trim() } : {}),
+        ...(value.manual_queue === true || value.mode === "manual" ? { manual_queue: true } : {}),
+        ...(typeof value.element_id === "string" ? { element_id: value.element_id.trim() } : {}),
+      };
+    });
+}
+
+function normalizeAssignmentStrategy(value: unknown, fallback = "round-robin"): "round-robin" | "load-balancing" | "broadcast" | "manual" {
+  if (value === "round-robin" || value === "load-balancing" || value === "broadcast" || value === "manual") return value;
+  return fallback as "round-robin";
+}
+
+async function prepareRoleAssignmentSuggestion(
+  suggestion: RoleAssignmentSuggestion,
+  opts: NormalizeOptions,
+): Promise<AssistantAction> {
+  const workflowId = (suggestion.workflow_id ?? opts.current_workflow_id ?? "").trim();
+  const role = suggestion.role?.trim() ?? "";
+  const baseParams = {
+    ...(workflowId ? { workflow_id: workflowId } : {}),
+    ...(role ? { role } : {}),
+    ...(suggestion.element_id ? { element_id: suggestion.element_id } : {}),
+  };
+  if (!workflowId) {
+    return {
+      action: "role.update",
+      params: baseParams,
+      status: "failed",
+      description: "Prepare role assignment suggestion",
+      error: "workflow_id or current_workflow_id is required for validation-grounded role assignment",
+    };
+  }
+  if (!role) {
+    return {
+      action: "role.update",
+      params: baseParams,
+      status: "failed",
+      description: "Prepare role assignment suggestion",
+      error: "role is required",
+    };
+  }
+
+  const workflow = await getWorkflow(workflowId);
+  if (!workflow) {
+    return {
+      action: "role.update",
+      params: baseParams,
+      status: "failed",
+      description: "Prepare role assignment suggestion",
+      error: `Workflow "${workflowId}" not found`,
+    };
+  }
+
+  const validation = await buildWorkflowValidationReceipt(workflow, "assistant.role_assignment");
+  const matchingIssue = [...validation.errors, ...validation.warnings].find(issue => (
+    issue.class === "role" &&
+    ROLE_ASSIGNMENT_VALIDATION_CODES.has(issue.code) &&
+    issue.details?.role === role &&
+    (!suggestion.element_id || issue.element_id === suggestion.element_id)
+  ));
+  if (!matchingIssue) {
+    return {
+      action: "role.update",
+      params: baseParams,
+      status: "failed",
+      description: "Prepare role assignment suggestion",
+      error: `No current workflow.validate role error for role "${role}"`,
+      result: {
+        workflow_id: workflowId,
+        role,
+        validation_source: validation.source,
+        validation_readiness: validation.readiness,
+      },
+    };
+  }
+
+  const roles = await listRoles();
+  const existingRole = roles.find(item => item.role_id === role);
+  const assignees = suggestion.manual_queue
+    ? []
+    : suggestion.assignees && suggestion.assignees.length > 0
+    ? suggestion.assignees
+    : suggestion.assignee
+    ? [suggestion.assignee]
+    : [];
+  if (!suggestion.manual_queue && assignees.length === 0) {
+    return {
+      action: existingRole ? "role.update" : "role.create",
+      params: { ...baseParams, validation_issue_code: matchingIssue.code },
+      status: "failed",
+      description: "Prepare role assignment suggestion",
+      error: "assignee or assignees is required unless manual_queue=true",
+    };
+  }
+
+  const strategy = suggestion.manual_queue
+    ? "manual"
+    : normalizeAssignmentStrategy(suggestion.strategy, existingRole && existingRole.strategy !== "manual" ? existingRole.strategy : "round-robin");
+  const action = existingRole ? "role.update" : "role.create";
+  const actionArgs = action === "role.create"
+    ? {
+        role_id: role,
+        name: role,
+        assignees,
+        strategy,
+      }
+    : {
+        id: role,
+        assignees,
+        strategy,
+      };
+  const validationArgs = validateActionArgs(action, actionArgs);
+  if (!validationArgs.valid) {
+    return {
+      action,
+      params: actionArgs,
+      status: "failed",
+      description: "Prepare role assignment suggestion",
+      error: validationArgs.errors.join("; "),
+    };
+  }
+
+  const sessionId = opts.session_id ?? opts.chat_id;
+  const agentChain = opts.agent_id ?? "tsunade";
+  await auditLog({
+    timestamp: new Date().toISOString(),
+    session_id: sessionId,
+    action_type: action,
+    parameters: JSON.stringify({
+      ...actionArgs,
+      grounded_by: {
+        workflow_id: workflowId,
+        validation_source: validation.source,
+        validation_issue_code: matchingIssue.code,
+        element_id: matchingIssue.element_id,
+      },
+    }),
+    result: "requires_confirm",
+    agent_chain: agentChain,
+  }).catch(() => {});
+
+  return {
+    action,
+    params: actionArgs,
+    status: "needs_confirm",
+    description: suggestion.manual_queue
+      ? `Mark role "${role}" as explicit manual queue requires confirmation`
+      : `Assign role "${role}" requires confirmation`,
+    result: {
+      workflow_id: workflowId,
+      role,
+      validation_issue_code: matchingIssue.code,
+      element_id: matchingIssue.element_id,
+    },
+  };
 }
 
 function schemaPatchTargetId(patch: Record<string, unknown>, opts: NormalizeOptions): string | null {
@@ -993,6 +1218,60 @@ function buildCaseStartReceipt(
   };
 }
 
+function buildRoleAssignmentReceipt(
+  action: AssistantAction,
+  opts: NormalizeOptions,
+  status: ActionReceipt["status"],
+): ActionReceipt {
+  const roleId = typeof action.params.role_id === "string"
+    ? action.params.role_id
+    : typeof action.params.id === "string"
+    ? action.params.id
+    : typeof action.result?.role === "string"
+    ? action.result.role
+    : "role.assignment";
+  const assignees = Array.isArray(action.params.assignees)
+    ? action.params.assignees.filter((item): item is string => typeof item === "string")
+    : [];
+  const strategy = typeof action.params.strategy === "string" ? action.params.strategy : undefined;
+  const validationCode = typeof action.result?.validation_issue_code === "string"
+    ? action.result.validation_issue_code
+    : undefined;
+  const elementId = typeof action.result?.element_id === "string" ? action.result.element_id : undefined;
+  const details = [
+    action.error,
+    validationCode ? `grounded_by=${validationCode}` : undefined,
+    elementId ? `element_id=${elementId}` : undefined,
+  ].filter((item): item is string => Boolean(item)).join("; ");
+  const assignmentLabel = strategy
+    ? `${strategy}${assignees.length > 0 ? ` -> ${assignees.join(", ")}` : ""}`
+    : undefined;
+
+  return {
+    id: randomUUID(),
+    action: action.action,
+    status,
+    summary:
+      status === "pending_confirmation"
+        ? `Назначение роли "${roleId}" ожидает подтверждения оператора.`
+        : `Предложение назначения роли "${roleId}" отклонено.`,
+    ...(details ? { details } : {}),
+    ...(action.error ? { failure_reasons: [action.error] } : {}),
+    changed_resources: [
+      {
+        kind: "role",
+        id: roleId,
+        ...(assignmentLabel ? { label: assignmentLabel } : {}),
+        change: status === "pending_confirmation" ? "pending" : "failed",
+      },
+    ],
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: action.action,
+    },
+  };
+}
+
 function buildWorkflowDeleteReceipt(
   action: AssistantAction,
   opts: NormalizeOptions,
@@ -1311,6 +1590,9 @@ function extractReply(parsed: Record<string, unknown>, fallback: string): string
   }
   if (parsed.start_case || parsed.case_start || parsed["case.start"]) {
     return "Запускаю процесс.";
+  }
+  if (parsed.role_assignment_suggestions || parsed.role_assignments || parsed.role_assignment || parsed["role.assign"]) {
+    return "Подготовил предложение назначения роли.";
   }
   return fallback;
 }
