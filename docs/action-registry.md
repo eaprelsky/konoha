@@ -77,8 +77,8 @@ argument metadata.
 | Action | Description | Autonomy |
 |--------|-------------|----------|
 | `element.add` | Add a validated event/function/gateway element to a workflow through the direct Action Spine executor | confirm |
-| `element.update` | Update element properties | confirm |
-| `element.remove` | Remove element + connected edges | confirm |
+| `element.update` | Update validated element properties through the direct Action Spine executor | confirm |
+| `element.remove` | Remove an element and connected edges through the direct Action Spine executor | confirm |
 
 ### Flow (`flow.*`)
 
@@ -91,8 +91,8 @@ argument metadata.
 
 | Action | Description | Autonomy |
 |--------|-------------|----------|
-| `trigger.set` | Set trigger config on event element | confirm |
-| `trigger.resolve` | Auto-detect trigger kind via resolver | auto |
+| `trigger.set` | Set trigger config on an event element through the direct Action Spine executor | confirm |
+| `trigger.resolve` | Auto-detect and persist trigger kind through the direct Action Spine executor | auto |
 
 ### Case (`case.*`)
 

@@ -168,6 +168,29 @@ describe("workflow action contract validation", () => {
     expect(result.errors).toContain("Missing required argument: label");
   });
 
+  it("element update/remove and trigger actions validate required fields", () => {
+    const update = validateActionArgs("element.update", {});
+    expect(update.valid).toBe(false);
+    expect(update.errors).toContain("Missing required argument: workflow_id");
+    expect(update.errors).toContain("Missing required argument: id");
+
+    const remove = validateActionArgs("element.remove", {});
+    expect(remove.valid).toBe(false);
+    expect(remove.errors).toContain("Missing required argument: workflow_id");
+    expect(remove.errors).toContain("Missing required argument: id");
+
+    const triggerSet = validateActionArgs("trigger.set", {});
+    expect(triggerSet.valid).toBe(false);
+    expect(triggerSet.errors).toContain("Missing required argument: workflow_id");
+    expect(triggerSet.errors).toContain("Missing required argument: element_id");
+    expect(triggerSet.errors).toContain("Missing required argument: kind");
+
+    const triggerResolve = validateActionArgs("trigger.resolve", {});
+    expect(triggerResolve.valid).toBe(false);
+    expect(triggerResolve.errors).toContain("Missing required argument: workflow_id");
+    expect(triggerResolve.errors).toContain("Missing required argument: element_id");
+  });
+
   it("flow add/remove validates required fields", () => {
     const add = validateActionArgs("flow.add", {});
     expect(add.valid).toBe(false);
@@ -385,10 +408,6 @@ describe("workflow action contract validation", () => {
   it("every action has explicit surface metadata for GUI/API/MCP/testbench parity", () => {
     const surface = listActionSurface();
     const planned = new Set([
-      "element.update",
-      "element.remove",
-      "trigger.set",
-      "trigger.resolve",
       "event.wait_list",
     ]);
 

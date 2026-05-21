@@ -21,8 +21,8 @@ Every API endpoint → action ID → autonomy level → audit status. Generated 
 | Endpoint | Action | Autonomy | Audited |
 |----------|--------|----------|---------|
 | `/act` direct | `element.add` | confirm | yes |
-| `PATCH /workflows/:id/elements/:eid` | `element.update` | confirm | yes |
-| `DELETE /workflows/:id/elements/:eid` | `element.remove` | confirm | yes |
+| `/act` direct | `element.update` | confirm | yes |
+| `/act` direct | `element.remove` | confirm | yes |
 
 ## Flow Actions
 
@@ -35,8 +35,8 @@ Every API endpoint → action ID → autonomy level → audit status. Generated 
 
 | Endpoint | Action | Autonomy | Audited |
 |----------|--------|----------|---------|
-| `PUT /workflows/:id/triggers/:eid` | `trigger.set` | confirm | yes |
-| `POST /workflows/:id/triggers/:eid/resolve` | `trigger.resolve` | auto | yes |
+| `/act` direct | `trigger.set` | confirm | yes |
+| `/act` direct | `trigger.resolve` | auto | yes |
 
 ## Case Actions
 

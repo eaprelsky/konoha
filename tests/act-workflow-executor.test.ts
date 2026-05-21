@@ -12,6 +12,7 @@ process.env.ANTHROPIC_API_KEY ||= "test-anthropic-key";
 
 const TEST_ADMIN_TOKEN = process.env.KONOHA_TOKEN || "test-admin-token-preload";
 const { app } = await import("../core/src/server");
+const { config } = await import("../src/config");
 const redis = createTestRedis();
 
 const RUN = `act-wf-${Date.now()}`;
@@ -56,6 +57,12 @@ beforeAll(async () => {
     "workflow.update",
     "workflow.delete",
     "element.add",
+    "element.update",
+    "element.remove",
+    "flow.add",
+    "flow.remove",
+    "trigger.set",
+    "trigger.resolve",
     "workitem.create",
     "workitem.update",
     "workitem.cancel",
@@ -816,6 +823,177 @@ describe("/act workflow executor", () => {
       code: "INVALID_FLOW_ENDPOINTS",
       workflow_id: workflowId,
     });
+  });
+
+  test("executes element.update and element.remove directly with validation and version guards", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-element-update-remove`;
+    const createWorkflowRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.create",
+        category: "act",
+        args: {
+          id: workflowId,
+          name: "Element update remove workflow",
+          elements: [
+            { id: "start", type: "event", label: "Start" },
+            { id: "review", type: "function", label: "Review", role: "reviewer" },
+            { id: "done", type: "event", label: "Done" },
+          ],
+          flow: [["start", "review"], ["review", "done"]],
+          draft: true,
+        },
+      }),
+    }));
+    expect(createWorkflowRes.status).toBe(201);
+
+    const update = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.update",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "review",
+          label: "Review request carefully",
+          role: "senior_reviewer",
+          expected_edit_version: 1,
+        },
+      }),
+    }));
+    const updateBody = await update.json();
+    expect(update.status).toBe(200);
+    expect(updateBody.data.updated_element).toMatchObject({
+      id: "review",
+      label: "Review request carefully",
+      role: "senior_reviewer",
+    });
+    expect(updateBody.data.edit_version).toBe(2);
+
+    const stale = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.update",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "review",
+          label: "Stale update",
+          expected_edit_version: 1,
+        },
+      }),
+    }));
+    const staleBody = await stale.json();
+    expect(stale.status).toBe(409);
+    expect(staleBody.data).toMatchObject({
+      code: "WORKFLOW_UPDATE_CONFLICT",
+      workflow_id: workflowId,
+      details: { expected_edit_version: 1, actual_edit_version: 2 },
+    });
+
+    const remove = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.remove",
+        category: "act",
+        args: { workflow_id: workflowId, id: "review", expected_edit_version: 2 },
+      }),
+    }));
+    const removeBody = await remove.json();
+    expect(remove.status).toBe(200);
+    expect(removeBody.data.removed_element.id).toBe("review");
+    expect(removeBody.data.removed_edges).toEqual([["start", "review"], ["review", "done"]]);
+    expect(removeBody.data.elements.map((el: any) => el.id)).toEqual(["start", "done"]);
+    expect(removeBody.data.flow).toEqual([]);
+  });
+
+  test("executes trigger.set and trigger.resolve directly on event elements", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-trigger-direct`;
+    const createWorkflowRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.create",
+        category: "act",
+        args: {
+          id: workflowId,
+          name: "Trigger direct workflow",
+          elements: [
+            { id: "start", type: "event", label: "Start" },
+            { id: "review", type: "function", label: "Review", role: "reviewer" },
+          ],
+          flow: [["start", "review"]],
+          draft: true,
+        },
+      }),
+    }));
+    expect(createWorkflowRes.status).toBe(201);
+
+    const setTrigger = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "trigger.set",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          element_id: "start",
+          kind: "timer",
+          config: { cron: "0 9 * * *", confidence: 1 },
+          expected_edit_version: 1,
+        },
+      }),
+    }));
+    const setBody = await setTrigger.json();
+    expect(setTrigger.status).toBe(200);
+    expect(setBody.data.trigger).toMatchObject({ kind: "timer", cron: "0 9 * * *", confidence: 1 });
+    expect(setBody.data.updated_element.trigger).toMatchObject({ kind: "timer", cron: "0 9 * * *" });
+
+    const invalidTarget = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "trigger.set",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          element_id: "review",
+          kind: "manual",
+          config: { manual_override: true },
+        },
+      }),
+    }));
+    const invalidTargetBody = await invalidTarget.json();
+    expect(invalidTarget.status).toBe(400);
+    expect(invalidTargetBody.data.code).toBe("INVALID_TRIGGER_TARGET");
+
+    const oldAnthropicKey = config.llm.anthropicApiKey;
+    config.llm.anthropicApiKey = "";
+    try {
+      const resolved = await app.fetch(new Request("http://localhost/act", {
+        method: "POST",
+        headers: adminHeaders(),
+        body: JSON.stringify({
+          action: "trigger.resolve",
+          category: "act",
+          args: {
+            workflow_id: workflowId,
+            element_id: "start",
+            expected_edit_version: 2,
+          },
+        }),
+      }));
+      const resolvedBody = await resolved.json();
+      expect(resolved.status).toBe(200);
+      expect(resolvedBody.data.trigger).toMatchObject({ kind: "ambiguous", confidence: 0 });
+      expect(resolvedBody.data.updated_element.trigger).toMatchObject({ kind: "ambiguous" });
+    } finally {
+      config.llm.anthropicApiKey = oldAnthropicKey;
+    }
   });
 
   test("executes workitem create/update/cancel directly through the action envelope", async () => {

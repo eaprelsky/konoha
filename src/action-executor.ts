@@ -182,6 +182,25 @@ function hasEdge(flow: FlowEdge[] | undefined, from: string, to: string): boolea
   });
 }
 
+function triggerFromArgs(args: Record<string, unknown>): { trigger?: WorkflowElement["trigger"]; error?: ActionExecution } {
+  const invalid = validationFailure("trigger.set", args);
+  if (invalid) return { error: invalid };
+  const kind = String(args.kind).trim();
+  if (!kind) return { error: { status: 400, data: { error: "Invalid trigger schema", code: "INVALID_TRIGGER_SCHEMA", details: ["kind must be a non-empty string"] } } };
+  const config = args.config === undefined ? {} : args.config;
+  if (!isRecord(config)) return { error: { status: 400, data: { error: "Invalid trigger schema", code: "INVALID_TRIGGER_SCHEMA", details: ["config must be an object"] } } };
+  return { trigger: { ...config, kind } as WorkflowElement["trigger"] };
+}
+
+function processContextFromWorkflow(workflow: WorkflowDefinition): ProcessContext {
+  return {
+    process_id: workflow.id,
+    process_name: workflow.name,
+    events: (workflow.elements ?? []).filter(el => el.type === "event").map(el => ({ id: el.id, label: el.label })),
+    functions: (workflow.elements ?? []).filter(el => el.type === "function").map(el => ({ id: el.id, label: el.label })),
+  };
+}
+
 function normalizeResolvedTrigger(trigger: Awaited<ReturnType<typeof resolveBatchProgrammatic>>[number]["trigger"]): WorkflowElement["trigger"] | null {
   if (!trigger) return null;
   if (trigger.kind === "timer" && !trigger.cron && isRecord(trigger.delay_after)) {
@@ -201,6 +220,63 @@ function normalizeResolvedTrigger(trigger: Awaited<ReturnType<typeof resolveBatc
 function lifecycleUpdateOpts(current: WorkflowDefinition): { draft?: boolean; lifecycleState?: WorkflowLifecycleState } {
   const lifecycleState = getWorkflowLifecycleState(current);
   return lifecycleState === "draft" ? { draft: true } : { lifecycleState: "validated" };
+}
+
+function expectedVersionConflict(
+  current: WorkflowDefinition,
+  args: Record<string, unknown>,
+  workflowId: string,
+): ActionExecution | null {
+  if (typeof args.expected_edit_version === "number" && current.edit_version !== args.expected_edit_version) {
+    return {
+      status: 409,
+      data: {
+        error: "Workflow edit version conflict",
+        code: "WORKFLOW_UPDATE_CONFLICT",
+        workflow_id: workflowId,
+        details: {
+          expected_edit_version: args.expected_edit_version,
+          actual_edit_version: current.edit_version ?? 0,
+        },
+      },
+    };
+  }
+  if (typeof args.expected_deploy_version === "number" && getWorkflowDeployVersion(current) !== args.expected_deploy_version) {
+    return {
+      status: 409,
+      data: {
+        error: "Workflow deploy version conflict",
+        code: "WORKFLOW_UPDATE_CONFLICT",
+        workflow_id: workflowId,
+        details: {
+          expected_deploy_version: args.expected_deploy_version,
+          actual_deploy_version: getWorkflowDeployVersion(current),
+        },
+      },
+    };
+  }
+  return null;
+}
+
+function mutationConflict(workflowId: string, attempts: number): ActionExecution {
+  return { status: 409, data: { error: "Workflow mutation conflict", code: "WORKFLOW_MUTATION_CONFLICT", workflow_id: workflowId, attempts } };
+}
+
+function workflowValidationFailure(
+  workflowId: string,
+  details: unknown,
+  extra: Record<string, unknown> = {},
+): ActionExecution {
+  return {
+    status: 422,
+    data: {
+      error: "Validation failed",
+      code: "WORKFLOW_VALIDATION_FAILED",
+      workflow_id: workflowId,
+      ...extra,
+      details,
+    },
+  };
 }
 
 async function normalizeElementsIfNeeded(body: Record<string, unknown>): Promise<boolean> {
@@ -699,6 +775,8 @@ async function executeElementAction(action: string, args: Record<string, unknown
 
       const workflowId = String(args.workflow_id);
       const result = await mutateWorkflowAtomically<{ added_element: WorkflowElement }, ActionExecution>(workflowId, current => {
+        const versionConflict = expectedVersionConflict(current, args, workflowId);
+        if (versionConflict) return { abort: versionConflict };
         if ((current.elements ?? []).some(existing => existing.id === element.id)) {
           return {
             abort: {
@@ -726,24 +804,97 @@ async function executeElementAction(action: string, args: Record<string, unknown
       if (result.status === "not_found") {
         return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
       }
-      if (result.status === "conflict") {
-        return { status: 409, data: { error: "Workflow mutation conflict", code: "WORKFLOW_MUTATION_CONFLICT", workflow_id: workflowId, attempts: result.attempts } };
-      }
+      if (result.status === "conflict") return mutationConflict(workflowId, result.attempts);
       if (result.status === "aborted") return result.meta;
       if (result.errors.length > 0) {
-        return {
-          status: 422,
-          data: {
-            error: "Validation failed",
-            code: "WORKFLOW_VALIDATION_FAILED",
-            workflow_id: workflowId,
-            element_id: element.id,
-            details: result.errors,
-          },
-        };
+        return workflowValidationFailure(workflowId, result.errors, { element_id: element.id });
       }
 
       return { status: 200, data: { ...result.workflow, added_element: result.meta.added_element } };
+    }
+    case "element.update": {
+      const invalid = validationFailure("element.update", args);
+      if (invalid) return invalid;
+      const workflowId = String(args.workflow_id);
+      const elementId = String(args.id).trim();
+      const patch: Partial<WorkflowElement> = {};
+      const details: string[] = [];
+      if (args.label !== undefined) {
+        const label = String(args.label).trim();
+        if (!label) details.push("label must be a non-empty string when provided");
+        else patch.label = label;
+      }
+      if (args.role !== undefined) {
+        const role = String(args.role).trim();
+        if (!role) details.push("role must be a non-empty string when provided");
+        else patch.role = role;
+      }
+      if (args.trigger !== undefined) {
+        if (!isRecord(args.trigger)) details.push("trigger must be an object when provided");
+        else patch.trigger = args.trigger as WorkflowElement["trigger"];
+      }
+      if (details.length > 0) return { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details } };
+      if (Object.keys(patch).length === 0) return { status: 400, data: { error: "No element update fields provided", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId } };
+
+      const result = await mutateWorkflowAtomically<{ updated_element: WorkflowElement }, ActionExecution>(workflowId, current => {
+        const versionConflict = expectedVersionConflict(current, args, workflowId);
+        if (versionConflict) return { abort: versionConflict };
+        const index = (current.elements ?? []).findIndex(element => element.id === elementId);
+        if (index < 0) {
+          return { abort: { status: 404, data: { error: "Element not found", code: "ELEMENT_NOT_FOUND", workflow_id: workflowId, element_id: elementId } } };
+        }
+        const currentElement = current.elements[index];
+        if (patch.role !== undefined && currentElement.type !== "function") {
+          return { abort: { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details: ["role is only allowed for function elements"] } } };
+        }
+        if (patch.trigger !== undefined && currentElement.type !== "event") {
+          return { abort: { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details: ["trigger is only allowed for event elements"] } } };
+        }
+        const updated = { ...currentElement, ...patch, id: currentElement.id, type: currentElement.type };
+        const elements = [...(current.elements ?? [])];
+        elements[index] = updated;
+        return { patch: { elements }, opts: lifecycleUpdateOpts(current), meta: { updated_element: updated } };
+      });
+
+      if (result.status === "not_found") return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
+      if (result.status === "conflict") return mutationConflict(workflowId, result.attempts);
+      if (result.status === "aborted") return result.meta;
+      if (result.errors.length > 0) return workflowValidationFailure(workflowId, result.errors, { element_id: elementId });
+      return { status: 200, data: { ...result.workflow, updated_element: result.meta.updated_element } };
+    }
+    case "element.remove": {
+      const invalid = validationFailure("element.remove", args);
+      if (invalid) return invalid;
+      const workflowId = String(args.workflow_id);
+      const elementId = String(args.id).trim();
+      const result = await mutateWorkflowAtomically<{ removed_element: WorkflowElement; removed_edges: FlowEdge[] }, ActionExecution>(workflowId, current => {
+        const versionConflict = expectedVersionConflict(current, args, workflowId);
+        if (versionConflict) return { abort: versionConflict };
+        const currentElements = current.elements ?? [];
+        const removed = currentElements.find(element => element.id === elementId);
+        if (!removed) return { abort: { status: 404, data: { error: "Element not found", code: "ELEMENT_NOT_FOUND", workflow_id: workflowId, element_id: elementId } } };
+        const removedEdges = (current.flow ?? []).filter(edge => {
+          const [from, to] = edgeEndpoints(edge);
+          return from === elementId || to === elementId;
+        });
+        return {
+          patch: {
+            elements: currentElements.filter(element => element.id !== elementId),
+            flow: (current.flow ?? []).filter(edge => {
+              const [from, to] = edgeEndpoints(edge);
+              return from !== elementId && to !== elementId;
+            }),
+          },
+          opts: lifecycleUpdateOpts(current),
+          meta: { removed_element: removed, removed_edges: removedEdges },
+        };
+      });
+
+      if (result.status === "not_found") return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
+      if (result.status === "conflict") return mutationConflict(workflowId, result.attempts);
+      if (result.status === "aborted") return result.meta;
+      if (result.errors.length > 0) return workflowValidationFailure(workflowId, result.errors, { element_id: elementId });
+      return { status: 200, data: { ...result.workflow, removed_element: result.meta.removed_element, removed_edges: result.meta.removed_edges } };
     }
     default:
       return null;
@@ -761,6 +912,8 @@ async function executeFlowAction(action: string, args: Record<string, unknown>):
 
       const workflowId = String(args.workflow_id);
       const result = await mutateWorkflowAtomically<{ added_edge: FlowEdge }, ActionExecution>(workflowId, current => {
+        const versionConflict = expectedVersionConflict(current, args, workflowId);
+        if (versionConflict) return { abort: versionConflict };
         const elementIds = new Set((current.elements ?? []).map(element => element.id));
         const missing = [from, to].filter(id => !elementIds.has(id));
         if (missing.length > 0) {
@@ -788,14 +941,9 @@ async function executeFlowAction(action: string, args: Record<string, unknown>):
       });
 
       if (result.status === "not_found") return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
-      if (result.status === "conflict") return { status: 409, data: { error: "Workflow mutation conflict", code: "WORKFLOW_MUTATION_CONFLICT", workflow_id: workflowId, attempts: result.attempts } };
+      if (result.status === "conflict") return mutationConflict(workflowId, result.attempts);
       if (result.status === "aborted") return result.meta;
-      if (result.errors.length > 0) {
-        return {
-          status: 422,
-          data: { error: "Validation failed", code: "WORKFLOW_VALIDATION_FAILED", workflow_id: workflowId, edge: { from, to }, details: result.errors },
-        };
-      }
+      if (result.errors.length > 0) return workflowValidationFailure(workflowId, result.errors, { edge: { from, to } });
       return { status: 200, data: { ...result.workflow, added_edge: result.meta.added_edge } };
     }
     case "flow.remove": {
@@ -807,6 +955,8 @@ async function executeFlowAction(action: string, args: Record<string, unknown>):
 
       const workflowId = String(args.workflow_id);
       const result = await mutateWorkflowAtomically<{ removed_edge: FlowEdge }, ActionExecution>(workflowId, current => {
+        const versionConflict = expectedVersionConflict(current, args, workflowId);
+        if (versionConflict) return { abort: versionConflict };
         const currentFlow = current.flow ?? [];
         const removed = currentFlow.find(edge => {
           const [edgeFrom, edgeTo] = edgeEndpoints(edge);
@@ -833,15 +983,99 @@ async function executeFlowAction(action: string, args: Record<string, unknown>):
       });
 
       if (result.status === "not_found") return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
-      if (result.status === "conflict") return { status: 409, data: { error: "Workflow mutation conflict", code: "WORKFLOW_MUTATION_CONFLICT", workflow_id: workflowId, attempts: result.attempts } };
+      if (result.status === "conflict") return mutationConflict(workflowId, result.attempts);
       if (result.status === "aborted") return result.meta;
-      if (result.errors.length > 0) {
+      if (result.errors.length > 0) return workflowValidationFailure(workflowId, result.errors, { edge: { from, to } });
+      return { status: 200, data: { ...result.workflow, removed_edge: result.meta.removed_edge } };
+    }
+    default:
+      return null;
+  }
+}
+
+async function executeTriggerAction(action: string, args: Record<string, unknown>): Promise<ActionExecution | null> {
+  switch (action) {
+    case "trigger.set": {
+      const { trigger, error } = triggerFromArgs(args);
+      if (error) return error;
+      if (!trigger) return { status: 400, data: { error: "Invalid trigger schema", code: "INVALID_TRIGGER_SCHEMA" } };
+      const workflowId = String(args.workflow_id);
+      const elementId = String(args.element_id).trim();
+      const result = await mutateWorkflowAtomically<{ updated_element: WorkflowElement; trigger: WorkflowElement["trigger"] }, ActionExecution>(workflowId, current => {
+        const versionConflict = expectedVersionConflict(current, args, workflowId);
+        if (versionConflict) return { abort: versionConflict };
+        const index = (current.elements ?? []).findIndex(element => element.id === elementId);
+        if (index < 0) return { abort: { status: 404, data: { error: "Element not found", code: "ELEMENT_NOT_FOUND", workflow_id: workflowId, element_id: elementId } } };
+        const currentElement = current.elements[index];
+        if (currentElement.type !== "event") {
+          return { abort: { status: 400, data: { error: "Trigger target must be an event element", code: "INVALID_TRIGGER_TARGET", workflow_id: workflowId, element_id: elementId } } };
+        }
+        const updated = { ...currentElement, trigger };
+        const elements = [...(current.elements ?? [])];
+        elements[index] = updated;
+        return { patch: { elements }, opts: lifecycleUpdateOpts(current), meta: { updated_element: updated, trigger } };
+      });
+
+      if (result.status === "not_found") return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
+      if (result.status === "conflict") return mutationConflict(workflowId, result.attempts);
+      if (result.status === "aborted") return result.meta;
+      if (result.errors.length > 0) return workflowValidationFailure(workflowId, result.errors, { element_id: elementId });
+      return { status: 200, data: { ...result.workflow, updated_element: result.meta.updated_element, trigger: result.meta.trigger } };
+    }
+    case "trigger.resolve": {
+      const invalid = validationFailure("trigger.resolve", args);
+      if (invalid) return invalid;
+      const workflowId = String(args.workflow_id);
+      const elementId = String(args.element_id).trim();
+      const current = await getWorkflow(workflowId);
+      if (!current) return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
+      const target = (current.elements ?? []).find(element => element.id === elementId);
+      if (!target) return { status: 404, data: { error: "Element not found", code: "ELEMENT_NOT_FOUND", workflow_id: workflowId, element_id: elementId } };
+      if (target.type !== "event") return { status: 400, data: { error: "Trigger target must be an event element", code: "INVALID_TRIGGER_TARGET", workflow_id: workflowId, element_id: elementId } };
+      const versionConflict = expectedVersionConflict(current, args, workflowId);
+      if (versionConflict) return versionConflict;
+      if (target.trigger?.manual_override) {
         return {
-          status: 422,
-          data: { error: "Validation failed", code: "WORKFLOW_VALIDATION_FAILED", workflow_id: workflowId, edge: { from, to }, details: result.errors },
+          status: 200,
+          data: {
+            ...current,
+            updated_element: target,
+            trigger: target.trigger,
+            skipped: true,
+            reason: "manual_override",
+          },
         };
       }
-      return { status: 200, data: { ...result.workflow, removed_edge: result.meta.removed_edge } };
+
+      let trigger: WorkflowElement["trigger"] = { kind: "ambiguous", candidates: [], confidence: 0 };
+      try {
+        const [resolved] = await Promise.race([
+          resolveBatchProgrammatic([{ id: target.id, label: target.label, manual_override: target.trigger?.manual_override }], processContextFromWorkflow(current)),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("trigger resolver timed out after 60s")), 60_000)),
+        ]);
+        trigger = normalizeResolvedTrigger(resolved?.trigger) ?? trigger;
+      } catch (e: any) {
+        trigger = { kind: "ambiguous", candidates: [], confidence: 0, error: e.message } as WorkflowElement["trigger"];
+      }
+
+      const result = await mutateWorkflowAtomically<{ updated_element: WorkflowElement; trigger: WorkflowElement["trigger"] }, ActionExecution>(workflowId, latest => {
+        const versionConflict = expectedVersionConflict(latest, args, workflowId);
+        if (versionConflict) return { abort: versionConflict };
+        const index = (latest.elements ?? []).findIndex(element => element.id === elementId);
+        if (index < 0) return { abort: { status: 404, data: { error: "Element not found", code: "ELEMENT_NOT_FOUND", workflow_id: workflowId, element_id: elementId } } };
+        const latestElement = latest.elements[index];
+        if (latestElement.type !== "event") return { abort: { status: 400, data: { error: "Trigger target must be an event element", code: "INVALID_TRIGGER_TARGET", workflow_id: workflowId, element_id: elementId } } };
+        const updated = { ...latestElement, trigger };
+        const elements = [...(latest.elements ?? [])];
+        elements[index] = updated;
+        return { patch: { elements }, opts: lifecycleUpdateOpts(latest), meta: { updated_element: updated, trigger } };
+      });
+
+      if (result.status === "not_found") return { status: 404, data: { error: "Workflow not found", code: "WORKFLOW_NOT_FOUND", workflow_id: workflowId } };
+      if (result.status === "conflict") return mutationConflict(workflowId, result.attempts);
+      if (result.status === "aborted") return result.meta;
+      if (result.errors.length > 0) return workflowValidationFailure(workflowId, result.errors, { element_id: elementId });
+      return { status: 200, data: { ...result.workflow, updated_element: result.meta.updated_element, trigger: result.meta.trigger } };
     }
     default:
       return null;
@@ -1402,6 +1636,9 @@ export async function executeActionDirect(
   }
   if (action.startsWith("flow.")) {
     return executeFlowAction(action, args);
+  }
+  if (action.startsWith("trigger.")) {
+    return executeTriggerAction(action, args);
   }
   if (action.startsWith("case.")) {
     return executeCaseAction(action, args);
