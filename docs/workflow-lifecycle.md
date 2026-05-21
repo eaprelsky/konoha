@@ -168,7 +168,8 @@ deployment transaction receipt:
   "records": {
     "workflow": "workflow:sales/lead-qualification",
     "deployed_snapshot": "workflow:deployed:sales/lead-qualification:v3",
-    "deploy_receipt": "workflow.last_deploy.side_effects"
+    "deploy_receipt": "workflow.last_deploy.side_effects",
+    "deploy_record": "workflow:deploy-record:sales/lead-qualification:v3"
   },
   "retry_policy": {
     "scope": "workflow_deploy_version",
@@ -187,6 +188,17 @@ and deployment-scoped `idempotency_key` values for created, cancelled,
 unchanged, failed, and rollback operations. The durable deploy record is
 `workflow.last_deploy`; its `side_effects` field stores the same
 transaction/subscription receipt after materialization.
+
+Each deploy attempt that reaches the durable deploy boundary also writes an
+auditable deploy record keyed as
+`workflow:deploy-record:<workflow_id>:v<deploy_version>` and indexed by
+`workflow:deploy-records:<workflow_id>` plus the global
+`workflow:deploy-records` index. Deploy records store the transaction receipt,
+workflow/snapshot/receipt record keys, deployed version, created/cancelled/
+unchanged/failed subscription diff, rollback evidence when present, and stable
+failure details for blocked attempts. These records are the durable input for
+subscription materialization and reconciliation follow-ups; operators should
+inspect them before manually repairing subscriptions.
 
 Failures use stable `code` values:
 

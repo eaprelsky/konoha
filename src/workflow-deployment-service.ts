@@ -41,6 +41,7 @@ export interface WorkflowDeploymentTransactionReceipt {
     workflow: string;
     deployed_snapshot: string;
     deploy_receipt: "workflow.last_deploy.side_effects";
+    deploy_record: string;
   };
   retry_policy: {
     scope: "workflow_deploy_version";
@@ -79,10 +80,44 @@ export interface WorkflowDeploymentReceipt {
   };
 }
 
+export type WorkflowDeploymentRecordStatus = "completed" | "blocked";
+
+export interface WorkflowDeploymentRecord {
+  schema_version: 1;
+  workflow_id: string;
+  deploy_version: number;
+  deployment_id: string;
+  record_key: string;
+  index_key: string;
+  status: WorkflowDeploymentRecordStatus;
+  source: string;
+  attempted_at: string;
+  completed_at: string;
+  deployed_at?: string;
+  deployed_by?: string;
+  transaction: WorkflowDeploymentTransactionReceipt;
+  records: WorkflowDeploymentTransactionReceipt["records"];
+  subscription_diff: WorkflowDeploymentReceipt["subscriptions"] & {
+    rollback?: WorkflowDeploymentSubscriptionReceipt[];
+  };
+  failure?: {
+    code: string;
+    message: string;
+    details?: string[];
+  };
+  receipt: WorkflowDeploymentReceipt & {
+    rollback?: WorkflowDeploymentSubscriptionReceipt[];
+  };
+}
+
 interface DeploymentSubscriptionDeps {
   createSubscription: typeof createSubscriptionProgrammatic;
   cancelResources: typeof cancelSubscriptionResources;
 }
+
+export const WORKFLOW_DEPLOY_RECORD_KEY_PREFIX = "workflow:deploy-record:";
+export const WORKFLOW_DEPLOY_RECORD_INDEX_PREFIX = "workflow:deploy-records:";
+export const WORKFLOW_DEPLOY_RECORD_GLOBAL_INDEX = "workflow:deploy-records";
 
 const defaultDeps: DeploymentSubscriptionDeps = {
   createSubscription: createSubscriptionProgrammatic,
@@ -121,6 +156,14 @@ function deploymentId(workflowId: string, deployVersion: number): string {
 
 function operationKey(workflowId: string, deployVersion: number, eventId: string): string {
   return `${workflowId}:v${deployVersion}:${eventId}`;
+}
+
+export function workflowDeploymentRecordKey(workflowId: string, deployVersion: number): string {
+  return `${WORKFLOW_DEPLOY_RECORD_KEY_PREFIX}${workflowId}:v${deployVersion}`;
+}
+
+export function workflowDeploymentRecordIndexKey(workflowId: string): string {
+  return `${WORKFLOW_DEPLOY_RECORD_INDEX_PREFIX}${workflowId}`;
 }
 
 function deploymentIdempotencyKey(workflowId: string, deployVersion: number, callerKey?: string): string {
@@ -164,6 +207,7 @@ export function buildWorkflowDeploymentTransaction(
       workflow: `workflow:${def.id}`,
       deployed_snapshot: `workflow:deployed:${def.id}:v${context.deploy_version}`,
       deploy_receipt: "workflow.last_deploy.side_effects",
+      deploy_record: workflowDeploymentRecordKey(def.id, context.deploy_version),
     },
     retry_policy: {
       scope: "workflow_deploy_version",
@@ -184,6 +228,68 @@ export function setWorkflowDeploymentTransactionStatus<T extends WorkflowDeploym
       status,
     },
   } as T;
+}
+
+export async function persistWorkflowDeploymentRecord(
+  receipt: WorkflowDeploymentReceipt & { rollback?: WorkflowDeploymentSubscriptionReceipt[] },
+  options: {
+    status: WorkflowDeploymentRecordStatus;
+    attempted_at?: string;
+    completed_at?: string;
+    deployed_at?: string;
+    deployed_by?: string;
+    failure?: WorkflowDeploymentRecord["failure"];
+  },
+): Promise<WorkflowDeploymentRecord> {
+  const record_key = workflowDeploymentRecordKey(receipt.workflow_id, receipt.deploy_version);
+  const index_key = workflowDeploymentRecordIndexKey(receipt.workflow_id);
+  const completed_at = options.completed_at ?? new Date().toISOString();
+  const attempted_at = options.attempted_at ?? completed_at;
+  const record: WorkflowDeploymentRecord = {
+    schema_version: 1,
+    workflow_id: receipt.workflow_id,
+    deploy_version: receipt.deploy_version,
+    deployment_id: receipt.deployment_id,
+    record_key,
+    index_key,
+    status: options.status,
+    source: receipt.source,
+    attempted_at,
+    completed_at,
+    ...(options.deployed_at ? { deployed_at: options.deployed_at } : {}),
+    ...(options.deployed_by ? { deployed_by: options.deployed_by } : {}),
+    transaction: receipt.transaction,
+    records: receipt.transaction.records,
+    subscription_diff: {
+      ...receipt.subscriptions,
+      ...(receipt.rollback ? { rollback: receipt.rollback } : {}),
+    },
+    ...(options.failure ? { failure: options.failure } : {}),
+    receipt,
+  };
+  const score = Date.parse(completed_at);
+  await redis.set(record_key, JSON.stringify(record));
+  await redis.zadd(index_key, Number.isFinite(score) ? score : Date.now(), record_key);
+  await redis.zadd(WORKFLOW_DEPLOY_RECORD_GLOBAL_INDEX, Number.isFinite(score) ? score : Date.now(), record_key);
+  return record;
+}
+
+export async function getWorkflowDeploymentRecord(
+  workflowId: string,
+  deployVersion: number,
+): Promise<WorkflowDeploymentRecord | null> {
+  const raw = await redis.get(workflowDeploymentRecordKey(workflowId, deployVersion));
+  if (!raw) return null;
+  return JSON.parse(raw) as WorkflowDeploymentRecord;
+}
+
+export async function listWorkflowDeploymentRecords(workflowId: string): Promise<WorkflowDeploymentRecord[]> {
+  const keys = await redis.zrange(workflowDeploymentRecordIndexKey(workflowId), 0, -1);
+  if (keys.length === 0) return [];
+  const rawRecords = await redis.mget(...keys);
+  return rawRecords
+    .filter((raw): raw is string => Boolean(raw))
+    .map(raw => JSON.parse(raw) as WorkflowDeploymentRecord);
 }
 
 function startEvents(def: WorkflowDefinition): WorkflowElement[] {

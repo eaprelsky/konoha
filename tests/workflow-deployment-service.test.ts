@@ -11,8 +11,13 @@ import {
   type WorkflowDefinition,
 } from "../src/workflow-loader";
 import {
+  getWorkflowDeploymentRecord,
+  listWorkflowDeploymentRecords,
   materializeWorkflowDeploymentSubscriptions,
   setWorkflowDeploymentSubscriptionDepsForTest,
+  workflowDeploymentRecordIndexKey,
+  workflowDeploymentRecordKey,
+  WORKFLOW_DEPLOY_RECORD_GLOBAL_INDEX,
 } from "../src/workflow-deployment-service";
 import { createTestRedis } from "./redis-test-utils";
 
@@ -62,6 +67,17 @@ async function deployedSnapshotKeys(processId: string): Promise<string[]> {
   return keys;
 }
 
+async function deployRecordKeys(processId: string): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", `workflow:deploy-record:${processId}:*`, "COUNT", 100) as [string, string[]];
+    keys.push(...batch);
+    cursor = nextCursor;
+  } while (cursor !== "0");
+  return keys;
+}
+
 async function cleanupWorkflow(id: string): Promise<void> {
   await deleteCasesByProcess(id).catch(() => 0);
   await cancelSubscriptionsByProcessAndInstance(id, "new").catch(() => 0);
@@ -69,6 +85,12 @@ async function cleanupWorkflow(id: string): Promise<void> {
   if (subs.length > 0) await redis.hdel(SUBSCRIPTIONS_KEY, ...subs.map(sub => sub.id));
   const keys = await deployedSnapshotKeys(id);
   if (keys.length > 0) await redis.del(...keys);
+  const deployKeys = await deployRecordKeys(id);
+  if (deployKeys.length > 0) {
+    await redis.del(...deployKeys);
+    await redis.zrem(WORKFLOW_DEPLOY_RECORD_GLOBAL_INDEX, ...deployKeys).catch(() => 0);
+  }
+  await redis.del(workflowDeploymentRecordIndexKey(id));
   await redis.del(`workflow:${id}`);
   await redis.del(`konoha:workflow:versionctr:${id}`);
   await redis.srem("konoha:workflow:index", id);
@@ -113,6 +135,7 @@ describe("workflow deployment service", () => {
           workflow: `workflow:${id}`,
           deployed_snapshot: `workflow:deployed:${id}:v1`,
           deploy_receipt: "workflow.last_deploy.side_effects",
+          deploy_record: workflowDeploymentRecordKey(id, 1),
         },
       },
       subscriptions: {
@@ -140,6 +163,35 @@ describe("workflow deployment service", () => {
       operation_key: `${id}:v1:start`,
       idempotency_key: `workflow.deploy:${id}:v1:${firstIdempotencyKey}:subscription:create:start`,
       deployed_by: "operator-1",
+    });
+    const firstRecord = await getWorkflowDeploymentRecord(id, 1);
+    expect(firstRecord).toMatchObject({
+      schema_version: 1,
+      workflow_id: id,
+      deploy_version: 1,
+      deployment_id: `${id}:v1`,
+      record_key: workflowDeploymentRecordKey(id, 1),
+      index_key: workflowDeploymentRecordIndexKey(id),
+      status: "completed",
+      deployed_by: "operator-1",
+      transaction: {
+        status: "completed",
+        idempotency_key: `workflow.deploy:${id}:v1:${firstIdempotencyKey}`,
+      },
+      records: {
+        deploy_record: workflowDeploymentRecordKey(id, 1),
+      },
+      subscription_diff: {
+        desired: 1,
+        created: [expect.objectContaining({ operation_key: `${id}:v1:start` })],
+        cancelled: [],
+        unchanged: [],
+        failed: [],
+      },
+      receipt: {
+        ok: true,
+        deploy_version: 1,
+      },
     });
 
     const second = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-2" });
@@ -183,6 +235,16 @@ describe("workflow deployment service", () => {
       idempotency_key: `workflow.deploy:${id}:v2:subscription:unchanged:start`,
       deployed_by: "operator-2",
     });
+    const records = await listWorkflowDeploymentRecords(id);
+    expect(records.map(record => record.deploy_version)).toEqual([1, 2]);
+    expect(records[1]).toMatchObject({
+      status: "completed",
+      deploy_version: 2,
+      subscription_diff: {
+        desired: 1,
+        unchanged: [expect.objectContaining({ operation_key: `${id}:v2:start` })],
+      },
+    });
   });
 
   test("redeploy cancels stale start subscriptions and creates changed trigger subscriptions", async () => {
@@ -217,6 +279,21 @@ describe("workflow deployment service", () => {
     expect(active).toHaveLength(1);
     expect(active[0].id).not.toBe(firstSub.id);
     expect(active[0].trigger).toMatchObject({ kind: "timer", cron: "*/10 * * * *" });
+    const record = await getWorkflowDeploymentRecord(id, 2);
+    expect(record).toMatchObject({
+      status: "completed",
+      deploy_version: 2,
+      subscription_diff: {
+        desired: 1,
+        created: [expect.objectContaining({ operation_key: `${id}:v2:start` })],
+        cancelled: [expect.objectContaining({
+          previous_subscription_id: firstSub.id,
+          reason: "trigger_changed",
+        })],
+        unchanged: [],
+        failed: [],
+      },
+    });
   });
 
   test("caller idempotency key is scoped by deploy version for changed-trigger redeploy", async () => {
@@ -361,6 +438,25 @@ describe("workflow deployment service", () => {
         },
       });
       expect(await activeSubscriptionsForProcess(id)).toEqual([]);
+      const record = await getWorkflowDeploymentRecord(id, 1);
+      expect(record).toMatchObject({
+        status: "blocked",
+        failure: {
+          code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED",
+          message: "Workflow deploy failed while materializing subscriptions",
+        },
+        subscription_diff: {
+          failed: [expect.objectContaining({
+            event_id: "start",
+            reason: "create_subscription_failed",
+          })],
+          rollback: [],
+        },
+        receipt: {
+          ok: false,
+          rollback: [],
+        },
+      });
     } finally {
       resetDeps();
     }

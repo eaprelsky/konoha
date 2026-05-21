@@ -72,7 +72,9 @@ import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } fr
 import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
 import { applyWorkflowPatch } from "./workflow-patch-service";
 import {
+  buildWorkflowDeploymentTransaction,
   materializeWorkflowDeploymentSubscriptions,
+  persistWorkflowDeploymentRecord,
   rollbackWorkflowDeploymentSideEffects,
   setWorkflowDeploymentTransactionStatus,
 } from "./workflow-deployment-service";
@@ -621,6 +623,40 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   try {
     await saveWorkflowDeployedSnapshot(result.workflow, "workflow.deploy");
   } catch (e: any) {
+    const transaction = buildWorkflowDeploymentTransaction({ id }, {
+      deploy_version: deployVersion,
+      deployed_at: deployedAt,
+      deployed_by: deployedBy,
+      idempotency_key: idempotencyKey,
+      source: "workflow.deploy",
+    }, "blocked");
+    const snapshotFailureDeployment = {
+      ok: false,
+      workflow_id: id,
+      deploy_version: deployVersion,
+      deployment_id: transaction.deployment_id,
+      transaction,
+      source: "workflow.deploy",
+      subscriptions: {
+        desired: 0,
+        created: [],
+        cancelled: [],
+        unchanged: [],
+        failed: [],
+      },
+    };
+    await persistWorkflowDeploymentRecord(snapshotFailureDeployment, {
+      status: "blocked",
+      attempted_at: deployedAt,
+      completed_at: new Date().toISOString(),
+      deployed_at: deployedAt,
+      deployed_by: deployedBy,
+      failure: {
+        code: "WORKFLOW_DEPLOY_SNAPSHOT_FAILED",
+        message: e.message,
+        details: [`DEPLOYED_SNAPSHOT_FAILED: ${e.message}`],
+      },
+    });
     const blocked = await updateWorkflow(id, result.workflow, {
       lifecycleState: "validated",
       deploy: {
@@ -655,6 +691,20 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   if (!deployment.ok) {
     const rollback = await rollbackWorkflowDeploymentSideEffects(deployment);
     const blockedDeployment = setWorkflowDeploymentTransactionStatus({ ...deployment, rollback }, "blocked");
+    await persistWorkflowDeploymentRecord(blockedDeployment, {
+      status: "blocked",
+      attempted_at: deployedAt,
+      completed_at: new Date().toISOString(),
+      deployed_at: deployedAt,
+      deployed_by: deployedBy,
+      failure: {
+        code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED",
+        message: "Workflow deploy failed while materializing subscriptions",
+        details: deployment.subscriptions.failed.map(failure =>
+          `${failure.event_id}: ${failure.error ?? failure.reason ?? "unknown error"}`,
+        ),
+      },
+    });
     const failedDetails = deployment.subscriptions.failed.map(failure =>
       `SUBSCRIPTION_MATERIALIZATION_FAILED: ${failure.event_id}: ${failure.error ?? failure.reason ?? "unknown error"}`,
     );
@@ -685,6 +735,13 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   }
 
   const completedDeployment = setWorkflowDeploymentTransactionStatus(deployment, "completed");
+  await persistWorkflowDeploymentRecord(completedDeployment, {
+    status: "completed",
+    attempted_at: deployedAt,
+    completed_at: new Date().toISOString(),
+    deployed_at: deployedAt,
+    deployed_by: deployedBy,
+  });
   const receiptUpdate = await updateWorkflow(id, result.workflow, {
     lifecycleState: "executable",
     deploy: {
