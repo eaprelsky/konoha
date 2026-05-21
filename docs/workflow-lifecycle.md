@@ -219,6 +219,12 @@ Failures use stable `code` values:
   the response includes rollback evidence and the workflow is demoted back to
   `validated` with `needs_review`.
 
+When rollback cannot cancel a subscription that was already created during a
+failed deploy attempt, the subscription remains active and retryable. The
+rollback receipt records the failed cancel operation, and the next
+`workflow.deploy` attempt treats the matching active start subscription as
+`unchanged` instead of creating a duplicate.
+
 `workflow.undeploy` and `workflow.retire` return stable subscription
 reconciliation evidence. `workflow.undeploy` keeps the workflow record but makes
 new case starts fail the executable gate:

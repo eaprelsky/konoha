@@ -39,6 +39,21 @@ function workflow(id: string, cron = "*/5 * * * *"): WorkflowDefinition {
   };
 }
 
+function workflowWithTwoStartEvents(id: string): WorkflowDefinition {
+  return {
+    id,
+    version: "1.0.0",
+    name: `Deployment service ${id}`,
+    elements: [
+      { id: "start-a", type: "event", label: "Start A", trigger: { kind: "timer", cron: "*/5 * * * *", confidence: 1 } },
+      { id: "start-b", type: "event", label: "Start B", trigger: { kind: "timer", cron: "*/10 * * * *", confidence: 1 } },
+      { id: "task", type: "function", label: "Review", role: "reviewer" },
+      { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
+    ],
+    flow: [["start-a", "task"], ["start-b", "task"], ["task", "done"]],
+  };
+}
+
 async function subscriptionsForProcess(processId: string): Promise<Array<Record<string, any>>> {
   const raw = await redis.hgetall(SUBSCRIPTIONS_KEY).catch(() => ({} as Record<string, string>));
   return Object.values(raw)
@@ -757,5 +772,157 @@ describe("workflow deployment service", () => {
     } finally {
       resetDeps();
     }
+  });
+
+  test("failed deploy rollback leaves created subscriptions retryable and retry does not duplicate them", async () => {
+    const id = `${RUN}-rollback-retry`;
+    touched.add(id);
+    await createWorkflow(workflowWithTwoStartEvents(id));
+
+    const runtimeSub = await createSubscriptionProgrammatic({
+      event_id: "waiting",
+      process_id: id,
+      process_name: "Running case",
+      instance_id: "case-rollback-retry",
+      trigger: { kind: "manual", action: "complete", role: "reviewer" } as any,
+    });
+
+    let createAttempts = 0;
+    let rollbackAttempts = 0;
+    const resetDeps = setWorkflowDeploymentSubscriptionDepsForTest({
+      async createSubscription(params) {
+        createAttempts += 1;
+        if (params.event_id === "start-b") {
+          throw new Error("simulated start-b materialization failure");
+        }
+        return createSubscriptionProgrammatic(params);
+      },
+      async cancelResources(sub) {
+        rollbackAttempts += 1;
+        if (sub.event_id === "start-a") {
+          throw new Error("simulated rollback cancel failure");
+        }
+      },
+    });
+    try {
+      const failedDeploy = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+      expect(failedDeploy?.status).toBe(502);
+      expect(createAttempts).toBe(2);
+      expect(rollbackAttempts).toBe(1);
+      expect((failedDeploy?.data as any)).toMatchObject({
+        code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED",
+        lifecycle_state: "validated",
+        deployment: {
+          ok: false,
+          deploy_version: 1,
+          subscriptions: {
+            desired: 2,
+            created: [expect.objectContaining({
+              event_id: "start-a",
+              status: "created",
+              operation_key: `${id}:v1:start-a`,
+            })],
+            failed: [expect.objectContaining({
+              event_id: "start-b",
+              status: "failed",
+              reason: "create_subscription_failed",
+              error: "simulated start-b materialization failure",
+            })],
+          },
+          rollback: [expect.objectContaining({
+            event_id: "start-a",
+            status: "failed",
+            reason: "rollback_failed_deploy_materialization",
+            error: "simulated rollback cancel failure",
+          })],
+        },
+      });
+    } finally {
+      resetDeps();
+    }
+
+    const activeAfterFailedRollback = await activeStartSubscriptionsForProcess(id);
+    expect(activeAfterFailedRollback).toHaveLength(1);
+    expect(activeAfterFailedRollback[0]).toMatchObject({
+      event_id: "start-a",
+      status: "active",
+      deploy_version: 1,
+      deployment_id: `${id}:v1`,
+      operation_key: `${id}:v1:start-a`,
+    });
+    const runtimeAfterFailure = await redis.hget(SUBSCRIPTIONS_KEY, runtimeSub.subscription_id);
+    expect(JSON.parse(runtimeAfterFailure!)).toMatchObject({
+      process_id: id,
+      instance_id: "case-rollback-retry",
+      status: "active",
+    });
+    const blockedRecord = await getWorkflowDeploymentRecord(id, 1);
+    expect(blockedRecord).toMatchObject({
+      status: "blocked",
+      failure: {
+        code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED",
+      },
+      subscription_diff: {
+        rollback: [expect.objectContaining({
+          event_id: "start-a",
+          status: "failed",
+          error: "simulated rollback cancel failure",
+        })],
+      },
+      receipt: {
+        ok: false,
+        rollback: [expect.objectContaining({ status: "failed" })],
+      },
+    });
+
+    const retry = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-2" });
+    expect(retry?.status).toBe(200);
+    expect((retry?.data as any).deployment).toMatchObject({
+      ok: true,
+      deploy_version: 2,
+      subscriptions: {
+        desired: 2,
+        created: [expect.objectContaining({
+          event_id: "start-b",
+          status: "created",
+          operation_key: `${id}:v2:start-b`,
+        })],
+        cancelled: [],
+        unchanged: [expect.objectContaining({
+          event_id: "start-a",
+          subscription_id: activeAfterFailedRollback[0].id,
+          status: "unchanged",
+          operation_key: `${id}:v2:start-a`,
+        })],
+        failed: [],
+      },
+    });
+
+    const activeAfterRetry = await activeStartSubscriptionsForProcess(id);
+    expect(activeAfterRetry).toHaveLength(2);
+    expect(activeAfterRetry.filter(sub => sub.event_id === "start-a")).toHaveLength(1);
+    expect(activeAfterRetry.filter(sub => sub.event_id === "start-b")).toHaveLength(1);
+    expect(activeAfterRetry.find(sub => sub.event_id === "start-a")).toMatchObject({
+      id: activeAfterFailedRollback[0].id,
+      deploy_version: 2,
+      deployment_id: `${id}:v2`,
+      operation_key: `${id}:v2:start-a`,
+    });
+    const runtimeAfterRetry = await redis.hget(SUBSCRIPTIONS_KEY, runtimeSub.subscription_id);
+    expect(JSON.parse(runtimeAfterRetry!)).toMatchObject({
+      process_id: id,
+      instance_id: "case-rollback-retry",
+      status: "active",
+    });
+    const completedRecord = await getWorkflowDeploymentRecord(id, 2);
+    expect(completedRecord).toMatchObject({
+      status: "completed",
+      deploy_version: 2,
+      subscription_diff: {
+        created: [expect.objectContaining({ event_id: "start-b" })],
+        unchanged: [expect.objectContaining({ event_id: "start-a" })],
+        failed: [],
+      },
+    });
   });
 });

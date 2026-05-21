@@ -358,9 +358,9 @@ async function cancelSubscription(
   transaction: WorkflowDeploymentTransactionReceipt,
   deps: DeploymentSubscriptionDeps,
 ): Promise<WorkflowDeploymentSubscriptionReceipt> {
-  sub.status = "cancelled";
-  await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
   await deps.cancelResources(sub);
+  const cancelled = { ...sub, status: "cancelled" as const };
+  await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(cancelled));
   return {
     event_id: sub.event_id,
     event_label: sub.event_label,
@@ -626,9 +626,9 @@ export async function rollbackWorkflowDeploymentSideEffects(
     }
     if (subscription.status !== "active") continue;
     try {
-      subscription.status = "cancelled";
-      await redis.hset(SUBSCRIPTIONS_KEY, subscription.id, JSON.stringify(subscription));
       await deps.cancelResources(subscription);
+      const cancelled = { ...subscription, status: "cancelled" as const };
+      await redis.hset(SUBSCRIPTIONS_KEY, subscription.id, JSON.stringify(cancelled));
       rolledBack.push({
         event_id: subscription.event_id,
         event_label: subscription.event_label,
