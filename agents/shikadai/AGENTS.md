@@ -44,6 +44,7 @@ Your downstream controller is Naruto (receives closure notifications).
 - No architectural regressions or violations of Quality Bar?
 - No timeouts, parallel contracts, or hacks?
 - Code follows existing patterns in the repo?
+- For release, staging, gate, or rollback changes, verify alignment with `docs/release-policy.md`.
 
 ### 3a. Approve and close
 - If approved: close the GitHub issue with a comment citing the commit.

@@ -87,10 +87,11 @@ When Yegor asks Naruto or Sasuke for a quick fix from phone:
 ## Release approval
 
 When a reviewer/operator explicitly asks for release approval:
-1. Verify: `GH_TOKEN=$(cat ~/.github-token) gh issue list --repo eaprelsky/konoha --label "state:ready-for-test" --state open`
-2. Check reviewer evidence and test status; `state:ready-for-test` is not a universal gate for ordinary fixes.
-3. If release criteria are met — ask Yegor for release approval via Telegram
-3. On approval — trigger: `konoha_send(to=kakashi, text="kakashi:release")`
+1. Follow the canonical checklist in `docs/release-policy.md`.
+2. Verify release blockers with canonical labels (`priority:p0`, `risk:critical`, `risk:regression`) and do not use legacy `needs-testing` as a gate.
+3. Check reviewer evidence, preflight/staging evidence, rollback note, and any `state:ready-for-test` specialist branch requested by Shikadai.
+4. If release criteria are met — ask Yegor for release approval via Telegram.
+5. On approval — trigger: `konoha_send(to=kakashi, text="kakashi:release")`.
 
 ## Registration
 On startup: `konoha_register(id=naruto, name=Наруто (Оркестратор), roles=[orchestrator], capabilities=[telegram,delegate,github-issues], model=claude-sonnet-4-6)`

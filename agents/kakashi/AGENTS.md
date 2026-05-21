@@ -126,11 +126,12 @@ When received:
 
 ## Release flow (kakashi:release)
 When triggered with `kakashi:release`:
-1. Check all `state:ready-for-test` issues are closed
-2. Bump version in `package.json`
-3. Commit, tag, push
-4. Create GitHub release via `gh release create`
-5. Notify Naruto: `konoha_send(to=naruto, text="[Kakashi] Released vX.Y.Z")`
+1. Follow `docs/release-policy.md`; do not release on legacy `needs-testing` labels.
+2. Run or verify the required policy gates for the release type, including `python3 scripts/pre-release-gate.py`.
+3. Confirm any Shikadai-requested `state:ready-for-test` specialist branch is closed or explicitly waived.
+4. Bump version in `package.json` and update `CHANGELOG.md` for versioned releases.
+5. Commit, tag, push, and create GitHub release via `gh release create`.
+6. Notify Naruto: `konoha_send(to=naruto, text="[Kakashi] Released vX.Y.Z")`.
 
 ## Skills
 - **frontend-design**: Use `/frontend-design` skill when building web components, pages, or UI.

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Pre-release gate script (SHIKADAI-4, #365).
+Pre-release gate script.
+
+Policy source of truth: docs/release-policy.md.
 
 Triggered by "release-request" message in Konoha bus.
-Runs release checks; reports Approved or Blocked to naruto (and optionally to Yegor).
+Runs release checks; reports Approved or Blocked to naruto.
 
 Usage:
     python3 pre-release-gate.py                # run checks, print results
@@ -25,6 +27,9 @@ from pathlib import Path
 KONOHA_REPO  = Path(os.environ.get("KONOHA_REPO", os.path.expanduser("~/konoha")))
 NOTIFY       = "--notify" in sys.argv
 ENV_FILES    = [Path("/home/ubuntu/.agent-env"), Path("/opt/shared/.shared-credentials")]
+RELEASE_POLICY = KONOHA_REPO / "docs" / "release-policy.md"
+CANONICAL_BLOCKER_LABELS = ["priority:p0", "risk:critical", "risk:regression"]
+LEGACY_RELEASE_LABELS = ["P0", "P0: critical", "awaiting-test", "needs-testing"]
 
 
 def load_env_defaults() -> dict[str, str]:
@@ -65,6 +70,22 @@ def run(cmd: list[str], cwd: Path | None = None, timeout: int = 120) -> tuple[in
         cwd=str(cwd or KONOHA_REPO),
     )
     return result.returncode, result.stdout, result.stderr
+
+
+def gh_issue_list_by_label(label: str, limit: int = 10) -> tuple[bool, list[dict], str]:
+    gh_token = os.environ.get("GH_TOKEN") or ENV_DEFAULTS.get("GH_TOKEN") or ""
+    if not gh_token:
+        return False, [], "GH_TOKEN not set"
+    env = {**os.environ, "GH_TOKEN": gh_token}
+    result = subprocess.run(
+        ["gh", "issue", "list", "--repo", "eaprelsky/konoha",
+         "--label", label, "--state", "open",
+         "--json", "number,title,labels", "--limit", str(limit)],
+        capture_output=True, text=True, timeout=30, env=env,
+    )
+    if result.returncode != 0:
+        return False, [], (result.stderr or result.stdout).strip()[:300]
+    return True, json.loads(result.stdout) if result.stdout.strip() else [], ""
 
 
 def check_typecheck() -> tuple[bool, str]:
@@ -148,29 +169,44 @@ def check_runtime_size() -> tuple[bool, str]:
     return False, f"runtime.ts: {lines} lines (>50, should be re-exports only)"
 
 
-def check_no_p0_issues() -> tuple[bool, str]:
-    """Check 5: no open GitHub issues with label 'priority:p0'."""
-    gh_token = os.environ.get("GH_TOKEN") or ENV_DEFAULTS.get("GH_TOKEN") or ""
-    if not gh_token:
-        return True, "P0 issues: GH_TOKEN not set, skipping"
-    env = {**os.environ, "GH_TOKEN": gh_token}
-    result = subprocess.run(
-        ["gh", "issue", "list", "--repo", "eaprelsky/konoha",
-         "--label", "priority:p0", "--state", "open",
-         "--json", "number,title", "--limit", "10"],
-        capture_output=True, text=True, timeout=30, env=env,
-    )
-    if result.returncode != 0:
-        return True, "P0 issues: gh CLI error, skipping"
-    issues = json.loads(result.stdout) if result.stdout.strip() else []
-    if not issues:
-        return True, "P0 issues: none open"
-    titles = "\n".join(f"  #{i['number']}: {i['title']}" for i in issues)
-    return False, f"Open P0 issues:\n{titles}"
+def check_release_blocker_issues() -> tuple[bool, str]:
+    """Check 5: no open canonical release blocker issues."""
+    blockers: list[tuple[str, dict]] = []
+    skipped: list[str] = []
+    for label in CANONICAL_BLOCKER_LABELS:
+        ok, issues, error = gh_issue_list_by_label(label)
+        if not ok:
+            skipped.append(f"{label}: {error}")
+            continue
+        blockers.extend((label, issue) for issue in issues)
+    if blockers:
+        titles = "\n".join(f"  {label} #{issue['number']}: {issue['title']}" for label, issue in blockers)
+        return False, f"Policy blocker issues are open:\n{titles}"
+    if skipped:
+        return True, "Release blocker labels: skipped GitHub lookup (" + "; ".join(skipped) + ")"
+    return True, "Release blocker labels: none open"
+
+
+def check_legacy_release_labels() -> tuple[bool, str]:
+    """Check 6: legacy release routing labels are not used on open issues."""
+    found: list[tuple[str, dict]] = []
+    skipped: list[str] = []
+    for label in LEGACY_RELEASE_LABELS:
+        ok, issues, error = gh_issue_list_by_label(label)
+        if not ok:
+            skipped.append(f"{label}: {error}")
+            continue
+        found.extend((label, issue) for issue in issues)
+    if found:
+        titles = "\n".join(f"  legacy_release_labels {label} #{issue['number']}: {issue['title']}" for label, issue in found)
+        return False, f"Legacy release labels must be migrated:\n{titles}"
+    if skipped:
+        return True, "Legacy release labels: skipped GitHub lookup (" + "; ".join(skipped) + ")"
+    return True, "Legacy release labels: none open"
 
 
 def check_changelog() -> tuple[bool, str]:
-    """Check 6: CHANGELOG.md contains section for current version."""
+    """Check: CHANGELOG.md contains section for current version."""
     changelog = KONOHA_REPO / "CHANGELOG.md"
     pkg = KONOHA_REPO / "package.json"
     if not changelog.exists():
@@ -185,7 +221,7 @@ def check_changelog() -> tuple[bool, str]:
 
 
 def check_version_match() -> tuple[bool, str]:
-    """Check 7: package.json version matches CHANGELOG."""
+    """Check: package.json version matches CHANGELOG."""
     # This is implied by check_changelog — they match if changelog has the version
     pkg = KONOHA_REPO / "package.json"
     changelog = KONOHA_REPO / "CHANGELOG.md"
@@ -204,7 +240,7 @@ def check_version_match() -> tuple[bool, str]:
 
 
 def check_testbench_smoke() -> tuple[bool, str]:
-    """Check 8: TestBench smoke — login, dashboard, editor, load process."""
+    """Check: TestBench smoke — login, dashboard, editor, load process."""
     def testbench_request(method: str, path: str, body: dict | None = None) -> dict:
         data = json.dumps(body).encode("utf-8") if body is not None else None
         headers = {"Content-Type": "application/json"}
@@ -245,45 +281,57 @@ def check_testbench_smoke() -> tuple[bool, str]:
 
 
 CHECKS = [
-    ("typecheck",      check_typecheck),
-    ("tests",          check_tests),
-    ("shared_config",  check_shared_config),
-    ("action_security_boundary", check_action_security_boundary),
-    ("file_sizes",     check_file_sizes),
-    ("runtime_size",   check_runtime_size),
-    ("no_p0_issues",   check_no_p0_issues),
-    ("changelog",      check_changelog),
-    ("version_match",  check_version_match),
-    ("testbench_smoke",check_testbench_smoke),
+    ("typecheck",      check_typecheck, "blocker"),
+    ("tests",          check_tests, "blocker"),
+    ("shared_config",  check_shared_config, "blocker"),
+    ("action_security_boundary", check_action_security_boundary, "blocker"),
+    ("file_sizes",     check_file_sizes, "blocker"),
+    ("runtime_size",   check_runtime_size, "blocker"),
+    ("release_blocker_labels", check_release_blocker_issues, "blocker"),
+    ("legacy_release_labels", check_legacy_release_labels, "blocker"),
+    ("changelog",      check_changelog, "blocker"),
+    ("version_match",  check_version_match, "blocker"),
+    ("testbench_smoke",check_testbench_smoke, "blocker"),
 ]
 
 
 def run_all_checks() -> dict:
     results = {}
-    for name, fn in CHECKS:
+    for name, fn, severity in CHECKS:
         print(f"  [{name}] running...", end=" ", flush=True)
         try:
             passed, detail = fn()
         except Exception as e:
             passed, detail = False, f"Exception: {e}"
-        results[name] = {"passed": passed, "detail": detail}
+        results[name] = {"passed": passed, "detail": detail, "severity": severity}
         status = "✓" if passed else "✗"
         print(f"{status} {detail[:80]}")
     return results
 
 
 def format_report(results: dict) -> str:
-    blockers = [(k, v["detail"]) for k, v in results.items() if not v["passed"]]
+    blockers = [(k, v["detail"]) for k, v in results.items() if not v["passed"] and v.get("severity") == "blocker"]
+    warnings = [(k, v["detail"]) for k, v in results.items() if not v["passed"] and v.get("severity") == "warning"]
     passed = [k for k, v in results.items() if v["passed"]]
-    lines = [f"Pre-release gate: {datetime.now().strftime('%Y-%m-%d %H:%M')}"]
+    lines = [
+        f"Pre-release gate: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"Policy: {RELEASE_POLICY.relative_to(KONOHA_REPO)}",
+    ]
     lines.append(f"Passed ({len(passed)}/{len(results)}): {', '.join(passed)}")
     if blockers:
-        lines.append(f"\nBLOCKED — {len(blockers)} issue(s):")
+        lines.append(f"\nBLOCKED — {len(blockers)} policy blocker(s):")
         for name, detail in blockers:
             lines.append(f"\n[{name}] {detail}")
-        lines.append(f"\nresult: BLOCKED")
+    if warnings:
+        lines.append(f"\nWARNINGS — {len(warnings)} item(s):")
+        for name, detail in warnings:
+            lines.append(f"\n[{name}] {detail}")
+    if blockers:
+        lines.append("\nresult: BLOCKED")
+    elif warnings:
+        lines.append("\nresult: APPROVED_WITH_WARNINGS")
     else:
-        lines.append(f"\nresult: APPROVED")
+        lines.append("\nresult: APPROVED")
     return "\n".join(lines)
 
 

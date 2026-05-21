@@ -239,6 +239,10 @@ KONOHA_TOKEN=your-secret KONOHA_PORT=3200 bun run start
 
 ## Operational Gates
 
+The canonical release policy is `docs/release-policy.md`. It defines release
+types, owner/reviewer/executor responsibilities, gate tiers, waiver wording,
+versioning, rollback limits, and audit evidence.
+
 Production hardening is enforced by `scripts/preflight.sh`:
 
 - system health: services, lifecycle wrappers, watchdogs, Telegram streams, source size, LLM profiles
@@ -250,7 +254,17 @@ Production hardening is enforced by `scripts/preflight.sh`:
 - BPMS load regression profile validation and release-gate report attachment
 - data-store backup/restore drill contract and staging restore report
 
-Current rule before larger Workflow Engine changes: run production preflight and review all non-zero checks before release. Known exception as of 2026-04-30: PostgreSQL shadow verification can return bloat-only exit code `2` even when sync is complete (`onlyInRedis=0`); treat that as retention debt, not a code regression, until the retention policy is implemented. CI runs the portable companion gate (`scripts/preflight-portable.sh`): the same typechecks/regression suites plus frontend tests/build, without production-only systemd, Telegram smoke, or live credential dependencies. Broad BPMS refactors and the #753 staging rollout are additionally blocked by `docs/lean-baseline-gate.md` until the lean `prod-core` baseline is measured clean or Naruto records a time-boxed waiver.
+Current rule before larger Workflow Engine changes: follow
+`docs/release-policy.md`, run production preflight, and review all non-zero
+checks before release. Known exception as of 2026-04-30: PostgreSQL shadow
+verification can return bloat-only exit code `2` even when sync is complete
+(`onlyInRedis=0`); treat that as retention debt, not a code regression, until
+the retention policy is implemented. CI runs the portable companion gate
+(`scripts/preflight-portable.sh`): the same typechecks/regression suites plus
+frontend tests/build, without production-only systemd, Telegram smoke, or live
+credential dependencies. Broad BPMS refactors and the #753 staging rollout are
+additionally blocked by `docs/lean-baseline-gate.md` until the lean `prod-core`
+baseline is measured clean or Naruto records a time-boxed waiver.
 
 ## Key Design Rules
 

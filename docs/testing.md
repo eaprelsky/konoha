@@ -17,7 +17,11 @@ recovery contract and uses a portable staging restore drill fixture.
 scripts/preflight.sh
 ```
 
-This is the release gate on `agent.eaprelsky.ru`. It includes the portable checks plus production-only system health, lifecycle/watchdog validation, Telegram smoke, and PostgreSQL shadow verification. Run this before large Workflow Engine changes or after changing lifecycle/runtime/watchdog/storage code.
+This is the production gate defined by `docs/release-policy.md` for
+`agent.eaprelsky.ru`. It includes the portable checks plus production-only
+system health, lifecycle/watchdog validation, Telegram smoke, and PostgreSQL
+shadow verification. Run this before large Workflow Engine changes or after
+changing lifecycle/runtime/watchdog/storage code.
 For broad BPMS changes, set `BPMS_LOAD_PROFILE=release-gate-staging` or
 `BPMS_LOAD_PROFILE=staging-soak-8h`, set `BPMS_LOAD_OBSERVATIONS` to the staging
 observation file, and keep `BPMS_LOAD_REPORT` at the default
@@ -46,6 +50,9 @@ scripts/staging-smoke.sh --dry-run
 Live staging smoke must source `/opt/shared/.agent-env.staging` and use
 `scripts/staging-smoke.sh --live`; it checks the staging URL and staging
 `pg-verify` path without production Redis DB `0` or PostgreSQL `public`.
+
+The canonical release checklist, release types, waiver wording, versioning, and
+rollback/audit requirements live in `docs/release-policy.md`.
 
 Workflow construction/runtime security changes must also satisfy
 `docs/workflow-security-boundary.md`. The release gate runs
