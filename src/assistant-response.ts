@@ -121,10 +121,13 @@ export async function normalizeAssistantResponse(
         if (patchAction) {
           actionsTaken.push(patchAction);
           if (patchAction.status === "executed") {
-            const receipt = buildWorkflowPatchReceipt(patchAction, opts, "succeeded");
+            const partial = patchAction.result?.assistant_partial_failure === true;
+            const receipt = buildWorkflowPatchReceipt(patchAction, opts, partial ? "partial" : "succeeded");
             actionReceipts.push(receipt);
-            editResult = buildAssistantEditResult(patchAction, "committed", receipt);
-            reply = reply + `\n\nИзменение процесса сохранено через workflow.patch.`;
+            editResult = buildAssistantEditResult(patchAction, partial ? "failed" : "committed", receipt);
+            reply = reply + (partial
+              ? `\n\n⚠️ Изменение процесса сохранено частично: часть schema_patch не поддерживается durable workflow.patch.`
+              : `\n\nИзменение процесса сохранено через workflow.patch.`);
           } else if (patchAction.status === "needs_confirm") {
             pendingConfirmations.push(await buildPendingConfirmation("workflow.patch", patchAction.params, opts));
             const receipt = buildWorkflowPatchReceipt(patchAction, opts, "pending_confirmation");
@@ -604,7 +607,7 @@ function schemaPatchTargetId(patch: Record<string, unknown>, opts: NormalizeOpti
   return id || null;
 }
 
-function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): { patch: Record<string, unknown> | null; error?: string } {
+function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): { patch: Record<string, unknown> | null; error?: string; unsupported_keys: string[] } {
   const supportedKeys = [
     "set_name",
     "set_description",
@@ -615,6 +618,15 @@ function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): { patch: 
     "remove_flow",
     "set_triggers",
   ];
+  const controlKeys = [
+    "id",
+    "workflow_id",
+    "process_id",
+    "expected_edit_version",
+    "expected_deploy_version",
+  ];
+  const supportedSet = new Set([...supportedKeys, ...controlKeys, "update_positions"]);
+  const unsupportedKeys = Object.keys(schemaPatch).filter(key => !supportedSet.has(key));
   const patch: Record<string, unknown> = {};
   for (const key of supportedKeys) {
     if (Object.prototype.hasOwnProperty.call(schemaPatch, key)) {
@@ -622,7 +634,7 @@ function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): { patch: 
     }
   }
   const positionUpdates = durablePositionUpdates(schemaPatch.update_positions);
-  if (positionUpdates.error) return { patch: null, error: positionUpdates.error };
+  if (positionUpdates.error) return { patch: null, error: positionUpdates.error, unsupported_keys: unsupportedKeys };
   if (positionUpdates.length > 0) {
     const existing = Array.isArray(patch.update_elements)
       ? patch.update_elements.filter(item => item && typeof item === "object") as Record<string, unknown>[]
@@ -637,7 +649,7 @@ function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): { patch: 
     }
     patch.update_elements = [...byId.values()];
   }
-  return { patch: Object.keys(patch).length > 0 ? patch : null };
+  return { patch: Object.keys(patch).length > 0 ? patch : null, unsupported_keys: unsupportedKeys };
 }
 
 type DurablePositionUpdates = Array<{ id: string; x: number; y: number }> & { error?: string };
@@ -685,10 +697,45 @@ async function executeWorkflowPatchFromSchema(
       status: "failed",
       description: "Reject malformed schema patch before durable workflow.patch",
       error: durablePatch.error,
+      result: {
+        ok: false,
+        code: "WORKFLOW_PATCH_INVALID",
+        error: durablePatch.error,
+        ...(workflowId ? { workflow_id: workflowId } : {}),
+        failure_reasons: [durablePatch.error],
+        attempted_resources: workflowId ? [{ kind: "workflow", id: workflowId, change: "failed" }] : [],
+      },
     };
   }
 
   if (!workflowId || !patch) {
+    if (workflowId && durablePatch.unsupported_keys.length > 0) {
+      const error = `Unsupported schema_patch keys: ${durablePatch.unsupported_keys.join(", ")}`;
+      return {
+        action: "workflow.patch",
+        params: {
+          id: workflowId,
+          unsupported_schema_keys: durablePatch.unsupported_keys,
+        },
+        status: "failed",
+        description: "Reject unsupported schema patch before durable workflow.patch",
+        error,
+        result: {
+          ok: false,
+          code: "WORKFLOW_PATCH_UNSUPPORTED",
+          error,
+          workflow_id: workflowId,
+          unsupported_schema_keys: durablePatch.unsupported_keys,
+          failure_reasons: durablePatch.unsupported_keys.map(key => `schema_patch.${key} is not supported by workflow.patch`),
+          attempted_resources: durablePatch.unsupported_keys.map(key => ({
+            kind: "workflow",
+            id: workflowId,
+            label: `schema_patch.${key}`,
+            change: "failed",
+          })),
+        },
+      };
+    }
     return {
       action: "workflow.patch",
       params: {
@@ -781,7 +828,20 @@ async function executeWorkflowPatchFromSchema(
       params: actionArgs,
       status: "executed",
       description: `Applied workflow schema patch to "${workflowId}"`,
-      result: result.data as Record<string, unknown>,
+      result: {
+        ...(result.data as Record<string, unknown>),
+        ...(durablePatch.unsupported_keys.length > 0 ? {
+          assistant_partial_failure: true,
+          unsupported_schema_keys: durablePatch.unsupported_keys,
+          failure_reasons: durablePatch.unsupported_keys.map(key => `schema_patch.${key} is not supported by workflow.patch`),
+          attempted_resources: durablePatch.unsupported_keys.map(key => ({
+            kind: "workflow",
+            id: workflowId,
+            label: `schema_patch.${key}`,
+            change: "failed",
+          })),
+        } : {}),
+      },
     };
   } catch (e: any) {
     return {
@@ -1025,25 +1085,41 @@ function buildWorkflowPatchReceipt(
   const rawChanges = Array.isArray(result.changed_resources)
     ? result.changed_resources as Record<string, unknown>[]
     : [];
+  const rawAttempts = Array.isArray(result.attempted_resources)
+    ? result.attempted_resources as Record<string, unknown>[]
+    : [];
+  const failureReasons = Array.isArray(result.failure_reasons)
+    ? result.failure_reasons.filter(reason => typeof reason === "string") as string[]
+    : Array.isArray(result.details) && result.details.every(reason => typeof reason === "string")
+    ? result.details as string[]
+    : typeof result.code === "string" && typeof result.error === "string"
+    ? [`${result.code}: ${result.error}`]
+    : [];
+  const mapResource = (change: Record<string, unknown>, forceFailed = false): ActionReceiptResource => {
+    const rawKind = typeof change.kind === "string" ? change.kind : "workflow";
+    const kind = rawKind === "flow" ? "flow" : rawKind === "workflow" ? "workflow" : "element";
+    const rawChange = typeof change.change === "string" ? change.change : "updated";
+    const mappedChange =
+      forceFailed || status === "failed"
+        ? "failed"
+        : status === "pending_confirmation"
+        ? "pending"
+        : rawChange === "created"
+        ? "created"
+        : "updated";
+    return {
+      kind,
+      id: typeof change.id === "string" ? change.id : workflowId,
+      ...(typeof change.label === "string" ? { label: change.label } : {}),
+      change: mappedChange,
+    };
+  };
   const changedResources: ActionReceiptResource[] = rawChanges
-    .map(change => {
-      const rawKind = typeof change.kind === "string" ? change.kind : "workflow";
-      const kind = rawKind === "flow" ? "flow" : rawKind === "workflow" ? "workflow" : "element";
-      const rawChange = typeof change.change === "string" ? change.change : "updated";
-      const mappedChange =
-        status === "pending_confirmation"
-          ? "pending"
-          : status === "failed"
-          ? "failed"
-          : rawChange === "created"
-          ? "created"
-          : "updated";
-      return {
-        kind,
-        id: typeof change.id === "string" ? change.id : workflowId,
-        change: mappedChange,
-      };
-    });
+    .map(change => mapResource(change));
+  const attemptedResources = rawAttempts.map(change => mapResource(change, true));
+  if (status === "partial" || (status === "failed" && changedResources.length === 0)) {
+    changedResources.push(...attemptedResources);
+  }
   if (changedResources.length === 0) {
     changedResources.push({
       kind: "workflow",
@@ -1059,11 +1135,15 @@ function buildWorkflowPatchReceipt(
     summary:
       status === "succeeded"
         ? `Изменение процесса сохранено: ${changedResources.length} объект(ов) затронуто.`
+        : status === "partial"
+        ? `Изменение процесса выполнено частично: ${rawChanges.length} сохранено, ${attemptedResources.length} отклонено.`
         : status === "pending_confirmation"
         ? `Изменение процесса ожидает подтверждения.`
         : `Изменение процесса отклонено серверной проверкой.`,
-    ...(action.error ? { details: action.error } : {}),
+    ...(action.error || typeof result.error === "string" ? { details: action.error ?? String(result.error) } : {}),
+    ...(failureReasons.length > 0 ? { failure_reasons: failureReasons } : {}),
     changed_resources: changedResources,
+    ...(attemptedResources.length > 0 ? { attempted_resources: attemptedResources } : {}),
     audit: {
       session_id: opts.session_id ?? opts.chat_id,
       action_type: "workflow.patch",

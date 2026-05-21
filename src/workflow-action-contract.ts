@@ -61,7 +61,9 @@ export interface WorkflowActionReceipt {
   status: WorkflowReceiptStatus;
   summary: string;
   details?: string;
+  failure_reasons?: string[];
   changed_resources: WorkflowActionReceiptResource[];
+  attempted_resources?: WorkflowActionReceiptResource[];
   audit: {
     session_id: string;
     action_type: WorkflowActionType | string;
@@ -90,6 +92,8 @@ export function buildWorkflowObservableResult(receipts: WorkflowActionReceipt[])
 
   const status: WorkflowObservableResult["status"] =
     counts.failed > 0 && (counts.succeeded > 0 || counts.pending_confirmation > 0 || counts.partial > 0)
+      ? "partial"
+      : counts.partial > 0
       ? "partial"
       : counts.failed > 0
       ? "failed"

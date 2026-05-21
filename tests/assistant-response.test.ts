@@ -220,6 +220,60 @@ describe("normalizeAssistantResponse", () => {
     }
   });
 
+  it("returns partial receipts when only a durable subset of schema_patch is supported", async () => {
+    const workflowId = `assistant-partial-${Date.now()}`;
+    await createWorkflow({
+      id: workflowId,
+      version: "1.0",
+      name: "Assistant Partial Before",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+      ],
+      flow: [],
+    }, { draft: true });
+
+    try {
+      const resp = await normalizeAssistantResponse(JSON.stringify({
+        reply: "Переименовал и раскрасил процесс",
+        schema_patch: {
+          set_name: "Assistant Partial After",
+          update_colors: { start: "#ff00ff" },
+        },
+      }), {
+        ...baseOpts,
+        current_workflow_id: workflowId,
+        autonomy_overrides: { "workflow.patch": "auto" },
+      });
+
+      expect(resp.action_receipts[0]).toMatchObject({
+        action: "workflow.patch",
+        status: "partial",
+        failure_reasons: ["schema_patch.update_colors is not supported by workflow.patch"],
+      });
+      expect(resp.action_receipts[0].changed_resources).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "workflow", id: workflowId, change: "updated" }),
+        expect.objectContaining({ kind: "workflow", id: workflowId, label: "schema_patch.update_colors", change: "failed" }),
+      ]));
+      expect(resp.action_receipts[0].attempted_resources).toEqual([
+        expect.objectContaining({ kind: "workflow", id: workflowId, label: "schema_patch.update_colors", change: "failed" }),
+      ]);
+      expect(resp.edit_result).toMatchObject({
+        kind: "schema_patch",
+        mode: "failed",
+        durable: false,
+        workflow_id: workflowId,
+        receipt_id: resp.action_receipts[0].id,
+      });
+      expect(resp.observable_result.status).toBe("partial");
+
+      const saved = await getWorkflow(workflowId);
+      expect(saved?.name).toBe("Assistant Partial After");
+      expect((saved?.elements[0] as any)?.color).toBeUndefined();
+    } finally {
+      await cleanupWorkflow(workflowId);
+    }
+  });
+
   it("marks stale assistant schema patches as failed conflicts without committing", async () => {
     const workflowId = `assistant-conflict-${Date.now()}`;
     await createWorkflow({
@@ -250,6 +304,7 @@ describe("normalizeAssistantResponse", () => {
         action: "workflow.patch",
         status: "failed",
         details: "Workflow edit version does not match expected_edit_version",
+        failure_reasons: ["WORKFLOW_PATCH_CONFLICT: Workflow edit version does not match expected_edit_version"],
       });
       expect(resp.edit_result).toMatchObject({
         kind: "schema_patch",
@@ -294,6 +349,14 @@ describe("normalizeAssistantResponse", () => {
       });
 
       expect(resp.action_receipts[0]).toMatchObject({ action: "workflow.patch", status: "failed" });
+      expect(resp.action_receipts[0].changed_resources).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "element", id: "start", change: "failed" }),
+        expect.objectContaining({ kind: "element", id: "task", change: "failed" }),
+      ]));
+      expect(resp.action_receipts[0].attempted_resources).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "element", id: "task", change: "failed" }),
+      ]));
+      expect(resp.action_receipts[0].failure_reasons?.some(reason => reason.includes("ADAPTER_MISSING"))).toBe(true);
       expect(resp.edit_result).toMatchObject({ kind: "schema_patch", mode: "failed", durable: false });
       expect(resp.observable_result.status).toBe("failed");
       const saved = await getWorkflow(workflowId);
@@ -522,6 +585,15 @@ describe("workflow action contract", () => {
     expect(result.status).toBe("partial");
     expect(result.counts.succeeded).toBe(1);
     expect(result.counts.failed).toBe(1);
+  });
+
+  it("surfaces partial status when the only receipt is partial", () => {
+    const result = buildWorkflowObservableResult([
+      { id: "partial", action: "workflow.patch", status: "partial", summary: "partial", changed_resources: [], audit: { session_id: "s", action_type: "workflow.patch" } },
+    ]);
+
+    expect(result.status).toBe("partial");
+    expect(result.counts.partial).toBe(1);
   });
 });
 

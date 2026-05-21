@@ -257,7 +257,14 @@ export interface WorkflowActionReceipt {
   status: WorkflowReceiptStatus;
   summary: string;
   details?: string;
+  failure_reasons?: string[];
   changed_resources: Array<{
+    kind: WorkflowResourceKind;
+    id: string;
+    label?: string;
+    change: WorkflowResourceChange;
+  }>;
+  attempted_resources?: Array<{
     kind: WorkflowResourceKind;
     id: string;
     label?: string;

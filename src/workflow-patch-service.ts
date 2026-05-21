@@ -69,6 +69,7 @@ export interface WorkflowPatchFailure {
   workflow_id?: string;
   status: number;
   details?: unknown;
+  attempted_resources?: WorkflowPatchChange[];
   validation?: WorkflowValidationReceipt;
   attempts?: number;
 }
@@ -441,6 +442,7 @@ export async function applyWorkflowPatch(request: WorkflowPatchRequest): Promise
             code: "WORKFLOW_PATCH_VALIDATION_FAILED",
             error: "Workflow patch validation failed",
             workflow_id: workflowId,
+            attempted_resources: built.changed_resources,
             validation,
             details: validationIssueDetails(validation.errors),
           },
@@ -479,6 +481,7 @@ export async function applyWorkflowPatch(request: WorkflowPatchRequest): Promise
       code: "WORKFLOW_PATCH_VALIDATION_FAILED",
       error: "Workflow patch validation failed",
       workflow_id: workflowId,
+      attempted_resources: result.meta.changed_resources,
       validation,
       details: validationIssueDetails(validation.errors),
     };

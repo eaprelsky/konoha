@@ -32,6 +32,8 @@ Each receipt includes:
 - `status` — `succeeded`, `pending_confirmation`, `failed`, or `partial`
 - `summary` — user-visible summary
 - `changed_resources[]` — concrete workflow/element/flow resources affected
+- `attempted_resources[]` — optional resources attempted but not committed, reported with `change=failed`
+- `failure_reasons[]` — optional machine-readable/user-safe failure evidence such as validation codes or unsupported schema patch fields
 - `audit` — audit linkage via `session_id` and `action_type`
 
 ## Current coverage
@@ -41,6 +43,7 @@ Each receipt includes:
 - Confirmation-required commits are marked `edit_result.mode=pending_confirmation`
 - Durable commits are marked `edit_result.mode=committed`
 - Readiness, validation, or malformed-patch failures are marked `edit_result.mode=failed` and must not be treated as saved canvas state
+- Mixed schema patches with a durable subset plus unsupported mutations return a `workflow.patch` receipt with `status=partial`; only the durable subset is persisted, unsupported resources are reported in `attempted_resources[]`/`failure_reasons[]`, and `edit_result.mode=failed` prevents the full client patch from being treated as saved canvas state
 - Frontend canvas handling treats `edit_result.mode=preview` as local-only, `pending_confirmation`/`failed` as no-apply, and `committed` as an optimistic paint followed by a fresh backend workflow reload; the saved backend workflow is the source of truth after `workflow.patch`
 - Concurrent durable edits use `expected_edit_version`/`expected_deploy_version` guards. A stale guard returns a 409 conflict (`WORKFLOW_PATCH_CONFLICT`, `WORKFLOW_UPDATE_CONFLICT`, or `WORKFLOW_MUTATION_CONFLICT`) and remains `edit_result.mode=failed`, with no workflow mutation.
 - `create_workflow` yields a `workflow.create` receipt
