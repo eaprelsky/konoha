@@ -70,6 +70,7 @@ export function makeWorkflowDefinition(overrides: Partial<WorkflowDefinition> = 
     name: overrides.name ?? "Test Workflow",
     description: overrides.description,
     triggers: overrides.triggers,
+    documents: overrides.documents,
     payload_fields: overrides.payload_fields,
     payload_schema: overrides.payload_schema,
     elements: overrides.elements ?? [

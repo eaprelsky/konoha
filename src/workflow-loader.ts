@@ -1139,7 +1139,18 @@ export function validateWorkflowReadiness(
         }
       }
 
-      for (const docId of element.documents ?? []) {
+      for (const rawDocId of element.documents ?? []) {
+        if (typeof rawDocId !== "string" || rawDocId.trim() === "") {
+          issues.push(validationIssue(
+            "DOCUMENT_BINDING_INVALID",
+            "error",
+            "document",
+            `Function "${element.id}" has an invalid document binding`,
+            { element_id: element.id, legacy_code: "RUNTIME_INVALID_DOCUMENT_BINDING", details: { document: rawDocId } },
+          ));
+          continue;
+        }
+        const docId = rawDocId.trim();
         if (!knownDocIds.has(docId)) {
           issues.push(validationIssue(
             "DOCUMENT_MISSING",
@@ -1151,18 +1162,30 @@ export function validateWorkflowReadiness(
         }
       }
 
-      const systems = [
+      const systems: unknown[] = [
         ...(element.system ? [{ connector: element.system }] : []),
         ...(element.systems ?? []),
       ];
       for (const system of systems) {
-        if (adapterContextProvided && !adapterNames.has(system.connector)) {
+        if (!isRecord(system) || typeof system.connector !== "string" || system.connector.trim() === "") {
+          issues.push(validationIssue(
+            "ADAPTER_BINDING_INVALID",
+            "error",
+            "adapter",
+            `Function "${element.id}" has an invalid adapter binding`,
+            { element_id: element.id, legacy_code: "RUNTIME_INVALID_ADAPTER_BINDING", details: { system } },
+          ));
+          continue;
+        }
+        const connector = system.connector.trim();
+        const operation = typeof system.operation === "string" ? system.operation : undefined;
+        if (adapterContextProvided && !adapterNames.has(connector)) {
           issues.push(validationIssue(
             "ADAPTER_MISSING",
             "error",
             "adapter",
-            `Function "${element.id}" references missing adapter "${system.connector}"`,
-            { element_id: element.id, legacy_code: "RUNTIME_MISSING_ADAPTER", details: { connector: system.connector, operation: system.operation } },
+            `Function "${element.id}" references missing adapter "${connector}"`,
+            { element_id: element.id, legacy_code: "RUNTIME_MISSING_ADAPTER", details: { connector, operation } },
           ));
         }
       }
