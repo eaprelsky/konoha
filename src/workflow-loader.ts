@@ -133,6 +133,7 @@ export interface WorkflowDeployMetadata {
   deployed_by?: string;
   source: string;
   details?: string[];
+  side_effects?: unknown;
 }
 
 export interface WorkflowUpdateOptions {

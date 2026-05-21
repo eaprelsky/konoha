@@ -21,7 +21,7 @@ import { CaseStartGateError } from "./runtime/case-start-gate";
 import { normalizeElementNames } from "./normalizer";
 import { deleteCasesByProcess, createCase, getCase, listCases, forceCloseCase, cancelCase, deleteCase } from "./runtime";
 import { resolveBatchProgrammatic, type ProcessContext } from "./trigger-resolver";
-import { createSubscriptionProgrammatic, cancelSubscriptionsByProcessAndInstance, type TriggerDef } from "./event-manager";
+import { cancelSubscriptionsByProcessAndInstance } from "./event-manager";
 import { validateActionArgs } from "./action-registry";
 import {
   createStandaloneWorkItem,
@@ -71,6 +71,7 @@ import {
 import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "./retention/runtime-cleanup";
 import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
 import { applyWorkflowPatch } from "./workflow-patch-service";
+import { materializeWorkflowDeploymentSubscriptions } from "./workflow-deployment-service";
 
 export interface ActionExecution {
   status: number;
@@ -375,35 +376,6 @@ async function resolveTriggers(
   return { elements: updatedElements, needs_review };
 }
 
-async function subscribeStartEvents(def: WorkflowDefinition): Promise<void> {
-  const cancelledCount = await cancelSubscriptionsByProcessAndInstance(def.id, "new");
-  if (cancelledCount > 0) {
-    console.log(`[workflow-deploy] cancelled ${cancelledCount} stale start-event sub(s) for process ${def.id}`);
-  }
-
-  const inCount = new Map<string, number>();
-  for (const el of def.elements) inCount.set(el.id, 0);
-  for (const [, to] of def.flow ?? []) inCount.set(to, (inCount.get(to) ?? 0) + 1);
-
-  const startEvents = def.elements.filter((el) =>
-    el.type === "event" && (inCount.get(el.id) ?? 0) === 0 && el.trigger?.kind && !el.trigger?.manual_override,
-  );
-
-  for (const el of startEvents) {
-    try {
-      await createSubscriptionProgrammatic({
-        event_id: el.id,
-        process_id: def.id,
-        instance_id: "new",
-        trigger: el.trigger as TriggerDef,
-      });
-      console.log(`[workflow-deploy] subscribed start event ${el.id} for process ${def.id}`);
-    } catch (e: any) {
-      console.error(`[workflow-deploy] failed to subscribe start event ${el.id}: ${e.message}`);
-    }
-  }
-}
-
 async function executeWorkflowCreate(args: Record<string, unknown>, opts: WorkflowActionOptions): Promise<ActionExecution> {
   const body = toWorkflowCreateArgs(args, opts);
   const invalid = validationFailure("workflow.create", body);
@@ -624,6 +596,41 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   const deployedAt = new Date().toISOString();
   const deployVersion = getWorkflowDeployVersion(current) + 1;
   const deployedBy = args.deployed_by ? String(args.deployed_by) : "system";
+  const deployment = await materializeWorkflowDeploymentSubscriptions(body, {
+    deploy_version: deployVersion,
+    deployed_at: deployedAt,
+    deployed_by: deployedBy,
+    source: "workflow.deploy",
+  });
+  if (!deployment.ok) {
+    const failedDetails = deployment.subscriptions.failed.map(failure =>
+      `SUBSCRIPTION_MATERIALIZATION_FAILED: ${failure.event_id}: ${failure.error ?? failure.reason ?? "unknown error"}`,
+    );
+    const blocked = await updateWorkflow(id, body, {
+      lifecycleState: "validated",
+      deploy: {
+        status: "blocked",
+        checked_at: deployedAt,
+        source: "workflow.deploy",
+        details: failedDetails.length > 0 ? failedDetails : ["SUBSCRIPTION_MATERIALIZATION_FAILED"],
+        side_effects: deployment,
+      },
+      needsReview: true,
+    });
+    if (blocked === null) return workflowNotFound(id);
+    if (isWorkflowUpdateConflict(blocked)) return workflowUpdateConflictExecution(blocked);
+    return {
+      status: 502,
+      data: {
+        error: "Workflow deploy failed while materializing subscriptions",
+        code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED",
+        process_id: id,
+        lifecycle_state: "validated",
+        deployment,
+        workflow: blocked.workflow,
+      },
+    };
+  }
   const result = await updateWorkflow(id, body, {
     lifecycleState: "executable",
     deploy: {
@@ -633,7 +640,11 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
       deployed_at: deployedAt,
       deployed_by: deployedBy,
       source: "workflow.deploy",
-      details: ["validation passed", "start-event subscriptions materialized"],
+      details: [
+        "validation passed",
+        `subscriptions desired=${deployment.subscriptions.desired} created=${deployment.subscriptions.created.length} cancelled=${deployment.subscriptions.cancelled.length} unchanged=${deployment.subscriptions.unchanged.length}`,
+      ],
+      side_effects: deployment,
     },
     needsReview: false,
   });
@@ -641,9 +652,8 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   if (isWorkflowUpdateConflict(result)) return workflowUpdateConflictExecution(result);
   if (result.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: result.errors } };
 
-  await subscribeStartEvents(result.workflow);
   await saveWorkflowDeployedSnapshot(result.workflow, "workflow.deploy");
-  return { status: 200, data: { ...result.workflow, normalized } };
+  return { status: 200, data: { ...result.workflow, normalized, deployment } };
 }
 
 async function executeWorkflowRetire(action: "workflow.retire" | "workflow.delete", args: Record<string, unknown>): Promise<ActionExecution> {

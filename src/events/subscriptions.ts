@@ -455,6 +455,11 @@ export async function createSubscriptionProgrammatic(params: {
   process_name?: string;
   instance_id: string;
   trigger: TriggerDef;
+  deploy_version?: number;
+  deployment_id?: string;
+  operation_key?: string;
+  deployed_at?: string;
+  deployed_by?: string;
 }): Promise<{ subscription_id: string; status: string; mode: "auto" | "manual" }> {
   const trigger = params.trigger;
   let mode: "auto" | "manual" = "manual";
@@ -508,6 +513,11 @@ export async function createSubscriptionProgrammatic(params: {
     subscribed_at: now2,
     fire_count: 0,
     next_fire_at: computeNextFireAt(trigger, now2),
+    ...(params.deploy_version !== undefined ? { deploy_version: params.deploy_version } : {}),
+    ...(params.deployment_id ? { deployment_id: params.deployment_id } : {}),
+    ...(params.operation_key ? { operation_key: params.operation_key } : {}),
+    ...(params.deployed_at ? { deployed_at: params.deployed_at } : {}),
+    ...(params.deployed_by ? { deployed_by: params.deployed_by } : {}),
   };
 
   await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));

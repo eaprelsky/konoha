@@ -54,4 +54,9 @@ export interface Subscription {
   last_poll_at?: string;     // last condition poll time
   last_poll_result?: unknown; // last condition poll result
   error?: string;            // last error message
+  deploy_version?: number;
+  deployment_id?: string;
+  operation_key?: string;
+  deployed_at?: string;
+  deployed_by?: string;
 }

@@ -129,13 +129,15 @@ trigger.kind ∈ { "manual", "schedule", "webhook", "telegram", "event", "ambigu
 
 1. **Trigger Resolver** (`src/trigger-resolver.ts`) — uses Claude to classify incoming events against known process definitions and populate `trigger.kind` + `confidence`.
 
-2. **Event Manager** (`src/event-manager.ts`) — manages subscriptions. When an event fires:
+2. **Workflow Deployment Service** (`src/workflow-deployment-service.ts`) — `workflow.deploy` validates readiness, computes the start-trigger subscription diff, materializes created/cancelled/unchanged subscriptions, and returns a deploy receipt before marking the workflow executable.
+
+3. **Event Manager** (`src/event-manager.ts`) — manages subscriptions. When an event fires:
    - For `instance_id = "new"` → `createCase()` is called.
    - For an existing `instance_id` → `handleEventFired()` resumes the case at the waiting event node.
 
-3. **`subscribeEventNode`** — called when the engine reaches an intermediate event with a live trigger. Registers a programmatic subscription in the event manager so the case resumes when the trigger fires.
+4. **`subscribeEventNode`** — called when the engine reaches an intermediate event with a live trigger. Registers a programmatic subscription in the event manager so the case resumes when the trigger fires.
 
-4. **`cancelSubscriptionsByInstance`** — cleans up all active subscriptions when a case terminates (done or error).
+5. **`cancelSubscriptionsByInstance`** — cleans up all active subscriptions when a case terminates (done or error).
 
 ---
 
@@ -160,6 +162,8 @@ Subscriptions are stored in Redis and managed by `src/event-manager.ts`:
 - `createSubscriptionProgrammatic({ event_id, process_id, instance_id, trigger })` — registers a subscription to resume a waiting case.
 - `cancelSubscriptionsByInstance(instance_id)` — removes all subscriptions for a case on termination.
 - Adapters (telegram-bot, webhook, schedule, etc.) listen to their source and call the event manager when a matching event arrives.
+
+For deployed start triggers, `workflow.deploy` owns subscription materialization through the workflow deployment service. Deploy receipts include `deployment_id`, `deploy_version`, and per-event `operation_key` entries for `created`, `cancelled`, `unchanged`, and `failed` subscription operations. If any materialization operation fails, the deploy stays blocked/validated and the workflow is not marked executable.
 
 ---
 

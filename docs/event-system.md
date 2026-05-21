@@ -228,7 +228,8 @@ Bitrix24 pushes events to `POST /api/webhooks/bitrix`. The adapter dispatches th
 ```
 eEPC diagram deployed
   → Trigger Resolver classifies each event label → TriggerDescriptor
-  → Event Manager creates subscription for each trigger
+  → workflow.deploy computes and applies the start-trigger subscription diff
+      created/cancelled/unchanged/failed operations are returned in the deploy receipt
       timer     → node-cron job / BullMQ delay
       message   → DataAdapter listener (webhook / long-poll)
       condition → BullMQ polling job → adapter.executeQuery()
