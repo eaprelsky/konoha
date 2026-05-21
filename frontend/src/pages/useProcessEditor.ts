@@ -26,6 +26,58 @@ export interface SchemaPatch {
 }
 export type Snapshot = { els: WorkflowElement[]; fl: [string, string, string?][]; pos: Record<string, Pos> };
 export type WfNode = Workflow & { children: WfNode[] };
+export type SchemaPatchCanvasMode = 'preview' | 'pending_confirmation' | 'committed' | 'failed';
+
+export interface SchemaPatchCanvasEventDetail {
+  patch: SchemaPatch;
+  mode: SchemaPatchCanvasMode;
+  workflow_id?: string;
+  receipt?: unknown;
+}
+
+export function workflowEditorSnapshot(wf: Pick<Workflow, 'elements' | 'flow'>): Snapshot {
+  const pos: Record<string, Pos> = {};
+  wf.elements.forEach((el, i) => {
+    if (typeof el.x === 'number' && typeof el.y === 'number' && (el.x !== 0 || el.y !== 0)) {
+      pos[el.id] = { x: el.x, y: el.y };
+    } else {
+      const col = i % 6, row = Math.floor(i / 6);
+      pos[el.id] = { x: snap(40 + col * (EW + 60)), y: snap(40 + row * (EH + 80)) };
+    }
+  });
+  return { els: [...wf.elements], fl: [...(wf.flow || [])], pos };
+}
+
+export function normalizeSchemaPatchCanvasEvent(detail: unknown): SchemaPatchCanvasEventDetail | null {
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return null;
+  const record = detail as Record<string, unknown>;
+  const patch = record.patch && typeof record.patch === 'object' && !Array.isArray(record.patch)
+    ? record.patch as SchemaPatch
+    : record as SchemaPatch;
+  const rawMode = typeof record.mode === 'string' ? record.mode : 'preview';
+  const mode: SchemaPatchCanvasMode =
+    rawMode === 'committed' || rawMode === 'pending_confirmation' || rawMode === 'failed'
+      ? rawMode
+      : 'preview';
+  const workflowId = typeof record.workflow_id === 'string' ? record.workflow_id : undefined;
+  return { patch, mode, workflow_id: workflowId, receipt: record.receipt };
+}
+
+export function workflowIdFromPatchSavedEvent(detail: unknown): string | null {
+  if (!detail || typeof detail !== 'object') return null;
+  const record = detail as Record<string, unknown>;
+  if (typeof record.workflow_id === 'string') return record.workflow_id;
+  const receipt = record.receipt && typeof record.receipt === 'object'
+    ? record.receipt as Record<string, unknown>
+    : record;
+  if (typeof receipt.workflow_id === 'string') return receipt.workflow_id;
+  const changedResources = receipt.changed_resources;
+  if (Array.isArray(changedResources)) {
+    const workflow = changedResources.find((item: any) => item?.kind === 'workflow' && typeof item?.id === 'string');
+    if (workflow) return workflow.id;
+  }
+  return null;
+}
 
 export interface DraftWarning { text: string; details: string[] }
 
@@ -265,6 +317,14 @@ export function useProcessEditor(readOnly = false) {
     }, 2000);
   }
 
+  function cancelAutosave() {
+    if (autosaveTimer.current) {
+      clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
+    }
+    setAutosavePending(false);
+  }
+
   // ── Keyboard shortcuts ────────────────────────────────────────────────────────
   const undoRef = useRef(undo); undoRef.current = undo;
   const redoRef = useRef(redo); redoRef.current = redo;
@@ -336,32 +396,55 @@ export function useProcessEditor(readOnly = false) {
 
   // ── Schema patch via DOM event (issue #416: AssistantWidget → canvas) ────────
   // Pure transformation logic lives in applyPatchHelper.ts for unit testability (issue #461).
-  function applyPatch(patch: SchemaPatch) {
+  function applyPatch(patch: SchemaPatch, options: { autosave?: boolean } = {}) {
     if (readOnly) return;
-    pushSnapshot(); scheduleAutosave();
+    const autosave = options.autosave ?? true;
+    pushSnapshot();
+    if (autosave) scheduleAutosave();
     const next = applyPatchToState({ elements, flow, positions }, patch);
     setElements(next.elements);
     setFlow(next.flow);
     setPositions(next.positions);
   }
 
+  async function reconcileSavedWorkflowState(workflowId: string) {
+    if (!workflowId || workflowId !== wfId.trim()) return;
+    cancelAutosave();
+    try {
+      const saved = await api.workflows.getFresh(workflowId);
+      const snapshot = workflowEditorSnapshot(saved);
+      setWfName(saved.name || saved.id);
+      setElements(snapshot.els);
+      setFlow(snapshot.fl);
+      setPositions(snapshot.pos);
+      setSelected(prev => prev && saved.elements.some(el => el.id === prev) ? prev : null);
+      setMultiSelected(prev => prev.filter(id => saved.elements.some(el => el.id === id)));
+      setWorkflows(prev => {
+        const idx = prev.findIndex(w => w.id === saved.id);
+        if (idx < 0) return [saved, ...prev];
+        const next = [...prev];
+        next[idx] = saved;
+        return next;
+      });
+      refreshList();
+      await refreshValidation(workflowId);
+    } catch (err: any) {
+      setError(`Не удалось сверить схему с сервером: ${err.message ?? String(err)}`);
+    }
+  }
+
   // Listen for patches dispatched by AssistantWidget
   useEffect(() => {
     (window as any).__konoha_apply_schema_patch = applyPatch;
     function onPatch(e: Event) {
-      applyPatch((e as CustomEvent).detail);
+      const detail = normalizeSchemaPatchCanvasEvent((e as CustomEvent).detail);
+      if (!detail || detail.mode === 'failed' || detail.mode === 'pending_confirmation') return;
+      if (detail.workflow_id && detail.workflow_id !== wfId.trim()) return;
+      applyPatch(detail.patch, { autosave: detail.mode !== 'committed' });
     }
     function onPatchSaved(e: Event) {
-      const detail = (e as CustomEvent).detail;
-      const workflowId = typeof detail?.workflow_id === 'string'
-        ? detail.workflow_id
-        : typeof detail?.changed_resources?.find === 'function'
-        ? detail.changed_resources.find((item: any) => item?.kind === 'workflow')?.id
-        : null;
-      if (workflowId && workflowId === wfId.trim()) {
-        refreshList();
-        refreshValidation(workflowId);
-      }
+      const workflowId = workflowIdFromPatchSavedEvent((e as CustomEvent).detail);
+      if (workflowId) void reconcileSavedWorkflowState(workflowId);
     }
     window.addEventListener('konoha:schema_patch', onPatch);
     window.addEventListener('konoha:workflow_patch_saved', onPatchSaved);

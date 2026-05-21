@@ -145,6 +145,10 @@ export const api = {
   workflows: {
     list: () => apiFetch<Workflow[]>(`${BASE}/workflows`),
     get: (id: string) => apiFetch<Workflow>(`${BASE}/workflows/${id}`),
+    getFresh: (id: string) => {
+      invalidateCache(`${BASE}/workflows`);
+      return apiFetch<Workflow>(`${BASE}/workflows/${encodeURIComponent(id)}?fresh=${Date.now()}`, { cache: 'no-store' });
+    },
     validate: (id: string, source = 'workflow.deploy') =>
       apiFetch<WorkflowValidationReceipt>(`${BASE}/workflows/${id}/validation?source=${encodeURIComponent(source)}`),
     versions: (id: string) => apiFetch<{ version: string; saved_at?: string }[]>(`${BASE}/workflows/${id}/versions`),

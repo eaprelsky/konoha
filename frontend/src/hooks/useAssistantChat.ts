@@ -71,6 +71,12 @@ export function schemaPatchDurability(ev: any): 'saved' | 'pending' | 'failed' |
   return 'preview';
 }
 
+function schemaPatchCanvasMode(state: 'saved' | 'pending' | 'failed' | 'preview'): 'committed' | 'pending_confirmation' | 'failed' | 'preview' {
+  if (state === 'saved') return 'committed';
+  if (state === 'pending') return 'pending_confirmation';
+  return state;
+}
+
 function schemaPatchSystemText(state: 'saved' | 'pending' | 'failed' | 'preview'): string {
   if (state === 'saved') return 'Схема сохранена на сервере.';
   if (state === 'pending') return 'Изменение подготовлено и ждёт подтверждения.';
@@ -421,12 +427,24 @@ export function useAssistantChat(options: UseAssistantChatOptions = {}): UseAssi
                 return updated;
               });
               if (ev.schema_patch && patchState !== 'failed' && patchState !== 'pending') {
-                window.dispatchEvent(new CustomEvent('konoha:schema_patch', { detail: ev.schema_patch }));
+                const receipt = Array.isArray(ev.action_receipts)
+                  ? ev.action_receipts.find((item: any) => item?.action === 'workflow.patch')
+                  : null;
+                window.dispatchEvent(new CustomEvent('konoha:schema_patch', {
+                  detail: {
+                    patch: ev.schema_patch,
+                    mode: schemaPatchCanvasMode(patchState),
+                    workflow_id: ev.edit_result?.workflow_id,
+                    receipt,
+                  },
+                }));
                 if (patchState === 'saved') {
-                  const receipt = Array.isArray(ev.action_receipts)
-                    ? ev.action_receipts.find((item: any) => item?.action === 'workflow.patch')
-                    : null;
-                  window.dispatchEvent(new CustomEvent('konoha:workflow_patch_saved', { detail: receipt }));
+                  window.dispatchEvent(new CustomEvent('konoha:workflow_patch_saved', {
+                    detail: {
+                      workflow_id: ev.edit_result?.workflow_id,
+                      receipt,
+                    },
+                  }));
                 }
               }
               if (ev.created_workflow) {

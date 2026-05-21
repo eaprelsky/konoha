@@ -41,6 +41,7 @@ Each receipt includes:
 - Confirmation-required commits are marked `edit_result.mode=pending_confirmation`
 - Durable commits are marked `edit_result.mode=committed`
 - Readiness, validation, or malformed-patch failures are marked `edit_result.mode=failed` and must not be treated as saved canvas state
+- Frontend canvas handling treats `edit_result.mode=preview` as local-only, `pending_confirmation`/`failed` as no-apply, and `committed` as an optimistic paint followed by a fresh backend workflow reload; the saved backend workflow is the source of truth after `workflow.patch`
 - `create_workflow` yields a `workflow.create` receipt
 - confirm-required workflow creation yields `pending_confirmation` receipts and aggregate result status instead of magical silence
 

@@ -4,7 +4,8 @@
  *        removeEdge, undo/redo, newProcess, paletteClick, loadWorkflow
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
+import { api } from '../api/client';
 import { useProcessEditor } from '../pages/useProcessEditor';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -15,6 +16,22 @@ vi.mock('../api/client', () => ({
       list: vi.fn().mockResolvedValue([
         { id: 'proc-1', name: 'Test Process', elements: [{ id: 'event-1', type: 'event', label: 'Start' }], flow: [], version: '1.0.0' },
       ]),
+      getFresh: vi.fn().mockResolvedValue({ id: 'proc-1', name: 'Test Process', elements: [{ id: 'event-1', type: 'event', label: 'Start' }], flow: [], version: '1.0.0' }),
+      validate: vi.fn().mockResolvedValue({
+        workflow_id: 'proc-1',
+        taxonomy_version: 1,
+        readiness: 'ready',
+        source: 'workflow.deploy',
+        errors: [],
+        warnings: [],
+        checked_at: '2026-05-21T00:00:00.000Z',
+        gates: {
+          deployment_blocker: false,
+          case_start_blocker: false,
+          release_blocker: false,
+          reviewer_required: false,
+        },
+      }),
       create: vi.fn().mockResolvedValue({}),
       update: vi.fn().mockResolvedValue({}),
       delete: vi.fn().mockResolvedValue({}),
@@ -33,6 +50,20 @@ vi.mock('../context/TokenContext', () => ({
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  (api.workflows.list as any).mockResolvedValue([
+    { id: 'proc-1', name: 'Test Process', elements: [{ id: 'event-1', type: 'event', label: 'Start' }], flow: [], version: '1.0.0' },
+  ]);
+  (api.workflows.getFresh as any).mockResolvedValue({
+    id: 'proc-1',
+    name: 'Test Process',
+    elements: [{ id: 'event-1', type: 'event', label: 'Start' }],
+    flow: [],
+    version: '1.0.0',
+  });
+});
 
 describe('useProcessEditor — initial state', () => {
   it('starts with empty elements, flow and positions', () => {
@@ -243,5 +274,112 @@ describe('useProcessEditor — paletteClick', () => {
     act(() => { result.current.paletteClick('function'); });
     expect(result.current.elements).toHaveLength(1);
     expect(result.current.picker).toBeNull();
+  });
+});
+
+describe('useProcessEditor — assistant schema patch reconciliation', () => {
+  async function loadDefaultWorkflow() {
+    const rendered = renderHook(() => useProcessEditor());
+    await waitFor(() => expect(rendered.result.current.workflows).toHaveLength(1));
+    act(() => { rendered.result.current.loadWorkflow('proc-1'); });
+    expect(rendered.result.current.elements[0].label).toBe('Start');
+    return rendered;
+  }
+
+  it('keeps preview schema patches local', async () => {
+    const { result } = await loadDefaultWorkflow();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('konoha:schema_patch', {
+        detail: {
+          patch: { update_elements: [{ id: 'event-1', label: 'Preview Label' }] },
+          mode: 'preview',
+          workflow_id: 'proc-1',
+        },
+      }));
+    });
+
+    expect(result.current.elements[0].label).toBe('Preview Label');
+    expect(result.current.autosavePending).toBe(true);
+    expect(api.workflows.getFresh).not.toHaveBeenCalled();
+  });
+
+  it('reconciles committed optimistic patches to the saved backend workflow', async () => {
+    (api.workflows.getFresh as any).mockResolvedValue({
+      id: 'proc-1',
+      name: 'Canonical Process',
+      elements: [{ id: 'event-1', type: 'event', label: 'Saved Canonical', x: 140, y: 220 }],
+      flow: [],
+      version: '1.0.1',
+    });
+    const { result } = await loadDefaultWorkflow();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('konoha:schema_patch', {
+        detail: {
+          patch: { update_elements: [{ id: 'event-1', label: 'Optimistic Label' }] },
+          mode: 'committed',
+          workflow_id: 'proc-1',
+        },
+      }));
+    });
+    expect(result.current.elements[0].label).toBe('Optimistic Label');
+    expect(result.current.autosavePending).toBe(false);
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('konoha:workflow_patch_saved', {
+        detail: { workflow_id: 'proc-1' },
+      }));
+    });
+
+    await waitFor(() => expect(result.current.elements[0].label).toBe('Saved Canonical'));
+    expect(result.current.wfName).toBe('Canonical Process');
+    expect(result.current.positions['event-1']).toEqual({ x: 140, y: 220 });
+    expect(api.workflows.getFresh).toHaveBeenCalledWith('proc-1');
+  });
+
+  it('does not apply pending or failed schema patches to the canvas', async () => {
+    const { result } = await loadDefaultWorkflow();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('konoha:schema_patch', {
+        detail: {
+          patch: { update_elements: [{ id: 'event-1', label: 'Pending Label' }] },
+          mode: 'pending_confirmation',
+          workflow_id: 'proc-1',
+        },
+      }));
+      window.dispatchEvent(new CustomEvent('konoha:schema_patch', {
+        detail: {
+          patch: { update_elements: [{ id: 'event-1', label: 'Failed Label' }] },
+          mode: 'failed',
+          workflow_id: 'proc-1',
+        },
+      }));
+    });
+
+    expect(result.current.elements[0].label).toBe('Start');
+    expect(result.current.autosavePending).toBe(false);
+    expect(api.workflows.getFresh).not.toHaveBeenCalled();
+  });
+
+  it('ignores schema patches for a stale workflow id', async () => {
+    const { result } = await loadDefaultWorkflow();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('konoha:schema_patch', {
+        detail: {
+          patch: { update_elements: [{ id: 'event-1', label: 'Stale Label' }] },
+          mode: 'committed',
+          workflow_id: 'other-process',
+        },
+      }));
+      window.dispatchEvent(new CustomEvent('konoha:workflow_patch_saved', {
+        detail: { workflow_id: 'other-process' },
+      }));
+    });
+
+    expect(result.current.elements[0].label).toBe('Start');
+    expect(api.workflows.getFresh).not.toHaveBeenCalled();
   });
 });
