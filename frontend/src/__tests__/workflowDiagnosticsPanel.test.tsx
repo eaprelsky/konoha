@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import type { WorkflowValidationReceipt } from '../api/types';
 import { WorkflowDiagnosticsPanel, workflowValidationCounts } from '../pages/WorkflowDiagnosticsPanel';
@@ -65,5 +65,89 @@ describe('WorkflowDiagnosticsPanel', () => {
       warnings: 1,
       blocked: true,
     });
+  });
+
+  test('renders role assignment actions from stable role validation codes', async () => {
+    const onResolveRoleIssue = vi.fn().mockResolvedValue(undefined);
+    const roleReceipt: WorkflowValidationReceipt = {
+      ...blockedReceipt,
+      errors: [
+        {
+          code: 'ROLE_UNRESOLVABLE',
+          severity: 'error',
+          class: 'role',
+          message: 'Function "review" role "sales_owner" cannot resolve',
+          element_id: 'review',
+          details: { role: 'sales_owner' },
+        },
+      ],
+      warnings: [],
+    };
+
+    render(
+      <WorkflowDiagnosticsPanel
+        receipt={roleReceipt}
+        loading={false}
+        error={null}
+        onRefresh={vi.fn()}
+        onFocusElement={vi.fn()}
+        roles={[]}
+        agents={[{ id: 'sasuke', name: 'Sasuke', status: 'online' } as any]}
+        people={[{ id: 'person-1', name: 'Yegor', tg_id: 123, position: 'owner' } as any]}
+        onResolveRoleIssue={onResolveRoleIssue}
+      />,
+    );
+
+    expect(screen.getByText('ROLE_UNRESOLVABLE')).toBeInTheDocument();
+    expect(screen.getByText('sales_owner')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Assignee for sales_owner'), { target: { value: 'sasuke' } });
+    fireEvent.click(screen.getByRole('button', { name: /Assign/i }));
+
+    await waitFor(() => expect(onResolveRoleIssue).toHaveBeenCalledWith(
+      roleReceipt.errors[0],
+      { mode: 'assign', assignee: 'sasuke' },
+    ));
+    expect(await screen.findByText('Assignee saved')).toBeInTheDocument();
+  });
+
+  test('allows explicit manual queue resolution for missing assignee role errors', async () => {
+    const onResolveRoleIssue = vi.fn().mockResolvedValue(undefined);
+    const roleReceipt: WorkflowValidationReceipt = {
+      ...blockedReceipt,
+      errors: [
+        {
+          code: 'ROLE_MISSING_ASSIGNEE',
+          severity: 'error',
+          class: 'role',
+          message: 'Role "reviewer" has no assignees and is not manual',
+          element_id: 'review',
+          details: { role: 'reviewer', strategy: 'round-robin' },
+        },
+      ],
+      warnings: [],
+    };
+
+    render(
+      <WorkflowDiagnosticsPanel
+        receipt={roleReceipt}
+        loading={false}
+        error={null}
+        onRefresh={vi.fn()}
+        onFocusElement={vi.fn()}
+        roles={[{ role_id: 'reviewer', name: 'Reviewer', assignees: [], strategy: 'round-robin', created_at: '', updated_at: '' }]}
+        agents={[]}
+        people={[]}
+        onResolveRoleIssue={onResolveRoleIssue}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Manual$/i }));
+
+    await waitFor(() => expect(onResolveRoleIssue).toHaveBeenCalledWith(
+      roleReceipt.errors[0],
+      { mode: 'manual' },
+    ));
+    expect(await screen.findByText('Manual queue saved')).toBeInTheDocument();
   });
 });

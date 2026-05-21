@@ -72,10 +72,11 @@
   .workflow-diagnostics-ok { color:#166534; background:#dcfce7; border:1px solid #86efac; }
   .workflow-diagnostics-error { color:#991b1b; background:#fee2e2; border:1px solid #fca5a5; }
   .workflow-diagnostics-list { display:flex; flex-direction:column; gap:5px; max-height:180px; overflow-y:auto; }
-  .workflow-diagnostic-item { width:100%; text-align:left; border:1px solid #e2e8f0; background:white; border-radius:5px; padding:6px 7px; display:flex; flex-direction:column; gap:3px; cursor:pointer; }
-  .workflow-diagnostic-item:disabled { cursor:default; opacity:.9; }
+  .workflow-diagnostic-item { width:100%; text-align:left; border:1px solid #e2e8f0; background:white; border-radius:5px; padding:6px 7px; display:flex; flex-direction:column; gap:5px; }
   .workflow-diagnostic-item.tone-error { border-color:#fca5a5; }
   .workflow-diagnostic-item.tone-warning { border-color:#fbbf24; }
+  .workflow-diagnostic-focus { width:100%; text-align:left; border:0; background:transparent; padding:0; display:flex; flex-direction:column; gap:3px; cursor:pointer; }
+  .workflow-diagnostic-focus:disabled { cursor:default; opacity:.9; }
   .workflow-diagnostic-main { display:flex; align-items:center; justify-content:space-between; gap:6px; }
   .workflow-diagnostic-code { color:#1e293b; font-size:10px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .workflow-diagnostic-class { flex-shrink:0; font-size:9px; color:#475569; background:#e2e8f0; border-radius:3px; padding:1px 4px; }
@@ -86,6 +87,19 @@
   .workflow-diagnostics-gates .gate-clear { color:#166534; background:#dcfce7; border-color:#86efac; }
   .workflow-diagnostics-gates .gate-blocked { color:#991b1b; background:#fee2e2; border-color:#fca5a5; }
   .workflow-diagnostics-gates .gate-review { color:#92400e; background:#fef3c7; border-color:#fbbf24; }
+  .workflow-role-resolution { border-top:1px solid #e2e8f0; padding-top:5px; display:flex; flex-direction:column; gap:5px; }
+  .workflow-role-resolution-title { display:flex; align-items:center; gap:5px; font-size:10px; color:#64748b; }
+  .workflow-role-resolution-title code { color:#0f172a; background:#f1f5f9; border-radius:3px; padding:1px 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .workflow-role-resolution-state { color:#475569; background:#e2e8f0; border-radius:3px; padding:1px 4px; }
+  .workflow-role-resolution-row { display:grid; grid-template-columns:minmax(0, 1fr) auto auto; gap:4px; align-items:center; }
+  .workflow-role-resolution-row select { min-width:0; height:26px; border:1px solid #cbd5e1; border-radius:4px; padding:2px 6px; font-size:10px; background:white; color:#1e293b; }
+  .workflow-role-resolution-action { height:26px; border:1px solid #2563eb; background:#2563eb; color:white; border-radius:4px; padding:0 6px; font-size:10px; display:inline-flex; align-items:center; gap:3px; cursor:pointer; white-space:nowrap; }
+  .workflow-role-resolution-action.secondary { background:white; color:#334155; border-color:#cbd5e1; }
+  .workflow-role-resolution-action:disabled { opacity:.55; cursor:not-allowed; }
+  .workflow-role-resolution-current, .workflow-role-resolution-ok, .workflow-role-resolution-error { font-size:10px; line-height:1.35; }
+  .workflow-role-resolution-current { color:#64748b; }
+  .workflow-role-resolution-ok { color:#166534; }
+  .workflow-role-resolution-error { color:#991b1b; }
   .tsunade-panel { width:320px; flex-shrink:0; display:flex; flex-direction:column; background:#fff; border-left:1px solid #e2e8f0; height:100%; }
   .tsunade-header { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #e2e8f0; background:#f8fafc; }
   .tsunade-title { font-size:13px; font-weight:600; color:#1e293b; }

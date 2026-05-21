@@ -63,6 +63,10 @@ export function ProcessEditorSidebar({ s }: { s: ProcessEditorState }) {
           error={s.validationError}
           onRefresh={() => s.refreshValidation(s.wfId.trim())}
           onFocusElement={s.focusElement}
+          roles={s.roles}
+          agents={s.agents}
+          people={s.people}
+          onResolveRoleIssue={s.resolveRoleAssignmentIssue}
         />
       )}
 

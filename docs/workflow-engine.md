@@ -163,6 +163,12 @@ function roles with stable role-class codes:
 - `ROLE_ASSIGNEE_UNRESOLVABLE` when a non-manual RoleDef has assignees but none
   route to an online-capable agent or Telegram-reachable person.
 
+The ProcessEditor diagnostics panel renders these role validation codes as
+operator remediation controls. Operators can assign the role to a reachable
+agent/person or explicitly mark it as a manual queue; both paths use the
+canonical Action Spine `role.create`/`role.update` contracts and refresh the
+same `workflow.validate` receipt after the mutation.
+
 ---
 
 ## Event Subscriptions

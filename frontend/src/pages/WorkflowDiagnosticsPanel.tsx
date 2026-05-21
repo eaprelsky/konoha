@@ -1,4 +1,11 @@
-import type { WorkflowValidationIssue, WorkflowValidationReceipt } from '../api/types';
+import { useEffect, useMemo, useState } from 'react';
+import { Inbox, Loader2, UserCheck } from 'lucide-react';
+import type { Agent, Person, RoleDef, WorkflowValidationIssue, WorkflowValidationReceipt } from '../api/types';
+import {
+  buildRoleAssigneeOptions,
+  extractRoleAssignmentIssue,
+  type RoleAssignmentResolution,
+} from './roleAssignmentResolution';
 
 interface Props {
   receipt: WorkflowValidationReceipt | null;
@@ -6,6 +13,10 @@ interface Props {
   error: string | null;
   onRefresh: () => void;
   onFocusElement: (id: string) => void;
+  roles?: RoleDef[];
+  agents?: Agent[];
+  people?: Person[];
+  onResolveRoleIssue?: (issue: WorkflowValidationIssue, resolution: RoleAssignmentResolution) => Promise<void>;
 }
 
 function issueTarget(issue: WorkflowValidationIssue): string | null {
@@ -26,7 +37,105 @@ export function workflowValidationCounts(receipt: WorkflowValidationReceipt | nu
   };
 }
 
-export function WorkflowDiagnosticsPanel({ receipt, loading, error, onRefresh, onFocusElement }: Props) {
+interface RoleAssignmentControlsProps {
+  issue: WorkflowValidationIssue;
+  roles: RoleDef[];
+  agents: Agent[];
+  people: Person[];
+  onResolveRoleIssue?: (issue: WorkflowValidationIssue, resolution: RoleAssignmentResolution) => Promise<void>;
+}
+
+function WorkflowRoleAssignmentControls({ issue, roles, agents, people, onResolveRoleIssue }: RoleAssignmentControlsProps) {
+  const roleIssue = extractRoleAssignmentIssue(issue);
+  const options = useMemo(() => buildRoleAssigneeOptions(agents, people), [agents, people]);
+  const currentRole = roleIssue ? roles.find(role => role.role_id === roleIssue.role) : undefined;
+  const [assignee, setAssignee] = useState(options[0]?.id ?? '');
+  const [busy, setBusy] = useState<'assign' | 'manual' | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!assignee && options[0]) setAssignee(options[0].id);
+  }, [assignee, options]);
+
+  if (!roleIssue || !onResolveRoleIssue) return null;
+
+  async function apply(resolution: RoleAssignmentResolution, mode: 'assign' | 'manual') {
+    setBusy(mode);
+    setMessage(null);
+    setFailure(null);
+    try {
+      await onResolveRoleIssue(issue, resolution);
+      setMessage(mode === 'manual' ? 'Manual queue saved' : 'Assignee saved');
+    } catch (err: any) {
+      setFailure(err?.message ?? 'Role update failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="workflow-role-resolution" onClick={event => event.stopPropagation()}>
+      <div className="workflow-role-resolution-title">
+        <span>Role</span>
+        <code>{roleIssue.role}</code>
+        {currentRole && <span className="workflow-role-resolution-state">{currentRole.strategy}</span>}
+      </div>
+      <div className="workflow-role-resolution-row">
+        <select
+          aria-label={`Assignee for ${roleIssue.role}`}
+          value={assignee}
+          onChange={event => setAssignee(event.target.value)}
+          disabled={busy !== null || options.length === 0}
+        >
+          {options.length === 0 && <option value="">No reachable assignees</option>}
+          {options.map(option => (
+            <option key={`${option.group}:${option.id}`} value={option.id}>
+              {option.group === 'agents' ? 'Agent' : 'Person'} · {option.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="workflow-role-resolution-action"
+          disabled={busy !== null || !assignee}
+          onClick={() => apply({ mode: 'assign', assignee }, 'assign')}
+        >
+          {busy === 'assign' ? <Loader2 size={12} aria-hidden="true" /> : <UserCheck size={12} aria-hidden="true" />}
+          Assign
+        </button>
+        <button
+          type="button"
+          className="workflow-role-resolution-action secondary"
+          disabled={busy !== null}
+          onClick={() => apply({ mode: 'manual' }, 'manual')}
+        >
+          {busy === 'manual' ? <Loader2 size={12} aria-hidden="true" /> : <Inbox size={12} aria-hidden="true" />}
+          Manual
+        </button>
+      </div>
+      {roleIssue.current_assignees.length > 0 && (
+        <div className="workflow-role-resolution-current">
+          Current: {roleIssue.current_assignees.join(', ')}
+        </div>
+      )}
+      {message && <div className="workflow-role-resolution-ok">{message}</div>}
+      {failure && <div className="workflow-role-resolution-error">{failure}</div>}
+    </div>
+  );
+}
+
+export function WorkflowDiagnosticsPanel({
+  receipt,
+  loading,
+  error,
+  onRefresh,
+  onFocusElement,
+  roles = [],
+  agents = [],
+  people = [],
+  onResolveRoleIssue,
+}: Props) {
   const issues = [...(receipt?.errors ?? []), ...(receipt?.warnings ?? [])];
   const counts = workflowValidationCounts(receipt);
 
@@ -64,20 +173,32 @@ export function WorkflowDiagnosticsPanel({ receipt, loading, error, onRefresh, o
             const target = issueTarget(issue);
             const canFocus = Boolean(issue.element_id);
             return (
-              <button
+              <div
                 key={`${issue.code}-${issue.element_id ?? issue.edge?.join(':') ?? index}`}
                 className={`workflow-diagnostic-item tone-${issueTone(issue)}`}
-                onClick={() => { if (issue.element_id) onFocusElement(issue.element_id); }}
-                disabled={!canFocus}
                 title={target ?? issue.code}
               >
-                <span className="workflow-diagnostic-main">
-                  <span className="workflow-diagnostic-code">{issue.code}</span>
-                  <span className="workflow-diagnostic-class">{issue.class}</span>
-                </span>
-                <span className="workflow-diagnostic-message">{issue.message}</span>
-                {target && <span className="workflow-diagnostic-target">{target}</span>}
-              </button>
+                <button
+                  type="button"
+                  className="workflow-diagnostic-focus"
+                  onClick={() => { if (issue.element_id) onFocusElement(issue.element_id); }}
+                  disabled={!canFocus}
+                >
+                  <span className="workflow-diagnostic-main">
+                    <span className="workflow-diagnostic-code">{issue.code}</span>
+                    <span className="workflow-diagnostic-class">{issue.class}</span>
+                  </span>
+                  <span className="workflow-diagnostic-message">{issue.message}</span>
+                  {target && <span className="workflow-diagnostic-target">{target}</span>}
+                </button>
+                <WorkflowRoleAssignmentControls
+                  issue={issue}
+                  roles={roles}
+                  agents={agents}
+                  people={people}
+                  onResolveRoleIssue={onResolveRoleIssue}
+                />
+              </div>
             );
           })}
         </div>

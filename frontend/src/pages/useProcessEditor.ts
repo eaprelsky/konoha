@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useToken } from '../context/TokenContext';
 import { api } from '../api/client';
-import type { Workflow, WorkflowElement, WorkflowValidationReceipt, RoleDef, DocTemplate, ProcessMiningData } from '../api/types';
+import type { Agent, Person, Workflow, WorkflowElement, WorkflowValidationIssue, WorkflowValidationReceipt, RoleDef, DocTemplate, ProcessMiningData } from '../api/types';
 import { EW, EH, snap, pinchDist, genId, slugify, type Pos, type EType } from './ArrowRouter';
 import { Inspector } from '../components/Inspector';
 import { DEFAULT_LABELS } from './ElementShape';
@@ -13,6 +13,7 @@ import { applyPatchToState } from './applyPatchHelper';
 import { filterOperatorWorkflows, useOperatorViewMode } from '../utils/operatorView';
 import { workflowMatchesSearch } from './processSearch';
 import { workflowLifecycleView } from '../workflowLifecycle';
+import { buildRoleAssignmentAction, extractRoleAssignmentIssue, type RoleAssignmentResolution } from './roleAssignmentResolution';
 
 export type Mode = 'select' | 'connect';
 
@@ -114,6 +115,8 @@ export function useProcessEditor(readOnly = false) {
   const [versions, setVersions] = useState<{ version: string; saved_at?: string }[]>([]);
   const [viewingVersion, setViewingVersion] = useState<string | null>(null);
   const [roles,    setRoles]    = useState<RoleDef[]>([]);
+  const [agents,   setAgents]   = useState<Agent[]>([]);
+  const [people,   setPeople]   = useState<Person[]>([]);
   const [docs,     setDocs]     = useState<DocTemplate[]>([]);
   const [breadcrumb, setBreadcrumb] = useState<{ id: string; name: string }[]>([]);
   const [adapters, setAdapters] = useState<string[]>([]);
@@ -188,6 +191,8 @@ export function useProcessEditor(readOnly = false) {
   useEffect(() => {
     if (!token) return;
     api.roles.list().then(setRoles).catch(() => {});
+    api.agents.list().then(setAgents).catch(() => {});
+    api.people.list().then(setPeople).catch(() => {});
     api.documents.list().then(setDocs).catch(() => {});
     api.adapters.list().then(r => setAdapters(r.adapters)).catch(() => {});
     api.workspace.list().then(files => setWsFiles(files.map(f => f.name))).catch(() => {});
@@ -918,6 +923,22 @@ export function useProcessEditor(readOnly = false) {
     setPanY(rect.height / 2 - (pos.y + EH / 2) * z);
   }
 
+  async function resolveRoleAssignmentIssue(issue: WorkflowValidationIssue, resolution: RoleAssignmentResolution): Promise<void> {
+    const roleIssue = extractRoleAssignmentIssue(issue);
+    if (!roleIssue) throw new Error('Validation issue is not a role assignment issue');
+    const action = buildRoleAssignmentAction(roleIssue, roles, resolution);
+    const saved = action.kind === 'create'
+      ? await api.roles.create(action.payload as any)
+      : await api.roles.update(action.role_id, action.payload as any);
+    setRoles(prev => {
+      const exists = prev.some(role => role.role_id === saved.role_id);
+      return exists
+        ? prev.map(role => role.role_id === saved.role_id ? saved : role)
+        : [...prev, saved];
+    });
+    await refreshValidation(wfId.trim());
+  }
+
   // ── Sync role/doc entity on inline edit ──────────────────────────────────────
   function syncEntityOnEdit(el: WorkflowElement, newLabel: string) {
     if (el.type === 'role') {
@@ -990,7 +1011,7 @@ export function useProcessEditor(readOnly = false) {
     workflows, operatorWorkflows, hiddenWorkflowCount, showHiddenArtifacts, setShowHiddenArtifacts,
     currentWorkflow, currentLifecycle,
     sideW, versions, viewingVersion, setViewingVersion,
-    roles, docs, adapters, wsFiles, breadcrumb,
+    roles, agents, people, docs, adapters, wsFiles, breadcrumb,
     showChat, setShowChat, picker, setPicker,
     triggerResolving, resolveTrigger,
     sideSearch, setSideSearch,
@@ -1007,7 +1028,7 @@ export function useProcessEditor(readOnly = false) {
     zoomIn, zoomOut, zoomReset, zoomFit,
     refreshList, newProcess, startCreatingNew, commitNewProc,
     startRename, commitRename, dupWorkflow, delWorkflow,
-    loadWorkflow, drillDown, toggleMining, focusElement, applyTsunadePatch, deployWorkflow, runCurrentWorkflow,
+    loadWorkflow, drillDown, toggleMining, focusElement, resolveRoleAssignmentIssue, applyTsunadePatch, deployWorkflow, runCurrentWorkflow,
     addElement, paletteClick, pickFromRegistry, deleteElement, updateElement, removeEdge, applyPatch,
     switchMode, scheduleAutosave, syncEntityOnEdit,
     onResizeMouseDown,
