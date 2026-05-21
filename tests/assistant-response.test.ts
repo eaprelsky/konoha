@@ -143,6 +143,54 @@ describe("normalizeAssistantResponse", () => {
     }
   });
 
+  it("rejects malformed schema_patch positions instead of returning false saved receipt", async () => {
+    const workflowId = `assistant-patch-bad-position-${Date.now()}`;
+    const roleId = `${workflowId}-role`;
+    await createRole({ role_id: roleId, name: "Assistant bad position role", strategy: "manual", assignees: [] });
+    await createWorkflow({
+      id: workflowId,
+      version: "1.0",
+      name: "Assistant Patch Before",
+      elements: [
+        { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+        { id: "review", type: "function", label: "Review", role: roleId },
+        { id: "done", type: "event", label: "Done" },
+      ],
+      flow: [["start", "review"], ["review", "done"]],
+    }, { draft: true });
+
+    try {
+      const resp = await normalizeAssistantResponse(JSON.stringify({
+        reply: "Переименовал и передвинул процесс",
+        schema_patch: {
+          set_name: "Assistant Patch After",
+          update_positions: { start: { x: "320", y: 180 } },
+        },
+      }), {
+        ...baseOpts,
+        current_workflow_id: workflowId,
+        autonomy_overrides: { "workflow.patch": "auto" },
+      });
+
+      expect(resp.action_receipts[0]).toMatchObject({
+        action: "workflow.patch",
+        status: "failed",
+      });
+      expect(resp.action_receipts.some(receipt => receipt.action === "workflow.patch" && receipt.status === "succeeded")).toBe(false);
+      expect(resp.observable_result.status).toBe("failed");
+      const saved = await getWorkflow(workflowId);
+      expect(saved?.name).toBe("Assistant Patch Before");
+      expect(saved?.elements.find(element => element.id === "start")).not.toMatchObject({ x: "320", y: 180 });
+      expect(saved?.elements.find(element => element.id === "start")?.x).toBeUndefined();
+    } finally {
+      await deleteCasesByProcess(workflowId).catch(() => 0);
+      await redis.del(`workflow:${workflowId}`).catch(() => 0);
+      await redis.srem(WORKFLOW_INDEX_KEY, workflowId).catch(() => 0);
+      await pgDeleteWorkflow(workflowId).catch(() => 0);
+      await deleteRole(roleId).catch(() => {});
+    }
+  });
+
   it("does not persist readiness-invalid assistant schema patches", async () => {
     const workflowId = `assistant-patch-invalid-${Date.now()}`;
     await createWorkflow({

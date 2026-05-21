@@ -571,7 +571,7 @@ function schemaPatchTargetId(patch: Record<string, unknown>, opts: NormalizeOpti
   return id || null;
 }
 
-function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): Record<string, unknown> | null {
+function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): { patch: Record<string, unknown> | null; error?: string } {
   const supportedKeys = [
     "set_name",
     "set_description",
@@ -589,6 +589,7 @@ function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): Record<st
     }
   }
   const positionUpdates = durablePositionUpdates(schemaPatch.update_positions);
+  if (positionUpdates.error) return { patch: null, error: positionUpdates.error };
   if (positionUpdates.length > 0) {
     const existing = Array.isArray(patch.update_elements)
       ? patch.update_elements.filter(item => item && typeof item === "object") as Record<string, unknown>[]
@@ -603,17 +604,29 @@ function toDurableWorkflowPatch(schemaPatch: Record<string, unknown>): Record<st
     }
     patch.update_elements = [...byId.values()];
   }
-  return Object.keys(patch).length > 0 ? patch : null;
+  return { patch: Object.keys(patch).length > 0 ? patch : null };
 }
 
-function durablePositionUpdates(raw: unknown): Array<{ id: string; x: number; y: number }> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
-  const updates: Array<{ id: string; x: number; y: number }> = [];
+type DurablePositionUpdates = Array<{ id: string; x: number; y: number }> & { error?: string };
+
+function durablePositionUpdates(raw: unknown): DurablePositionUpdates {
+  const updates: DurablePositionUpdates = [] as unknown as DurablePositionUpdates;
+  if (raw === undefined) return updates;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    updates.error = "update_positions must be an object of element id to finite numeric x/y";
+    return updates;
+  }
   for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (!id.trim() || !value || typeof value !== "object" || Array.isArray(value)) continue;
+    if (!id.trim() || !value || typeof value !== "object" || Array.isArray(value)) {
+      updates.error = `update_positions.${id || "<empty>"} must be an object with finite numeric x/y`;
+      return updates;
+    }
     const pos = value as Record<string, unknown>;
     if (typeof pos.x === "number" && Number.isFinite(pos.x) && typeof pos.y === "number" && Number.isFinite(pos.y)) {
       updates.push({ id, x: pos.x, y: pos.y });
+    } else {
+      updates.error = `update_positions.${id} must include finite numeric x and y`;
+      return updates;
     }
   }
   return updates;
@@ -626,7 +639,21 @@ async function executeWorkflowPatchFromSchema(
   if (!schemaPatch || typeof schemaPatch !== "object" || Array.isArray(schemaPatch)) return null;
   const rawPatch = schemaPatch as Record<string, unknown>;
   const workflowId = schemaPatchTargetId(rawPatch, opts);
-  const patch = toDurableWorkflowPatch(rawPatch);
+  const durablePatch = toDurableWorkflowPatch(rawPatch);
+  const patch = durablePatch.patch;
+
+  if (durablePatch.error) {
+    return {
+      action: "workflow.patch",
+      params: {
+        ...(workflowId ? { id: workflowId } : {}),
+        invalid_schema_patch: true,
+      },
+      status: "failed",
+      description: "Reject malformed schema patch before durable workflow.patch",
+      error: durablePatch.error,
+    };
+  }
 
   if (!workflowId || !patch) {
     return {
