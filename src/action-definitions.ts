@@ -244,7 +244,7 @@ export const ACTIONS: ActionDef[] = [
   // ── Trigger ───────────────────────────────────────────────────────────────
   {
     id: "trigger.set",
-    description: "Set or update the trigger configuration on an event element.",
+    description: "Set or update kind-validated trigger configuration on an event element.",
     scope: "trigger",
     args: [
       { name: "workflow_id", type: "string", required: true,  description: "Workflow ID." },

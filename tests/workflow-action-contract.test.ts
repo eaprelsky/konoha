@@ -209,6 +209,14 @@ describe("workflow action contract validation", () => {
     expect(triggerSet.errors).toContain("Missing required argument: workflow_id");
     expect(triggerSet.errors).toContain("Missing required argument: element_id");
     expect(triggerSet.errors).toContain("Missing required argument: kind");
+    expect(validateActionArgs("trigger.set", {
+      workflow_id: "wf-123",
+      element_id: "start",
+      kind: "timer",
+      config: { cron: "0 9 * * *" },
+      expected_edit_version: 1,
+      expected_deploy_version: 0,
+    }).valid).toBe(true);
 
     const triggerResolve = validateActionArgs("trigger.resolve", {});
     expect(triggerResolve.valid).toBe(false);

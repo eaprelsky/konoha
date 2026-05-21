@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import * as nodeCron from "node-cron";
 import {
   getWorkflow,
   listWorkflows,
@@ -61,6 +62,8 @@ import { sendConnectorMessage } from "./messenger-outbound";
 import { executeGithubIssueAction } from "./github-issue-actions";
 import { sendMessage } from "./redis";
 import { ServiceError } from "./errors";
+import { parseBdDuration } from "./work-calendar";
+import { parseDurationMs } from "./events/utils";
 import {
   buildPgOnlyRetentionCleanupApply,
   buildPgOnlyRetentionCleanupPreview,
@@ -117,6 +120,15 @@ function validationFailure(action: string, args: Record<string, unknown>): Actio
 const ELEMENT_TYPES = new Set(["event", "function", "gateway"]);
 const GATEWAY_OPERATORS = new Set(["AND", "OR", "XOR"]);
 const WORKFLOW_RETIRE_MODES = new Set(["retire_only", "archive_with_runtime_cleanup", "purge_generated"]);
+const TRIGGER_CONDITION_OPERATORS = new Set([">", "<", ">=", "<=", "==", "!="]);
+const TRIGGER_ACTIONS = new Set(["approve", "reject", "submit", "complete", "escalate"]);
+const TRIGGER_SYSTEM_EVENTS = new Set([
+  "process_completed",
+  "process_error",
+  "subprocess_completed",
+  "function_completed",
+  "all_branches_completed",
+]);
 
 function buildElementAddPayload(args: Record<string, unknown>): { element?: WorkflowElement; error?: ActionExecution } {
   const invalid = validationFailure("element.add", args);
@@ -197,7 +209,68 @@ function triggerFromArgs(args: Record<string, unknown>): { trigger?: WorkflowEle
   if (!kind) return { error: { status: 400, data: { error: "Invalid trigger schema", code: "INVALID_TRIGGER_SCHEMA", details: ["kind must be a non-empty string"] } } };
   const config = args.config === undefined ? {} : args.config;
   if (!isRecord(config)) return { error: { status: 400, data: { error: "Invalid trigger schema", code: "INVALID_TRIGGER_SCHEMA", details: ["config must be an object"] } } };
-  return { trigger: { ...config, kind } as WorkflowElement["trigger"] };
+  const trigger = { ...config, kind } as NonNullable<WorkflowElement["trigger"]>;
+  const details = triggerSchemaErrors(trigger);
+  if (details.length > 0) {
+    return { error: { status: 400, data: { error: "Invalid trigger schema", code: "INVALID_TRIGGER_SCHEMA", details } } };
+  }
+  return { trigger };
+}
+
+function isValidTriggerDuration(value: unknown): value is string {
+  if (typeof value !== "string" || value.trim() === "") return false;
+  if (parseBdDuration(value)) return true;
+  try {
+    return parseDurationMs(value) > 0;
+  } catch {
+    return false;
+  }
+}
+
+function triggerSchemaErrors(trigger: NonNullable<WorkflowElement["trigger"]>): string[] {
+  const details: string[] = [];
+  if (trigger.confidence !== undefined && (typeof trigger.confidence !== "number" || trigger.confidence < 0 || trigger.confidence > 1)) {
+    details.push("confidence must be a number between 0 and 1");
+  }
+  switch (trigger.kind) {
+    case "timer":
+      if (typeof trigger.cron !== "string" || trigger.cron.trim() === "") details.push("timer trigger requires cron");
+      else if (!nodeCron.validate(trigger.cron)) details.push("timer cron expression is invalid");
+      if (isRecord(trigger.delay_after)) details.push("delayed triggers must use kind=delay_after");
+      break;
+    case "message":
+      if (typeof trigger.source !== "string" || trigger.source.trim() === "") details.push("message trigger requires source");
+      if (!isRecord(trigger.filter)) details.push("message trigger requires filter object");
+      break;
+    case "condition":
+      if (typeof trigger.data_source !== "string" || trigger.data_source.trim() === "") details.push("condition trigger requires data_source");
+      if (!isRecord(trigger.query) || typeof trigger.query.entity !== "string" || trigger.query.entity.trim() === "" || !isRecord(trigger.query.filter) || typeof trigger.query.metric !== "string" || trigger.query.metric.trim() === "") {
+        details.push("condition trigger requires query.entity, query.filter, and query.metric");
+      }
+      if (!TRIGGER_CONDITION_OPERATORS.has(String(trigger.operator))) details.push("condition trigger requires a supported operator");
+      if (typeof trigger.threshold !== "number" || !Number.isFinite(trigger.threshold)) details.push("condition trigger requires numeric threshold");
+      if (!isValidTriggerDuration(trigger.poll_interval)) details.push("condition trigger requires a valid poll_interval duration");
+      break;
+    case "delay_after":
+      if (!isValidTriggerDuration(trigger.duration)) details.push("delay_after trigger requires a valid duration");
+      break;
+    case "manual":
+      if (!trigger.manual_override) {
+        if (!TRIGGER_ACTIONS.has(String(trigger.action))) details.push("manual trigger requires a supported action");
+        if (typeof trigger.role !== "string" || trigger.role.trim() === "") details.push("manual trigger requires role");
+      }
+      break;
+    case "system":
+      if (!TRIGGER_SYSTEM_EVENTS.has(String(trigger.event_name))) details.push("system trigger requires a supported event_name");
+      break;
+    case "ambiguous":
+      if (!Array.isArray(trigger.candidates)) details.push("ambiguous trigger requires candidates array");
+      break;
+    default:
+      details.push("kind must be one of: timer, message, condition, system, manual, delay_after, ambiguous");
+      break;
+  }
+  return details;
 }
 
 function optionalNonEmptyString(value: unknown, field: string, details: string[]): string | undefined {

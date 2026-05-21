@@ -93,7 +93,7 @@ argument metadata.
 
 | Action | Description | Autonomy |
 |--------|-------------|----------|
-| `trigger.set` | Set trigger config on an event element through the direct Action Spine executor | confirm |
+| `trigger.set` | Set kind-validated trigger config on event elements through the direct Action Spine executor | confirm |
 | `trigger.resolve` | Auto-detect and persist trigger kind through the direct Action Spine executor with explicit `resolution_status`, `review_status`, `review_required`, and `confidence` receipt fields | auto |
 
 ### Case (`case.*`)

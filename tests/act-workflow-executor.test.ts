@@ -1182,6 +1182,129 @@ describe("/act workflow executor", () => {
     expect(invalidTarget.status).toBe(400);
     expect(invalidTargetBody.data.code).toBe("INVALID_TRIGGER_TARGET");
 
+    const invalidTimer = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "trigger.set",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          element_id: "start",
+          kind: "timer",
+          config: { delay_after: { duration: "PT5M" } },
+        },
+      }),
+    }));
+    const invalidTimerBody = await invalidTimer.json();
+    expect(invalidTimer.status).toBe(400);
+    expect(invalidTimerBody.data).toMatchObject({
+      code: "INVALID_TRIGGER_SCHEMA",
+      details: ["timer trigger requires cron", "delayed triggers must use kind=delay_after"],
+    });
+
+    const invalidCron = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "trigger.set",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          element_id: "start",
+          kind: "timer",
+          config: { cron: "not a cron" },
+        },
+      }),
+    }));
+    const invalidCronBody = await invalidCron.json();
+    expect(invalidCron.status).toBe(400);
+    expect(invalidCronBody.data).toMatchObject({
+      code: "INVALID_TRIGGER_SCHEMA",
+      details: ["timer cron expression is invalid"],
+    });
+
+    const unknownKind = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "trigger.set",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          element_id: "start",
+          kind: "webhook",
+          config: {},
+        },
+      }),
+    }));
+    const unknownKindBody = await unknownKind.json();
+    expect(unknownKind.status).toBe(400);
+    expect(unknownKindBody.data).toMatchObject({
+      code: "INVALID_TRIGGER_SCHEMA",
+      details: ["kind must be one of: timer, message, condition, system, manual, delay_after, ambiguous"],
+    });
+
+    const staleSet = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "trigger.set",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          element_id: "start",
+          kind: "timer",
+          config: { cron: "0 10 * * *" },
+          expected_edit_version: 1,
+        },
+      }),
+    }));
+    const staleSetBody = await staleSet.json();
+    expect(staleSet.status).toBe(409);
+    expect(staleSetBody.data).toMatchObject({
+      code: "WORKFLOW_UPDATE_CONFLICT",
+      workflow_id: workflowId,
+      details: { expected_edit_version: 1, actual_edit_version: 2 },
+    });
+
+    const deployConflict = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "trigger.set",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          element_id: "start",
+          kind: "timer",
+          config: { cron: "0 10 * * *" },
+          expected_deploy_version: 99,
+        },
+      }),
+    }));
+    const deployConflictBody = await deployConflict.json();
+    expect(deployConflict.status).toBe(409);
+    expect(deployConflictBody.data).toMatchObject({
+      code: "WORKFLOW_UPDATE_CONFLICT",
+      workflow_id: workflowId,
+      details: { expected_deploy_version: 99, actual_deploy_version: 0 },
+    });
+
+    const afterInvalid = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.get",
+        category: "inspect",
+        args: { id: workflowId },
+      }),
+    }));
+    const afterInvalidBody = await afterInvalid.json();
+    expect(afterInvalid.status).toBe(200);
+    expect(afterInvalidBody.data.edit_version).toBe(2);
+    expect(afterInvalidBody.data.elements.find((el: any) => el.id === "start").trigger).toMatchObject({ kind: "timer", cron: "0 9 * * *" });
+
     const oldAnthropicKey = config.llm.anthropicApiKey;
     config.llm.anthropicApiKey = "";
     try {
