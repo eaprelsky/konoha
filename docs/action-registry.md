@@ -79,7 +79,7 @@ argument metadata.
 | Action | Description | Autonomy |
 |--------|-------------|----------|
 | `element.add` | Add a validated event/function/gateway element to a workflow through the direct Action Spine executor | confirm |
-| `element.update` | Update validated element properties through the direct Action Spine executor | confirm |
+| `element.update` | Update validated element labels, roles, operators, triggers, documents, systems, intent, and subprocess bindings through the direct Action Spine executor | confirm |
 | `element.remove` | Remove an element and connected edges through the direct Action Spine executor | confirm |
 
 ### Flow (`flow.*`)

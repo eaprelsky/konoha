@@ -911,6 +911,144 @@ describe("/act workflow executor", () => {
     expect(removeBody.data.flow).toEqual([]);
   });
 
+  test("executes element.update for type-specific metadata fields with guards", async () => {
+    const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-element-update-fields`;
+    const createWorkflowRes = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "workflow.create",
+        category: "act",
+        args: {
+          id: workflowId,
+          name: "Element update fields workflow",
+          elements: [
+            { id: "start", type: "event", label: "Start" },
+            { id: "review", type: "function", label: "Review", role: "reviewer" },
+            { id: "decision", type: "gateway", label: "Decision", operator: "XOR" },
+            { id: "done", type: "event", label: "Done", trigger: { manual_override: true } },
+          ],
+          flow: [["start", "review"], ["review", "decision"], ["decision", "done"]],
+          documents: [{ doc_id: "policy-doc", name: "Policy", content: "Follow policy." }],
+          draft: true,
+        },
+      }),
+    }));
+    expect(createWorkflowRes.status).toBe(201);
+
+    const updateFunction = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.update",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "review",
+          label: "Review with context",
+          role: "senior_reviewer",
+          documents: ["policy-doc"],
+          systems: [{ connector: "bitrix24", operation: "read_deal", binding_id: "crm-read" }],
+          intent: "Check the lead against policy",
+          sub_process_id: "child-review-workflow",
+          expected_edit_version: 1,
+        },
+      }),
+    }));
+    const updateFunctionBody = await updateFunction.json();
+    expect(updateFunction.status).toBe(200);
+    expect(updateFunctionBody.data.updated_element).toMatchObject({
+      id: "review",
+      label: "Review with context",
+      role: "senior_reviewer",
+      documents: ["policy-doc"],
+      systems: [{ connector: "bitrix24", operation: "read_deal", binding_id: "crm-read" }],
+      intent: "Check the lead against policy",
+      sub_process_id: "child-review-workflow",
+    });
+    expect(updateFunctionBody.data.lifecycle_state).toBe("draft");
+    expect(updateFunctionBody.data.edit_version).toBe(2);
+
+    const updateGateway = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.update",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "decision",
+          operator: "AND",
+          expected_edit_version: 2,
+        },
+      }),
+    }));
+    const updateGatewayBody = await updateGateway.json();
+    expect(updateGateway.status).toBe(200);
+    expect(updateGatewayBody.data.updated_element).toMatchObject({ id: "decision", operator: "AND" });
+
+    const updateEvent = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.update",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "start",
+          trigger: { kind: "timer", cron: "0 10 * * *", confidence: 1 },
+          expected_edit_version: 3,
+        },
+      }),
+    }));
+    const updateEventBody = await updateEvent.json();
+    expect(updateEvent.status).toBe(200);
+    expect(updateEventBody.data.updated_element).toMatchObject({ id: "start", trigger: { kind: "timer", cron: "0 10 * * *" } });
+
+    for (const [id, patch, detail] of [
+      ["start", { documents: ["policy-doc"] }, "documents are only allowed for function elements"],
+      ["start", { systems: [{ connector: "bitrix24" }] }, "systems are only allowed for function elements"],
+      ["start", { intent: "Handle lead" }, "intent is only allowed for function elements"],
+      ["start", { sub_process_id: "child" }, "sub_process_id is only allowed for function elements"],
+      ["review", { operator: "OR" }, "operator is only allowed for gateway elements"],
+      ["review", { trigger: { kind: "timer", cron: "0 12 * * *" } }, "trigger is only allowed for event elements"],
+    ] as Array<[string, Record<string, unknown>, string]>) {
+      const invalid = await app.fetch(new Request("http://localhost/act", {
+        method: "POST",
+        headers: adminHeaders(),
+        body: JSON.stringify({
+          action: "element.update",
+          category: "act",
+          args: { workflow_id: workflowId, id, ...patch },
+        }),
+      }));
+      const invalidBody = await invalid.json();
+      expect(invalid.status).toBe(400);
+      expect(invalidBody.data).toMatchObject({ code: "INVALID_ELEMENT_UPDATE", details: [detail] });
+    }
+
+    const malformed = await app.fetch(new Request("http://localhost/act", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        action: "element.update",
+        category: "act",
+        args: {
+          workflow_id: workflowId,
+          id: "review",
+          documents: ["policy-doc", ""],
+          systems: [{ connector: "" }],
+        },
+      }),
+    }));
+    const malformedBody = await malformed.json();
+    expect(malformed.status).toBe(400);
+    expect(malformedBody.data).toMatchObject({
+      code: "INVALID_ELEMENT_UPDATE",
+      details: ["documents[1] must be a non-empty string", "systems[0].connector must be a non-empty string when provided"],
+    });
+  });
+
   test("executes trigger.set and trigger.resolve directly on event elements", async () => {
     const workflowId = `${HTTP_WORKFLOW_ID_PREFIX}-trigger-direct`;
     const createWorkflowRes = await app.fetch(new Request("http://localhost/act", {

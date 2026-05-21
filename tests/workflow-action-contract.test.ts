@@ -183,6 +183,21 @@ describe("workflow action contract validation", () => {
     expect(update.valid).toBe(false);
     expect(update.errors).toContain("Missing required argument: workflow_id");
     expect(update.errors).toContain("Missing required argument: id");
+    const validUpdate = validateActionArgs("element.update", {
+      workflow_id: "wf-123",
+      id: "review",
+      label: "Review",
+      role: "reviewer",
+      operator: "XOR",
+      trigger: { kind: "timer", cron: "0 9 * * *" },
+      documents: ["policy-doc"],
+      systems: [{ connector: "bitrix24", operation: "read_deal" }],
+      intent: "Review the case",
+      sub_process_id: "child-workflow",
+      expected_edit_version: 1,
+      expected_deploy_version: 0,
+    });
+    expect(validUpdate.valid).toBe(true);
 
     const remove = validateActionArgs("element.remove", {});
     expect(remove.valid).toBe(false);

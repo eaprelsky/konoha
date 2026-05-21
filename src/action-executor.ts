@@ -200,6 +200,62 @@ function triggerFromArgs(args: Record<string, unknown>): { trigger?: WorkflowEle
   return { trigger: { ...config, kind } as WorkflowElement["trigger"] };
 }
 
+function optionalNonEmptyString(value: unknown, field: string, details: string[]): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    details.push(`${field} must be a string when provided`);
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    details.push(`${field} must be a non-empty string when provided`);
+    return undefined;
+  }
+  return trimmed;
+}
+
+function documentsFromValue(value: unknown, details: string[]): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    details.push("documents must be an array of non-empty strings when provided");
+    return undefined;
+  }
+  const documents: string[] = [];
+  for (const [index, item] of value.entries()) {
+    if (typeof item !== "string" || item.trim() === "") {
+      details.push(`documents[${index}] must be a non-empty string`);
+      continue;
+    }
+    documents.push(item.trim());
+  }
+  return documents;
+}
+
+function systemsFromValue(value: unknown, details: string[]): WorkflowElement["systems"] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    details.push("systems must be an array of adapter binding objects when provided");
+    return undefined;
+  }
+  const systems: NonNullable<WorkflowElement["systems"]> = [];
+  for (const [index, item] of value.entries()) {
+    if (!isRecord(item)) {
+      details.push(`systems[${index}] must be an object`);
+      continue;
+    }
+    const connector = optionalNonEmptyString(item.connector, `systems[${index}].connector`, details);
+    const operation = item.operation === undefined ? undefined : optionalNonEmptyString(item.operation, `systems[${index}].operation`, details);
+    const bindingId = item.binding_id === undefined ? undefined : optionalNonEmptyString(item.binding_id, `systems[${index}].binding_id`, details);
+    if (!connector) continue;
+    systems.push({
+      connector,
+      ...(operation ? { operation } : {}),
+      ...(bindingId ? { binding_id: bindingId } : {}),
+    });
+  }
+  return systems;
+}
+
 function processContextFromWorkflow(workflow: WorkflowDefinition): ProcessContext {
   return {
     process_id: workflow.id,
@@ -1113,19 +1169,30 @@ async function executeElementAction(action: string, args: Record<string, unknown
       const patch: Partial<WorkflowElement> = {};
       const details: string[] = [];
       if (args.label !== undefined) {
-        const label = String(args.label).trim();
-        if (!label) details.push("label must be a non-empty string when provided");
-        else patch.label = label;
+        const label = optionalNonEmptyString(args.label, "label", details);
+        if (label) patch.label = label;
       }
       if (args.role !== undefined) {
-        const role = String(args.role).trim();
-        if (!role) details.push("role must be a non-empty string when provided");
-        else patch.role = role;
+        const role = optionalNonEmptyString(args.role, "role", details);
+        if (role) patch.role = role;
+      }
+      if (args.operator !== undefined) {
+        const operator = optionalNonEmptyString(args.operator, "operator", details);
+        if (operator && !GATEWAY_OPERATORS.has(operator)) details.push("operator must be AND, OR, or XOR");
+        else if (operator) patch.operator = operator as WorkflowElement["operator"];
       }
       if (args.trigger !== undefined) {
         if (!isRecord(args.trigger)) details.push("trigger must be an object when provided");
         else patch.trigger = args.trigger as WorkflowElement["trigger"];
       }
+      const documents = documentsFromValue(args.documents, details);
+      if (documents) patch.documents = documents;
+      const systems = systemsFromValue(args.systems, details);
+      if (systems) patch.systems = systems;
+      const intent = optionalNonEmptyString(args.intent, "intent", details);
+      if (intent) patch.intent = intent;
+      const subProcessId = optionalNonEmptyString(args.sub_process_id, "sub_process_id", details);
+      if (subProcessId) patch.sub_process_id = subProcessId;
       if (details.length > 0) return { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details } };
       if (Object.keys(patch).length === 0) return { status: 400, data: { error: "No element update fields provided", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId } };
 
@@ -1140,8 +1207,23 @@ async function executeElementAction(action: string, args: Record<string, unknown
         if (patch.role !== undefined && currentElement.type !== "function") {
           return { abort: { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details: ["role is only allowed for function elements"] } } };
         }
+        if (patch.operator !== undefined && currentElement.type !== "gateway") {
+          return { abort: { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details: ["operator is only allowed for gateway elements"] } } };
+        }
         if (patch.trigger !== undefined && currentElement.type !== "event") {
           return { abort: { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details: ["trigger is only allowed for event elements"] } } };
+        }
+        if (patch.documents !== undefined && currentElement.type !== "function") {
+          return { abort: { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details: ["documents are only allowed for function elements"] } } };
+        }
+        if (patch.systems !== undefined && currentElement.type !== "function") {
+          return { abort: { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details: ["systems are only allowed for function elements"] } } };
+        }
+        if (patch.intent !== undefined && currentElement.type !== "function") {
+          return { abort: { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details: ["intent is only allowed for function elements"] } } };
+        }
+        if (patch.sub_process_id !== undefined && currentElement.type !== "function") {
+          return { abort: { status: 400, data: { error: "Invalid element update", code: "INVALID_ELEMENT_UPDATE", workflow_id: workflowId, element_id: elementId, details: ["sub_process_id is only allowed for function elements"] } } };
         }
         const updated = { ...currentElement, ...patch, id: currentElement.id, type: currentElement.type };
         const elements = [...(current.elements ?? [])];
