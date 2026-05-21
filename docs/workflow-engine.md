@@ -167,6 +167,12 @@ For deployed start triggers, `workflow.deploy` owns subscription materialization
 
 If the snapshot save fails, deployment exits before any subscription side effects. If subscription materialization fails, `workflow.deploy` records a blocked deploy receipt, rolls back created subscriptions where possible, and demotes the workflow back to `validated`/`needs_review`. A retry creates the next deploy transaction/version; matching active subscriptions are treated as `unchanged`, stale duplicates are cancelled by diff, and operation keys remain deterministic as `{workflow_id}:v{deploy_version}:{event_id}`.
 
+`workflow.undeploy`, `workflow.retire`, and compatibility `workflow.delete`
+cancel only deploy-managed start subscriptions (`instance_id="new"`) and return
+a start-subscription reconciliation receipt. Running-case/intermediate
+subscriptions keep their concrete `case_id` instance and are preserved unless a
+separate runtime cleanup mode deletes the case itself.
+
 ---
 
 ## PostgreSQL Storage Layer

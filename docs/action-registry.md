@@ -28,8 +28,9 @@ Actions use **object-scope naming**: `{scope}.{verb}`
 
 Category classification is derived from the verb contract, not from UI routes.
 Mutation verbs include direct writes such as `add`, `set`, `resolve`, `deploy`,
-`retire`, and `validate`, and the classifier also recognizes snake_case verbs
-such as `batch_delete` and `update_labels` by their write segment.
+`undeploy`, `retire`, and `validate`, and the classifier also recognizes
+snake_case verbs such as `batch_delete` and `update_labels` by their write
+segment.
 
 | Scope | Meaning |
 |-------|---------|
@@ -67,6 +68,7 @@ argument metadata.
 | `workflow.validate` | Return the canonical graph/runtime/deploy/migration readiness receipt | auto |
 | `workflow.patch` | Apply a server-side schema patch atomically with validation, CAS persistence, conflict guard, and no partial writes | confirm |
 | `workflow.deploy` | Validate, materialize runtime start triggers, record deploy metadata, and mark workflow executable | confirm |
+| `workflow.undeploy` | Demote workflow from executable state and cancel deploy-managed start subscriptions | confirm |
 | `workflow.retire` | Retire workflow from new starts and optionally clean generated runtime artifacts | confirm |
 | `workflow.delete` | Compatibility archive route for `workflow.retire` with default runtime cleanup | confirm |
 | `workflow.list` | List all workflows | auto |

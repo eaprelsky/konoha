@@ -67,10 +67,15 @@ longer the same operation as deploying it for runtime execution.
   affects only cases started after that deploy version. Legacy cases without a
   binding fall back to the current workflow definition until an explicit
   migration policy exists.
+- `workflow.undeploy` demotes an executable workflow back to `validated`,
+  cancels deploy-managed `instance_id:"new"` start-event subscriptions, and
+  preserves running-case/intermediate subscriptions whose `instance_id` is a
+  concrete case id. It returns a start-subscription reconciliation receipt.
 - `workflow.retire` is the canonical retire operation. It removes the workflow
   from active lists, marks `lifecycle_state: "retired"`, records optional
-  `retired_by`, and can run in `retire_only`,
-  `archive_with_runtime_cleanup`, or `purge_generated` mode.
+  `retired_by`, cancels deploy-managed start-event subscriptions in every mode,
+  and can run in `retire_only`, `archive_with_runtime_cleanup`, or
+  `purge_generated` mode.
 - `workflow.delete` is a compatibility archive route for `workflow.retire`
   with the same durable retired record and default runtime cleanup.
 - Messenger-driven start triggers must include an activation policy covering
@@ -214,6 +219,30 @@ Failures use stable `code` values:
   the response includes rollback evidence and the workflow is demoted back to
   `validated` with `needs_review`.
 
+`workflow.undeploy` and `workflow.retire` return stable subscription
+reconciliation evidence. `workflow.undeploy` keeps the workflow record but makes
+new case starts fail the executable gate:
+
+```json
+{
+  "ok": true,
+  "workflow_id": "sales/lead-qualification",
+  "action": "workflow.undeploy",
+  "lifecycle_state": "validated",
+  "deploy_version": 3,
+  "undeployed_by": "operator-1",
+  "subscription_reconciliation": {
+    "ok": true,
+    "source": "workflow.undeploy",
+    "reason": "workflow_undeployed",
+    "active_before": 1,
+    "cancelled": [],
+    "failed": [],
+    "preserved_running_case_subscriptions": true
+  }
+}
+```
+
 `workflow.retire` returns a stable receipt:
 
 ```json
@@ -229,7 +258,13 @@ Failures use stable `code` values:
   "archived": true,
   "deleted_cases": 0,
   "deleted_work_items": 0,
-  "cancelled_subscriptions": 0
+  "cancelled_subscriptions": 1,
+  "subscription_reconciliation": {
+    "ok": true,
+    "source": "workflow.retire",
+    "reason": "workflow_retired",
+    "preserved_running_case_subscriptions": true
+  }
 }
 ```
 

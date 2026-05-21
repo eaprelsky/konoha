@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { executeActionDirect } from "../src/action-executor";
-import { cancelSubscriptionsByProcessAndInstance } from "../src/event-manager";
+import { cancelSubscriptionsByProcessAndInstance, createSubscriptionProgrammatic } from "../src/event-manager";
 import { SUBSCRIPTIONS_KEY } from "../src/events/subscriptions";
 import { deleteCasesByProcess } from "../src/runtime";
 import { pgDeleteWorkflow } from "../src/storage/pg";
@@ -54,6 +54,10 @@ async function subscriptionsForProcess(processId: string): Promise<Array<Record<
 
 async function activeSubscriptionsForProcess(processId: string): Promise<Array<Record<string, any>>> {
   return (await subscriptionsForProcess(processId)).filter(sub => sub.status === "active");
+}
+
+async function activeStartSubscriptionsForProcess(processId: string): Promise<Array<Record<string, any>>> {
+  return (await activeSubscriptionsForProcess(processId)).filter(sub => sub.instance_id === "new");
 }
 
 async function deployedSnapshotKeys(processId: string): Promise<string[]> {
@@ -257,6 +261,187 @@ describe("workflow deployment service", () => {
         desired: 1,
         unchanged: [expect.objectContaining({ operation_key: `${id}:v2:start` })],
       },
+    });
+  });
+
+  test("workflow.undeploy cancels deploy-managed start subscriptions and preserves running case subscriptions", async () => {
+    const id = `${RUN}-undeploy`;
+    touched.add(id);
+    await createWorkflow(workflow(id));
+
+    const deployed = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+    expect(deployed?.status).toBe(200);
+    expect(await activeStartSubscriptionsForProcess(id)).toHaveLength(1);
+
+    const runtimeSub = await createSubscriptionProgrammatic({
+      event_id: "waiting",
+      process_id: id,
+      process_name: "Running case",
+      instance_id: "case-123",
+      trigger: { kind: "manual", action: "complete", role: "reviewer" } as any,
+    });
+
+    const undeployed = await executeActionDirect("workflow.undeploy", { id, undeployed_by: "operator-2" });
+    expect(undeployed?.status).toBe(200);
+    expect((undeployed?.data as any)).toMatchObject({
+      ok: true,
+      workflow_id: id,
+      action: "workflow.undeploy",
+      lifecycle_state: "validated",
+      undeployed_by: "operator-2",
+      subscription_reconciliation: {
+        ok: true,
+        workflow_id: id,
+        deploy_version: 1,
+        source: "workflow.undeploy",
+        reason: "workflow_undeployed",
+        active_before: 1,
+        cancelled: [expect.objectContaining({
+          event_id: "start",
+          status: "cancelled",
+          reason: "workflow_undeployed",
+        })],
+        failed: [],
+        preserved_running_case_subscriptions: true,
+      },
+    });
+    expect(await activeStartSubscriptionsForProcess(id)).toEqual([]);
+
+    const rawRuntimeSub = await redis.hget(SUBSCRIPTIONS_KEY, runtimeSub.subscription_id);
+    expect(rawRuntimeSub).toBeTruthy();
+    expect(JSON.parse(rawRuntimeSub!)).toMatchObject({
+      id: runtimeSub.subscription_id,
+      process_id: id,
+      instance_id: "case-123",
+      status: "active",
+    });
+
+    const blockedStart = await executeActionDirect("case.start", {
+      process_id: id,
+      subject: "blocked after undeploy",
+      payload: {},
+    });
+    expect(blockedStart?.status).toBe(409);
+    expect((blockedStart?.data as any)).toMatchObject({
+      code: "WORKFLOW_NOT_EXECUTABLE",
+      lifecycle_state: "validated",
+    });
+
+    const saved = await getWorkflow(id);
+    expect(saved).toMatchObject({
+      lifecycle_state: "validated",
+      last_deploy: {
+        status: "blocked",
+        source: "workflow.undeploy",
+        side_effects: {
+          type: "start_subscription_reconciliation",
+          ok: true,
+        },
+      },
+    });
+  });
+
+  test("workflow.undeploy reports failed reconciliation and leaves start subscriptions retryable", async () => {
+    const id = `${RUN}-undeploy-failed-reconcile`;
+    touched.add(id);
+    await createWorkflow(workflow(id));
+
+    const deployed = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+    expect(deployed?.status).toBe(200);
+    const activeBefore = await activeStartSubscriptionsForProcess(id);
+    expect(activeBefore).toHaveLength(1);
+
+    const restoreDeps = setWorkflowDeploymentSubscriptionDepsForTest({
+      async cancelResources() {
+        throw new Error("simulated cancel failure");
+      },
+    });
+    try {
+      const undeployed = await executeActionDirect("workflow.undeploy", { id, undeployed_by: "operator-2" });
+      expect(undeployed?.status).toBe(502);
+      expect((undeployed?.data as any)).toMatchObject({
+        ok: false,
+        workflow_id: id,
+        action: "workflow.undeploy",
+        lifecycle_state: "validated",
+        subscription_reconciliation: {
+          ok: false,
+          source: "workflow.undeploy",
+          reason: "workflow_undeployed",
+          active_before: 1,
+          cancelled: [],
+          failed: [expect.objectContaining({
+            event_id: "start",
+            status: "failed",
+            error: "simulated cancel failure",
+          })],
+          preserved_running_case_subscriptions: true,
+        },
+      });
+    } finally {
+      restoreDeps();
+    }
+
+    expect(await activeStartSubscriptionsForProcess(id)).toHaveLength(1);
+    const saved = await getWorkflow(id);
+    expect(saved).toMatchObject({
+      lifecycle_state: "validated",
+      needs_review: true,
+      last_deploy: {
+        status: "blocked",
+        source: "workflow.undeploy",
+        side_effects: {
+          type: "start_subscription_reconciliation",
+          ok: false,
+        },
+      },
+    });
+  });
+
+  test("workflow.retire cancels deploy-managed starts in retire_only mode without cancelling running case subscriptions", async () => {
+    const id = `${RUN}-retire-start-subscriptions`;
+    touched.add(id);
+    await createWorkflow(workflow(id));
+
+    const deployed = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-1" });
+    expect(deployed?.status).toBe(200);
+    expect(await activeStartSubscriptionsForProcess(id)).toHaveLength(1);
+
+    const runtimeSub = await createSubscriptionProgrammatic({
+      event_id: "waiting",
+      process_id: id,
+      instance_id: "case-456",
+      trigger: { kind: "manual", action: "complete", role: "reviewer" } as any,
+    });
+
+    const retired = await executeActionDirect("workflow.retire", {
+      id,
+      mode: "retire_only",
+      retired_by: "operator-2",
+    });
+    expect(retired?.status).toBe(200);
+    expect((retired?.data as any)).toMatchObject({
+      ok: true,
+      workflow_id: id,
+      action: "workflow.retire",
+      lifecycle_state: "retired",
+      cancelled_subscriptions: 1,
+      subscription_reconciliation: {
+        ok: true,
+        source: "workflow.retire",
+        reason: "workflow_retired",
+        active_before: 1,
+        cancelled: [expect.objectContaining({ event_id: "start", status: "cancelled" })],
+        failed: [],
+        preserved_running_case_subscriptions: true,
+      },
+    });
+    expect(await activeStartSubscriptionsForProcess(id)).toEqual([]);
+    const rawRuntimeSub = await redis.hget(SUBSCRIPTIONS_KEY, runtimeSub.subscription_id);
+    expect(JSON.parse(rawRuntimeSub!)).toMatchObject({
+      process_id: id,
+      instance_id: "case-456",
+      status: "active",
     });
   });
 

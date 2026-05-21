@@ -38,7 +38,7 @@ rejected for regular agent tokens before execution.
 | --- | --- | --- | --- | --- |
 | Create or edit workflow definitions | `workflow.create`, `workflow.update`, `workflow.patch`, `element.add`, `element.update`, `element.remove`, `flow.add`, `flow.remove`, `trigger.set` | admin | confirm | required |
 | Preview or validate workflow definitions | `workflow.list`, `workflow.get`, `trigger.resolve` | admin | auto | no audit for pure reads; `trigger.resolve` is audited because it may persist resolver output when wired |
-| Deploy runtime triggers | `workflow.deploy` | admin | confirm | required |
+| Deploy runtime triggers | `workflow.deploy`, `workflow.undeploy` | admin | confirm | required |
 | Retire or archive workflows | `workflow.retire`, `workflow.delete`, `workflow.batch_delete` | admin | confirm | required |
 | Start workflow cases | `case.start` | admin | auto | required |
 | Inspect case and event payloads | `case.get`, `case.list`, `event.wait_list` | admin | auto | no audit for current read-only inspection actions |

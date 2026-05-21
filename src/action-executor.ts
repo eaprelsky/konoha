@@ -21,7 +21,6 @@ import { CaseStartGateError } from "./runtime/case-start-gate";
 import { normalizeElementNames } from "./normalizer";
 import { deleteCasesByProcess, createCase, getCase, listCases, forceCloseCase, cancelCase, deleteCase } from "./runtime";
 import { resolveBatchProgrammatic, type ProcessContext } from "./trigger-resolver";
-import { cancelSubscriptionsByProcessAndInstance } from "./event-manager";
 import { validateActionArgs } from "./action-registry";
 import {
   createStandaloneWorkItem,
@@ -75,8 +74,10 @@ import {
   buildWorkflowDeploymentTransaction,
   materializeWorkflowDeploymentSubscriptions,
   persistWorkflowDeploymentRecord,
+  reconcileWorkflowStartSubscriptions,
   rollbackWorkflowDeploymentSideEffects,
   setWorkflowDeploymentTransactionStatus,
+  type WorkflowStartSubscriptionReconciliationReceipt,
 } from "./workflow-deployment-service";
 
 export interface ActionExecution {
@@ -773,6 +774,103 @@ async function executeWorkflowDeploy(args: Record<string, unknown>): Promise<Act
   };
 }
 
+async function persistUndeployReceipt(
+  id: string,
+  workflow: WorkflowDefinition,
+  deployVersion: number,
+  source: "workflow.undeploy" | "workflow.retire" | "workflow.delete",
+  receipt: WorkflowStartSubscriptionReconciliationReceipt,
+): Promise<WorkflowDefinition | null> {
+  const result = await updateWorkflow(id, workflow, {
+    lifecycleState: "validated",
+    deploy: {
+      status: "blocked",
+      checked_at: receipt.checked_at,
+      deploy_version: deployVersion,
+      source,
+      details: [
+        `${source} cancelled deploy-managed start subscriptions`,
+        `cancelled=${receipt.cancelled.length} failed=${receipt.failed.length}`,
+      ],
+      side_effects: {
+        type: "start_subscription_reconciliation",
+        ...receipt,
+      },
+    },
+    needsReview: !receipt.ok,
+  });
+  if (!result || isWorkflowUpdateConflict(result) || result.errors.length > 0) return null;
+  return result.workflow;
+}
+
+async function executeWorkflowUndeploy(args: Record<string, unknown>): Promise<ActionExecution> {
+  const invalid = validationFailure("workflow.undeploy", args);
+  if (invalid) return invalid;
+
+  const id = String(args.id);
+  const current = await getWorkflow(id);
+  if (!current) return workflowNotFound(id);
+  const deployVersion = getWorkflowDeployVersion(current);
+  const undeployedBy = args.undeployed_by ? String(args.undeployed_by) : "workflow.undeploy";
+  const currentState = getWorkflowLifecycleState(current);
+
+  if (currentState === "retired") {
+    const reconciliation = await reconcileWorkflowStartSubscriptions(current, {
+      deploy_version: deployVersion,
+      source: "workflow.undeploy",
+      reason: "workflow_retired_reconciliation",
+    });
+    return {
+      status: reconciliation.ok ? 200 : 502,
+      data: {
+        ok: reconciliation.ok,
+        workflow_id: id,
+        action: "workflow.undeploy",
+        lifecycle_state: "retired",
+        already_retired: true,
+        subscription_reconciliation: reconciliation,
+      },
+    };
+  }
+
+  const demoted = await updateWorkflow(id, current, {
+    lifecycleState: "validated",
+    deploy: {
+      status: "blocked",
+      checked_at: new Date().toISOString(),
+      deploy_version: deployVersion,
+      source: "workflow.undeploy",
+      details: ["workflow undeployed before start subscription reconciliation"],
+    },
+    needsReview: false,
+  });
+  if (demoted === null) return workflowNotFound(id);
+  if (isWorkflowUpdateConflict(demoted)) return workflowUpdateConflictExecution(demoted);
+  if (demoted.errors.length > 0) return { status: 422, data: { error: "Validation failed", details: demoted.errors } };
+
+  const reconciliation = await reconcileWorkflowStartSubscriptions(demoted.workflow, {
+    deploy_version: deployVersion,
+    source: "workflow.undeploy",
+    reason: "workflow_undeployed",
+  });
+  const receiptWorkflow = await persistUndeployReceipt(id, demoted.workflow, deployVersion, "workflow.undeploy", reconciliation);
+
+  return {
+    status: reconciliation.ok ? 200 : 502,
+    data: {
+      ok: reconciliation.ok,
+      workflow_id: id,
+      action: "workflow.undeploy",
+      lifecycle_state: "validated",
+      deploy_version: deployVersion,
+      undeployed_by: undeployedBy,
+      subscription_reconciliation: reconciliation,
+      workflow: receiptWorkflow ?? demoted.workflow,
+      ...(receiptWorkflow ? {} : { warning: "undeploy receipt was returned but could not be persisted after lifecycle demotion" }),
+    },
+  };
+}
+
 async function executeWorkflowRetire(action: "workflow.retire" | "workflow.delete", args: Record<string, unknown>): Promise<ActionExecution> {
   const invalid = validationFailure(action, args);
   if (invalid) return invalid;
@@ -795,21 +893,28 @@ async function executeWorkflowRetire(action: "workflow.retire" | "workflow.delet
   if (!current) return workflowNotFound(id);
   const alreadyRetired = getWorkflowLifecycleState(current) === "retired";
   const retiredBy = action === "workflow.retire" && args.retired_by ? String(args.retired_by) : action;
+  const deployVersion = getWorkflowDeployVersion(current);
 
   if (!alreadyRetired) {
     const archived = await archiveWorkflow(id, { source: action, retiredBy });
     if (!archived) return workflowNotFound(id);
   }
 
+  const reconciliation = await reconcileWorkflowStartSubscriptions(current, {
+    deploy_version: deployVersion,
+    source: action,
+    reason: "workflow_retired",
+  });
+
   let deletedCases = 0;
   let deletedWorkItems = 0;
-  let cancelledSubscriptions = 0;
+  let cancelledSubscriptions = reconciliation.cancelled.length;
   const warnings: string[] = [];
+  if (!reconciliation.ok) warnings.push("start subscription reconciliation failed");
 
   if (mode === "archive_with_runtime_cleanup" || mode === "purge_generated") {
     deletedCases = await deleteCasesByProcess(id).catch(() => { warnings.push("case cleanup failed"); return 0; });
     deletedWorkItems = await deleteWorkItemsByProcess(id).catch(() => { warnings.push("work item cleanup failed"); return 0; });
-    cancelledSubscriptions = await cancelSubscriptionsByProcessAndInstance(id, "new").catch(() => { warnings.push("subscription cleanup failed"); return 0; });
   }
 
   return {
@@ -827,6 +932,7 @@ async function executeWorkflowRetire(action: "workflow.retire" | "workflow.delet
       deleted_cases: deletedCases,
       deleted_work_items: deletedWorkItems,
       cancelled_subscriptions: cancelledSubscriptions,
+      subscription_reconciliation: reconciliation,
       warnings: warnings.length > 0 ? warnings : undefined,
     },
   };
@@ -852,9 +958,17 @@ async function executeWorkflowBatchDelete(args: Record<string, unknown>): Promis
         results.push({ id, ok: false, deleted_cases: 0, deleted_work_items: 0, cancelled_subscriptions: 0, error: "Not found" });
         continue;
       }
+      const current = await getWorkflow(id);
+      const reconciliation = current
+        ? await reconcileWorkflowStartSubscriptions(current, {
+          deploy_version: getWorkflowDeployVersion(current),
+          source: "workflow.delete",
+          reason: "workflow_retired",
+        })
+        : { cancelled: [], failed: [] };
       const deletedCases = await deleteCasesByProcess(id).catch(() => 0);
       const deletedWorkItems = await deleteWorkItemsByProcess(id).catch(() => 0);
-      const cancelledSubscriptions = await cancelSubscriptionsByProcessAndInstance(id, "new").catch(() => 0);
+      const cancelledSubscriptions = reconciliation.cancelled.length;
       results.push({ id, ok: true, deleted_cases: deletedCases, deleted_work_items: deletedWorkItems, cancelled_subscriptions: cancelledSubscriptions });
     } catch (e: any) {
       results.push({ id, ok: false, deleted_cases: 0, deleted_work_items: 0, cancelled_subscriptions: 0, error: e.message });
@@ -898,6 +1012,8 @@ export async function executeWorkflowAction(
       return executeWorkflowPatch(args);
     case "workflow.deploy":
       return executeWorkflowDeploy(args);
+    case "workflow.undeploy":
+      return executeWorkflowUndeploy(args);
     case "workflow.retire":
       return executeWorkflowRetire("workflow.retire", args);
     case "workflow.delete":

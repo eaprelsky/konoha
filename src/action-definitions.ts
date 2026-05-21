@@ -82,6 +82,18 @@ export const ACTIONS: ActionDef[] = [
     audited: true,
   },
   {
+    id: "workflow.undeploy",
+    description: "Demote an executable workflow from new case starts and cancel deploy-managed start subscriptions while preserving running cases.",
+    scope: "workflow",
+    args: [
+      { name: "id", type: "string", required: true, description: "Workflow ID to undeploy." },
+      { name: "undeployed_by", type: "string", required: false, description: "Operator or agent ID recorded in the undeploy receipt." },
+    ],
+    implementation: { kind: "direct", note: "Demotes lifecycle to validated and reconciles deploy-managed start subscriptions through action-executor." },
+    autonomy: "confirm",
+    audited: true,
+  },
+  {
     id: "workflow.retire",
     description: "Retire a workflow from new case starts and optionally clean generated runtime artifacts while preserving audit-readable records.",
     scope: "workflow",

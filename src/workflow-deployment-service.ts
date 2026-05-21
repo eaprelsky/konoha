@@ -80,6 +80,19 @@ export interface WorkflowDeploymentReceipt {
   };
 }
 
+export interface WorkflowStartSubscriptionReconciliationReceipt {
+  ok: boolean;
+  workflow_id: string;
+  deploy_version: number;
+  source: string;
+  reason: string;
+  checked_at: string;
+  active_before: number;
+  cancelled: WorkflowDeploymentSubscriptionReceipt[];
+  failed: WorkflowDeploymentSubscriptionReceipt[];
+  preserved_running_case_subscriptions: true;
+}
+
 export type WorkflowDeploymentRecordStatus = "completed" | "blocked";
 
 export interface WorkflowDeploymentRecord {
@@ -177,6 +190,20 @@ function operationIdempotencyKey(
   operation: "create" | "cancel" | "unchanged" | "failed" | "rollback",
 ): string {
   return `${transaction.idempotency_key}:subscription:${operation}:${eventId}`;
+}
+
+function reconciliationOperationKey(workflowId: string, deployVersion: number, eventId: string, subscriptionId: string): string {
+  return `${workflowId}:v${deployVersion}:${eventId}:subscription:${subscriptionId}:reconcile`;
+}
+
+function reconciliationIdempotencyKey(
+  source: string,
+  workflowId: string,
+  deployVersion: number,
+  eventId: string,
+  subscriptionId: string,
+): string {
+  return `${source}:${workflowId}:v${deployVersion}:subscription:cancel:${eventId}:${subscriptionId}`;
 }
 
 export function buildWorkflowDeploymentTransaction(
@@ -519,6 +546,66 @@ export async function materializeWorkflowDeploymentSubscriptions(
       unchanged,
       failed,
     },
+  };
+}
+
+export async function reconcileWorkflowStartSubscriptions(
+  def: Pick<WorkflowDefinition, "id" | "deploy_version" | "lifecycle" | "last_deploy" | "lifecycle_state" | "status">,
+  context: {
+    deploy_version: number;
+    source: string;
+    reason: string;
+  },
+  deps: DeploymentSubscriptionDeps = activeDeps,
+): Promise<WorkflowStartSubscriptionReconciliationReceipt> {
+  const checked_at = new Date().toISOString();
+  const active = await activeStartSubscriptions(def.id);
+  const cancelled: WorkflowDeploymentSubscriptionReceipt[] = [];
+  const failed: WorkflowDeploymentSubscriptionReceipt[] = [];
+
+  for (const sub of active) {
+    const operation_key = reconciliationOperationKey(def.id, context.deploy_version, sub.event_id, sub.id);
+    const idempotency_key = reconciliationIdempotencyKey(context.source, def.id, context.deploy_version, sub.event_id, sub.id);
+    try {
+      await deps.cancelResources(sub);
+      sub.status = "cancelled";
+      await redis.hset(SUBSCRIPTIONS_KEY, sub.id, JSON.stringify(sub));
+      cancelled.push({
+        event_id: sub.event_id,
+        event_label: sub.event_label,
+        trigger_kind: sub.trigger.kind,
+        previous_subscription_id: sub.id,
+        operation_key,
+        idempotency_key,
+        status: "cancelled",
+        reason: context.reason,
+      });
+    } catch (e: any) {
+      failed.push({
+        event_id: sub.event_id,
+        event_label: sub.event_label,
+        trigger_kind: sub.trigger.kind,
+        previous_subscription_id: sub.id,
+        operation_key,
+        idempotency_key,
+        status: "failed",
+        reason: context.reason,
+        error: e.message,
+      });
+    }
+  }
+
+  return {
+    ok: failed.length === 0,
+    workflow_id: def.id,
+    deploy_version: context.deploy_version,
+    source: context.source,
+    reason: context.reason,
+    checked_at,
+    active_before: active.length,
+    cancelled,
+    failed,
+    preserved_running_case_subscriptions: true,
   };
 }
 
