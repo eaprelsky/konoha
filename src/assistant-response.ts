@@ -14,9 +14,10 @@
 import { executeAction } from "./act-envelope";
 import { auditLog, checkAutonomy } from "./assistant-actions";
 import type { AutonomyLevel } from "./assistant-actions";
+import { classifyAction, validateActionArgs } from "./action-registry";
+import type { ActionCategory } from "./action-registry";
 import { listWorkItems } from "./runtime/work-items";
 import { listRoles } from "./runtime/roles";
-import { validateActionArgs } from "./action-registry";
 import { getWorkflow } from "./workflow-loader";
 import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
 import {
@@ -87,6 +88,26 @@ export interface NormalizeOptions {
   /** Current workflow visible in the editor; used to make schema_patch durable. */
   current_workflow_id?: string;
 }
+
+interface AssistantActionSequenceStep {
+  action: string;
+  args: Record<string, unknown>;
+  category?: ActionCategory;
+  meta?: {
+    session_id?: string;
+    agent_chain?: string;
+    idempotency_key?: string;
+  };
+  halt_on_error?: boolean;
+}
+
+const ASSISTANT_ACTION_SEQUENCE_ALLOWLIST = new Set([
+  "role.create",
+  "workflow.create",
+  "workflow.validate",
+  "workflow.deploy",
+  "case.start",
+]);
 
 // ── Normalization ─────────────────────────────────────────────────────────────
 
@@ -189,6 +210,58 @@ export async function normalizeAssistantResponse(
           if (a.selector && !a.target) { a.target = a.selector; }
           delete a.selector;
           uiActions.push(a as unknown as UiAction);
+        }
+      }
+    }
+
+    const actionSequence = extractActionSequence(parsed);
+    if (actionSequence.length > 0 && executeActions) {
+      let haltedByFailure = false;
+      for (const step of actionSequence) {
+        if (haltedByFailure) {
+          actionsTaken.push({
+            action: step.action,
+            params: step.args,
+            status: "skipped",
+            description: `Skipped ${step.action} because a previous assistant action failed`,
+          });
+          continue;
+        }
+
+        const action = await executeActionSequenceStep(step, opts);
+        actionsTaken.push(action);
+
+        if (action.status === "executed") {
+          if (action.action === "workflow.create" && action.result) {
+            createdWorkflow = { id: action.result.id as string, name: action.result.name as string, ...action.result };
+            actionReceipts.push(buildWorkflowCreateReceipt(action, opts, "succeeded"));
+          } else if (action.action === "case.start") {
+            actionReceipts.push(buildCaseStartReceipt(action, opts, "succeeded"));
+            const caseId = typeof action.result?.case_id === "string" ? action.result.case_id : undefined;
+            const processId = typeof action.result?.process_id === "string"
+              ? action.result.process_id
+              : typeof action.params.process_id === "string"
+              ? action.params.process_id
+              : undefined;
+            uiActions.push({
+              type: "navigate",
+              target: caseId ? `/monitor?case_id=${caseId}` : "/monitor",
+              path: caseId ? `/monitor?case_id=${caseId}` : "/monitor",
+              ...(caseId ? { case_id: caseId } : {}),
+              ...(processId ? { workflow_id: processId, process_id: processId } : {}),
+              message: "Открыть мониторинг прогона",
+            });
+          } else {
+            actionReceipts.push(buildActionSequenceReceipt(action, opts, "succeeded"));
+          }
+        } else if (action.status === "needs_confirm") {
+          pendingConfirmations.push(await buildPendingConfirmation(action.action, action.params, opts));
+          actionReceipts.push(buildActionSequenceReceipt(action, opts, "pending_confirmation"));
+          reply = reply + `\n\nТребуется подтверждение перед выполнением действия: ${action.action}.`;
+        } else if (action.status === "failed") {
+          actionReceipts.push(buildActionSequenceReceipt(action, opts, "failed"));
+          reply = reply + `\n\n⚠️ Ошибка действия ${action.action}: ${action.error}`;
+          if (step.halt_on_error !== false) haltedByFailure = true;
         }
       }
     }
@@ -318,6 +391,116 @@ export async function normalizeAssistantResponse(
     action_receipts: actionReceipts,
     observable_result: observableResult,
     ui_actions: uiActions,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function extractActionSequence(parsed: Record<string, unknown>): AssistantActionSequenceStep[] {
+  const rawSequence =
+    Array.isArray(parsed.action_sequence) ? parsed.action_sequence
+    : Array.isArray(parsed.action_spine) ? parsed.action_spine
+    : Array.isArray(parsed.assistant_actions) ? parsed.assistant_actions
+    : Array.isArray(parsed.actions) ? parsed.actions.filter(item => isRecord(item) && typeof item.action === "string")
+    : [];
+
+  return rawSequence
+    .filter(isRecord)
+    .map((item): AssistantActionSequenceStep | null => {
+      const action = typeof item.action === "string" && item.action.trim()
+        ? item.action.trim()
+        : typeof item.type === "string" && item.type.includes(".")
+        ? item.type.trim()
+        : "";
+      if (!action) return null;
+      const args = isRecord(item.args) ? item.args : {};
+      const category = item.category === "act" || item.category === "inspect" || item.category === "drill"
+        ? item.category
+        : classifyAction(action);
+      const meta = isRecord(item.meta)
+        ? {
+          ...(typeof item.meta.session_id === "string" ? { session_id: item.meta.session_id } : {}),
+          ...(typeof item.meta.agent_chain === "string" ? { agent_chain: item.meta.agent_chain } : {}),
+          ...(typeof item.meta.idempotency_key === "string" ? { idempotency_key: item.meta.idempotency_key } : {}),
+        }
+        : undefined;
+      return {
+        action,
+        args,
+        category,
+        ...(meta ? { meta } : {}),
+        ...(typeof item.halt_on_error === "boolean" ? { halt_on_error: item.halt_on_error } : {}),
+      };
+    })
+    .filter((item): item is AssistantActionSequenceStep => Boolean(item));
+}
+
+async function executeActionSequenceStep(
+  step: AssistantActionSequenceStep,
+  opts: NormalizeOptions,
+): Promise<AssistantAction> {
+  if (!ASSISTANT_ACTION_SEQUENCE_ALLOWLIST.has(step.action)) {
+    return {
+      action: step.action,
+      params: step.args,
+      status: "failed",
+      description: `Execute ${step.action}`,
+      error: `${step.action} is not supported by assistant action_sequence`,
+    };
+  }
+
+  const sessionId = opts.session_id ?? opts.chat_id;
+  const agentChain = opts.agent_id ?? "tsunade";
+  const result = await executeAction({
+    action: step.action,
+    category: step.category ?? classifyAction(step.action),
+    args: step.args,
+    meta: {
+      session_id: sessionId,
+      agent_chain: agentChain,
+      ...step.meta,
+    },
+  }, {
+    session_id: sessionId,
+    agent_chain: agentChain,
+  });
+
+  if (result.requires_confirm) {
+    return {
+      action: step.action,
+      params: step.args,
+      status: "needs_confirm",
+      description: `${step.action} requires confirmation`,
+    };
+  }
+
+  if (!result.ok) {
+    return {
+      action: step.action,
+      params: step.args,
+      status: "failed",
+      description: `Execute ${step.action}`,
+      error: result.error ?? "Unknown action execution error",
+      ...(isRecord(result.data) ? { result: result.data } : {}),
+    };
+  }
+
+  const data = isRecord(result.data) ? result.data : { value: result.data };
+  const actionResult = step.action === "case.start"
+    ? {
+      ...data,
+      next_work_item: await findNextPendingWorkItem(data.case_id),
+    }
+    : data;
+
+  return {
+    action: step.action,
+    params: step.args,
+    status: "executed",
+    description: `Executed ${step.action}`,
+    result: actionResult,
   };
 }
 
@@ -1107,6 +1290,84 @@ async function buildPendingConfirmation(
     created_at: record.created_at,
     expires_at: record.expires_at,
     chat_id: record.chat_id,
+  };
+}
+
+function workflowIdForAction(action: AssistantAction): string {
+  const result = action.result ?? {};
+  const params = action.params ?? {};
+  for (const value of [
+    result.workflow_id,
+    result.process_id,
+    result.id,
+    params.id,
+    params.process_id,
+  ]) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return action.action;
+}
+
+function changedResourceForAction(action: AssistantAction, status: ActionReceipt["status"]): ActionReceiptResource {
+  const change = status === "succeeded" ? "updated" : status === "pending_confirmation" ? "pending" : "failed";
+  if (action.action.startsWith("role.")) {
+    const roleId = typeof action.result?.role_id === "string"
+      ? action.result.role_id
+      : typeof action.params.role_id === "string"
+      ? action.params.role_id
+      : typeof action.params.id === "string"
+      ? action.params.id
+      : action.action;
+    return {
+      kind: "role",
+      id: roleId,
+      ...(typeof action.params.name === "string" ? { label: action.params.name } : {}),
+      change,
+    };
+  }
+  return {
+    kind: "workflow",
+    id: workflowIdForAction(action),
+    change,
+  };
+}
+
+function readinessSummary(result: Record<string, unknown> | undefined): string | undefined {
+  if (!result) return undefined;
+  const validation = isRecord(result.validation) ? result.validation : result;
+  const readiness = typeof validation.readiness === "string" ? validation.readiness : undefined;
+  const errors = Array.isArray(validation.errors) ? validation.errors.length : undefined;
+  if (!readiness) return undefined;
+  return errors === undefined ? `readiness=${readiness}` : `readiness=${readiness}; errors=${errors}`;
+}
+
+function buildActionSequenceReceipt(
+  action: AssistantAction,
+  opts: NormalizeOptions,
+  status: ActionReceipt["status"],
+): ActionReceipt {
+  const result = action.result && typeof action.result === "object" ? action.result : {};
+  const summaryDetails = readinessSummary(result);
+  const actionLabel = action.action;
+  const summary =
+    status === "succeeded"
+      ? `${actionLabel} выполнено${summaryDetails ? ` (${summaryDetails})` : ""}.`
+      : status === "pending_confirmation"
+      ? `${actionLabel} ожидает подтверждения.`
+      : `${actionLabel} завершилось ошибкой.`;
+
+  return {
+    id: randomUUID(),
+    action: action.action,
+    status,
+    summary,
+    ...(action.error || typeof result.error === "string" ? { details: action.error ?? String(result.error) } : {}),
+    ...(action.error ? { failure_reasons: [action.error] } : {}),
+    changed_resources: [changedResourceForAction(action, status)],
+    audit: {
+      session_id: opts.session_id ?? opts.chat_id,
+      action_type: action.action,
+    },
   };
 }
 

@@ -67,6 +67,18 @@ python3 scripts/check-route-auth-policy.py
 scripts/staging-smoke.sh --dry-run
 ```
 
+Golden-path assistant fixture evidence for #685/#745:
+
+```bash
+bun test --timeout 30000 tests/assistant-create-validate-deploy-run-fixture.test.ts
+```
+
+This fixture uses `assistant.invoke` with a deterministic `fixture_response`
+containing an Action Spine `action_sequence`. It creates an explicit manual
+role, creates a workflow, validates the canonical readiness receipt, deploys
+through `workflow.deploy`, starts a case through `case.start`, and asserts the
+assigned work item and monitor navigation receipt without calling a live LLM.
+
 Production-only commands. Do not require these from portable CI:
 
 ```bash
