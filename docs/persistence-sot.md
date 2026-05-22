@@ -30,6 +30,14 @@ This document defines which store is canonical for each entity in the Konoha sys
    - `onlyInPG` is historical/shadow retention by default, but the script currently exits `2` when it exceeds the configured bloat threshold.
    - `PG_BLOAT_THRESHOLD=<number>` changes the non-strict bloat threshold for diagnostics.
    - `--strict` treats any Redis/PG mismatch as a failure and is not expected to pass on production until retention policy is implemented.
+   - Agent presence is the exception to the Redis-primary migration rule:
+     `konoha_agents` is canonical and `konoha:registry` is legacy
+     compatibility only, so PG-only presence rows are not managed-agent
+     definition drift.
+   - Managed agent definitions are verified separately through the Redis
+     `konoha:agent-defs`, `konoha:agent-templates`, and
+     `konoha:agent-runtime-configs` projections. AGENTS.md files are generated
+     by the managed lifecycle from those definitions, not from bus presence.
 6. **Retention reporting** runs via `bun run scripts/pg-only-retention-report.ts`:
    - read-only SELECTs only; it never deletes or updates production data.
    - groups PG-only rows by entity, candidate class, status, process/id prefix, age bucket, and `would_delete_count`.

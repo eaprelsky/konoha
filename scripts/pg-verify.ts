@@ -14,20 +14,18 @@
 import Redis from "ioredis";
 import postgres from "postgres";
 import { getDatabaseUrl } from "../src/storage/database-url";
+import {
+  compareAgentPresence,
+  compareManagedAgentDefinitionStores,
+  type PgVerifyCheckResult,
+} from "../src/pg-verify-agents";
 
 const DATABASE_URL = getDatabaseUrl();
 
 const redis = new Redis({ host: "127.0.0.1", port: 6379, db: 0, lazyConnect: false });
 const sql = postgres(DATABASE_URL, { max: 3, idle_timeout: 10, connect_timeout: 5, onnotice: () => {} });
 
-interface CheckResult {
-  entity: string;
-  redisCount: number;
-  pgCount: number;
-  onlyInRedis: string[];
-  onlyInPg: string[];
-  ok: boolean;
-}
+type CheckResult = PgVerifyCheckResult;
 
 async function scanKeys(match: string): Promise<string[]> {
   const keys: string[] = [];
@@ -175,22 +173,21 @@ async function checkReminders(): Promise<CheckResult> {
   };
 }
 
-async function checkAgents(): Promise<CheckResult> {
+async function checkAgentPresence(): Promise<CheckResult> {
   const redisIds = await redis.hkeys("konoha:registry");
   const pgRows = await sql<{ id: string }[]>`SELECT id FROM konoha_agents`;
   const pgIds = pgRows.map(r => r.id);
 
-  const redisSet = new Set(redisIds);
-  const pgSet = new Set(pgIds);
+  return compareAgentPresence(redisIds, pgIds);
+}
 
-  return {
-    entity: "agents",
-    redisCount: redisIds.length,
-    pgCount: pgIds.length,
-    onlyInRedis: redisIds.filter(id => !pgSet.has(id)),
-    onlyInPg: pgIds.filter(id => !redisSet.has(id)),
-    ok: redisIds.every(id => pgSet.has(id)),
-  };
+async function checkManagedAgentDefinitions(): Promise<CheckResult> {
+  const [legacyIds, templateIds, runtimeConfigIds] = await Promise.all([
+    redis.hkeys("konoha:agent-defs"),
+    redis.hkeys("konoha:agent-templates"),
+    redis.hkeys("konoha:agent-runtime-configs"),
+  ]);
+  return compareManagedAgentDefinitionStores({ legacyIds, templateIds, runtimeConfigIds });
 }
 
 async function checkMessages(): Promise<CheckResult> {
@@ -224,21 +221,29 @@ const PG_BLOAT_THRESHOLD = parseFloat(process.env.PG_BLOAT_THRESHOLD ?? (STRICT 
 // Returns true if a bloat threshold was exceeded for this entity.
 function printResult(r: CheckResult): boolean {
   const status = r.ok ? "OK" : "MISMATCH";
-  console.log(`\n[${status}] ${r.entity}: Redis=${r.redisCount} PG=${r.pgCount}`);
+  const redisLabel = r.redisLabel ?? "Redis";
+  const pgLabel = r.pgLabel ?? "PG";
+  console.log(`\n[${status}] ${r.entity}: ${redisLabel}=${r.redisCount} ${pgLabel}=${r.pgCount}`);
   if (r.onlyInRedis.length > 0) {
-    // CRITICAL: these records would be lost if Redis were turned off
-    console.log(`  !! Only in Redis (${r.onlyInRedis.length}): ${r.onlyInRedis.slice(0, 5).join(", ")}${r.onlyInRedis.length > 5 ? " ..." : ""}`);
+    // CRITICAL by default for Redis-primary entities. Presence overrides this
+    // because PG is the canonical bus-presence store and Redis is legacy only.
+    const marker = r.onlyInRedisIsWarning ? "--" : "!!";
+    const label = r.onlyInRedisLabel ?? "Only in Redis";
+    console.log(`  ${marker} ${label} (${r.onlyInRedis.length}): ${r.onlyInRedis.slice(0, 5).join(", ")}${r.onlyInRedis.length > 5 ? " ..." : ""}`);
   }
   let bloat = false;
   let onlyInPgIsError = false;
   if (r.onlyInPg.length > 0) {
-    if (STRICT) {
-      console.log(`  !! Only in PG (${r.onlyInPg.length}) [STRICT mode]: ${r.onlyInPg.slice(0, 5).join(", ")}${r.onlyInPg.length > 5 ? " ..." : ""}`);
+    const label = r.onlyInPgLabel ?? "Only in PG";
+    const strictOnlyInPgIsError = r.strictOnlyInPgIsError ?? true;
+    if (STRICT && strictOnlyInPgIsError) {
+      console.log(`  !! ${label} (${r.onlyInPg.length}) [STRICT mode]: ${r.onlyInPg.slice(0, 5).join(", ")}${r.onlyInPg.length > 5 ? " ..." : ""}`);
       onlyInPgIsError = true;
     } else {
-      console.log(`  -- Only in PG (${r.onlyInPg.length}) [archived/historical, OK]: ${r.onlyInPg.slice(0, 3).join(", ")}${r.onlyInPg.length > 3 ? " ..." : ""}`);
+      const disposition = r.onlyInPgDisposition ?? "archived/historical, OK";
+      console.log(`  -- ${label} (${r.onlyInPg.length}) [${disposition}]: ${r.onlyInPg.slice(0, 3).join(", ")}${r.onlyInPg.length > 3 ? " ..." : ""}`);
     }
-    if (r.redisCount > 0 && r.onlyInPg.length > r.redisCount * PG_BLOAT_THRESHOLD) {
+    if (!r.ignoreOnlyInPgBloat && r.redisCount > 0 && r.onlyInPg.length > r.redisCount * PG_BLOAT_THRESHOLD) {
       const pct = Math.round((r.onlyInPg.length / r.redisCount) * 100);
       console.log(`  ⚠ BLOAT WARNING: onlyInPg (${r.onlyInPg.length}) is ${pct}% of redisCount (${PG_BLOAT_THRESHOLD * 100}% threshold).`);
       console.log(`    Action: bun run scripts/migrate-redis-to-pg.ts --dry-run`);
@@ -260,7 +265,8 @@ async function main(): Promise<void> {
       checkRoles(),
       checkDocs(),
       checkReminders(),
-      checkAgents(),
+      checkAgentPresence(),
+      checkManagedAgentDefinitions(),
       checkMessages(),
     ]);
 
