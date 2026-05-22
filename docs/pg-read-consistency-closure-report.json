@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 683,
+  "report_date": "2026-05-22",
+  "status": "ready_for_parent_review",
+  "parent_issue": 683,
+  "source_contract": "docs/persistence-sot.md",
+  "target_invariant": "Redis remains primary for workflow/runtime entities until each PG_READ entity is explicitly enabled after readiness evidence; onlyInRedis is a cutover blocker, while onlyInPG rows must be classified by retention policy before cleanup or PG_READ rollout.",
+  "accepted_child_issues": [737, 738, 739, 740, 754],
+  "acceptance_coverage": [
+    {
+      "criterion": "pg-verify separates PG-primary agent presence from Redis-managed agent definitions",
+      "status": "covered",
+      "issues": [737],
+      "evidence": [
+        "src/pg-verify-agents.ts",
+        "scripts/pg-verify.ts",
+        "docs/persistence-sot.md",
+        "tests/pg-verify-agent-contract.test.ts"
+      ],
+      "notes": "Konoha bus presence is PostgreSQL-primary; managed agent definitions and AGENTS.md lifecycle remain Redis/managed-definition projections."
+    },
+    {
+      "criterion": "PG-only rows are classified by retention class and safe cleanup disposition before action",
+      "status": "covered",
+      "issues": [738],
+      "evidence": [
+        "src/retention/report.ts",
+        "scripts/pg-only-retention-report.ts",
+        "docs/persistence-sot.md",
+        "tests/pg-only-retention-report.test.ts"
+      ],
+      "notes": "Retention report is read-only, groups PG-only rows, blocks cleanup when onlyInRedis exists, and separates safe candidates from manual-review rows."
+    },
+    {
+      "criterion": "PG_READ readiness report preserves onlyInRedis and PG-only retention blockers",
+      "status": "covered",
+      "issues": [739],
+      "evidence": [
+        "src/pg-read-readiness.ts",
+        "scripts/pg-read-readiness-report.ts",
+        "src/routes/pg-read-readiness.ts",
+        "tests/pg-read-readiness-report.test.ts"
+      ],
+      "stable_blockers": [
+        "ONLY_IN_REDIS",
+        "PG_ONLY_MANUAL_REVIEW",
+        "PG_ONLY_RETENTION_REQUIRED"
+      ],
+      "notes": "Readiness returns ready/blocked/pg_primary per entity and marks rollout unsafe when enabled entities are blocked."
+    },
+    {
+      "criterion": "PG_READ rollout uses conservative default-off entity flags instead of one global switch",
+      "status": "covered",
+      "issues": [740],
+      "evidence": [
+        "src/storage/pg-read-flags.ts",
+        "docs/configuration.md",
+        "docs/pg-read-cutover-roadmap.md",
+        "tests/pg-read-flags.test.ts"
+      ],
+      "notes": "PG_READ_ENTITIES and per-entity PG_READ_* flags gate Redis-primary reads one entity at a time; legacy PG_READ=true remains an explicit fallback."
+    },
+    {
+      "criterion": "high-volume runtime retention keeps active artifacts visible and blocks cleanup/compaction on Redis-only or active effect state",
+      "status": "covered",
+      "issues": [754],
+      "evidence": [
+        "docs/runtime-retention-policy.json",
+        "docs/retention-lifecycle.md",
+        "src/retention/runtime-policy.ts",
+        "src/retention/runtime-cleanup.ts",
+        "tests/runtime-retention-policy.test.ts",
+        "tests/runtime-retention-cleanup.test.ts"
+      ],
+      "notes": "Active cases use active retention classes before high-volume completed classes; archive/compaction requires PG shadow consistency and no Redis-only rows."
+    },
+    {
+      "criterion": "existing onlyInRedis cases, work_items, or workflows remain explicit blockers rather than false green readiness",
+      "status": "covered",
+      "issues": [738, 739, 740, 754],
+      "evidence": [
+        "docs/persistence-sot.md",
+        "docs/pg-read-cutover-roadmap.md",
+        "src/pg-read-readiness.ts",
+        "tests/pg-read-readiness-report.test.ts",
+        "tests/runtime-retention-policy.test.ts"
+      ],
+      "notes": "PG_READ readiness and retention cleanup both hard-block on onlyInRedis; onlyInPG bloat is retention debt until classified and approved."
+    }
+  ],
+  "gate_policy": {
+    "redis_primary_until_pg_read_entity_safe": true,
+    "only_in_redis": {
+      "severity": "blocker",
+      "applies_to": ["PG_READ rollout", "release gate", "retention cleanup"],
+      "allowed_waiver": false
+    },
+    "only_in_pg": {
+      "severity": "retention_gate",
+      "requires": ["pg-only retention classification", "safe cleanup candidate or manual review disposition"],
+      "destructive_cleanup_from_pg_verify_alone": false
+    },
+    "agent_presence": {
+      "source_of_truth": "PostgreSQL",
+      "pg_read_flag_target": false,
+      "managed_definition_storage": "Redis managed agent definitions"
+    },
+    "pg_read_rollout": {
+      "default": "off",
+      "preferred_flags": ["PG_READ_ENTITIES", "PG_READ_<ENTITY>"],
+      "legacy_global_flag": "PG_READ=true"
+    }
+  },
+  "operator_commands": [
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-verify.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-only-retention-report.ts --json",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-read-readiness-report.ts --json"
+  ],
+  "review_commands": [
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/pg-read-consistency-closure-report.test.ts tests/pg-verify-agent-contract.test.ts tests/pg-only-retention-report.test.ts tests/pg-read-readiness-report.test.ts tests/pg-read-flags.test.ts tests/runtime-retention-policy.test.ts tests/runtime-retention-cleanup.test.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run typecheck"
+  ],
+  "closure_decision": {
+    "parent_issue_can_close_after_review": true,
+    "remaining_blockers": [],
+    "release_claim_unblocked": false,
+    "notes": "This reconciles the #683 parent after #737, #738, #739, #740, and #754. Production release still follows the #686 checklist and #812 terminal-case gate; PG_READ cutover remains entity-scoped and gated by live readiness evidence."
+  }
+}

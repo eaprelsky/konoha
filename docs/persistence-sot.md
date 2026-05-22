@@ -70,3 +70,8 @@ Records exist in PG but not in Redis.
 
 ### Dual-write failures
 If `pgWrite()` fails, the Redis write succeeded but PG is missing the record. The next `pg-verify.ts` run will catch it.
+
+Issue #683 parent closure evidence for Redis/PostgreSQL consistency, PG_READ
+readiness, and the retention gate lives in
+`docs/pg-read-consistency-closure-report.json` and
+`docs/pg-read-consistency-closure-report.md`.
