@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 759,
+  "report_date": "2026-05-22",
+  "status": "ready_for_epic_review",
+  "scope": "Lean Konoha runtime and resource diet closure evidence across MCP, optional workers, monitor sharing, host/cache budgets, Naruto/Sasuke guardrails, and runtime retention.",
+  "child_issues": [
+    { "issue": 766, "state": "closed", "label": "state:done", "workstream": "mcp", "summary": "MCP cost catalog and per-role default allowlists" },
+    { "issue": 767, "state": "closed", "label": "state:done", "workstream": "mcp", "summary": "Lazy task/session MCP packs with public session entrypoint" },
+    { "issue": 782, "state": "closed", "label": "state:done", "workstream": "mcp", "summary": "Pinned local installs for always-on MCPs; npx/uvx deferred to task sessions" },
+    { "issue": 783, "state": "closed", "label": "state:done", "workstream": "mcp", "summary": "Duplicate Telethon/Bitrix instances removed from non-owner profiles" },
+    { "issue": 775, "state": "closed", "label": "state:done", "workstream": "mcp", "summary": "Sasuke Yonote context restricted to read/search-only on-demand surface" },
+    { "issue": 765, "state": "closed", "label": "state:done", "workstream": "optional_workers", "summary": "Kakashi/Shino lifecycle made on-demand/default-off where appropriate" },
+    { "issue": 758, "state": "closed", "label": "state:done", "workstream": "optional_workers", "summary": "TestBench on-demand and bounded browser profiles" },
+    { "issue": 770, "state": "closed", "label": "state:done", "workstream": "resource_bounds", "summary": "systemd MemoryMax/CPUQuota for optional agents, MCP packs, and TestBench" },
+    { "issue": 791, "state": "closed", "label": "state:done", "workstream": "optional_workers", "summary": "SDD dev/test workers converted to bounded on-demand pool" },
+    { "issue": 772, "state": "closed", "label": "state:done", "workstream": "monitoring", "summary": "Single shared Kiba monitor for prod/staging with environment labels" },
+    { "issue": 773, "state": "closed", "label": "state:done", "workstream": "host_budget", "summary": "Host-level non-Konoha reserve without removing mail stack" },
+    { "issue": 779, "state": "closed", "label": "state:done", "workstream": "host_budget", "summary": "Conservative host-service audit and rollback commands" },
+    { "issue": 769, "state": "closed", "label": "state:done", "workstream": "host_budget", "summary": "Disk cache cleanup and safe retention policy" },
+    { "issue": 764, "state": "closed", "label": "state:done", "workstream": "guardrails", "summary": "Naruto/Sasuke separation ADR and rollback plan" },
+    { "issue": 754, "state": "closed", "label": "state:done", "workstream": "retention_capacity", "summary": "High-volume runtime retention, archival, and UI compaction policy" }
+  ],
+  "non_negotiable_guards": {
+    "sasuke_user_account_ingestion": {
+      "status": "protected",
+      "evidence": [
+        "docs/adr-007-naruto-sasuke-separation.md",
+        "docs/mcp-cost-catalog.md",
+        "docs/service-profiles.json"
+      ],
+      "required_services": [
+        "agent-sasuke.service",
+        "agent-watchdog-sasuke.service",
+        "telegram-event-bridge.service"
+      ],
+      "required_mcp": [
+        "konoha",
+        "telethon-channel",
+        "bitrix24"
+      ],
+      "forbidden_diet_actions": [
+        "stop Sasuke while Telegram user-account ingestion is enabled",
+        "rewrite sasuke Redis consumer groups",
+        "replace Sasuke required connector MCPs with broad shared packs"
+      ]
+    },
+    "naruto_orchestration": {
+      "status": "protected_until_separate_experiment",
+      "evidence": [
+        "docs/adr-007-naruto-sasuke-separation.md",
+        "docs/service-profiles.json"
+      ],
+      "required_services": [
+        "agent-naruto.service",
+        "agent-watchdog-naruto.service",
+        "telegram-bot.service"
+      ],
+      "forbidden_diet_actions": [
+        "merge Naruto into Sasuke",
+        "pause Naruto without reviewed maintenance experiment",
+        "change telegram:bot:incoming/naruto consumer ownership during resource cleanup"
+      ]
+    },
+    "mail_stack": {
+      "status": "reserved_not_removed",
+      "evidence": [
+        "docs/resource-budgets.json",
+        "docs/resource-budget-policy.md",
+        "docs/mail-integration-profile.json"
+      ],
+      "reserve": {
+        "memory_mib": 768,
+        "cpu_percent": 100,
+        "disk_gib": 10
+      },
+      "forbidden_diet_actions": [
+        "disable Docker/mail stack as Lean Konoha cleanup",
+        "delete mail data or images without dedicated mail migration",
+        "count mail reserve as Konoha-free capacity"
+      ]
+    }
+  },
+  "source_level_evidence": [
+    {
+      "id": "mcp_orphan_cleanup",
+      "workstream": "mcp",
+      "issues": [766],
+      "before": { "processes": 35, "rss_kib": 2800000 },
+      "after": { "processes": 5, "rss_kib": 400000 },
+      "estimated_savings": { "processes": 30, "rss_kib": 2400000 },
+      "source": "docs/mcp-cost-catalog.md Konoha MCP orphan cleanup",
+      "additivity": "separate_from_profile_defaults_when_orphans_are_present"
+    },
+    {
+      "id": "kiba_broad_mcp_to_monitor_core",
+      "workstream": "mcp",
+      "issues": [766, 767, 782, 772],
+      "before": { "processes": 29, "rss_kib": 1433224 },
+      "after": { "processes": 1, "rss_kib": 86900 },
+      "estimated_savings": { "processes": 28, "rss_kib": 1346324 },
+      "source": "docs/lean-baseline-gate.md measurement table",
+      "additivity": "may_overlap_with_optional_pack_rows"
+    },
+    {
+      "id": "office_miro_browser_default_off",
+      "workstream": "mcp",
+      "issues": [767, 782, 758],
+      "before": { "processes": 9, "rss_kib": 378000 },
+      "after": { "processes": 0, "rss_kib": 0 },
+      "estimated_savings": { "processes": 9, "rss_kib": 378000 },
+      "source": "docs/lean-baseline-gate.md optional pack measurement",
+      "additivity": "source_default_saving; live overlap depends on stale agent configs"
+    },
+    {
+      "id": "duplicate_telethon_bitrix_removed",
+      "workstream": "mcp",
+      "issues": [783],
+      "before": { "processes": 4, "rss_kib": 286364 },
+      "after": { "processes": 2, "rss_kib": 143576 },
+      "estimated_savings": { "processes": 2, "rss_kib": 142788 },
+      "source": "docs/mcp-cost-catalog.md duplicate connector MCP table",
+      "additivity": "connector_owner_regeneration_saving"
+    },
+    {
+      "id": "testbench_browser_default_off",
+      "workstream": "optional_workers",
+      "issues": [758, 770],
+      "before": { "processes": 8, "rss_kib": 505232 },
+      "after": { "processes": 0, "rss_kib": 0 },
+      "estimated_savings": { "processes": 8, "rss_kib": 505232 },
+      "source": "docs/lean-baseline-gate.md live active TestBench pool sample; docs/resource-budgets.json prod-core testbench disabled",
+      "additivity": "saving applies when active TestBench pool is stopped outside QA sessions"
+    },
+    {
+      "id": "optional_host_services",
+      "workstream": "host_budget",
+      "issues": [779],
+      "before": { "processes": null, "rss_kib": 128000 },
+      "after": { "processes": null, "rss_kib": 0 },
+      "estimated_savings": { "processes": null, "rss_kib": 128000 },
+      "source": "docs/resource-budgets.json host_service_audit disable_candidates expected_savings_mib",
+      "additivity": "host-service candidate saving after operator precondition review"
+    }
+  ],
+  "bounded_defaults": {
+    "service_profile": "prod-core",
+    "autostart_agents": [
+      "naruto",
+      "sasuke",
+      "kiba"
+    ],
+    "disabled_lifecycle_agents": [
+      "kakashi",
+      "shino",
+      "hinata",
+      "guy",
+      "ibiki"
+    ],
+    "testbench": {
+      "prod_core_default": "disabled",
+      "qa_pool_size": 1,
+      "qa_max_pool_size": 2,
+      "systemd_memory_max": "768M",
+      "systemd_cpu_quota": "100%"
+    },
+    "sdd_worker_pool": {
+      "max_active_workers": 2,
+      "max_active_specialists": 1,
+      "idle_timeout_sec": 1800,
+      "slice": "konoha-qa.slice",
+      "worker_memory_max": "900M",
+      "worker_cpu_quota": "150%"
+    },
+    "mcp_on_demand": {
+      "heavy_pack_memory_max": "384M",
+      "heavy_pack_cpu_quota": "50%",
+      "low_cost_pack_memory_max": "256M",
+      "low_cost_pack_cpu_quota": "25%",
+      "idle_timeout_sec": 900
+    },
+    "kiba": {
+      "mode": "single-shared-monitor",
+      "mcp_allowlist": [
+        "konoha"
+      ],
+      "environments": [
+        "prod",
+        "staging"
+      ]
+    }
+  },
+  "rollback_plan": [
+    {
+      "scope": "agent/systemd scopes",
+      "command": "KONOHA_AGENT_SYSTEMD_SCOPE=0 restart affected agent",
+      "effect": "Rollback transient systemd accounting to previous direct tmux launch while preserving AgentDef defaults"
+    },
+    {
+      "scope": "on-demand MCP wrapper",
+      "command": "KONOHA_MCP_SYSTEMD_SCOPE=0 KONOHA_MCP_SESSION_PACKS=<pack> bun scripts/build-mcp-session-config.ts ...",
+      "effect": "Run a task/session MCP without transient systemd scope when systemd scope creation is the failure mode"
+    },
+    {
+      "scope": "optional SDD workers",
+      "command": "python3 scripts/sdd-worker-pool.py rollback --reason <reason>",
+      "effect": "Stop active pool workers and clear pool state without changing core Developer -> Reviewer labels"
+    },
+    {
+      "scope": "host-service audit",
+      "command": "python3 scripts/host-service-audit.py --json; then run candidate rollback_commands from docs/resource-budgets.json",
+      "effect": "Re-enable only the optional non-Konoha host services that were disabled"
+    },
+    {
+      "scope": "Naruto/Sasuke guardrail",
+      "command": "sudo systemctl start agent-naruto.service agent-watchdog-naruto.service agent-sasuke.service agent-watchdog-sasuke.service",
+      "effect": "Restore both Telegram runtime identities; do not reset Sasuke Redis consumer groups"
+    }
+  ],
+  "review_commands": [
+    "KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py --policy-dry-run",
+    "KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py",
+    "python3 scripts/resource-inventory.py --json --no-disk",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-read-readiness-report.ts --json",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-only-retention-report.ts --json",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/lean-runtime-diet-report.test.ts tests/tool-profiles.test.ts tests/resource-budget-contract.test.ts tests/runtime-retention-policy.test.ts",
+    "python3 -m pytest tests/test_service_profiles.py tests/test_healthcheck_policy.py"
+  ],
+  "remaining_ops_gaps": [
+    {
+      "id": "live_prod_core_inventory_after_restart",
+      "status": "ops_validation_required",
+      "reason": "Source defaults are accepted, but stale long-lived agent workdirs/processes may still need maintenance restart/regeneration before a live clean prod-core snapshot proves all savings."
+    },
+    {
+      "id": "mail_externalization",
+      "status": "separate_future_migration_only",
+      "reason": "Mail stack is reserved, not removed, under #759."
+    },
+    {
+      "id": "naruto_pause_or_consolidation",
+      "status": "blocked_by_adr_007",
+      "reason": "Requires separate reviewed compatibility experiment; not part of Lean closure."
+    }
+  ],
+  "closure_decision": {
+    "epic_can_close_after_review": true,
+    "reason": "All explicit child issues in the closure scope are closed state:done; source contracts protect production flows and bound optional runtime surfaces. Remaining gaps are operational validation/restart tasks, not unimplemented architecture blockers."
+  }
+}

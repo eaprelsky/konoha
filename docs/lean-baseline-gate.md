@@ -26,6 +26,7 @@ The machine-readable deployment contract is split across these files:
 
 | Contract | Source |
 | --- | --- |
+| Lean runtime diet closure evidence | `docs/lean-runtime-diet-report.json` |
 | Service profile and required/optional service policy | `docs/service-profiles.json` |
 | Resource envelopes and scale-out policy | `docs/resource-budgets.json` |
 | Canonical agent lifecycle and MCP allowlist | `docs/system-agent-roster.json` |
