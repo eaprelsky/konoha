@@ -87,6 +87,10 @@ case position/history, and payload, then returns state changes plus effect
 intents. It does not write Redis/PostgreSQL, create work items, enqueue outbox
 effects, send notifications, create waits, subscribe events, or call adapters.
 `advanceCase` remains the side-effect applicator for that plan.
+Redis-free transition regression fixtures live in
+`tests/fixtures/state-machine-transition-fixtures.ts` and are checked by
+`tests/state-machine-transition-fixtures.test.ts` before runtime storage paths
+are involved.
 
 1. **Build adjacency maps** — `outEdges`, `inEdges`, `byId`, `edgeConditions` from the workflow definition. O(n) per call.
 
