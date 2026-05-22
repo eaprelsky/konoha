@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Case, EventWait, OperatorArtifactMetadata, RoleDef, Run, RuntimeEvent, WorkItem, Workflow } from '../api/types';
+import type { Case, EventWait, OperatorArtifactMetadata, RoleDef, Run, RuntimeEffectRecord, RuntimeEvent, WorkItem, Workflow } from '../api/types';
 
 const STORAGE_KEY = 'konoha.operatorView.showHiddenArtifacts';
 
@@ -129,6 +129,30 @@ function isHiddenProcessScoped(item: { process_id?: string | null } & MetadataCa
   return !!item.process_id && hiddenProcessIds.has(item.process_id);
 }
 
+function stringFrom(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function runtimeEffectProcessIds(effect: RuntimeEffectRecord): string[] {
+  const payload = effect.payload || {};
+  const subscription = payload.subscription && typeof payload.subscription === 'object' && !Array.isArray(payload.subscription)
+    ? payload.subscription as Record<string, unknown>
+    : {};
+  const workItem = payload.work_item && typeof payload.work_item === 'object' && !Array.isArray(payload.work_item)
+    ? payload.work_item as Record<string, unknown>
+    : {};
+  const candidates = [
+    effect.links.workflow_id,
+    stringFrom(payload.workflow_id),
+    stringFrom(payload.process_id),
+    stringFrom(subscription.workflow_id),
+    stringFrom(subscription.process_id),
+    stringFrom(workItem.workflow_id),
+    stringFrom(workItem.process_id),
+  ];
+  return candidates.filter((value): value is string => !!value);
+}
+
 export function filterOperatorWorkItems(
   items: WorkItem[],
   hiddenProcessIds: Set<string>,
@@ -145,6 +169,18 @@ export function filterOperatorWaits(
 ): EventWait[] {
   if (options.showHiddenArtifacts) return waits;
   return waits.filter(wait => !isHiddenProcessScoped(wait, hiddenProcessIds));
+}
+
+export function filterOperatorRuntimeEffects(
+  effects: RuntimeEffectRecord[],
+  hiddenProcessIds: Set<string>,
+  options: OperatorViewOptions = {},
+): RuntimeEffectRecord[] {
+  if (options.showHiddenArtifacts) return effects;
+  return effects.filter(effect => {
+    if (isHiddenByMetadata(effect)) return false;
+    return !runtimeEffectProcessIds(effect).some(processId => hiddenProcessIds.has(processId));
+  });
 }
 
 function urlForcesDebug(): boolean | null {

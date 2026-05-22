@@ -1,8 +1,9 @@
 import { describe, expect, test, beforeEach } from 'vitest';
-import type { RoleDef, Run, RuntimeEvent, Workflow } from '../api/types';
+import type { RoleDef, Run, RuntimeEffectRecord, RuntimeEvent, Workflow } from '../api/types';
 import {
   filterOperatorCases,
   filterOperatorEvents,
+  filterOperatorRuntimeEffects,
   filterOperatorRoles,
   filterOperatorRuns,
   filterOperatorWaits,
@@ -37,6 +38,25 @@ const baseRun: Run = {
   payload: {},
   history: [],
   created_at: '2026-04-30T00:00:00.000Z',
+};
+
+const baseRuntimeEffect: RuntimeEffectRecord = {
+  schema_version: 1,
+  effect_id: 'effect-visible',
+  kind: 'workitem.dispatch',
+  payload: {},
+  idempotency_key: 'effect-visible',
+  status: 'retry',
+  attempts: 1,
+  retry_policy: {
+    max_attempts: 3,
+    backoff: 'fixed',
+    retry_delays_ms: [1000],
+    dead_letter_after_attempts: 3,
+  },
+  links: { workflow_id: 'sales-lead' },
+  created_at: '2026-04-30T00:00:00.000Z',
+  updated_at: '2026-04-30T00:00:00.000Z',
 };
 
 describe('operatorView filtering', () => {
@@ -123,6 +143,24 @@ describe('operatorView filtering', () => {
 
     expect(filterOperatorWorkItems(workItems as any, hiddenProcesses).map(item => item.work_item_id)).toEqual(['wi-1']);
     expect(filterOperatorWaits(waits as any, hiddenProcesses).map(wait => wait.wait_id)).toEqual(['wait-1']);
+  });
+
+  test('filters runtime effects by hidden workflow correlation before monitor rendering', () => {
+    const hiddenProcesses = new Set(['process-mnnaqaey-copy', 'e2e-flow']);
+    const effects: RuntimeEffectRecord[] = [
+      baseRuntimeEffect,
+      { ...baseRuntimeEffect, effect_id: 'effect-hidden-link', links: { workflow_id: 'process-mnnaqaey-copy' } },
+      { ...baseRuntimeEffect, effect_id: 'effect-hidden-payload', links: {}, payload: { subscription: { process_id: 'e2e-flow' } } },
+      { ...baseRuntimeEffect, effect_id: 'effect-hidden-metadata', links: {}, payload: { metadata: { visibility: 'test' } } },
+    ];
+
+    expect(filterOperatorRuntimeEffects(effects, hiddenProcesses).map(effect => effect.effect_id)).toEqual(['effect-visible']);
+    expect(filterOperatorRuntimeEffects(effects, hiddenProcesses, { showHiddenArtifacts: true }).map(effect => effect.effect_id)).toEqual([
+      'effect-visible',
+      'effect-hidden-link',
+      'effect-hidden-payload',
+      'effect-hidden-metadata',
+    ]);
   });
 
   test('supports debug view from url or local storage', () => {

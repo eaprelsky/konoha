@@ -13,7 +13,7 @@ import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { EventWait, Run, RuntimeEffectRecord, RuntimeEffectsSummary, Workflow } from '../api/types';
 import { buildRoleLabelMap } from '../utils/agentDisplay';
-import { filterOperatorRuns, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
+import { filterOperatorRuntimeEffects, filterOperatorRuns, filterOperatorWaits, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
 import { MonitorOpsPanel, type MonitorRecoveryAction } from './MonitorOpsPanel';
 import './Monitor.css';
 
@@ -48,6 +48,20 @@ function statusLabel(s: string, t: (key: string) => string): string {
   return s;
 }
 
+function summarizeRuntimeEffects(effects: RuntimeEffectRecord[]): RuntimeEffectsSummary {
+  return {
+    total: effects.length,
+    pending: effects.filter(effect => effect.status === 'pending').length,
+    in_flight: effects.filter(effect => effect.status === 'in_flight').length,
+    retry: effects.filter(effect => effect.status === 'retry').length,
+    failed: effects.filter(effect => effect.status === 'failed').length,
+    dead_letter: effects.filter(effect => effect.status === 'dead_letter').length,
+    cancelled: effects.filter(effect => effect.status === 'cancelled').length,
+    succeeded: effects.filter(effect => effect.status === 'succeeded').length,
+    recovery_actionable: effects.filter(effect => effect.status === 'pending' || effect.status === 'retry' || effect.status === 'failed' || effect.status === 'dead_letter').length,
+  };
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 
@@ -71,7 +85,6 @@ export function Monitor() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [wfLoadState, setWfLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [runtimeEffects, setRuntimeEffects] = useState<RuntimeEffectRecord[]>([]);
-  const [runtimeEffectSummary, setRuntimeEffectSummary] = useState<RuntimeEffectsSummary | null>(null);
   const [waits, setWaits] = useState<EventWait[]>([]);
   const [opsLoading, setOpsLoading] = useState(false);
   const [opsError, setOpsError] = useState<string | null>(null);
@@ -125,7 +138,6 @@ export function Monitor() {
     ])
       .then(([effectsResult, waitsResult]) => {
         setRuntimeEffects(effectsResult.effects);
-        setRuntimeEffectSummary(effectsResult.summary);
         setWaits(waitsResult.waits);
         setOpsError(null);
       })
@@ -162,6 +174,13 @@ export function Monitor() {
   // Group runs by process_id, filter by search
   const operatorRuns = filterOperatorRuns(runs, hiddenProcessIds, { showHiddenArtifacts });
   const hiddenRunCount = runs.length - filterOperatorRuns(runs, hiddenProcessIds).length;
+  const visibleRuntimeEffects = filterOperatorRuntimeEffects(runtimeEffects, hiddenProcessIds, { showHiddenArtifacts });
+  const visibleRuntimeEffectSummary = summarizeRuntimeEffects(visibleRuntimeEffects);
+  const visibleWaits = filterOperatorWaits(waits, hiddenProcessIds, { showHiddenArtifacts });
+  const hiddenRecoveryCount =
+    (runtimeEffects.length - filterOperatorRuntimeEffects(runtimeEffects, hiddenProcessIds).length) +
+    (waits.length - filterOperatorWaits(waits, hiddenProcessIds).length);
+  const hiddenArtifactCount = hiddenRunCount + hiddenRecoveryCount;
   const runsById = useMemo(() => new Map(runs.map(run => [run.case_id, run])), [runs]);
   const filtered = operatorRuns.filter(r => {
     if (!search) return true;
@@ -277,7 +296,7 @@ export function Monitor() {
                   <option value="error">{t('run.status.error')}</option>
                 </select>
               </div>
-              {hiddenRunCount > 0 && (
+              {hiddenArtifactCount > 0 && (
                 <label
                   style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#64748b' }}
                   title={t('operator.monitor.hiddenTitle')}
@@ -287,7 +306,7 @@ export function Monitor() {
                     checked={showHiddenArtifacts}
                     onChange={e => setShowHiddenArtifacts(e.target.checked)}
                   />
-                  {t('operator.monitor.hidden').replace('{count}', String(hiddenRunCount))}
+                  {t('operator.monitor.hidden').replace('{count}', String(hiddenArtifactCount))}
                 </label>
               )}
             </div>
@@ -314,9 +333,9 @@ export function Monitor() {
           </div>
 
           <MonitorOpsPanel
-            effects={runtimeEffects}
-            effectSummary={runtimeEffectSummary}
-            waits={waits}
+            effects={visibleRuntimeEffects}
+            effectSummary={visibleRuntimeEffectSummary}
+            waits={visibleWaits}
             runsById={runsById}
             processNames={wfNameMap}
             loading={opsLoading}
