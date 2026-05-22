@@ -105,7 +105,7 @@ are involved.
    | `gateway` | Return gateway evaluation/split/join intents (see gateway logic below) |
    | element not found | Return `case.error`; `advanceCase` sets `status = "error"`, emits `process.exception`, and **returns** |
 
-3. **Apply** — `advanceCase` applies planner state changes and executes effect intents through existing side-effect boundaries: work-item persistence, dispatch outbox, event waits/subscriptions, adapter outbox, synchronous adapter calls, subprocess creation, and terminal cleanup.
+3. **Apply** — `advanceCase` applies planner state changes and executes effect intents through existing side-effect boundaries: work-item persistence, dispatch outbox, event waits/subscriptions, adapter outbox, synchronous adapter calls, subprocess effects, and terminal cleanup.
 
 4. **System bindings** — if a function element has `systems[]`, the engine calls default `sync` adapter bindings synchronously and merges outputs into the case payload. On success the work item is auto-completed and the loop continues without pausing. Bindings explicitly marked `execution: "async_effect"` are safe side effects: the runtime enqueues an `adapter.invoke` outbox record instead of executing inline, and the work item/case do not depend on that adapter output.
 
@@ -130,6 +130,23 @@ Condition syntax: `payload.<field> <op> <value>` where op ∈ `=== !== > < >= <=
 
 - **Split**: activates branches whose edge condition evaluates to true (or branches with no condition). At least one must match.
 - **Join**: same as AND — waits for all activated branches.
+
+## Subprocess Effects
+
+Subprocess calls are represented by explicit contracts in
+`src/runtime/cases/subprocess-effects.ts`:
+
+- `subprocess.spawn` records the parent case, function element, parent work
+  item, child workflow, child subject, and payload used to create the child
+  case.
+- `subprocess.parent_complete` records the child case, parent work item, output
+  payload, and bounded retry policy used when a child case completes and resumes
+  the parent case.
+
+`advanceCase` still applies these effects through the existing persistence and
+case-start paths; the contracts make the subprocess boundary testable without
+embedding child-case creation or parent-completion retry details in the graph
+planner.
 
 ---
 

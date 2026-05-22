@@ -23,6 +23,12 @@ import { saveCase, loadCase, saveWorkItem, loadWorkItem, CASES_IDX_PROCESS, WORK
 import type { Case, WorkItem, ActiveBranch, HistoryEntry } from "./types";
 import { bindWorkflowSnapshotForCase, loadWorkflowForCase } from "./workflow-binding";
 import {
+  buildSubprocessParentCompletionEffect,
+  buildSubprocessSpawnEffect,
+  type SubprocessParentCompletionEffect,
+  type SubprocessSpawnEffect,
+} from "./subprocess-effects";
+import {
   buildGraphAdjacency,
   evaluateGraphCondition,
   findGraphJoinGateway,
@@ -246,14 +252,23 @@ async function resolveChildProcess(
   return null;
 }
 
-async function completeParentWorkItem(childCase: Case): Promise<void> {
-  if (!childCase.parent_work_item_id) return;
-  const wi = await loadWorkItem(childCase.parent_work_item_id);
+async function applySubprocessSpawnEffect(effect: SubprocessSpawnEffect): Promise<Case> {
+  return createCaseInner(
+    effect.child_process_id,
+    effect.child_subject,
+    effect.payload,
+    undefined,
+    effect.parent_work_item_id,
+  );
+}
+
+async function completeParentWorkItem(effect: SubprocessParentCompletionEffect): Promise<void> {
+  const wi = await loadWorkItem(effect.parent_work_item_id);
   if (!wi || wi.status === "done") return;
 
   const prevStatus = wi.status;
   wi.status = "done";
-  wi.output = childCase.payload;
+  wi.output = effect.output;
   wi.updated_at = new Date().toISOString();
   await saveWorkItem(wi, prevStatus);
 
@@ -264,9 +279,9 @@ async function completeParentWorkItem(childCase: Case): Promise<void> {
   const parentDef = await loadWorkflowForCase(parentCase);
   if (!parentDef) return;
 
-  parentCase.payload = { ...parentCase.payload, ...childCase.payload };
+  parentCase.payload = { ...parentCase.payload, ...effect.output };
   const histEntry = parentCase.history.find(h => h.work_item_id === wi.work_item_id);
-  if (histEntry) histEntry.output = childCase.payload;
+  if (histEntry) histEntry.output = effect.output;
 
   await advanceCase(parentCase, parentDef);
 }
@@ -292,19 +307,19 @@ async function emitGatewayEventsFromPlan(kase: Case, plan: GraphTransitionPlan):
 }
 
 function scheduleParentCompletion(kase: Case): void {
-  if (!kase.parent_work_item_id) return;
+  const effect = buildSubprocessParentCompletionEffect(kase);
+  if (!effect) return;
   void (async () => {
-    const MAX_ATTEMPTS = 3;
-    let delay = 500;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let delay = effect.retry.initial_delay_ms;
+    for (let attempt = 1; attempt <= effect.retry.max_attempts; attempt++) {
       try {
-        await completeParentWorkItem(kase);
+        await completeParentWorkItem(effect);
         return;
       } catch (e: any) {
-        log.error("completeParentWorkItem error", { case_id: kase.case_id, error: e.message, attempt });
-        if (attempt < MAX_ATTEMPTS) {
+        log.error("completeParentWorkItem error", { case_id: kase.case_id, parent_work_item_id: effect.parent_work_item_id, error: e.message, attempt });
+        if (attempt < effect.retry.max_attempts) {
           await new Promise(r => setTimeout(r, delay));
-          delay *= 2;
+          delay *= effect.retry.backoff_multiplier;
         }
       }
     }
@@ -399,13 +414,14 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
         kase.history.push({ element_id: nextId, element_type: "function", label: nextEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
         await saveCase(kase);
 
-        const childCase = await createCaseInner(
+        const spawnEffect = buildSubprocessSpawnEffect({
+          parentCase: kase,
+          elementId: nextId,
+          element: nextEl,
           childProcessId,
-          `${kase.subject} → ${nextEl.label}`,
-          { ...kase.payload },
-          undefined,
-          wi.work_item_id,
-        );
+          parentWorkItemId: wi.work_item_id,
+        });
+        const childCase = await applySubprocessSpawnEffect(spawnEffect);
 
         wi.child_case_id = childCase.case_id;
         await saveWorkItem(wi, "pending");
