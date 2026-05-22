@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   sync-wiki:
@@ -27,9 +27,15 @@ jobs:
 
       - name: Sync GitHub Wiki
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KONOHA_WIKI_TOKEN: ${{ secrets.KONOHA_WIKI_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
+          if [ -z "${KONOHA_WIKI_TOKEN:-}" ]; then
+            echo "::notice::KONOHA_WIKI_TOKEN is not configured; Wiki source was validated but publish is skipped."
+            echo "::notice::Configure a Wiki-capable token or run scripts/sync-github-wiki.ts --publish from an approved operator session to initialize the Wiki."
+            exit 0
+          fi
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          export GITHUB_TOKEN="$KONOHA_WIKI_TOKEN"
           bun run scripts/sync-github-wiki.ts --publish

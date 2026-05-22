@@ -82,4 +82,14 @@ describe("public GitHub Wiki source and sync policy", () => {
     expect(readme).toContain("https://github.com/eaprelsky/konoha/wiki");
     expect(readme).toContain("docs/wiki/");
   });
+
+  test("GitHub Action validates source and publishes only with a Wiki-capable token", async () => {
+    const workflow = await readFile(".github/workflows/wiki.yml", "utf-8");
+
+    expect(workflow).toContain("bun run scripts/sync-github-wiki.ts --check");
+    expect(workflow).toContain("KONOHA_WIKI_TOKEN");
+    expect(workflow).toContain("Wiki source was validated but publish is skipped");
+    expect(workflow).toContain("bun run scripts/sync-github-wiki.ts --publish");
+    expect(workflow).not.toContain("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}");
+  });
 });

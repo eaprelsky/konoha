@@ -232,7 +232,7 @@ function printUsage(): void {
   console.log(`Usage:
   bun run scripts/sync-github-wiki.ts --check [--source docs/wiki]
   bun run scripts/sync-github-wiki.ts --dry-run [--source docs/wiki] [--out /tmp/wiki]
-  bun run scripts/sync-github-wiki.ts --publish [--source docs/wiki] [--wiki-url https://github.com/eaprelsky/konoha.wiki.git]
+  GITHUB_TOKEN=<wiki-capable-token> bun run scripts/sync-github-wiki.ts --publish [--source docs/wiki] [--wiki-url https://github.com/eaprelsky/konoha.wiki.git]
 `);
 }
 
