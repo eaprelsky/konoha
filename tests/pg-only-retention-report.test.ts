@@ -4,6 +4,7 @@ import {
   buildCleanupApplyPlanFromRows,
   buildCleanupPreviewFromRows,
   classifyRetentionCandidate,
+  classifyRetentionRow,
   groupRetentionRows,
   idPrefix,
   processPrefix,
@@ -34,6 +35,12 @@ describe("PG-only retention report classification", () => {
     });
 
     expect(classifyRetentionCandidate(candidate, NOW)).toBe("safe_candidate:old_completed_cases");
+    expect(classifyRetentionRow(candidate, NOW)).toMatchObject({
+      class_id: "generated_test_artifact",
+      disposition: "safe_cleanup_candidate",
+      safe_cleanup_candidate: true,
+      min_age_days: 7,
+    });
   });
 
   test("keeps recent generated cases in review", () => {
@@ -45,21 +52,71 @@ describe("PG-only retention report classification", () => {
       updated_at: "2026-04-29T18:00:00Z",
     });
 
-    expect(classifyRetentionCandidate(recent, NOW)).toBe("review");
+    expect(classifyRetentionCandidate(recent, NOW)).toBe("review:generated_test_artifact");
+    expect(classifyRetentionRow(recent, NOW)).toMatchObject({
+      class_id: "generated_test_artifact",
+      disposition: "manual_review",
+      safe_cleanup_candidate: false,
+    });
   });
 
-  test("classifies generated draft workflows and debug agents", () => {
-    expect(classifyRetentionCandidate(row({
+  test("classifies generated draft workflows and debug agents as safe cleanup candidates", () => {
+    expect(classifyRetentionRow(row({
       entity: "workflows",
       id: "operator-eval-create-molde5ds",
       status: "draft",
-    }), NOW)).toBe("safe_candidate:generated_draft_workflow");
+    }), NOW)).toMatchObject({
+      class_id: "generated_test_artifact",
+      candidate: "safe_candidate:generated_draft_workflow",
+      disposition: "safe_cleanup_candidate",
+    });
 
-    expect(classifyRetentionCandidate(row({
+    expect(classifyRetentionRow(row({
       entity: "agents",
       id: "debug-mcp-1777488527074",
       status: "offline",
-    }), NOW)).toBe("safe_candidate:debug_agent");
+    }), NOW)).toMatchObject({
+      class_id: "debug_agent",
+      candidate: "safe_candidate:debug_agent",
+      disposition: "safe_cleanup_candidate",
+    });
+  });
+
+  test("classifies archived workflows and historical runtime rows for manual review unless generated-safe", () => {
+    expect(classifyRetentionRow(row({
+      entity: "workflows",
+      id: "sales-onboarding",
+      status: "archived",
+      updated_at: "2026-04-01T00:00:00Z",
+    }), NOW)).toMatchObject({
+      class_id: "archived_workflow",
+      candidate: "review:archived_workflow",
+      disposition: "manual_review",
+      safe_cleanup_candidate: false,
+    });
+
+    expect(classifyRetentionRow(row({
+      entity: "workflows",
+      id: "act-wf-1777520060601-direct",
+      status: "archived",
+      updated_at: "2026-04-01T00:00:00Z",
+    }), NOW)).toMatchObject({
+      class_id: "archived_workflow",
+      candidate: "safe_candidate:archived_generated_workflow",
+      disposition: "safe_cleanup_candidate",
+    });
+
+    expect(classifyRetentionRow(row({
+      entity: "work_items",
+      id: "6a7c1f8a-aaaa-4bbb-8ccc-123456789abc",
+      status: "done",
+      process: "sales-onboarding",
+      updated_at: "2026-04-01T00:00:00Z",
+    }), NOW)).toMatchObject({
+      class_id: "historical_work_item",
+      candidate: "review:historical_work_item",
+      disposition: "manual_review",
+    });
   });
 
   test("builds deterministic grouping dimensions", () => {
@@ -72,6 +129,9 @@ describe("PG-only retention report classification", () => {
     expect(groups[0]).toMatchObject({
       entity: "work_items",
       candidate: "safe_candidate:old_completed_work_items",
+      retention_class: "generated_test_artifact",
+      disposition: "safe_cleanup_candidate",
+      safe_cleanup_candidate: true,
       status: "done",
       process_prefix: "or-gw",
       id_prefix: "wi",

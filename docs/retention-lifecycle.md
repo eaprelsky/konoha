@@ -16,6 +16,24 @@ Konoha stores active runtime data in Redis and shadows operational history into 
 
 `retention.cleanup_preview` is also read-only. It returns exact IDs only for rows classified as `safe_candidate:*`, omits review-only rows, and blocks candidate output when Redis-only mismatches exist. It is a preview contract for future cleanup, not a delete operation.
 
+## PG-Only Retention Classes
+
+The PG-only report uses machine-readable retention classes. `candidate` remains
+the compatibility field used by preview/apply, while `retention_class`,
+`disposition`, `safe_cleanup_candidate`, and `reason` explain why a row is or
+is not eligible.
+
+| Class | Default disposition | Cleanup policy |
+| --- | --- | --- |
+| `generated_test_artifact` | safe cleanup candidate when old enough or draft | Generated/evaluation workflows, cases, work items, and documents may enter preview only when they match approved test prefixes and age/status gates. |
+| `archived_workflow` | manual review by default | Production-looking archived/retired/deleted workflows remain historical evidence. Only old generated archived workflows become `safe_candidate:archived_generated_workflow`. |
+| `historical_case` | manual review | Terminal PG-only cases without generated/test prefixes are retained for operator review. |
+| `historical_work_item` | manual review | Terminal PG-only work items without generated/test prefixes are retained for operator review. |
+| `debug_agent` | safe cleanup candidate | Offline `debug-*` and `*-startup-check` bus-presence rows are cleanup candidates because managed AgentDef lifecycle is separate from presence. |
+| `old_completed_reminder` | safe cleanup candidate after 30 days | Completed reminder shadow rows older than the threshold may enter preview. |
+| `generated_document` | safe cleanup candidate after 30 days | Generated document rows older than the threshold may enter preview. |
+| `manual_review_unknown` | manual review | Anything not matched by an approved class is blocked from cleanup preview/apply. |
+
 `retention.cleanup_apply` is the destructive Action Spine entry point. It is deliberately narrow:
 
 - requires admin confirmation through `/act`;

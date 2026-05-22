@@ -23,7 +23,7 @@ This document defines the phased plan for migrating read paths from Redis to Pos
 - [ ] Fix all onlyInRedis discrepancies through `--fix` or manual sync
 - [x] Add pg-verify to preflight gate (#588)
 - [x] Add a dry-run PG-only retention report before strict mode is required (`bun run scripts/pg-only-retention-report.ts`)
-- [ ] Define and approve the PG-only retention policy/delete path from dry-run reports
+- [x] Define PG-only retention classes and safe cleanup candidate policy from dry-run reports (#738)
 - [ ] Decide whether non-strict bloat should be warning-only or a release blocker
 
 **Exit criteria**: non-strict `bun run scripts/pg-verify.ts` has zero `onlyInRedis` daily for one week, and PG-only retention policy is documented. `--strict` remains a later hardening target after retention cleanup exists.

@@ -16,6 +16,10 @@ export interface PgOnlyRow {
 export interface RetentionGroup {
   entity: RetentionEntity;
   candidate: string;
+  retention_class: RetentionClassId;
+  disposition: RetentionDisposition;
+  safe_cleanup_candidate: boolean;
+  reason: string;
   status: string;
   process_prefix: string;
   id_prefix: string;
@@ -128,8 +132,30 @@ const GENERATED_PREFIXES = [
 
 const GENERATED_RE = /^(act-wf|assistant-start|autonomy-eval|eepc|operator-eval|or-gw|test|xor-gw)(?:-|\d|$)/;
 const COMPLETED_STATUSES = new Set(["done", "completed", "sent", "closed", "archived"]);
+const ARCHIVED_WORKFLOW_STATUSES = new Set(["archived", "retired", "deleted"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const MAX_CLEANUP_APPLY_BATCH = 200;
+
+export type RetentionClassId =
+  | "generated_test_artifact"
+  | "archived_workflow"
+  | "historical_case"
+  | "historical_work_item"
+  | "debug_agent"
+  | "old_completed_reminder"
+  | "generated_document"
+  | "manual_review_unknown";
+
+export type RetentionDisposition = "safe_cleanup_candidate" | "manual_review";
+
+export interface RetentionClassification {
+  class_id: RetentionClassId;
+  candidate: string;
+  disposition: RetentionDisposition;
+  safe_cleanup_candidate: boolean;
+  reason: string;
+  min_age_days?: number;
+}
 
 function asDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
@@ -186,43 +212,142 @@ function cleanupCandidateFromRow(row: PgOnlyRow, candidate: string, now: Date): 
   };
 }
 
-export function classifyRetentionCandidate(row: PgOnlyRow, now = new Date()): string {
+function safeClassification(
+  classId: RetentionClassId,
+  candidate: string,
+  reason: string,
+  minAgeDays?: number,
+): RetentionClassification {
+  return {
+    class_id: classId,
+    candidate,
+    disposition: "safe_cleanup_candidate",
+    safe_cleanup_candidate: true,
+    reason,
+    ...(minAgeDays !== undefined ? { min_age_days: minAgeDays } : {}),
+  };
+}
+
+function reviewClassification(
+  classId: RetentionClassId,
+  candidate: string,
+  reason: string,
+): RetentionClassification {
+  return {
+    class_id: classId,
+    candidate,
+    disposition: "manual_review",
+    safe_cleanup_candidate: false,
+    reason,
+  };
+}
+
+export function classifyRetentionRow(row: PgOnlyRow, now = new Date()): RetentionClassification {
   const status = row.status ?? "unknown";
   const id = row.id;
   const process = row.process ?? "";
 
   if (row.entity === "agents" && status === "offline" && (/^debug-/.test(id) || id.endsWith("-startup-check"))) {
-    return "safe_candidate:debug_agent";
+    return safeClassification(
+      "debug_agent",
+      "safe_candidate:debug_agent",
+      "Offline debug/startup-check bus presence has no managed AgentDef lifecycle contract.",
+    );
   }
 
   if (row.entity === "workflows" && status === "draft" && GENERATED_RE.test(id)) {
-    return "safe_candidate:generated_draft_workflow";
+    return safeClassification(
+      "generated_test_artifact",
+      "safe_candidate:generated_draft_workflow",
+      "Generated draft workflow is absent from Redis and matches test/evaluation prefixes.",
+    );
+  }
+
+  if (row.entity === "workflows" && ARCHIVED_WORKFLOW_STATUSES.has(status)) {
+    if (GENERATED_RE.test(id) && isOld(row, now, 7)) {
+      return safeClassification(
+        "archived_workflow",
+        "safe_candidate:archived_generated_workflow",
+        "Archived generated workflow is old enough for PG-only cleanup.",
+        7,
+      );
+    }
+    return reviewClassification(
+      "archived_workflow",
+      "review:archived_workflow",
+      "Archived production-looking workflows remain historical evidence unless separately approved.",
+    );
   }
 
   if ((row.entity === "cases" || row.entity === "work_items")
     && COMPLETED_STATUSES.has(status)
-    && (GENERATED_RE.test(process) || GENERATED_RE.test(id))
+    && (GENERATED_RE.test(process) || GENERATED_RE.test(id))) {
+    if (!isOld(row, now, 7)) {
+      return reviewClassification(
+        "generated_test_artifact",
+        "review:generated_test_artifact",
+        `Generated/test ${row.entity} is terminal but has not reached the 7 day cleanup threshold.`,
+      );
+    }
+    return safeClassification(
+      "generated_test_artifact",
+      `safe_candidate:old_completed_${row.entity}`,
+      `Old terminal ${row.entity} belongs to a generated/test process or id prefix.`,
+      7,
+    );
+  }
+
+  if ((row.entity === "cases" || row.entity === "work_items")
+    && COMPLETED_STATUSES.has(status)
     && isOld(row, now, 7)) {
-    return `safe_candidate:old_completed_${row.entity}`;
+    const historicalClass = row.entity === "cases" ? "historical_case" : "historical_work_item";
+    return reviewClassification(
+      historicalClass,
+      `review:${row.entity === "cases" ? "historical_case" : "historical_work_item"}`,
+      `Old terminal ${row.entity} is PG-only historical evidence but does not match a generated/test prefix.`,
+    );
   }
 
   if (row.entity === "reminders" && COMPLETED_STATUSES.has(status) && isOld(row, now, 30)) {
-    return "safe_candidate:old_completed_reminder";
+    return safeClassification(
+      "old_completed_reminder",
+      "safe_candidate:old_completed_reminder",
+      "Completed reminder is older than the reminder cleanup threshold.",
+      30,
+    );
   }
 
   if (row.entity === "documents" && GENERATED_RE.test(id) && isOld(row, now, 30)) {
-    return "safe_candidate:generated_document";
+    return safeClassification(
+      "generated_document",
+      "safe_candidate:generated_document",
+      "Generated document is older than the document cleanup threshold.",
+      30,
+    );
   }
 
-  return "review";
+  return reviewClassification(
+    "manual_review_unknown",
+    "review:manual",
+    "Row does not match an approved PG-only cleanup class.",
+  );
+}
+
+export function classifyRetentionCandidate(row: PgOnlyRow, now = new Date()): string {
+  return classifyRetentionRow(row, now).candidate;
 }
 
 export function groupRetentionRows(rows: PgOnlyRow[], now = new Date()): RetentionGroup[] {
   const groups = new Map<string, RetentionGroup>();
   for (const row of rows) {
+    const classification = classifyRetentionRow(row, now);
     const group: RetentionGroup = {
       entity: row.entity,
-      candidate: classifyRetentionCandidate(row, now),
+      candidate: classification.candidate,
+      retention_class: classification.class_id,
+      disposition: classification.disposition,
+      safe_cleanup_candidate: classification.safe_cleanup_candidate,
+      reason: classification.reason,
       status: row.status ?? "unknown",
       process_prefix: processPrefix(row.process),
       id_prefix: idPrefix(row.id),
@@ -233,6 +358,8 @@ export function groupRetentionRows(rows: PgOnlyRow[], now = new Date()): Retenti
     const key = JSON.stringify([
       group.entity,
       group.candidate,
+      group.retention_class,
+      group.disposition,
       group.status,
       group.process_prefix,
       group.id_prefix,
@@ -333,11 +460,11 @@ export function buildCleanupPreviewFromRows(
   const limit = options.limit === undefined ? 200 : options.limit;
   const now = options.now ?? new Date(options.generatedAt);
   const allCandidates = rows
-    .map(row => ({ row, candidate: classifyRetentionCandidate(row, now) }))
-    .filter(item => item.candidate.startsWith("safe_candidate:"))
+    .map(row => ({ row, classification: classifyRetentionRow(row, now) }))
+    .filter(item => item.classification.safe_cleanup_candidate)
     .sort((a, b) =>
       a.row.entity.localeCompare(b.row.entity)
-      || a.candidate.localeCompare(b.candidate)
+      || a.classification.candidate.localeCompare(b.classification.candidate)
       || a.row.id.localeCompare(b.row.id)
     );
 
@@ -353,7 +480,7 @@ export function buildCleanupPreviewFromRows(
     ...(blockedReason ? { blocked_reason: blockedReason } : {}),
     total_candidates: allCandidates.length,
     omitted_candidates: allCandidates.length - selected.length,
-    candidates: options.hardFail ? [] : selected.map(({ row, candidate }) => cleanupCandidateFromRow(row, candidate, now)),
+    candidates: options.hardFail ? [] : selected.map(({ row, classification }) => cleanupCandidateFromRow(row, classification.candidate, now)),
   };
 }
 
@@ -387,9 +514,9 @@ function entityConfig(entity: RetentionEntity): EntityConfig {
 function safeCandidateIndex(rows: PgOnlyRow[], now: Date): Map<string, RetentionCleanupCandidate> {
   const index = new Map<string, RetentionCleanupCandidate>();
   for (const row of rows) {
-    const candidate = classifyRetentionCandidate(row, now);
-    if (!candidate.startsWith("safe_candidate:")) continue;
-    index.set(`${row.entity}:${row.id}`, cleanupCandidateFromRow(row, candidate, now));
+    const classification = classifyRetentionRow(row, now);
+    if (!classification.safe_cleanup_candidate) continue;
+    index.set(`${row.entity}:${row.id}`, cleanupCandidateFromRow(row, classification.candidate, now));
   }
   return index;
 }
@@ -619,7 +746,8 @@ export function renderRetentionReportText(report: PgOnlyRetentionReport, limit: 
 
   const groups = limit === null ? report.groups : report.groups.slice(0, limit);
   for (const group of groups) {
-    lines.push(`- entity=${group.entity} candidate=${group.candidate} status=${group.status} process_prefix=${group.process_prefix} id_prefix=${group.id_prefix} age=${group.age_bucket} would_delete_count=${group.would_delete_count}`);
+    lines.push(`- entity=${group.entity} class=${group.retention_class} disposition=${group.disposition} candidate=${group.candidate} status=${group.status} process_prefix=${group.process_prefix} id_prefix=${group.id_prefix} age=${group.age_bucket} would_delete_count=${group.would_delete_count}`);
+    lines.push(`  reason=${group.reason}`);
     lines.push(`  samples=${group.sample_ids.join(", ")}`);
   }
   if (groups.length < report.groups.length) {

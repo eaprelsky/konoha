@@ -57,7 +57,7 @@ Records exist in PG but not in Redis.
 - **Current production status (2026-04-30)**: `onlyInRedis=0`, but PG has historical bloat in cases, work items, workflows, and documents. This is not a `9739ac5` deploy regression.
 - **Threshold**: non-strict `pg-verify.ts` exits `2` when `onlyInPG` exceeds 100% of `redisCount` unless `PG_BLOAT_THRESHOLD` is raised for diagnostics.
 - **Fix**: define retention policy first. Do not run destructive cleanup from `pg-verify` output alone. `migrate-redis-to-pg.ts --dry-run` is useful for `onlyInRedis`, but it does not classify or remove `onlyInPG` rows.
-- **Safe next step**: run `bun run scripts/pg-only-retention-report.ts` and review the safe-candidate groups before any delete mode exists. Initial safe-candidate classes include offline debug agents, generated draft/eval workflows, and old completed generated test cases/work items.
+- **Safe next step**: run `bun run scripts/pg-only-retention-report.ts` and review the safe-candidate groups before any delete mode. The report exposes machine-readable `retention_class`, `disposition`, `safe_cleanup_candidate`, and `reason` fields. Approved cleanup classes include generated test artifacts, old completed reminders, generated documents, and offline debug/startup-check presence rows; archived workflows and historical cases/work items remain manual-review unless they also match generated/test gates.
 
 ### Dual-write failures
 If `pgWrite()` fails, the Redis write succeeded but PG is missing the record. The next `pg-verify.ts` run will catch it.
