@@ -211,6 +211,10 @@ describe("runtime effect recovery", () => {
     expect(listRes.status).toBe(200);
     const listed = await listRes.json();
     expect(listed.effects.some((effect: any) => effect.effect_id === record.effect_id)).toBe(true);
+    expect(typeof listed.summary.total).toBe("number");
+    expect(typeof listed.summary.dead_letter).toBe("number");
+    expect(typeof listed.summary.recovery_actionable).toBe("number");
+    expect(Number(listed.summary.dead_letter)).toBeGreaterThanOrEqual(1);
 
     const showRes = await app.fetch(new Request(`http://localhost/runtime-effects/${record.effect_id}`, {
       headers: adminHeaders(),

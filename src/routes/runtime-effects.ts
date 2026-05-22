@@ -53,7 +53,23 @@ router.get("/runtime-effects", requireAdmin, async (c) => {
   const limit = parseLimit(c.req.query("limit"));
   const listed = await Promise.all(statuses.map(status => listRuntimeEffectsByStatus(status, { limit })));
   const effects = listed.flat().sort((a, b) => a.updated_at.localeCompare(b.updated_at)).slice(0, limit);
-  return c.json({ ok: true, statuses, limit, effects });
+  return c.json({
+    ok: true,
+    statuses,
+    limit,
+    effects,
+    summary: {
+      total: effects.length,
+      pending: effects.filter(effect => effect.status === "pending").length,
+      in_flight: effects.filter(effect => effect.status === "in_flight").length,
+      retry: effects.filter(effect => effect.status === "retry").length,
+      failed: effects.filter(effect => effect.status === "failed").length,
+      dead_letter: effects.filter(effect => effect.status === "dead_letter").length,
+      cancelled: effects.filter(effect => effect.status === "cancelled").length,
+      succeeded: effects.filter(effect => effect.status === "succeeded").length,
+      recovery_actionable: effects.filter(effect => ["pending", "retry", "failed", "dead_letter"].includes(effect.status)).length,
+    },
+  });
 });
 
 router.get("/runtime-effects/:id", requireAdmin, async (c) => {

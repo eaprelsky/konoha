@@ -205,6 +205,83 @@ export interface EventWait {
   event_data?: Record<string, unknown>;
 }
 
+export type RuntimeEffectStatus =
+  | 'pending'
+  | 'in_flight'
+  | 'succeeded'
+  | 'failed'
+  | 'retry'
+  | 'dead_letter'
+  | 'cancelled';
+
+export interface RuntimeEffectRecord {
+  schema_version: 1;
+  effect_id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  idempotency_key: string;
+  status: RuntimeEffectStatus;
+  attempts: number;
+  retry_policy: {
+    max_attempts: number;
+    backoff: 'fixed' | 'exponential';
+    retry_delays_ms: number[];
+    dead_letter_after_attempts: number;
+  };
+  links: {
+    workflow_id?: string;
+    deploy_version?: number;
+    deployment_id?: string;
+    deploy_record_key?: string;
+    case_id?: string;
+    work_item_id?: string;
+    subscription_id?: string;
+    event_id?: string;
+    action_type?: string;
+    action_trace_id?: string;
+    connector_id?: string;
+    adapter_id?: string;
+  };
+  created_at: string;
+  updated_at: string;
+  next_retry_at?: string;
+  locked_by?: string;
+  locked_until?: string;
+  completed_at?: string;
+  error?: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    failed_at: string;
+    details?: Record<string, unknown>;
+  };
+  receipt?: {
+    status: 'succeeded' | 'failed' | 'cancelled';
+    received_at: string;
+    data?: Record<string, unknown>;
+  };
+}
+
+export interface RuntimeEffectsSummary {
+  total: number;
+  pending: number;
+  in_flight: number;
+  retry: number;
+  failed: number;
+  dead_letter: number;
+  cancelled: number;
+  succeeded: number;
+  recovery_actionable: number;
+}
+
+export interface RuntimeEffectsResponse {
+  ok: true;
+  statuses: RuntimeEffectStatus[];
+  limit: number;
+  effects: RuntimeEffectRecord[];
+  summary: RuntimeEffectsSummary;
+}
+
 export interface WorkItemFilters {
   assignee?: string;
   process_id?: string;

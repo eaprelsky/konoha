@@ -13,6 +13,37 @@
   .mon-filter-row input:focus, .mon-filter-row select:focus { outline: none; border-color: #6366f1; background: #fff; }
   .mon-runs-list { flex: 1; overflow-y: auto; padding: 8px 0; }
 
+  /* Operator recovery lanes */
+  .mon-ops { border-bottom: 1px solid #e2e8f0; background: #fff; padding: 10px 12px 12px; flex-shrink: 0; max-height: 320px; overflow-y: auto; }
+  .mon-ops-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .mon-ops-title { font-size: 12px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: .04em; }
+  .mon-ops-subtitle { font-size: 11px; color: #64748b; margin-top: 2px; }
+  .mon-ops-loading { font-size: 11px; color: #64748b; }
+  .mon-ops-error { font-size: 11px; color: #b91c1c; background: #fee2e2; border-left: 3px solid #ef4444; padding: 6px 8px; margin-bottom: 8px; }
+  .mon-ops-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .mon-ops-column { min-width: 0; }
+  .mon-ops-column-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 5px; }
+  .mon-ops-column-head b { color: #0f172a; background: #f1f5f9; border-radius: 10px; padding: 1px 7px; }
+  .mon-ops-empty { font-size: 12px; color: #94a3b8; background: #f8fafc; border: 1px dashed #e2e8f0; padding: 8px; }
+  .mon-ops-item { display: block; width: 100%; text-align: left; border: 1px solid #e2e8f0; background: #f8fafc; padding: 7px 8px; margin-bottom: 6px; border-radius: 6px; }
+  .mon-ops-wait { cursor: pointer; font: inherit; }
+  .mon-ops-wait:hover { background: #eff6ff; border-color: #bfdbfe; }
+  .mon-ops-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .mon-ops-badge { font-size: 10px; font-weight: 800; text-transform: uppercase; border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
+  .mon-ops-badge.warn { background: #fef3c7; color: #92400e; }
+  .mon-ops-badge.bad { background: #fee2e2; color: #991b1b; }
+  .mon-ops-badge.critical { background: #fecaca; color: #7f1d1d; }
+  .mon-ops-name { font-size: 12px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mon-ops-meta { display: flex; gap: 7px; flex-wrap: wrap; font-size: 10px; color: #64748b; margin-top: 4px; }
+  .mon-ops-link { border: 0; background: transparent; color: #2563eb; cursor: pointer; padding: 3px 0 0; font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mon-ops-link:hover { text-decoration: underline; }
+  .mon-ops-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .mon-ops-actions button { border: 1px solid #cbd5e1; background: #fff; color: #334155; padding: 3px 7px; font-size: 11px; border-radius: 4px; cursor: pointer; }
+  .mon-ops-actions button:hover:not(:disabled) { border-color: #64748b; }
+  .mon-ops-actions button:disabled { opacity: .55; cursor: default; }
+  .mon-ops-case { font-size: 11px; color: #2563eb; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mon-ops-deadline { font-size: 10px; color: #64748b; margin-top: 3px; }
+
   /* Process group */
   .proc-group { margin-bottom: 2px; }
   .proc-group-header { display: flex; align-items: center; gap: 8px; padding: 8px 16px 6px; cursor: pointer; user-select: none; }

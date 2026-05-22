@@ -1,4 +1,4 @@
-import type { Workflow, WorkflowValidationReceipt, WorkItem, WorkItemFilters, PaginatedWorkItems, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, AssistantWorkflowResponse, DashboardProfile, TelegramStreamHealthSummary, FeatureFlagsResponse } from './types';
+import type { Workflow, WorkflowValidationReceipt, WorkItem, WorkItemFilters, PaginatedWorkItems, Case, Run, Reminder, ReminderStatus, RoleDef, DocTemplate, RuntimeEvent, Agent, AgentStatus, Person, WorkspaceFile, KibaAction, HighlightAction, Skill, McpServerDef, ProcessMiningData, KonohaMessage, KbNode, EventWait, EventWaitStatus, RuntimeEffectsResponse, RuntimeEffectStatus, RuntimeEffectRecord, AssistantWorkflowResponse, DashboardProfile, TelegramStreamHealthSummary, FeatureFlagsResponse } from './types';
 export type { KibaAction, HighlightAction };
 
 export interface AttachmentRef { path: string; name: string; mime?: string; }
@@ -247,6 +247,40 @@ export const api = {
       if (filters?.limit)  p.set('limit', String(filters.limit));
       const qs = p.toString();
       return apiFetch<RuntimeEvent[]>(`${BASE}/events/log${qs ? '?' + qs : ''}`);
+    },
+  },
+
+  runtimeEffects: {
+    list: (filters?: { status?: RuntimeEffectStatus[] | string; limit?: number }) => {
+      const p = new URLSearchParams();
+      if (filters?.status) p.set('status', Array.isArray(filters.status) ? filters.status.join(',') : filters.status);
+      if (filters?.limit) p.set('limit', String(filters.limit));
+      const qs = p.toString();
+      return apiFetch<RuntimeEffectsResponse>(`${BASE}/runtime-effects${qs ? '?' + qs : ''}`);
+    },
+    retry: async (id: string, params: { actor?: string; reason: string }) => {
+      const result = await apiFetch<{ ok: true; receipt: { record: RuntimeEffectRecord } }>(`${BASE}/runtime-effects/${encodeURIComponent(id)}/retry`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      invalidateCache(`${BASE}/runtime-effects`);
+      return result;
+    },
+    cancel: async (id: string, params: { actor?: string; reason: string }) => {
+      const result = await apiFetch<{ ok: true; receipt: { record: RuntimeEffectRecord } }>(`${BASE}/runtime-effects/${encodeURIComponent(id)}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      invalidateCache(`${BASE}/runtime-effects`);
+      return result;
+    },
+    deadLetter: async (id: string, params: { actor?: string; reason: string }) => {
+      const result = await apiFetch<{ ok: true; receipt: { record: RuntimeEffectRecord } }>(`${BASE}/runtime-effects/${encodeURIComponent(id)}/dead-letter`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+      invalidateCache(`${BASE}/runtime-effects`);
+      return result;
     },
   },
 

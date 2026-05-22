@@ -218,6 +218,13 @@ bun run scripts/runtime-effect-recovery.ts cancel <effect_id> --actor kakashi --
 bun run scripts/runtime-effect-recovery.ts dead-letter <effect_id> --actor kakashi --reason "payload is no longer valid"
 ```
 
+The operator Monitor page also exposes the same recovery contract. Its recovery
+lane reads `GET /runtime-effects?status=retry,failed,dead_letter` plus
+`GET /waits`, shows failed/dead-lettered effects next to active/overdue waits,
+and calls the existing retry/dead-letter endpoints with an operator reason.
+The UI is a view over the canonical outbox/wait records; it does not maintain a
+separate recovery state.
+
 For runtime recovery procedures, use
 `docs/workflow-runtime-rollback-recovery.md`. For release gates, use
 `docs/workflow-constructor-runtime-release-checklist.md`.

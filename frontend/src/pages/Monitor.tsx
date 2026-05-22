@@ -4,16 +4,17 @@
  * Left panel: runs grouped by process with status/SLA.
  * Right panel: EPC diagram with highlighted current step + history timeline.
  */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { EpcRenderer } from '../components/EpcRenderer';
 import { useToken } from '../context/TokenContext';
 import { useI18n } from '../context/I18nContext';
 import { useInterval } from '../hooks/useApi';
 import { api } from '../api/client';
-import type { Run, Workflow } from '../api/types';
+import type { EventWait, Run, RuntimeEffectRecord, RuntimeEffectsSummary, Workflow } from '../api/types';
 import { buildRoleLabelMap } from '../utils/agentDisplay';
 import { filterOperatorRuns, isWorkflowHiddenFromOperator, useOperatorViewMode } from '../utils/operatorView';
+import { MonitorOpsPanel, type MonitorRecoveryAction } from './MonitorOpsPanel';
 import './Monitor.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -69,6 +70,12 @@ export function Monitor() {
   const [roleLabels, setRoleLabels] = useState<Record<string, string>>({});
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [wfLoadState, setWfLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [runtimeEffects, setRuntimeEffects] = useState<RuntimeEffectRecord[]>([]);
+  const [runtimeEffectSummary, setRuntimeEffectSummary] = useState<RuntimeEffectsSummary | null>(null);
+  const [waits, setWaits] = useState<EventWait[]>([]);
+  const [opsLoading, setOpsLoading] = useState(false);
+  const [opsError, setOpsError] = useState<string | null>(null);
+  const [effectActionId, setEffectActionId] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState('');
   const [processFilter, setProcessFilter] = useState('');
@@ -109,6 +116,26 @@ export function Monitor() {
   useEffect(() => { load(); }, [load]);
   useInterval(load, 8000);
 
+  const loadOps = useCallback(() => {
+    if (!token) return;
+    setOpsLoading(true);
+    Promise.all([
+      api.runtimeEffects.list({ status: ['retry', 'failed', 'dead_letter'], limit: 50 }),
+      api.waits.list(),
+    ])
+      .then(([effectsResult, waitsResult]) => {
+        setRuntimeEffects(effectsResult.effects);
+        setRuntimeEffectSummary(effectsResult.summary);
+        setWaits(waitsResult.waits);
+        setOpsError(null);
+      })
+      .catch(e => setOpsError(e.message))
+      .finally(() => setOpsLoading(false));
+  }, [token]);
+
+  useEffect(() => { loadOps(); }, [loadOps]);
+  useInterval(loadOps, 10000);
+
   useEffect(() => {
     if (!targetCaseId || selectedRun?.case_id === targetCaseId) return;
     const target = runs.find(run => run.case_id === targetCaseId);
@@ -135,6 +162,7 @@ export function Monitor() {
   // Group runs by process_id, filter by search
   const operatorRuns = filterOperatorRuns(runs, hiddenProcessIds, { showHiddenArtifacts });
   const hiddenRunCount = runs.length - filterOperatorRuns(runs, hiddenProcessIds).length;
+  const runsById = useMemo(() => new Map(runs.map(run => [run.case_id, run])), [runs]);
   const filtered = operatorRuns.filter(r => {
     if (!search) return true;
     return r.subject.toLowerCase().includes(search.toLowerCase())
@@ -155,6 +183,51 @@ export function Monitor() {
       return s;
     });
   }
+
+  const selectCase = useCallback((caseId: string) => {
+    const existing = runsById.get(caseId);
+    if (existing) {
+      setSelectedRun(existing);
+      setProcessFilter(existing.process_id);
+      setCollapsedGroups(prev => {
+        const next = new Set(prev);
+        next.delete(existing.process_id);
+        return next;
+      });
+      return;
+    }
+    api.runs.get(caseId)
+      .then(run => {
+        setSelectedRun(run);
+        setProcessFilter(run.process_id);
+        setRuns(prev => prev.some(item => item.case_id === run.case_id) ? prev : [run, ...prev]);
+        setCollapsedGroups(prev => {
+          const next = new Set(prev);
+          next.delete(run.process_id);
+          return next;
+        });
+      })
+      .catch(e => setOpsError(e.message));
+  }, [runsById]);
+
+  const recoverEffect = useCallback(async (effect: RuntimeEffectRecord, action: MonitorRecoveryAction) => {
+    setEffectActionId(effect.effect_id);
+    try {
+      const reason = action === 'retry'
+        ? 'operator retry from monitor failed-effect view'
+        : 'operator dead-letter from monitor failed-effect view';
+      if (action === 'retry') {
+        await api.runtimeEffects.retry(effect.effect_id, { actor: 'operator:monitor', reason });
+      } else {
+        await api.runtimeEffects.deadLetter(effect.effect_id, { actor: 'operator:monitor', reason });
+      }
+      await loadOps();
+    } catch (e: any) {
+      setOpsError(e.message);
+    } finally {
+      setEffectActionId(null);
+    }
+  }, [loadOps]);
 
   function slaClass(r: Run): string {
     const ms = elapsedMs(r.created_at);
@@ -239,6 +312,20 @@ export function Monitor() {
               &gt;24h ({t('operator.monitor.stuck')})
             </span>
           </div>
+
+          <MonitorOpsPanel
+            effects={runtimeEffects}
+            effectSummary={runtimeEffectSummary}
+            waits={waits}
+            runsById={runsById}
+            processNames={wfNameMap}
+            loading={opsLoading}
+            error={opsError}
+            actionBusyId={effectActionId}
+            onRecoverEffect={recoverEffect}
+            onSelectCase={selectCase}
+            t={t}
+          />
 
           <div className="mon-runs-list">
             {loading && <div className="mon-loading">{t('operator.runs.loading')}</div>}
