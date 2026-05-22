@@ -80,22 +80,30 @@ States: `running` → `done` | `error`
 
 ## advanceCase Algorithm
 
-`advanceCase(kase, def)` is the core loop in `src/runtime/cases.ts`.
+`advanceCase(kase, def)` is the core loop in `src/runtime/cases.ts`. It now
+delegates deterministic graph navigation to the pure planner in
+`src/runtime/cases/transition-planner.ts`: the planner receives the workflow,
+case position/history, and payload, then returns state changes plus effect
+intents. It does not write Redis/PostgreSQL, create work items, enqueue outbox
+effects, send notifications, create waits, subscribe events, or call adapters.
+`advanceCase` remains the side-effect applicator for that plan.
 
 1. **Build adjacency maps** — `outEdges`, `inEdges`, `byId`, `edgeConditions` from the workflow definition. O(n) per call.
 
-2. **Iterate** — starting from `kase.position`, follow the next edge:
+2. **Plan** — starting from `kase.position`, `planGraphTransition()` decides the next graph transition:
 
    | Next element type | Action |
    |---|---|
-   | `function` | Create work item, dispatch it, update `kase.position`, **return** (async pause) |
-   | `event` (terminal) | Set `status = "done"`, cancel event subscriptions, **return** |
-   | `event` (intermediate with trigger) | Subscribe to trigger, save case, **return** |
-   | `event` (intermediate, no trigger) | Pass through, continue loop |
-   | `gateway` | See gateway logic below |
-   | element not found | Set `status = "error"`, emit `process.exception`, **return** |
+   | `function` | Return a `function.work_item` intent; `advanceCase` creates the work item, dispatches it, updates `kase.position`, and **returns** (async pause) |
+   | `event` (terminal) | Return `case.complete`; `advanceCase` sets `status = "done"`, cancels event subscriptions, and **returns** |
+   | `event` (intermediate with trigger) | Return `event.wait` with subscribe/reminder flags; `advanceCase` creates the wait/subscription/reminders, saves case, and **returns** |
+   | `event` (intermediate, no trigger) | Return `continue`; `advanceCase` records history and continues the loop |
+   | `gateway` | Return gateway evaluation/split/join intents (see gateway logic below) |
+   | element not found | Return `case.error`; `advanceCase` sets `status = "error"`, emits `process.exception`, and **returns** |
 
-3. **System bindings** — if a function element has `systems[]`, the engine calls default `sync` adapter bindings synchronously and merges outputs into the case payload. On success the work item is auto-completed and the loop continues without pausing. Bindings explicitly marked `execution: "async_effect"` are safe side effects: the runtime enqueues an `adapter.invoke` outbox record instead of executing inline, and the work item/case do not depend on that adapter output.
+3. **Apply** — `advanceCase` applies planner state changes and executes effect intents through existing side-effect boundaries: work-item persistence, dispatch outbox, event waits/subscriptions, adapter outbox, synchronous adapter calls, subprocess creation, and terminal cleanup.
+
+4. **System bindings** — if a function element has `systems[]`, the engine calls default `sync` adapter bindings synchronously and merges outputs into the case payload. On success the work item is auto-completed and the loop continues without pausing. Bindings explicitly marked `execution: "async_effect"` are safe side effects: the runtime enqueues an `adapter.invoke` outbox record instead of executing inline, and the work item/case do not depend on that adapter output.
 
 ---
 

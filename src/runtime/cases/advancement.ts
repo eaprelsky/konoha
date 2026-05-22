@@ -20,9 +20,15 @@ import { scheduleWaitReminders } from "../event-waits";
 import { enqueueWorkItemDispatchEffect } from "../workitem-dispatch-outbox";
 import { adapterInvokeBindingKey, enqueueAdapterInvokeEffect } from "../adapter-outbox";
 import { saveCase, loadCase, saveWorkItem, loadWorkItem, CASES_IDX_PROCESS, WORKITEMS_IDX_CASE, WORKITEM_KEY_PREFIX } from "./persistence";
-import type { Case, WorkItem, ActiveBranch } from "./types";
+import type { Case, WorkItem, ActiveBranch, HistoryEntry } from "./types";
 import { bindWorkflowSnapshotForCase, loadWorkflowForCase } from "./workflow-binding";
-import { evalGatewayCondition } from "../../workflow-gateway-conditions";
+import {
+  buildGraphAdjacency,
+  evaluateGraphCondition,
+  findGraphJoinGateway,
+  planGraphTransition,
+  type GraphTransitionPlan,
+} from "./transition-planner";
 
 const log = createLogger("runtime:advancement");
 const WORKFLOW_KEY_PREFIX = "workflow:";
@@ -36,25 +42,11 @@ export function buildAdjacency(def: WorkflowDefinition): {
   byId: Map<string, WorkflowElement>;
   edgeConditions: Map<string, string>;
 } {
-  const byId = new Map<string, WorkflowElement>(def.elements.map(e => [e.id, e]));
-  const outEdges = new Map<string, string[]>();
-  const inEdges = new Map<string, string[]>();
-  const edgeConditions = new Map<string, string>();
-  for (const el of def.elements) {
-    outEdges.set(el.id, []);
-    inEdges.set(el.id, []);
-  }
-  for (const edge of def.flow) {
-    const [from, to, condition] = edge;
-    outEdges.get(from)?.push(to);
-    inEdges.get(to)?.push(from);
-    if (condition) edgeConditions.set(`${from}->${to}`, condition);
-  }
-  return { outEdges, inEdges, byId, edgeConditions };
+  return buildGraphAdjacency(def);
 }
 
 export function evalCondition(condition: string, payload: Record<string, unknown>): boolean {
-  return evalGatewayCondition(condition, payload);
+  return evaluateGraphCondition(condition, payload);
 }
 
 export function findJoinGateway(
@@ -62,25 +54,7 @@ export function findJoinGateway(
   outEdges: Map<string, string[]>,
   byId: Map<string, WorkflowElement>,
 ): string | null {
-  const reachableSets = branchIds.map(startId => {
-    const visited = new Set<string>();
-    const queue = [startId];
-    while (queue.length > 0) {
-      const id = queue.shift()!;
-      if (visited.has(id)) continue;
-      visited.add(id);
-      for (const next of outEdges.get(id) || []) queue.push(next);
-    }
-    return visited;
-  });
-  if (reachableSets.length === 0) return null;
-  for (const candidate of reachableSets[0]) {
-    const el = byId.get(candidate);
-    if (el?.type === "gateway" && reachableSets.every(r => r.has(candidate))) {
-      return candidate;
-    }
-  }
-  return null;
+  return findGraphJoinGateway(branchIds, outEdges, byId);
 }
 
 // ── Work item creation helpers ───────────────────────────────────────────────
@@ -246,13 +220,57 @@ async function completeParentWorkItem(childCase: Case): Promise<void> {
   await advanceCase(parentCase, parentDef);
 }
 
+function appendPlannedHistory(kase: Case, entries: Omit<HistoryEntry, "timestamp">[]): void {
+  for (const entry of entries) {
+    kase.history.push({ ...entry, timestamp: new Date().toISOString() });
+  }
+}
+
+async function emitGatewayEventsFromPlan(kase: Case, plan: GraphTransitionPlan): Promise<void> {
+  for (const effect of plan.effects) {
+    if (effect.kind !== "gateway.evaluated") continue;
+    await emitEvent({
+      type: "gateway.evaluated",
+      case_id: kase.case_id,
+      process_id: kase.process_id,
+      element_id: effect.element_id,
+      label: effect.label,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+function scheduleParentCompletion(kase: Case): void {
+  if (!kase.parent_work_item_id) return;
+  void (async () => {
+    const MAX_ATTEMPTS = 3;
+    let delay = 500;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        await completeParentWorkItem(kase);
+        return;
+      } catch (e: any) {
+        log.error("completeParentWorkItem error", { case_id: kase.case_id, error: e.message, attempt });
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2;
+        }
+      }
+    }
+    log.error("completeParentWorkItem failed after max retries", { case_id: kase.case_id });
+    saveCase({ ...kase, needs_attention: true }).catch(e =>
+      log.error("saveCase needs_attention failed", { case_id: kase.case_id, error: e?.message }),
+    );
+  })();
+}
+
 // ── Main advancement loop ────────────────────────────────────────────────────
 
 export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<Case> {
   // Idempotency guard: only active cases may advance.
   if (kase.status !== "running") return kase;
 
-  const { outEdges, inEdges, byId, edgeConditions } = buildAdjacency(def);
+  const adjacency = buildAdjacency(def);
 
   let current = kase.position;
   let forcedNextId: string | null = null;
@@ -267,190 +285,61 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       await saveCase(kase);
       return kase;
     }
-    // When current position is a gateway (e.g. start_node from trigger), evaluate it first.
-    // Otherwise the loop skips to the first outgoing edge without checking conditions.
-    if (forcedNextId === null) {
-      const curEl = byId.get(current);
-      if (curEl?.type === "gateway") {
-        const gwOuts = outEdges.get(current) || [];
-        const operator = curEl.operator;
-        const gwTs = new Date().toISOString();
-        kase.history.push({ element_id: current, element_type: "gateway", label: curEl.label, timestamp: gwTs });
-        kase.position = current;
-        await emitEvent({ type: "gateway.evaluated", case_id: kase.case_id, process_id: kase.process_id, element_id: current, label: curEl.label, timestamp: gwTs });
+    const plan = planGraphTransition({
+      workflow: def,
+      case: kase,
+      adjacency,
+      current,
+      forced_next_id: forcedNextId,
+    });
+    if (forcedNextId !== null) forcedNextId = null;
 
-        if (operator === "XOR") {
-          if (gwOuts.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
-          if (gwOuts.length === 1) {
-            const cond = edgeConditions.get(`${current}->${gwOuts[0]}`);
-            if (cond && !evalCondition(cond, kase.payload)) {
-              kase.status = "error";
-              await saveCase(kase);
-              return kase;
-            }
-            forcedNextId = gwOuts[0];
-            continue;
-          }
-          let takenBranch: string | null = null;
-          for (const outId of gwOuts) {
-            const cond = edgeConditions.get(`${current}->${outId}`);
-            if (!cond || evalCondition(cond, kase.payload)) {
-              takenBranch = outId;
-              break;
-            }
-          }
-          if (!takenBranch) { kase.status = "error"; await saveCase(kase); return kase; }
-          await saveCase(kase);
-          forcedNextId = takenBranch;
-          continue;
-        }
+    await emitGatewayEventsFromPlan(kase, plan);
 
-        if (operator === "AND" || operator === "OR") {
-          const gwIns = inEdges.get(current) || [];
-          if (gwIns.length > 1) {
-            // join gateway at current: pass through
-            if (gwOuts.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
-            await saveCase(kase);
-            forcedNextId = gwOuts[0];
-            continue;
-          }
-          // split gateway at current: create branches (same logic as below)
-          let activeBranchIds: string[];
-          if (operator === "AND") {
-            activeBranchIds = gwOuts;
-          } else {
-            activeBranchIds = gwOuts.filter(outId => {
-              const cond = edgeConditions.get(`${current}->${outId}`);
-              return !cond || evalCondition(cond, kase.payload);
-            });
-            if (activeBranchIds.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
-          }
-          const branches: ActiveBranch[] = [];
-          for (const branchStartId of activeBranchIds) {
-            let branchEl = byId.get(branchStartId);
-            let branchElId = branchStartId;
-            while (branchEl?.type === "event") {
-              kase.history.push({ element_id: branchElId, element_type: "event", label: branchEl.label, timestamp: new Date().toISOString() });
-              const nextsOfBranch = outEdges.get(branchElId) || [];
-              if (nextsOfBranch.length === 0) break;
-              branchElId = nextsOfBranch[0];
-              branchEl = byId.get(branchElId);
-            }
-            if (branchEl?.type !== "function") continue;
-            const wi = await createWorkItemForElement(kase, branchElId, branchEl);
-            kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
-            await dispatchWorkItemForElement(kase, def, branchElId, branchEl, wi);
-            const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
-            await enqueueAsyncAdapterEffectsForElement(kase, def, branchElId, branchEl, wi, branchBindings);
-            const directBranchBindings = branchBindings.filter(binding => !isAsyncAdapterBinding(binding));
-            if (directBranchBindings.length > 0) {
-              let mergedOut: Record<string, unknown> = {};
-              let branchErr = false;
-              for (const binding of directBranchBindings) {
-                const adapter = getAdapter(binding.connector);
-                if (!adapter) continue;
-                try {
-                  const op = operationForBinding(binding, branchEl.label);
-                  const out = await adapter.execute(op, kase.payload);
-                  mergedOut = { ...mergedOut, ...out };
-                } catch (e: any) {
-                  log.error("adapter error in branch", { element_id: branchElId, error: e.message });
-                  branchErr = true;
-                  break;
-                }
-              }
-              if (!branchErr && directBranchBindings.some(b => getAdapter(b.connector))) {
-                wi.status = "done"; wi.output = mergedOut; wi.updated_at = new Date().toISOString();
-                await saveWorkItem(wi, "pending");
-                const h = kase.history.find(h => h.work_item_id === wi.work_item_id);
-                if (h) h.output = mergedOut;
-                branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: true });
-                continue;
-              }
-            }
-            branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: false });
-          }
-          kase.position = current;
-          kase.active_branches = branches;
-          kase.history.push({ element_id: current, element_type: "gateway", label: `${operator} split (${branches.length} branches)`, timestamp: new Date().toISOString() });
-          await saveCase(kase);
-          if (branches.length === 0 && activeBranchIds.length > 0) {
-            const joinId = findJoinGateway(activeBranchIds, outEdges, byId);
-            if (joinId) return advancePastJoin(kase, def, activeBranchIds);
-            if (gwOuts.length > 0) { forcedNextId = gwOuts[0]; continue; }
-            kase.status = "error"; await saveCase(kase); return kase;
-          }
-          if (branches.every(b => b.done)) return advancePastJoin(kase, def, branches.map(b => b.element_id));
-          return kase;
-        }
+    if (plan.kind === "inactive") return kase;
 
-        kase.status = "error"; await saveCase(kase); return kase;
-      }
-    }
-
-    let nextId: string;
-    if (forcedNextId !== null) {
-      nextId = forcedNextId;
-      forcedNextId = null;
-    } else {
-      const nexts = outEdges.get(current) || [];
-
-      if (nexts.length === 0) {
-        const el = byId.get(current);
-        if (el?.type === "event") {
-          kase.status = "done";
-          // Avoid duplicate history entry if already recorded during event auto-advance
-          const lastEntry = kase.history[kase.history.length - 1];
-          if (!lastEntry || lastEntry.element_id !== current) {
-            kase.history.push({ element_id: current, element_type: "event", label: el.label, timestamp: new Date().toISOString() });
-          }
-          await saveCase(kase);
-          cancelSubscriptionsByInstance(kase.case_id).catch(e =>
-            log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
-          );
-          if (kase.parent_work_item_id) {
-            void (async () => {
-              const MAX_ATTEMPTS = 3;
-              let delay = 500;
-              for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-                try {
-                  await completeParentWorkItem(kase);
-                  return;
-                } catch (e: any) {
-                  log.error("completeParentWorkItem error", { case_id: kase.case_id, error: e.message, attempt });
-                  if (attempt < MAX_ATTEMPTS) {
-                    await new Promise(r => setTimeout(r, delay));
-                    delay *= 2;
-                  }
-                }
-              }
-              log.error("completeParentWorkItem failed after max retries", { case_id: kase.case_id });
-              saveCase({ ...kase, needs_attention: true }).catch(e => log.error("saveCase needs_attention failed", { case_id: kase.case_id, error: e?.message }));
-            })();
-          }
-          return kase;
-        }
-        kase.status = "error";
-        await saveCase(kase);
-        cancelSubscriptionsByInstance(kase.case_id).catch(e =>
-          log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
-        );
-        publishEvent({ type: "process.exception", source: "runtime@comind.konoha", village_id: "comind.konoha", timestamp: new Date().toISOString(), payload: { case_id: kase.case_id, process_id: kase.process_id, error: `unexpected terminal element: ${current}` } }).catch(e => log.warn("publish process.exception failed", { error: e?.message }));
-        return kase;
-      }
-
-      nextId = nexts[0];
-    }
-
-    const nextEl = byId.get(nextId);
-    if (!nextEl) {
-      kase.status = "error";
+    if (plan.kind === "continue") {
+      appendPlannedHistory(kase, plan.history);
+      kase.position = plan.position;
       await saveCase(kase);
-      publishEvent({ type: "process.exception", source: "runtime@comind.konoha", village_id: "comind.konoha", timestamp: new Date().toISOString(), payload: { case_id: kase.case_id, process_id: kase.process_id, error: `element not found: ${nextId}` } }).catch(e => log.warn("publish process.exception failed", { error: e?.message }));
+      current = plan.next_current;
+      forcedNextId = plan.forced_next_id ?? null;
+      continue;
+    }
+
+    if (plan.kind === "complete") {
+      appendPlannedHistory(kase, plan.history);
+      kase.position = plan.position;
+      kase.status = "done";
+      await saveCase(kase);
+      cancelSubscriptionsByInstance(kase.case_id).catch(e =>
+        log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
+      );
+      scheduleParentCompletion(kase);
       return kase;
     }
 
-    if (nextEl.type === "function") {
+    if (plan.kind === "error") {
+      appendPlannedHistory(kase, plan.history);
+      kase.position = plan.position;
+      kase.status = "error";
+      await saveCase(kase);
+      cancelSubscriptionsByInstance(kase.case_id).catch(e =>
+        log.error("subscription cleanup error", { case_id: kase.case_id, error: e.message }),
+      );
+      publishEvent({
+        type: "process.exception",
+        source: "runtime@comind.konoha",
+        village_id: "comind.konoha",
+        timestamp: new Date().toISOString(),
+        payload: { case_id: kase.case_id, process_id: kase.process_id, error: plan.reason },
+      }).catch(e => log.warn("publish process.exception failed", { error: e?.message }));
+      return kase;
+    }
+
+    if (plan.kind === "function") {
+      const nextId = plan.element_id;
+      const nextEl = plan.element;
       const childProcessId = await resolveChildProcess(nextId, nextEl, def);
 
       if (childProcessId) {
@@ -538,204 +427,110 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
       return kase;
     }
 
-    if (nextEl.type === "event") {
+    if (plan.kind === "event_wait") {
+      const nextId = plan.element_id;
+      const nextEl = plan.element;
+      appendPlannedHistory(kase, plan.history);
       kase.position = nextId;
-      kase.history.push({ element_id: nextId, element_type: "event", label: nextEl.label, timestamp: new Date().toISOString() });
+      const activeWaits = await loadActiveWaitsForCase(kase.case_id);
+      let wait = activeWaits.find(w => w.element_id === nextId);
+      if (!wait) {
+        wait = await createEventWait({
+          case_id: kase.case_id,
+          process_id: kase.process_id,
+          element_id: nextId,
+          element_label: nextEl.label,
+          trigger_kind: plan.trigger_kind as any,
+          deadline: nextEl.trigger?.deadline,
+          assignee: nextEl.role,
+          escalation_target: nextEl.trigger?.escalation_target,
+        });
 
-      const isIntermediate = (inEdges.get(nextId) || []).length > 0 && (outEdges.get(nextId) || []).length > 0;
-      const trigger = nextEl.trigger;
-      const triggerKind = trigger?.kind || "manual";
-      const shouldWait =
-        isIntermediate &&
-        Boolean(trigger?.kind || trigger?.manual_override);
-
-      if (shouldWait) {
-        const activeWaits = await loadActiveWaitsForCase(kase.case_id);
-        let wait = activeWaits.find(w => w.element_id === nextId);
-        if (!wait) {
-          wait = await createEventWait({
-            case_id: kase.case_id,
-            process_id: kase.process_id,
-            element_id: nextId,
-            element_label: nextEl.label,
-            trigger_kind: triggerKind as any,
-            deadline: nextEl.trigger?.deadline,
-            assignee: nextEl.role,
-            escalation_target: nextEl.trigger?.escalation_target,
-          });
-
-          // Schedule reminders for manual waits (notification only, not process advancement)
-          if (triggerKind === "manual" || trigger?.manual_override) {
-            scheduleWaitReminders(wait).catch(e =>
-              log.warn("failed to schedule wait reminders", { case_id: kase.case_id, element_id: nextId, error: e?.message }),
-            );
-          }
-        }
-
-        if (trigger?.kind && trigger.kind !== "manual" && trigger.kind !== "ambiguous" && !trigger.manual_override) {
-          await saveCase(kase);
-          subscribeEventNode(kase, nextEl).catch(e =>
-            log.error("intermediate event subscribe error", { case_id: kase.case_id, node_id: nextId, error: e.message }),
+        // Schedule reminders for manual waits (notification only, not process advancement)
+        if (plan.schedule_reminders) {
+          scheduleWaitReminders(wait).catch(e =>
+            log.warn("failed to schedule wait reminders", { case_id: kase.case_id, element_id: nextId, error: e?.message }),
           );
-          return kase;
-        }
-        if (trigger?.kind) {
-          await saveCase(kase);
-          return kase;
         }
       }
 
-      current = nextId;
-      continue;
-    }
-
-    if (nextEl.type === "gateway") {
-      const operator = nextEl.operator;
-      const gwOuts = outEdges.get(nextId) || [];
-
-      if (operator === "XOR") {
-        const gwTs = new Date().toISOString();
-        kase.history.push({ element_id: nextId, element_type: "gateway", label: nextEl.label, timestamp: gwTs });
-        kase.position = nextId;
-        await emitEvent({ type: "gateway.evaluated", case_id: kase.case_id, process_id: kase.process_id, element_id: nextId, label: nextEl.label, timestamp: gwTs });
-
-        if (gwOuts.length <= 1) {
-          if (gwOuts.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
-          const cond = edgeConditions.get(`${nextId}->${gwOuts[0]}`);
-          if (cond && !evalCondition(cond, kase.payload)) {
-            kase.status = "error";
-            await saveCase(kase);
-            return kase;
-          }
-          current = nextId;
-          forcedNextId = gwOuts[0];
-          continue;
-        }
-
-        let takenBranch: string | null = null;
-        for (const outId of gwOuts) {
-          const cond = edgeConditions.get(`${nextId}->${outId}`);
-          if (!cond || evalCondition(cond, kase.payload)) {
-            takenBranch = outId;
-            break;
-          }
-        }
-        if (!takenBranch) { kase.status = "error"; await saveCase(kase); return kase; }
+      if (plan.subscribe) {
         await saveCase(kase);
-        current = nextId;
-        forcedNextId = takenBranch;
-        continue;
-      }
-
-      if (operator === "AND" || operator === "OR") {
-        // JOIN detection: gateways with multiple incoming edges are merge/join
-        // points, not splits. Pass through to outgoing edges.
-        const gwIns = inEdges.get(nextId) || [];
-        if (gwIns.length > 1) {
-          kase.position = nextId;
-          kase.history.push({ element_id: nextId, element_type: "gateway", label: nextEl.label, timestamp: new Date().toISOString() });
-          await saveCase(kase);
-          if (gwOuts.length === 0) {
-            kase.status = "error";
-            await saveCase(kase);
-            return kase;
-          }
-          current = nextId;
-          continue;
-        }
-
-        let activeBranchIds: string[];
-        if (operator === "AND") {
-          activeBranchIds = gwOuts;
-        } else {
-          activeBranchIds = gwOuts.filter(outId => {
-            const cond = edgeConditions.get(`${nextId}->${outId}`);
-            return !cond || evalCondition(cond, kase.payload);
-          });
-          if (activeBranchIds.length === 0) { kase.status = "error"; await saveCase(kase); return kase; }
-        }
-
-        const branches: ActiveBranch[] = [];
-        for (const branchStartId of activeBranchIds) {
-          let branchEl = byId.get(branchStartId);
-          let branchElId = branchStartId;
-          while (branchEl?.type === "event") {
-            kase.history.push({ element_id: branchElId, element_type: "event", label: branchEl.label, timestamp: new Date().toISOString() });
-            const nextsOfBranch = outEdges.get(branchElId) || [];
-            if (nextsOfBranch.length === 0) break;
-            branchElId = nextsOfBranch[0];
-            branchEl = byId.get(branchElId);
-          }
-          if (branchEl?.type !== "function") continue;
-
-          const wi = await createWorkItemForElement(kase, branchElId, branchEl);
-          kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
-          await dispatchWorkItemForElement(kase, def, branchElId, branchEl, wi);
-
-          const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
-          await enqueueAsyncAdapterEffectsForElement(kase, def, branchElId, branchEl, wi, branchBindings);
-          const directBranchBindings = branchBindings.filter(binding => !isAsyncAdapterBinding(binding));
-          if (directBranchBindings.length > 0) {
-            let mergedOut: Record<string, unknown> = {};
-            let branchErr = false;
-            for (const binding of directBranchBindings) {
-              const adapter = getAdapter(binding.connector);
-              if (!adapter) continue;
-              try {
-                const op = operationForBinding(binding, branchEl.label);
-                const out = await adapter.execute(op, kase.payload);
-                mergedOut = { ...mergedOut, ...out };
-              } catch (e: any) {
-                log.error("adapter error in branch", { element_id: branchElId, error: e.message });
-                branchErr = true;
-                break;
-              }
-            }
-            if (!branchErr && directBranchBindings.some(b => getAdapter(b.connector))) {
-              wi.status = "done"; wi.output = mergedOut; wi.updated_at = new Date().toISOString();
-              await saveWorkItem(wi, "pending");
-              const h = kase.history.find(h => h.work_item_id === wi.work_item_id);
-              if (h) h.output = mergedOut;
-              branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: true });
-              continue;
-            }
-          }
-          branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: false });
-        }
-
-        kase.position = nextId;
-        kase.active_branches = branches;
-        kase.history.push({ element_id: nextId, element_type: "gateway", label: `${operator} split (${branches.length} branches)`, timestamp: new Date().toISOString() });
-        await saveCase(kase);
-
-        if (branches.length === 0 && activeBranchIds.length > 0) {
-          const joinId = findJoinGateway(activeBranchIds, outEdges, byId);
-          if (joinId) {
-            return advancePastJoin(kase, def, activeBranchIds);
-          }
-          if (gwOuts.length > 0) {
-            current = nextId;
-            continue;
-          }
-          kase.status = "error";
-          await saveCase(kase);
-          return kase;
-        }
-
-        if (branches.every(b => b.done)) {
-          return advancePastJoin(kase, def, branches.map(b => b.element_id));
-        }
+        subscribeEventNode(kase, nextEl).catch(e =>
+          log.error("intermediate event subscribe error", { case_id: kase.case_id, node_id: nextId, error: e.message }),
+        );
         return kase;
       }
-
-      kase.status = "error";
       await saveCase(kase);
       return kase;
     }
 
-    kase.status = "error";
-    await saveCase(kase);
-    return kase;
+    if (plan.kind === "gateway_split") {
+      appendPlannedHistory(kase, plan.history);
+      const branches: ActiveBranch[] = [];
+      for (const branch of plan.branch_work_items) {
+        appendPlannedHistory(kase, branch.skipped_history);
+        const branchElId = branch.element_id;
+        const branchEl = branch.element;
+        const wi = await createWorkItemForElement(kase, branchElId, branchEl);
+        kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
+        await dispatchWorkItemForElement(kase, def, branchElId, branchEl, wi);
+
+        const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
+        await enqueueAsyncAdapterEffectsForElement(kase, def, branchElId, branchEl, wi, branchBindings);
+        const directBranchBindings = branchBindings.filter(binding => !isAsyncAdapterBinding(binding));
+        if (directBranchBindings.length > 0) {
+          let mergedOut: Record<string, unknown> = {};
+          let branchErr = false;
+          for (const binding of directBranchBindings) {
+            const adapter = getAdapter(binding.connector);
+            if (!adapter) continue;
+            try {
+              const op = operationForBinding(binding, branchEl.label);
+              const out = await adapter.execute(op, kase.payload);
+              mergedOut = { ...mergedOut, ...out };
+            } catch (e: any) {
+              log.error("adapter error in branch", { element_id: branchElId, error: e.message });
+              branchErr = true;
+              break;
+            }
+          }
+          if (!branchErr && directBranchBindings.some(b => getAdapter(b.connector))) {
+            wi.status = "done"; wi.output = mergedOut; wi.updated_at = new Date().toISOString();
+            await saveWorkItem(wi, "pending");
+            const h = kase.history.find(h => h.work_item_id === wi.work_item_id);
+            if (h) h.output = mergedOut;
+            branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: true });
+            continue;
+          }
+        }
+        branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: false });
+      }
+
+      kase.position = plan.position;
+      kase.active_branches = branches;
+      appendPlannedHistory(kase, [plan.split_history]);
+      await saveCase(kase);
+
+      if (branches.length === 0 && plan.active_branch_ids.length > 0) {
+        if (plan.empty_branch_join_id) {
+          return advancePastJoin(kase, def, plan.active_branch_ids);
+        }
+        if (plan.empty_branch_next_id) {
+          current = plan.position;
+          forcedNextId = plan.empty_branch_next_id;
+          continue;
+        }
+        kase.status = "error";
+        await saveCase(kase);
+        return kase;
+      }
+
+      if (branches.every(b => b.done)) {
+        return advancePastJoin(kase, def, branches.map(b => b.element_id));
+      }
+      return kase;
+    }
   }
 }
 
