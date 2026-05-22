@@ -11,11 +11,14 @@ import { createWorkflow } from "../src/workflow-loader";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import { cancelSubscriptionsByInstance } from "../src/event-manager";
 import { normalizeTelegramStreamEvent, routeMessengerEventToWorkflows } from "../src/messenger-event-router";
+import { createRole, deleteRole, loadRole, type RoleDef } from "../src/runtime/roles";
 import type { WorkflowDefinition } from "../src/workflow-loader";
 
 const redis = createTestRedis();
 const RUN = `eepc-${Date.now()}`;
 const draftStateMachineFixtures = new Set<string>();
+const touchedRoles = new Set<string>();
+const previousRoles = new Map<string, RoleDef | null>();
 
 function wfId(name: string) {
   return `${RUN}-${name}`;
@@ -26,7 +29,27 @@ async function registerWorkflow(def: WorkflowDefinition): Promise<void> {
   draftStateMachineFixtures.add(def.id);
 }
 
+async function ensureManualTestRoles(def: WorkflowDefinition): Promise<void> {
+  const roleIds = new Set<string>();
+  for (const element of def.elements) {
+    if (element.type === "function" && element.role) roleIds.add(element.role);
+  }
+  for (const roleId of roleIds) {
+    if (!previousRoles.has(roleId)) previousRoles.set(roleId, await loadRole(roleId));
+    touchedRoles.add(roleId);
+    await createRole({
+      role_id: roleId,
+      name: `eEPC regression role: ${roleId}`,
+      description: `Temporary role for ${RUN}`,
+      assignees: [],
+      strategy: "manual",
+      required_capabilities: [],
+    });
+  }
+}
+
 async function registerExecutableWorkflow(def: WorkflowDefinition): Promise<void> {
+  await ensureManualTestRoles(def);
   const result = await createWorkflow(def, { lifecycleState: "executable" });
   if (result.errors.length > 0) {
     throw new Error(`Executable workflow fixture failed validation: ${JSON.stringify(result.errors)}`);
@@ -130,6 +153,15 @@ afterAll(async () => {
   const workflowIds = await redis.smembers("konoha:workflow:index");
   for (const id of workflowIds) {
     if (id.startsWith(RUN)) await cleanupWorkflow(id);
+  }
+  for (const roleId of touchedRoles) {
+    const previous = previousRoles.get(roleId);
+    if (previous) {
+      const { created_at: _createdAt, updated_at: _updatedAt, ...params } = previous;
+      await createRole(params).catch(() => {});
+    } else {
+      await deleteRole(roleId).catch(() => {});
+    }
   }
   const dedupKeys = await redis.keys(`konoha:event-dedup:${RUN}*`);
   if (dedupKeys.length > 0) await redis.del(...dedupKeys);

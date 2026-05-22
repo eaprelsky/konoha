@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 680,
+  "report_date": "2026-05-22",
+  "status": "ready_for_parent_review",
+  "parent_issue": 680,
+  "source_contract": "docs/workflow-engine.md#advancecase-algorithm",
+  "target_invariant": "Case advancement graph navigation is planned by a deterministic pure state-machine core; runtime side effects are emitted as explicit intents or contracts and applied only outside the planner boundary.",
+  "accepted_child_issues": [725, 726, 727, 728],
+  "acceptance_coverage": [
+    {
+      "criterion": "state-machine transition tests run without Redis, adapters, Telegram, or real agents",
+      "status": "covered",
+      "issues": [725, 727],
+      "evidence": [
+        "src/runtime/cases/transition-planner.ts",
+        "tests/graph-transition-planner.test.ts",
+        "tests/state-machine-transition-fixtures.test.ts",
+        "tests/fixtures/state-machine-transition-fixtures.ts"
+      ],
+      "notes": "The planner and fixture tests operate on WorkflowDefinition and Case-shaped inputs only."
+    },
+    {
+      "criterion": "existing eEPC state-machine regression remains covered",
+      "status": "covered",
+      "issues": [725, 726, 727, 728],
+      "evidence": [
+        "tests/eepc-state-machine-regression.test.ts",
+        "tests/backend-golden-path.test.ts"
+      ],
+      "notes": "The broader runtime regression remains the compatibility check for create/deploy/run behavior after planner extraction."
+    },
+    {
+      "criterion": "transition outputs are deterministic for the same workflow, case, and payload",
+      "status": "covered",
+      "issues": [725, 727],
+      "evidence": [
+        "src/runtime/cases/transition-planner.ts",
+        "tests/graph-transition-planner.test.ts",
+        "tests/state-machine-transition-fixtures.test.ts"
+      ],
+      "notes": "Branch selection, joins, waits, terminals, loops, and malformed graphs are encoded as repeatable planner fixtures."
+    },
+    {
+      "criterion": "side effects are emitted as commands or intents, not executed inline by transition logic",
+      "status": "covered",
+      "issues": [725, 728],
+      "evidence": [
+        "src/runtime/cases/transition-planner.ts",
+        "src/runtime/cases/advancement.ts",
+        "src/runtime/cases/subprocess-effects.ts",
+        "tests/subprocess-transition-effects.test.ts"
+      ],
+      "intent_kinds": [
+        "gateway.evaluated",
+        "function.work_item",
+        "event.wait",
+        "case.complete",
+        "case.error",
+        "subprocess.spawn",
+        "subprocess.parent_complete"
+      ],
+      "notes": "advanceCase applies planner results through work-item, wait/subscription, outbox, adapter, subprocess, and cleanup boundaries."
+    },
+    {
+      "criterion": "gateway split and join handling use one shared planner path",
+      "status": "covered",
+      "issues": [726, 727],
+      "evidence": [
+        "src/runtime/cases/transition-planner.ts",
+        "tests/graph-transition-planner.test.ts",
+        "tests/state-machine-transition-fixtures.test.ts"
+      ],
+      "notes": "AND/OR splits, branch work-item planning, and join pass-through/reachability are planned in transition-planner.ts before runtime application."
+    },
+    {
+      "criterion": "advancement module is reduced to runtime application of planned transitions and effect boundaries",
+      "status": "covered",
+      "issues": [725, 726, 728],
+      "evidence": [
+        "src/runtime/cases/advancement.ts",
+        "src/runtime/cases/transition-planner.ts",
+        "src/runtime/cases/subprocess-effects.ts",
+        "docs/workflow-engine.md"
+      ],
+      "notes": "Graph navigation and subprocess effect construction are outside advancement.ts; advancement.ts persists state and applies side-effect boundaries."
+    }
+  ],
+  "pure_planner_forbidden_operations": [
+    "redis",
+    "dispatchWorkItem",
+    "enqueueRuntimeEffect",
+    "enqueueWorkItemDispatchEffect",
+    "sendMessage",
+    "createWorkItem",
+    "createCase(",
+    "subscribeEventNode",
+    "cancelSubscriptions",
+    "getAdapter",
+    "execFile",
+    "fetch("
+  ],
+  "side_effect_boundaries": [
+    {
+      "boundary": "work-item persistence and dispatch",
+      "planner_output": "function.work_item",
+      "applicator": "src/runtime/cases/advancement.ts"
+    },
+    {
+      "boundary": "event wait, subscription, and reminder scheduling",
+      "planner_output": "event.wait",
+      "applicator": "src/runtime/cases/advancement.ts"
+    },
+    {
+      "boundary": "terminal cleanup and case completion/error",
+      "planner_output": "case.complete/case.error",
+      "applicator": "src/runtime/cases/advancement.ts"
+    },
+    {
+      "boundary": "subprocess spawn and parent completion",
+      "planner_output": "subprocess effect contracts",
+      "applicator": "src/runtime/cases/subprocess-effects.ts"
+    }
+  ],
+  "review_commands": [
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/state-machine-core-closure-report.test.ts tests/graph-transition-planner.test.ts tests/state-machine-transition-fixtures.test.ts tests/subprocess-transition-effects.test.ts tests/eepc-state-machine-regression.test.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/workflow-lifecycle-gate.test.ts tests/backend-golden-path.test.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run typecheck"
+  ],
+  "closure_decision": {
+    "parent_issue_can_close_after_review": true,
+    "remaining_blockers": [],
+    "release_claim_unblocked": false,
+    "notes": "This reconciles the #680 parent after #725, #726, #727, and #728. Production release still follows the #686 checklist and #812 terminal-case gate."
+  }
+}

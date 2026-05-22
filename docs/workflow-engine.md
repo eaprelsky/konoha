@@ -215,6 +215,10 @@ fallback. Operators can distinguish tasks handed to an agent/person/system
 (`queued`), tasks left in the manual queue (`manual`), and retry/dead-letter
 transport failures (`failed`) without inferring from route-specific logs.
 
+Issue #680 parent closure evidence for the deterministic state-machine core and
+effect boundary lives in `docs/state-machine-core-closure-report.json` and
+`docs/state-machine-core-closure-report.md`.
+
 Issue #679 parent closure evidence lives in
 `docs/role-readiness-closure-report.json` and
 `docs/role-readiness-closure-report.md`.
