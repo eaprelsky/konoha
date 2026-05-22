@@ -826,6 +826,33 @@ def check_operational_alerts() -> list[Check]:
     return [Check("OK", "runtime.operational_alerts", detail)]
 
 
+def check_pg_read_readiness() -> list[Check]:
+    try:
+        receipt = api_get("/pg-read-readiness")
+    except Exception as exc:
+        return [Check("WARN", "storage.pg_read_readiness", str(exc), "Check /pg-read-readiness and KONOHA_TOKEN")]
+
+    summary = receipt.get("summary") or {}
+    entities = receipt.get("entities") or []
+    blocked_entities = [entity for entity in entities if entity.get("status") == "blocked"]
+    first = blocked_entities[0] if blocked_entities else {}
+    blockers = first.get("blockers") or []
+    first_blocker = blockers[0] if blockers else {}
+    detail = (
+        f"overall={receipt.get('overall_status')} pg_read_enabled={receipt.get('pg_read_enabled')} "
+        f"ready={coerce_int(summary.get('ready'))} blocked={coerce_int(summary.get('blocked'))} "
+        f"pg_primary={coerce_int(summary.get('pg_primary'))}"
+    )
+    if first:
+        detail += (
+            f" first_blocked_entity={first.get('entity')} blocker={first_blocker.get('code')}"
+            f" blocker_count={coerce_int(first_blocker.get('count'))}"
+        )
+    if receipt.get("overall_status") == "blocked":
+        return [Check("WARN", "storage.pg_read_readiness", detail, "Inspect: curl -sS $KONOHA_URL/pg-read-readiness -H \"Authorization: Bearer $KONOHA_TOKEN\"")]
+    return [Check("OK", "storage.pg_read_readiness", detail)]
+
+
 def check_redis_streams(policy: HealthcheckPolicy | None = None) -> list[Check]:
     policy = policy or load_healthcheck_policy()
     checks: list[Check] = []
@@ -1650,6 +1677,7 @@ def main() -> int:
     checks.extend(check_systemd_slices(policy))
     checks.extend(check_api())
     checks.extend(check_operational_alerts())
+    checks.extend(check_pg_read_readiness())
     checks.extend(check_redis_streams(policy))
     checks.extend(check_telegram_packer_pressure(policy))
     checks.extend(check_redis_polling_storm())

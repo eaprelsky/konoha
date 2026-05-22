@@ -43,6 +43,14 @@ This document defines which store is canonical for each entity in the Konoha sys
    - groups PG-only rows by entity, candidate class, status, process/id prefix, age bucket, and `would_delete_count`.
    - exits non-zero if any `onlyInRedis` rows are present, because retention cleanup must not proceed while PG shadow is missing Redis-primary records.
    - text output shows the top groups by default; use `--limit=<n>`, `--all`, or `--json` when creating a follow-up cleanup issue from the report output.
+7. **PG_READ readiness reporting** runs via `bun run scripts/pg-read-readiness-report.ts`,
+   `GET /pg-read-readiness`, or Action Spine `retention.pg_read_readiness`:
+   - returns per-entity `ready`, `blocked`, or `pg_primary` status;
+   - blocks on any `onlyInRedis` rows;
+   - blocks on PG-only manual-review rows or safe cleanup candidates until the
+     entity has an approved cleanup/filtering path;
+   - treats bus agent presence as `pg_primary` rather than a `PG_READ` flag
+     target.
 
 ## Recovery Procedures
 
@@ -57,7 +65,7 @@ Records exist in PG but not in Redis.
 - **Current production status (2026-04-30)**: `onlyInRedis=0`, but PG has historical bloat in cases, work items, workflows, and documents. This is not a `9739ac5` deploy regression.
 - **Threshold**: non-strict `pg-verify.ts` exits `2` when `onlyInPG` exceeds 100% of `redisCount` unless `PG_BLOAT_THRESHOLD` is raised for diagnostics.
 - **Fix**: define retention policy first. Do not run destructive cleanup from `pg-verify` output alone. `migrate-redis-to-pg.ts --dry-run` is useful for `onlyInRedis`, but it does not classify or remove `onlyInPG` rows.
-- **Safe next step**: run `bun run scripts/pg-only-retention-report.ts` and review the safe-candidate groups before any delete mode. The report exposes machine-readable `retention_class`, `disposition`, `safe_cleanup_candidate`, and `reason` fields. Approved cleanup classes include generated test artifacts, old completed reminders, generated documents, and offline debug/startup-check presence rows; archived workflows and historical cases/work items remain manual-review unless they also match generated/test gates.
+- **Safe next step**: run `bun run scripts/pg-read-readiness-report.ts` to see entity-level blockers, then use `bun run scripts/pg-only-retention-report.ts` for detailed cleanup/review groups. The retention report exposes machine-readable `retention_class`, `disposition`, `safe_cleanup_candidate`, and `reason` fields. Approved cleanup classes include generated test artifacts, old completed reminders, generated documents, and offline debug/startup-check presence rows; archived workflows and historical cases/work items remain manual-review unless they also match generated/test gates.
 
 ### Dual-write failures
 If `pgWrite()` fails, the Redis write succeeded but PG is missing the record. The next `pg-verify.ts` run will catch it.

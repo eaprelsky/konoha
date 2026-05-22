@@ -729,6 +729,15 @@ export const ACTIONS: ActionDef[] = [
     audited: false,
   },
   {
+    id: "retention.pg_read_readiness",
+    description: "Generate a read-only PG_READ entity readiness report with blockers and retention evidence.",
+    scope: "retention",
+    args: [],
+    implementation: { kind: "direct", note: "Builds on pg-verify/retention evidence; does not delete or update data." },
+    autonomy: "auto",
+    audited: false,
+  },
+  {
     id: "retention.cleanup_preview",
     description: "Preview exact safe retention cleanup candidates. Does not delete or update data.",
     scope: "retention",

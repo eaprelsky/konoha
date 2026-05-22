@@ -2,7 +2,7 @@ import Redis from "ioredis";
 import postgres from "postgres";
 import { getDatabaseUrl } from "../storage/database-url";
 
-export type RetentionEntity = "cases" | "work_items" | "workflows" | "documents" | "agents" | "reminders";
+export type RetentionEntity = "cases" | "work_items" | "workflows" | "roles" | "documents" | "agents" | "reminders";
 
 export interface PgOnlyRow {
   entity: RetentionEntity;
@@ -114,6 +114,7 @@ const ENTITY_CONFIGS: EntityConfig[] = [
   { entity: "cases", table: "cases", idColumn: "case_id", redisIds: redis => redis.zrange("konoha:cases:all", 0, -1), statusColumn: "status", processColumn: "process_id" },
   { entity: "work_items", table: "work_items", idColumn: "id", redisIds: redis => redis.zrange("konoha:workitems:all", 0, -1), statusColumn: "status", processColumn: "process_id" },
   { entity: "workflows", table: "workflows", idColumn: "id", redisIds: redis => redis.smembers("konoha:workflow:index"), statusColumn: "status", processColumn: "parent_id" },
+  { entity: "roles", table: "roles", idColumn: "id", redisIds: redis => redis.zrange("konoha:roles:all", 0, -1) },
   { entity: "documents", table: "documents", idColumn: "id", redisIds: redis => redis.zrange("konoha:docs:all", 0, -1) },
   { entity: "agents", table: "konoha_agents", idColumn: "id", redisIds: redis => redis.hkeys("konoha:registry"), statusColumn: "status" },
   { entity: "reminders", table: "reminders", idColumn: "id", redisIds: redis => redis.zrange("konoha:reminders:all", 0, -1), statusColumn: "status", processColumn: "process_id" },

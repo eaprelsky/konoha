@@ -70,6 +70,7 @@ import {
   buildPgOnlyRetentionReport,
   retentionReportForAction,
 } from "./retention/report";
+import { buildPgReadReadinessReport } from "./pg-read-readiness";
 import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "./retention/runtime-cleanup";
 import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
 import { applyWorkflowPatch } from "./workflow-patch-service";
@@ -2057,6 +2058,15 @@ async function executeRetentionAction(action: string, args: Record<string, unkno
         const limit = typeof args.limit === "number" ? args.limit : 120;
         const report = await buildPgOnlyRetentionReport();
         return { status: 200, data: retentionReportForAction(report, limit) };
+      } catch (e) {
+        return serviceFailure(e);
+      }
+    }
+    case "retention.pg_read_readiness": {
+      const invalid = validationFailure("retention.pg_read_readiness", args);
+      if (invalid) return invalid;
+      try {
+        return { status: 200, data: await buildPgReadReadinessReport() };
       } catch (e) {
         return serviceFailure(e);
       }

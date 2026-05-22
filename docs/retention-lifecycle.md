@@ -67,6 +67,26 @@ PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-only-retention-report.ts --l
 PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-only-retention-report.ts --json
 ```
 
+`retention.pg_read_readiness`, `GET /pg-read-readiness`, and
+`scripts/pg-read-readiness-report.ts` are the operator-facing PG_READ gate. The
+report is read-only and answers, per entity, whether PG_READ is eligible and
+what blocks it:
+
+- `ONLY_IN_REDIS`: PostgreSQL shadow is missing active Redis-primary rows;
+- `PG_ONLY_MANUAL_REVIEW`: PostgreSQL has historical rows that need operator
+  review or entity-specific filtering;
+- `PG_ONLY_RETENTION_REQUIRED`: PostgreSQL has safe cleanup candidates that
+  must be cleaned or filtered before entity-level PG_READ.
+
+Agents are reported as `pg_primary` because bus presence is already
+PostgreSQL-primary and does not use the `PG_READ` flag.
+
+```bash
+curl -sS "$KONOHA_URL/pg-read-readiness" -H "Authorization: Bearer $KONOHA_TOKEN"
+PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-read-readiness-report.ts
+PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-read-readiness-report.ts --json
+```
+
 ## Workflow
 
 `workflows/reliability/retention-cleanup.json` is the canonical eEPC wrapper around retention operations:
