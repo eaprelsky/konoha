@@ -87,7 +87,7 @@ describe("Action Spine extraction closure report", () => {
     expect(hostVocabulary).toContain("KonohaActionScope");
   });
 
-  test("ADR and spike docs keep extraction blocked on semantic and release gates", () => {
+  test("ADR and spike docs reflect accepted gates and separate future checks", () => {
     const adr = readRepoFile("docs/adr-005-action-spine-extraction.md");
     const spike = readRepoFile("docs/action-spine-package-extraction-spike.md");
     const closure = readRepoFile("docs/action-spine-extraction-closure-report.md");
@@ -101,8 +101,21 @@ describe("Action Spine extraction closure report", () => {
 
     expect(adr).toContain("docs/action-spine-extraction-closure-report.md");
     expect(spike).toContain("docs/action-spine-extraction-closure-report.md");
-    expect(closure).toContain("does not move runtime");
-    expect(`${adr}\n${spike}\n${closure}`).toContain("Do not");
+    expect(adr).toContain("- [x] #684 accepted");
+    expect(adr).toContain("- [x] #685 accepted");
+    expect(adr).toContain("- [x] #686 accepted");
+    expect(spike).toContain("- [x] #684 accepted");
+    expect(spike).toContain("- [x] #685 accepted");
+    expect(spike).toContain("- [x] #686 accepted");
+    expect(adr).toContain("Remaining future extraction checks");
+    expect(spike).toContain("Future checks before broader extraction or publishing");
+    expect(`${adr}\n${spike}`).not.toContain("- [ ] #684 accepted");
+    expect(`${adr}\n${spike}`).not.toContain("- [ ] #685 accepted");
+    expect(`${adr}\n${spike}`).not.toContain("- [ ] #686 accepted");
+    expect(`${adr}\n${spike}`).not.toContain("#685/#686 not accepted yet");
+    expect(`${adr}\n${spike}`).not.toContain("Do not start #618 extraction while #685/#686 acceptance evidence is missing");
+    expect(closure).toContain("did not move runtime");
+    expect(`${adr}\n${spike}\n${closure}`).toContain("#812");
   });
 
   test("review commands preserve boundary, action surface, route auth, typecheck, and diff checks", () => {

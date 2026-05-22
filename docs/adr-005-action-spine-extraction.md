@@ -1,22 +1,26 @@
 # ADR-005: Action Spine Framework Extraction
 
 > Issue: #618 | Priority: P2 | Date: 2026-05-01 | Author: Kakashi
-> Status: Planning phase — ADR defines package boundary, dependency inversion, and extraction slices.
+> Status: Initial private package scaffold implemented after accepted gates #684, #685, and #686.
 
-Program dependency gate: #618 remains blocked by the BPMS milestone graph in
-`docs/bpms-program-dependency-graph.md`. Do not start package extraction until
-#684, #685, and #741-#744 are complete.
+Program dependency gate: #618 was held behind the BPMS milestone graph in
+`docs/bpms-program-dependency-graph.md` until #684, #685, #686, and #741-#744
+were accepted. Those gates are now closed as `state:done`, so #618 owns the
+first private package scaffold. This does not authorize moving Konoha runtime
+behavior or host vocabulary into the generic package.
 
 Package extraction spike/readiness evidence after #741/#742 lives in
 `docs/action-spine-package-extraction-spike.md`. Treat that document as the
-current checklist for #618 until the M6 acceptance gates are closed.
+current checklist for completed scaffold checks and remaining future extraction
+checks.
 
 Parent closure evidence for #684 lives in
 `docs/action-spine-extraction-closure-report.md` and the matching
 machine-readable report
 `docs/action-spine-extraction-closure-report.json`. Closing #684 records that
-the boundary/readiness evidence from #741-#744 is reconciled; it does not start
-package extraction or unblock #618 before #685/#686.
+the boundary/readiness evidence from #741-#744 is reconciled. #685 and #686 are
+now accepted too, which permits the initial #618 scaffold recorded here while
+keeping Konoha runtime behavior host-owned.
 
 Issue #618 now owns the first reusable package scaffold in
 `packages/action-spine`. The package exposes generic types, ports, a registry
@@ -26,8 +30,9 @@ host-owned.
 
 ## Current Extraction Readiness (2026-05-22)
 
-Issue #618 is still an extraction backlog item, not an active package move.
-The accepted #741/#742 slices define the in-repo seams needed before extraction:
+Issue #618 has started with a private reusable package scaffold, not a runtime
+move or public package release. The accepted #741/#742 slices define the in-repo
+seams used by the scaffold:
 
 | Area | Status | Evidence | Extraction impact |
 |---|---|---|---|
@@ -36,30 +41,47 @@ The accepted #741/#742 slices define the in-repo seams needed before extraction:
 | Konoha host vocabulary split | Ready | `src/action-definitions.ts`, `src/action-registry.ts`, `src/action-policy.ts`, #742 | Concrete Konoha actions stay host-owned and are not part of generic core abstractions. |
 | Boundary manifest | Ready | `src/action-spine/boundary.ts`, `tests/action-spine-boundary.test.ts` | Generic core, Konoha vocabulary, and Konoha adapters are mechanically distinguished. |
 | Package scaffold | Ready | `packages/action-spine`, `tests/action-spine-package-core.test.ts`, `tests/action-spine-package-bridges.test.ts` | Reusable core/bridge API exists and uses injected ports. |
-| MCP bridge extraction | Blocked | `src/mcp-action-bridge.ts` remains adapter-side | Needs #744 bridge/consumer readiness before moving into a package. |
-| HTTP route extraction | Blocked | `src/act-envelope.ts` still owns Hono/auth/audit routing | Needs a factory over ports plus route/auth regression evidence. |
+| Package-local injected bridges | Complete for scaffold | `packages/action-spine/src/bridges/*`, `tests/action-spine-package-bridges.test.ts` | MCP/CLI/HTTP helper APIs execute only through injected ports and sample host vocabulary. |
+| Konoha MCP bridge adoption | Future check | `src/mcp-action-bridge.ts` remains adapter-side | Needs a later host wiring change before Konoha uses a package bridge. |
+| Konoha HTTP route adoption | Future check | `src/act-envelope.ts` still owns Hono/auth/audit routing | Needs a later factory over ports plus route/auth regression evidence. |
 | Konoha executor extraction | Blocked | `src/action-executor.ts` imports workflow/runtime/agent modules | Must remain a Konoha adapter behind `ActionExecutorPort`. |
-| Golden-path acceptance | Blocked | #685/#686 not accepted yet | Package extraction must wait until constructor -> deploy -> run -> assigned work item is proven. |
+| Golden-path acceptance | Complete | #685 and #686 accepted | Constructor -> deploy -> run -> assigned work item and release gate evidence are accepted; #812 remains open and not waived. |
 
 ### #618 Checklist
 
-Before starting any package extraction commit for #618:
+Completed prerequisite and scaffold checks:
 
 - [x] #741 accepted: Action Spine port interfaces are defined in-repo first.
 - [x] #742 accepted: generic core types are split from Konoha host vocabulary.
 - [x] #743 accepted: this readiness checklist and blocker set is reviewed.
 - [x] #744 accepted: bridge/package extraction readiness is reviewed.
-- [ ] #684 accepted: Action Spine extraction readiness umbrella is closed.
-- [ ] #685 accepted: golden-path acceptance suite proves assistant-created workflows can be deployed and executed.
-- [ ] #686 accepted: final release gate/runbook signs off production readiness.
+- [x] #684 accepted: Action Spine extraction readiness umbrella is closed.
+- [x] #685 accepted: golden-path acceptance suite proves assistant-created workflows can be deployed and executed.
+- [x] #686 accepted: final release gate/runbook signs off production readiness.
 - [x] #618 initial package scaffold: `packages/action-spine` exposes generic
   core/ports/registry/bridge APIs without importing Konoha runtime or host
   vocabulary.
-- [ ] No generic core file imports Konoha runtime, routes, storage, agent lifecycle, or concrete action vocabulary.
-- [ ] `docs/action-surface.json` remains generated from the Konoha host vocabulary and does not become a hand-maintained package artifact.
-- [ ] Extraction PR/commit includes `bun test --timeout 30000 tests/action-spine-boundary.test.ts tests/workflow-action-contract.test.ts`, `bun run typecheck`, `bun run scripts/action-surface-report.ts --check`, `python3 scripts/check-route-auth-policy.py`, and package-specific bridge tests.
+- [x] No generic package/core file imports Konoha runtime, routes, storage,
+  agent lifecycle, or concrete action vocabulary; this is covered by
+  `tests/action-spine-boundary.test.ts` and package-local bridge/core tests.
+- [x] `docs/action-surface.json` remains generated from the Konoha host
+  vocabulary and does not become a hand-maintained package artifact.
+- [x] #618 scaffold review checks include boundary, package bridge/core,
+  workflow/action compatibility, action-surface, route-auth, typecheck, and diff
+  checks.
 
-### Current Blockers
+Remaining future extraction checks:
+
+- [ ] If Konoha adopts a package MCP bridge, `src/mcp-action-bridge.ts` must
+  inject registry/executor/token dependencies instead of importing host
+  internals from package code.
+- [ ] If Konoha adopts a package HTTP route factory, `src/act-envelope.ts` must
+  keep auth, audit, autonomy, endpoint fallback, and caller context injectable
+  with focused route/security regressions.
+- [ ] Public package publishing still needs a versioning/release decision and
+  must not claim #812 closure or waiver.
+
+### Remaining Guardrails
 
 - #618 must not move `src/action-executor.ts` into reusable core; it is still a
   Konoha adapter with workflow/runtime/agent dependencies.
@@ -68,11 +90,11 @@ Before starting any package extraction commit for #618:
   vocabulary.
 - #618 must not create a second mutation path outside `/act` and the accepted
   compatibility executors.
-- #618 must not extract MCP or HTTP bridge code until the host registry,
-  executor, audit, autonomy, auth, and token dependencies are injectable and
-  covered by focused bridge tests.
-- #618 must remain blocked by M6 acceptance until #685/#686 verify runtime
-  semantics and release rollback evidence.
+- #618 must not replace Konoha's MCP or HTTP host adapters with package-backed
+  adapters until the host registry, executor, audit, autonomy, auth, and token
+  dependencies are injectable and covered by focused route/bridge tests.
+- #618 does not close, unpause, or waive #812; terminal-case release behavior
+  remains governed by that open gate.
 
 ## 1. Context
 

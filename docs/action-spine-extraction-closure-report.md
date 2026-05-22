@@ -2,9 +2,10 @@
 
 Date: 2026-05-22
 
-Issue #684 reconciles the accepted extraction-readiness slices #741, #742,
-#743, and #744. This is parent closure evidence only. It does not move runtime
-code into a package and does not unblock #618 extraction by itself.
+Issue #684 reconciled the accepted extraction-readiness slices #741, #742,
+#743, and #744. This is parent closure evidence only. At #684 closure time it
+did not move runtime code into a package and did not unblock #618 extraction by
+itself.
 
 ## Closure Decision
 
@@ -20,9 +21,10 @@ Action Spine is prepared for future package extraction at the boundary level:
 - `docs/action-spine-package-extraction-spike.md` documents the future package
   shape and the injectable dependencies required before any bridge moves.
 
-Package extraction is still blocked until #685, #686, and the #618
-package-specific readiness work are accepted. Closing #684 means the extraction
-gate is explicit and reviewable, not that extraction has started.
+At #684 closure time, package extraction was still blocked until #685, #686, and
+the #618 package-specific readiness work were accepted. Those gates are now
+closed, and #618 owns the initial private `packages/action-spine` scaffold while
+Konoha runtime behavior remains host-owned.
 
 ## Accepted Child Evidence
 
@@ -42,8 +44,8 @@ gate is explicit and reviewable, not that extraction has started.
 - Runtime adapters stay in Konoha until their registry, executor, audit,
   autonomy, auth, caller context, token, and endpoint fallback dependencies are
   injected and covered by package-local tests.
-- #618 extraction remains blocked by #685 golden-path acceptance and #686
-  release gate evidence.
+- Broader #618 extraction still must keep Konoha runtime behavior host-owned and
+  must not close, unpause, or waive #812.
 
 ## Review Evidence
 
