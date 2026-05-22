@@ -282,7 +282,6 @@ test.describe('Issue #747 browser golden path through AssistantWidget and Proces
         lifecycle_state: 'executable',
       },
     });
-    await page.reload();
     await expect(page.locator('.workflow-lifecycle-badge')).toContainText(/Executable|Исполн/i, { timeout: 10_000 });
     await expect(page.getByRole('button', { name: 'Run' })).toBeEnabled({ timeout: 10_000 });
 
