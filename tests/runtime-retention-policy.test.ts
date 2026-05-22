@@ -32,7 +32,7 @@ describe("high-volume runtime retention policy", () => {
       volume: "high",
       pg_shadow_consistent: true,
     })).toMatchObject({
-      retention_class: "runtime.case.completed.high_volume",
+      retention_class: "runtime.case.active",
       archive_eligible: false,
       compact_eligible: false,
       visible_by_default: true,
@@ -54,6 +54,25 @@ describe("high-volume runtime retention policy", () => {
       compact_eligible: true,
       visible_by_default: true,
       blocked: false,
+    });
+  });
+
+  test("selects active case retention class before high-volume completed policy", () => {
+    const policy = loadRuntimeRetentionPolicy();
+
+    expect(evaluateRuntimeArtifactRetention(policy, {
+      entity: "case",
+      state: "active",
+      age_hours: 1000,
+      volume: "high",
+      active_work_items: 1,
+      pg_shadow_consistent: true,
+      redis_only_rows: 0,
+    })).toMatchObject({
+      retention_class: "runtime.case.active",
+      archive_eligible: false,
+      compact_eligible: false,
+      visible_by_default: true,
     });
   });
 

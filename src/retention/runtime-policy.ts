@@ -192,9 +192,14 @@ function selectRetentionClass(
   policy: RuntimeRetentionPolicyContract,
   input: RuntimeArtifactRetentionInput,
 ): RuntimeRetentionClassPolicy | null {
-  const candidates = policy.retention_classes.filter(item => item.entity === input.entity);
+  const candidates = policy.retention_classes.filter(item =>
+    item.entity === input.entity && item.states.includes(input.state)
+  );
   const high = input.volume === "high" ? candidates.find(item => item.volume === "high") : undefined;
-  return high ?? candidates.find(item => item.volume === "all") ?? candidates[0] ?? null;
+  if (high) return high;
+  const allVolume = candidates.find(item => item.volume === "all");
+  if (allVolume) return allVolume;
+  return policy.retention_classes.find(item => item.entity === input.entity) ?? null;
 }
 
 export function evaluateRuntimeArtifactRetention(
