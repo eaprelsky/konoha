@@ -5,6 +5,10 @@ Date: 2026-05-22
 Issue #744 records extraction readiness evidence for #618. This is a spike, not
 an implementation plan to move files today. Package extraction remains gated by
 #684, #685, and #686 after the #741-#744 boundary/readiness slices are accepted.
+Issue #684 reconciles this spike with the accepted boundary/checklist slices in
+`docs/action-spine-extraction-closure-report.md` and
+`docs/action-spine-extraction-closure-report.json`; that report is parent
+evidence only and does not authorize #618 extraction before #685/#686.
 
 ## Current State
 
@@ -79,8 +83,8 @@ host dependencies instead of importing Konoha modules:
 
 - [x] #741 accepted: ports exist before extraction.
 - [x] #742 accepted: generic core types are split from Konoha host vocabulary.
-- [x] #743 submitted: #618 checklist/blockers are documented.
-- [ ] #744 accepted: this spike is reviewed and linked to #618/#684.
+- [x] #743 accepted: #618 checklist/blockers are documented.
+- [x] #744 accepted: this spike is reviewed and linked to #618/#684.
 - [ ] #684 accepted: extraction readiness umbrella is closed.
 - [ ] #685 accepted: constructor -> deploy -> run -> assigned work item golden path passes.
 - [ ] #686 accepted: final release gate/runbook signs off production readiness.

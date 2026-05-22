@@ -11,6 +11,13 @@ Package extraction spike/readiness evidence after #741/#742 lives in
 `docs/action-spine-package-extraction-spike.md`. Treat that document as the
 current checklist for #618 until the M6 acceptance gates are closed.
 
+Parent closure evidence for #684 lives in
+`docs/action-spine-extraction-closure-report.md` and the matching
+machine-readable report
+`docs/action-spine-extraction-closure-report.json`. Closing #684 records that
+the boundary/readiness evidence from #741-#744 is reconciled; it does not start
+package extraction or unblock #618 before #685/#686.
+
 ## Current Extraction Readiness (2026-05-22)
 
 Issue #618 is still an extraction backlog item, not an active package move.
@@ -33,8 +40,8 @@ Before starting any package extraction commit for #618:
 
 - [x] #741 accepted: Action Spine port interfaces are defined in-repo first.
 - [x] #742 accepted: generic core types are split from Konoha host vocabulary.
-- [ ] #743 accepted: this readiness checklist and blocker set is reviewed.
-- [ ] #744 accepted: bridge/package extraction readiness is reviewed.
+- [x] #743 accepted: this readiness checklist and blocker set is reviewed.
+- [x] #744 accepted: bridge/package extraction readiness is reviewed.
 - [ ] #684 accepted: Action Spine extraction readiness umbrella is closed.
 - [ ] #685 accepted: golden-path acceptance suite proves assistant-created workflows can be deployed and executed.
 - [ ] #686 accepted: final release gate/runbook signs off production readiness.
