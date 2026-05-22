@@ -1,7 +1,13 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { createHash } from 'crypto';
 import Redis from 'ioredis';
 
 const AUTONOMY_KEY = 'konoha:config:autonomy';
+const RUNTIME_EFFECT_KEY_PREFIX = 'runtime:effect:';
+const RUNTIME_EFFECT_IDEMPOTENCY_KEY_PREFIX = 'runtime:effect:idempotency:';
+const RUNTIME_EFFECT_STATUS_INDEX_PREFIX = 'runtime:effect:index:status:';
+const RUNTIME_EFFECT_CASE_INDEX_PREFIX = 'runtime:effect:index:case:';
+const RUNTIME_EFFECT_WORK_ITEM_INDEX_PREFIX = 'runtime:effect:index:work-item:';
 const RUN = `browser-golden-${Date.now()}`;
 const WORKFLOW_ID = `${RUN}-workflow`;
 const ROLE_ID = `${RUN}-reviewer`;
@@ -18,7 +24,9 @@ const redis = new Redis({
 const savedAutonomy: Record<string, string | null> = {};
 const touchedWorkflows = new Set<string>();
 const touchedRoles = new Set<string>();
+const touchedCases = new Set<string>();
 let adminToken = process.env.KONOHA_TOKEN ?? 'konoha-dev-token';
+let apiBaseUrl = 'http://127.0.0.1:3202';
 
 function workflowDefinition() {
   return {
@@ -53,8 +61,16 @@ function fixtureResponse(): string {
   });
 }
 
+function digest(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 24);
+}
+
+function normalizeBaseUrl(raw: string | undefined): string {
+  return (raw || 'http://127.0.0.1:3202').replace(/\/$/, '');
+}
+
 async function act(action: string, args: Record<string, unknown>) {
-  const response = await fetch('http://127.0.0.1:3202/api/act', {
+  const response = await fetch(`${apiBaseUrl}/api/act`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${adminToken}` },
     body: JSON.stringify({
@@ -71,7 +87,48 @@ async function act(action: string, args: Record<string, unknown>) {
   return { response, body };
 }
 
+async function cleanupRuntimeEffectsForCase(caseId: string) {
+  const caseIndexKey = `${RUNTIME_EFFECT_CASE_INDEX_PREFIX}${caseId}`;
+  const effectIds = await redis.zrange(caseIndexKey, 0, -1).catch(() => [] as string[]);
+  const pipe = redis.pipeline();
+  for (const effectId of effectIds) {
+    const raw = await redis.get(`${RUNTIME_EFFECT_KEY_PREFIX}${effectId}`).catch(() => null);
+    if (!raw) {
+      pipe.zrem(caseIndexKey, effectId);
+      continue;
+    }
+
+    let record: any;
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      pipe.del(`${RUNTIME_EFFECT_KEY_PREFIX}${effectId}`);
+      pipe.zrem(caseIndexKey, effectId);
+      continue;
+    }
+
+    pipe.del(`${RUNTIME_EFFECT_KEY_PREFIX}${effectId}`);
+    if (typeof record.idempotency_key === 'string') {
+      pipe.del(`${RUNTIME_EFFECT_IDEMPOTENCY_KEY_PREFIX}${digest(record.idempotency_key)}`);
+    }
+    if (typeof record.status === 'string') {
+      pipe.zrem(`${RUNTIME_EFFECT_STATUS_INDEX_PREFIX}${record.status}`, effectId);
+    }
+    if (typeof record.links?.work_item_id === 'string') {
+      pipe.zrem(`${RUNTIME_EFFECT_WORK_ITEM_INDEX_PREFIX}${record.links.work_item_id}`, effectId);
+    }
+    pipe.zrem(caseIndexKey, effectId);
+    pipe.del(`runtime:effect:lock:${effectId}`);
+    pipe.del(`workitem:dispatch:delivered:${effectId}`);
+  }
+  pipe.del(caseIndexKey);
+  await pipe.exec();
+}
+
 async function cleanup(request: APIRequestContext) {
+  for (const caseId of touchedCases) {
+    await cleanupRuntimeEffectsForCase(caseId).catch(() => {});
+  }
   for (const workflowId of touchedWorkflows) {
     await request.delete(`/api/workflows/${encodeURIComponent(workflowId)}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -108,7 +165,8 @@ async function expandAssistant(page: Page) {
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Issue #747 browser golden path through AssistantWidget and ProcessEditor', () => {
-  test.beforeAll(async ({ request }) => {
+  test.beforeAll(async ({ request, baseURL }) => {
+    apiBaseUrl = normalizeBaseUrl(baseURL);
     adminToken = await resolveAdminToken(request);
     for (const action of ['role.create', 'workflow.create', 'workflow.validate']) {
       savedAutonomy[action] = await redis.hget(AUTONOMY_KEY, action);
@@ -253,6 +311,7 @@ test.describe('Issue #747 browser golden path through AssistantWidget and Proces
     });
     const caseId = startedBody.data.case_id;
     expect(caseId).toEqual(expect.any(String));
+    touchedCases.add(caseId);
 
     await page.goto('/ui/workitems');
     await page.locator('#filterProcess').selectOption(WORKFLOW_ID, { timeout: 15_000 });
