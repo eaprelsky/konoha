@@ -242,7 +242,10 @@ idempotency keys, correlation links to cases/work items/deploy records, and a
 bounded state machine for `pending`, `in_flight`, `retry`, `failed`,
 `succeeded`, `dead_letter`, and `cancelled`. Deploy subscription effects reuse
 the deployment-scoped operation keys so retry/rollback evidence remains linked
-to deploy records and active subscriptions.
+to deploy records and active subscriptions. Runtime effect status changes emit
+case timeline events (`runtime.effect.*`), and persisted deploy records emit
+`workflow.deploy.receipt` events with deploy version, transaction idempotency,
+subscription diff counts, and failure evidence for operator recovery views.
 
 ---
 

@@ -14,6 +14,7 @@ import {
   runtimeEffectStorageKeys,
   transitionRuntimeEffectRecord,
 } from "../src/runtime-effect-outbox";
+import { listEvents } from "../src/runtime/event-log";
 
 const RUN = `runtime-effect-outbox-${Date.now()}`;
 
@@ -587,5 +588,69 @@ describe("runtime effect outbox model", () => {
         retryable: false,
       },
     });
+  });
+
+  test("emits idempotent case timeline events for runtime effect retries and dead letters", async () => {
+    const enqueued = await enqueueRuntimeEffect({
+      kind: "workitem.dispatch",
+      idempotency_key: `${RUN}:timeline-effect`,
+      payload: { role: "reviewer" },
+      links: { case_id: `${RUN}:case-timeline`, work_item_id: `${RUN}:work-timeline` },
+      retry_policy: { retry_delays_ms: [1_000], dead_letter_after_attempts: 2, max_attempts: 2 },
+    }, "2000-01-01T00:00:00.000Z");
+    await enqueueRuntimeEffect({
+      kind: "workitem.dispatch",
+      idempotency_key: `${RUN}:timeline-effect`,
+      payload: { role: "reviewer", duplicate: true },
+      links: { case_id: `${RUN}:case-timeline`, work_item_id: `${RUN}:work-timeline` },
+    }, "2000-01-01T00:00:00.500Z");
+
+    const retryResult = await processRuntimeEffectOutboxOnce({
+      worker_id: "timeline-worker",
+      now: "2000-01-01T00:00:01.000Z",
+      batch_size: 100,
+    }, async () => {
+      const error = new Error("temporary timeline failure") as Error & { code: string; retryable: boolean };
+      error.code = "TIMELINE_TEMPORARY_FAILURE";
+      error.retryable = true;
+      throw error;
+    });
+    expect(retryResult.final_record?.effect_id).toBe(enqueued.record.effect_id);
+    expect(retryResult.outcome).toBe("retry");
+
+    const deadLetterResult = await processRuntimeEffectOutboxOnce({
+      worker_id: "timeline-worker",
+      now: "2000-01-01T00:00:02.000Z",
+      batch_size: 100,
+    }, async () => {
+      const error = new Error("permanent timeline failure") as Error & { code: string; retryable: boolean };
+      error.code = "TIMELINE_PERMANENT_FAILURE";
+      error.retryable = true;
+      throw error;
+    });
+    expect(deadLetterResult.final_record?.effect_id).toBe(enqueued.record.effect_id);
+    expect(deadLetterResult.outcome).toBe("dead_letter");
+
+    const events = (await listEvents({ limit: 1000 })).filter(event => event.effect_id === enqueued.record.effect_id);
+    expect(events.filter(event => event.type === "runtime.effect.enqueued")).toHaveLength(1);
+    expect(events.some(event => event.type === "runtime.effect.claimed" && event.attempts === "1")).toBe(true);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "runtime.effect.retry_scheduled",
+      case_id: `${RUN}:case-timeline`,
+      work_item_id: `${RUN}:work-timeline`,
+      effect_status: "retry",
+      attempts: "1",
+      next_retry_at: "2000-01-01T00:00:02.000Z",
+      error_code: "TIMELINE_TEMPORARY_FAILURE",
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "runtime.effect.dead_lettered",
+      case_id: `${RUN}:case-timeline`,
+      work_item_id: `${RUN}:work-timeline`,
+      effect_status: "dead_letter",
+      attempts: "2",
+      error_code: "TIMELINE_PERMANENT_FAILURE",
+      error_retryable: "false",
+    }));
   });
 });

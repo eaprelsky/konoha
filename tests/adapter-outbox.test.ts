@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { registerAdapter, type Adapter } from "../src/adapters";
 import {
   adapterInvokeIdempotencyKey,
@@ -11,12 +11,14 @@ import {
   runtimeEffectIdFromIdempotencyKey,
 } from "../src/runtime-effect-outbox";
 import { createCase, deleteCasesByProcess } from "../src/runtime";
+import { createRole, deleteRole } from "../src/runtime/roles";
 import { createWorkflow, validateWorkflowReadiness, type WorkflowDefinition } from "../src/workflow-loader";
 import { completeWorkItem } from "../src/runtime/work-items";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import { makeWorkflowDefinition } from "./factories";
 
 const RUN = `adapter-outbox-${Date.now()}`;
+const REVIEWER_ROLE = `${RUN}:reviewer`;
 const workflows = new Set<string>();
 const calls: Array<{ adapter: string; action: string; input: Record<string, unknown> }> = [];
 
@@ -42,11 +44,22 @@ beforeEach(() => {
   calls.length = 0;
 });
 
+beforeAll(async () => {
+  await createRole({
+    role_id: REVIEWER_ROLE,
+    name: "Adapter outbox reviewer",
+    assignees: [],
+    strategy: "manual",
+    required_capabilities: [],
+  });
+});
+
 afterAll(async () => {
   await Promise.all([...workflows].map(async id => {
     await deleteCasesByProcess(id).catch(() => {});
     await pgDeleteWorkflow(id).catch(() => {});
   }));
+  await deleteRole(REVIEWER_ROLE).catch(() => {});
 });
 
 describe("adapter invoke outbox", () => {
@@ -159,7 +172,7 @@ describe("adapter invoke outbox", () => {
           id: "review",
           type: "function",
           label: "Review",
-          role: "reviewer",
+          role: REVIEWER_ROLE,
           systems: [{ connector: adapterId, operation: "notify", binding_id: "review.notify", execution: "async_effect" }],
         },
         { id: "done", type: "event", label: "Done" },
@@ -206,7 +219,7 @@ describe("adapter invoke outbox", () => {
           id: "sync",
           type: "function",
           label: "Notify",
-          role: "reviewer",
+          role: REVIEWER_ROLE,
           systems: [{ connector: adapterId, operation: "notify", binding_id: "sync.notify" }],
         },
         { id: "done", type: "event", label: "Done" },
@@ -236,7 +249,7 @@ describe("adapter invoke outbox", () => {
           id: "task",
           type: "function",
           label: "Task",
-          role: "reviewer",
+          role: REVIEWER_ROLE,
           systems: [{ connector: "telegram", operation: "send_message", execution: "background" as any }],
         },
         { id: "done", type: "event", label: "Done" },
@@ -266,7 +279,7 @@ describe("adapter invoke outbox", () => {
             id: "task",
             type: "function",
             label: "Task",
-            role: "reviewer",
+            role: REVIEWER_ROLE,
             systems: [{ connector: "telegram", operation: "send_message", execution } as any],
           },
           { id: "done", type: "event", label: "Done" },

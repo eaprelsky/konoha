@@ -4,6 +4,7 @@ import {
   cancelSubscriptionResources,
   createSubscriptionProgrammatic,
 } from "./events/subscriptions";
+import { emitWorkflowDeployReceiptTimelineEvent } from "./runtime/timeline-events";
 import type { Subscription, TriggerDef } from "./events/types";
 import type { WorkflowDefinition, WorkflowElement } from "./workflow-loader";
 
@@ -298,6 +299,7 @@ export async function persistWorkflowDeploymentRecord(
   await redis.set(record_key, JSON.stringify(record));
   await redis.zadd(index_key, Number.isFinite(score) ? score : Date.now(), record_key);
   await redis.zadd(WORKFLOW_DEPLOY_RECORD_GLOBAL_INDEX, Number.isFinite(score) ? score : Date.now(), record_key);
+  await emitWorkflowDeployReceiptTimelineEvent(record);
   return record;
 }
 

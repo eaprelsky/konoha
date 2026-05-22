@@ -7,6 +7,7 @@ import {
   recoverRuntimeEffect,
   runtimeEffectIdFromIdempotencyKey,
 } from "../src/runtime-effect-outbox";
+import { listEvents } from "../src/runtime/event-log";
 
 const RUN = `runtime-effect-recovery-${Date.now()}`;
 const TEST_ADMIN_TOKEN = process.env.KONOHA_TOKEN || "test-admin-token-preload";
@@ -78,6 +79,19 @@ describe("runtime effect recovery", () => {
 
     const audit = await readAuditLog({ actionType: "runtime_effect.cancel", limit: 20 });
     expect(audit.some(entry => entry.session_id === `runtime-effect-recovery:${enqueued.record.effect_id}` && entry.agent_chain === "kakashi")).toBe(true);
+
+    const timelineEvents = (await listEvents({ type: "runtime.effect.cancelled", limit: 1000 }))
+      .filter(event => event.effect_id === enqueued.record.effect_id);
+    expect(timelineEvents).toHaveLength(1);
+    expect(timelineEvents[0]).toMatchObject({
+      case_id: `${RUN}:case-cancel`,
+      work_item_id: `${RUN}:work-cancel`,
+      recovery_operation: "cancel",
+      recovery_actor: "kakashi",
+      recovery_noop: "false",
+      previous_status: "pending",
+      effect_status: "cancelled",
+    });
   });
 
   test("moves pending effects to dead letter with machine-readable operator evidence", async () => {

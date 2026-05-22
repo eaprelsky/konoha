@@ -2,6 +2,10 @@ import { createHash } from "crypto";
 import { createLogger } from "./logger";
 import { redis } from "./redis";
 import { auditLog } from "./assistant-actions";
+import {
+  emitRuntimeEffectRecoveryTimelineEvent,
+  emitRuntimeEffectTimelineEvent,
+} from "./runtime/timeline-events";
 
 export const RUNTIME_EFFECT_OUTBOX_SCHEMA_VERSION = 1;
 
@@ -612,11 +616,13 @@ export async function recoverRuntimeEffect(
       recovered_at: now,
     };
     const audited = await writeRuntimeEffectRecoveryAudit(receiptBase);
-    return {
+    const receipt = {
       ...receiptBase,
       audited,
       record: recovered.record,
     };
+    await emitRuntimeEffectRecoveryTimelineEvent(receipt);
+    return receipt;
   } finally {
     const owner = await redis.get(lockKey).catch(() => null);
     if (owner === lockOwner) await redis.del(lockKey);
@@ -638,6 +644,7 @@ export async function enqueueRuntimeEffect(
     }
   }
   await saveRuntimeEffectRecord(record);
+  await emitRuntimeEffectTimelineEvent(record, { event_type: "runtime.effect.enqueued" });
   return { record, duplicate: false };
 }
 
@@ -844,6 +851,7 @@ export async function claimNextRuntimeEffect(
         lock_ms: lockMs,
       });
       await saveRuntimeEffectRecord(claimed, current);
+      await emitRuntimeEffectTimelineEvent(claimed, { previous_status: current.status, event_type: "runtime.effect.claimed" });
       log.info("runtime effect claimed", { effect_id: claimed.effect_id, kind: claimed.kind, attempts: claimed.attempts, worker_id: options.worker_id });
       return claimed;
     } catch (e: any) {
@@ -870,6 +878,7 @@ export async function completeRuntimeEffect(
   });
   await saveRuntimeEffectRecord(completed, current);
   await redis.del(runtimeEffectLockKey(record.effect_id));
+  await emitRuntimeEffectTimelineEvent(completed, { previous_status: current.status, event_type: "runtime.effect.succeeded" });
   log.info("runtime effect succeeded", { effect_id: completed.effect_id, kind: completed.kind, attempts: completed.attempts });
   return completed;
 }
@@ -902,6 +911,10 @@ export async function failRuntimeEffect(
   });
   await saveRuntimeEffectRecord(failed, current);
   await redis.del(runtimeEffectLockKey(record.effect_id));
+  await emitRuntimeEffectTimelineEvent(failed, {
+    previous_status: current.status,
+    event_type: status === "retry" ? "runtime.effect.retry_scheduled" : "runtime.effect.dead_lettered",
+  });
   log.warn("runtime effect failed", { effect_id: failed.effect_id, kind: failed.kind, attempts: failed.attempts, status, error: failure.code });
   return failed;
 }

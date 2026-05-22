@@ -3,6 +3,7 @@ import { executeActionDirect } from "../src/action-executor";
 import { cancelSubscriptionsByProcessAndInstance, createSubscriptionProgrammatic } from "../src/event-manager";
 import { SUBSCRIPTIONS_KEY } from "../src/events/subscriptions";
 import { deleteCasesByProcess } from "../src/runtime";
+import { listEvents } from "../src/runtime/event-log";
 import { createRole, deleteRole } from "../src/runtime/roles";
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import {
@@ -237,6 +238,21 @@ describe("workflow deployment service", () => {
         ok: true,
         deploy_version: 1,
       },
+    });
+    const firstDeployEvents = (await listEvents({ type: "workflow.deploy.receipt", limit: 1000 }))
+      .filter(event => event.deploy_record_key === workflowDeploymentRecordKey(id, 1));
+    expect(firstDeployEvents).toHaveLength(1);
+    expect(firstDeployEvents[0]).toMatchObject({
+      process_id: id,
+      workflow_id: id,
+      deploy_version: "1",
+      deployment_id: `${id}:v1`,
+      deploy_status: "completed",
+      transaction_status: "completed",
+      deployed_by: "operator-1",
+      subscriptions_desired: "1",
+      subscriptions_created: "1",
+      subscriptions_failed: "0",
     });
 
     const second = await executeActionDirect("workflow.deploy", { id, deployed_by: "operator-2" });

@@ -61,6 +61,35 @@ index, and all correlation indexes. Re-enqueueing the same source
 `idempotency_key` returns the existing record with `duplicate=true` and does not
 overwrite the original payload.
 
+## Timeline Events
+
+Runtime effect state changes emit machine-readable case timeline entries through
+the runtime event log. The stable event types are:
+
+| Event type | Emitted when |
+|---|---|
+| `runtime.effect.enqueued` | A new outbox record is accepted. Duplicate idempotency-key enqueue attempts do not emit another event. |
+| `runtime.effect.claimed` | A worker claims a pending/retry effect and increments `attempts`. |
+| `runtime.effect.succeeded` | A worker completes the effect with a success receipt. |
+| `runtime.effect.retry_scheduled` | A worker or recovery operation leaves the effect retryable with `next_retry_at` and error evidence. |
+| `runtime.effect.dead_lettered` | The retry budget is exhausted or an operator dead-letters the effect. |
+| `runtime.effect.cancelled` | An operator cancels a pending/retry effect. |
+| `runtime.effect.recovery` | An operator recovery action was accepted without a state change, such as retrying an already pending effect. |
+
+Each event carries the durable correlation fields available on the record:
+`case_id`, `process_id`/`workflow_id`, `work_item_id`, `effect_id`,
+`effect_kind`, `effect_status`, `attempts`, `idempotency_key`, deploy/subscription
+links, error code/retryable flag, receipt status, and recovery actor/reason when
+the change was operator initiated. Timeline emission uses a separate
+`runtime:timeline-event:idempotency:<hash>` guard, so replaying enqueue/recovery
+paths does not create duplicate timeline evidence.
+
+Workflow deploy records also emit `workflow.deploy.receipt` timeline entries
+when a completed or blocked deploy receipt is persisted. Those entries include
+`workflow_id`, `deploy_version`, `deployment_id`, `deploy_record_key`,
+transaction status/idempotency, deploy status, actor, subscription diff counts,
+and failure code/message when present.
+
 ## State Machine
 
 Allowed transitions:
