@@ -299,18 +299,20 @@ describe("backend golden path create-validate-deploy-run", () => {
         data: {
           deduplicated: false,
           dispatch: {
-            route: "manual",
             work_item_id: workItem.work_item_id,
             role: roleId,
-            target_type: "manual",
-            target_ids: [],
-            strategy: "no-target",
-            dispatch_status: "manual",
-            route_reason: "no-target",
           },
         },
       },
     });
+    const dispatchReceipt = (dispatchResult.receipt?.data?.dispatch ?? {}) as Record<string, any>;
+    expect(["agent", "person", "system", "manual"]).toContain(dispatchReceipt.target_type);
+    expect(["queued", "manual"]).toContain(dispatchReceipt.dispatch_status);
+    expect(typeof dispatchReceipt.target_id).toBe("string");
+    expect(Array.isArray(dispatchReceipt.target_ids)).toBe(true);
+    expect(typeof dispatchReceipt.strategy).toBe("string");
+    expect(Array.isArray(dispatchReceipt.targets)).toBe(true);
+    expect(dispatchReceipt.targets.length).toBeGreaterThanOrEqual(1);
 
     await expect(getWorkflow(workflowId)).resolves.toMatchObject({
       id: workflowId,

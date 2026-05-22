@@ -210,10 +210,14 @@ RoleDef.
 
 Runtime work-item dispatch receipts use the same role assignment semantics.
 Every `workitem.dispatch` receipt records `target_type`, `target_id`, assignment
-`strategy`, `dispatch_status`, and per-target details for broadcast/manual
+`strategy`, `dispatch_status`, and `targets[]` details for broadcast/manual
 fallback. Operators can distinguish tasks handed to an agent/person/system
 (`queued`), tasks left in the manual queue (`manual`), and retry/dead-letter
 transport failures (`failed`) without inferring from route-specific logs.
+
+Issue #679 parent closure evidence lives in
+`docs/role-readiness-closure-report.json` and
+`docs/role-readiness-closure-report.md`.
 
 ---
 

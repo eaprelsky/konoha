@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 679,
+  "report_date": "2026-05-22",
+  "status": "ready_for_parent_review",
+  "parent_issue": 679,
+  "source_contract": "docs/workflow-engine.md#assignment-strategies",
+  "target_invariant": "A workflow may be executable only when every function role resolves to a system role, explicit manual queue, online-capable agent, capability match, or Telegram-reachable person; runtime dispatch may claim delivery only with target evidence in the workitem.dispatch receipt.",
+  "accepted_child_issues": [721, 722, 723, 724],
+  "acceptance_coverage": [
+    {
+      "criterion": "workflow.validate reports missing or unresolvable roles as blocking readiness errors",
+      "status": "covered",
+      "issues": [721],
+      "stable_codes": ["ROLE_UNRESOLVABLE", "ROLE_MISSING_ASSIGNEE", "ROLE_ASSIGNEE_UNRESOLVABLE"],
+      "evidence": [
+        "src/workflow-loader.ts",
+        "docs/workflow-engine.md",
+        "tests/workflow-role-readiness.test.ts",
+        "tests/workflow-validation-taxonomy.test.ts"
+      ],
+      "notes": "Readiness receipts mark role failures as deployment, case-start, and release blockers."
+    },
+    {
+      "criterion": "workflow.deploy refuses unresolved roles unless manual mode is explicit",
+      "status": "covered",
+      "issues": [721],
+      "evidence": [
+        "tests/workflow-role-readiness.test.ts",
+        "tests/workflow-lifecycle-gate.test.ts",
+        "tests/backend-golden-path.test.ts"
+      ],
+      "notes": "Workflow-created skeleton RoleDefs are placeholders and do not count as explicit manual queues."
+    },
+    {
+      "criterion": "dispatch receipts show actual target agent, person, system, or manual queue",
+      "status": "covered",
+      "issues": [724, 717],
+      "evidence": [
+        "src/dispatcher.ts",
+        "docs/runtime-effect-outbox.md",
+        "tests/zz_dispatcher.test.ts",
+        "tests/workitem-dispatch-outbox.test.ts",
+        "tests/backend-golden-path.test.ts"
+      ],
+      "required_receipt_fields": ["target_type", "target_id", "target_ids", "strategy", "dispatch_status", "targets"],
+      "notes": "Receipts distinguish queued agent/person/system delivery, manual queue fallback, and failed transport evidence for retry/dead-letter."
+    },
+    {
+      "criterion": "operator UI can resolve role readiness errors before running",
+      "status": "covered",
+      "issues": [722],
+      "evidence": [
+        "frontend/src/pages/roleAssignmentResolution.ts",
+        "frontend/src/__tests__/roleAssignmentResolution.test.ts",
+        "frontend/src/__tests__/workflowDiagnosticsPanel.test.tsx"
+      ],
+      "notes": "UI builds role.create/role.update payloads from stable role validation codes and reachable assignee options."
+    },
+    {
+      "criterion": "assistant suggestions are validation-grounded and require operator confirmation",
+      "status": "covered",
+      "issues": [723],
+      "evidence": [
+        "src/assistant-response.ts",
+        "tests/assistant-response.test.ts"
+      ],
+      "notes": "Assistant role_assignment suggestions become pending role.create/role.update confirmations only when the current workflow.validate receipt has a matching role error."
+    },
+    {
+      "criterion": "named agent, capability match, person Telegram target, manual queue, and unresolved role failure are tested",
+      "status": "covered",
+      "issues": [721, 724],
+      "evidence": [
+        "tests/workflow-role-readiness.test.ts",
+        "tests/zz_dispatcher.test.ts",
+        "tests/backend-golden-path.test.ts"
+      ],
+      "notes": "Backend tests cover direct agent, capability, person directory, explicit manual queue, skeleton placeholder rejection, and failed dispatch target evidence."
+    }
+  ],
+  "direct_paths_kept": [
+    {
+      "path": "manual queue",
+      "reason": "An operator-created RoleDef with strategy=manual and no assignees is an explicit queue target, not a missing assignment."
+    },
+    {
+      "path": "system role",
+      "reason": "System roles route to built-in system-agent execution and produce system target receipt details."
+    }
+  ],
+  "review_commands": [
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/role-readiness-closure-report.test.ts tests/workflow-role-readiness.test.ts tests/zz_dispatcher.test.ts tests/workitem-dispatch-outbox.test.ts tests/backend-golden-path.test.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/assistant-response.test.ts tests/workflow-validation-taxonomy.test.ts tests/workflow-lifecycle-gate.test.ts",
+    "cd frontend && PATH=/home/ubuntu/.bun/bin:$PATH bun run test -- roleAssignmentResolution workflowDiagnosticsPanel",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run typecheck"
+  ],
+  "closure_decision": {
+    "parent_issue_can_close_after_review": true,
+    "remaining_blockers": [],
+    "release_claim_unblocked": false,
+    "notes": "This reconciles the #679 parent. Production release still follows the #686 checklist and #812 terminal-case gate."
+  }
+}
