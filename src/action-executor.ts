@@ -74,6 +74,7 @@ import { buildPgReadReadinessReport } from "./pg-read-readiness";
 import { cleanupExpiredRuntimeArtifacts, InvalidRuntimeRetentionPolicyError } from "./retention/runtime-cleanup";
 import { buildWorkflowValidationReceipt } from "./workflow-validation-service";
 import { applyWorkflowPatch } from "./workflow-patch-service";
+import type { ActionExecutorPort } from "./action-spine/ports";
 import {
   buildWorkflowDeploymentTransaction,
   materializeWorkflowDeploymentSubscriptions,
@@ -2174,6 +2175,10 @@ export async function executeActionDirect(
   }
   return null;
 }
+
+export const konohaActionExecutorPort: ActionExecutorPort = {
+  execute: ({ action, args }) => executeActionDirect(action, args),
+};
 
 export function assertActionArgs(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) return {};

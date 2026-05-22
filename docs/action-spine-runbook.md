@@ -13,6 +13,10 @@ The registry is the source of truth. The generated machine-readable surface is
 `bun run scripts/action-surface-report.ts --write|--check`.
 Workflow construction/runtime security, authorization, and audit semantics are
 defined in `docs/workflow-security-boundary.md`.
+Package-boundary and host-adapter seams are defined in
+`docs/action-spine-boundary.md` and `src/action-spine/ports.ts`; new Action
+Spine work should use those ports before adding another direct dependency on
+Konoha workflow/runtime modules.
 
 ## Current Surface
 
@@ -101,6 +105,8 @@ action instead of duplicating behavior.
 5. Wire execution through a direct executor, registered handler, or endpoint
    resolver. Planned actions may exist in the vocabulary, but callers must treat
    `implemented: false` as not executable.
+   Direct executors are Konoha host adapters behind `ActionExecutorPort`; do not
+   move workflow/runtime imports into Action Spine core files.
 6. If MCP callers need the operation, prefer the generic tools:
    `konoha_action_catalog`, `konoha_action_get`, and `konoha_action_call`.
    Add a bespoke MCP tool only for a stable high-value workflow.

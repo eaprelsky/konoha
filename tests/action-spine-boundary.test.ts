@@ -7,6 +7,7 @@ import {
   ACTION_SPINE_KONOHA_ADAPTER_FILES,
   ACTION_SPINE_PORTS,
 } from "../src/action-spine/boundary";
+import { konohaActionExecutorPort } from "../src/action-executor";
 
 const repoRoot = join(import.meta.dir, "..");
 
@@ -25,6 +26,7 @@ function importSpecifiers(source: string): string[] {
 
 describe("Action Spine package boundary", () => {
   test("documents a small core and explicit Konoha adapters", () => {
+    expect(ACTION_SPINE_CORE_FILES).toContain("src/action-spine/ports.ts");
     expect(ACTION_SPINE_CORE_FILES).toContain("src/action-registry.ts");
     expect(ACTION_SPINE_CORE_FILES).toContain("src/action-policy.ts");
     expect(ACTION_SPINE_KONOHA_ADAPTER_FILES).toContain("src/action-executor.ts");
@@ -35,6 +37,16 @@ describe("Action Spine package boundary", () => {
       "HttpActionRouteAdapter",
       "McpActionBridgeAdapter",
     ]);
+  });
+
+  test("defines the core port interfaces before package extraction", () => {
+    const portsSource = readRepoFile("src/action-spine/ports.ts");
+    for (const port of ACTION_SPINE_PORTS) {
+      expect(port.source_file).toBe("src/action-spine/ports.ts");
+      expect(portsSource).toContain(`interface ${port.name}`);
+    }
+    expect(portsSource).toContain("interface ActionExecutionRequest");
+    expect(portsSource).toContain("interface ActionEnvelopeResult");
   });
 
   test("core files do not import Konoha runtime or agent modules directly", () => {
@@ -53,5 +65,6 @@ describe("Action Spine package boundary", () => {
     expect(executorImports.some(spec => spec.includes("workflow-loader"))).toBe(true);
     expect(executorImports.some(spec => spec.includes("agent-lifecycle"))).toBe(true);
     expect(ACTION_SPINE_CORE_FILES).not.toContain("src/action-executor.ts");
+    expect(konohaActionExecutorPort.execute).toBeFunction();
   });
 });

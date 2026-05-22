@@ -8,12 +8,15 @@ Core files are registry/policy/bridge code that can be imported without Konoha w
 
 | File | Role | Coupling rule |
 | --- | --- | --- |
+| `src/action-spine/ports.ts` | Type-only core port interfaces for host adapters | No workflow/runtime/agent imports |
 | `src/action-definitions.ts` | Declarative action vocabulary | No workflow/runtime/agent imports |
 | `src/action-registry.ts` | Registry API, contracts, validation, surface dump | No workflow/runtime/agent imports |
 | `src/action-policy.ts` | Category and default security classification | No workflow/runtime/agent imports |
 | `src/mcp-action-bridge.ts` | MCP catalog/get/call helpers over injected HTTP API | May depend on `zod` and registry only |
 
 `src/action-spine/boundary.ts` is the machine-readable manifest for this boundary.
+The ports are intentionally defined inside Konoha first; this is an interface
+seam for future extraction, not a package move.
 
 ## Konoha Adapters
 
@@ -28,13 +31,24 @@ Adapters bind the generic action surface to this deployment:
 
 ## Ports
 
-The reusable package should depend on ports, not Konoha modules:
+The reusable package should depend on ports, not Konoha modules. The current
+canonical definitions live in `src/action-spine/ports.ts`:
 
-- `ActionExecutorPort`: execute a validated action ID with typed args.
-- `ActionAuditPort`: record audited attempts and outcomes.
-- `ActionAutonomyPolicyPort`: resolve `auto`, `confirm`, or `disabled`.
-- `HttpActionRouteAdapter`: expose `/act` in a host HTTP framework.
-- `McpActionBridgeAdapter`: call `/act` through an injected API/token provider.
+- `ActionExecutorPort`: execute a validated action ID with typed args and return
+  `{status, data}` or `null` when the host has no direct executor.
+- `ActionAuditPort`: record audited attempts and outcomes without exposing
+  Konoha audit storage to core code.
+- `ActionAutonomyPolicyPort`: resolve `auto`, `confirm`, or `disabled` using
+  host policy state.
+- `HttpActionRouteAdapter`: expose action envelope execution in a host HTTP
+  framework.
+- `McpActionBridgeAdapter`: expose catalog/get/call helpers through an injected
+  API/token provider.
+
+Konoha currently implements the executor seam with
+`konohaActionExecutorPort` in `src/action-executor.ts`. Audit/autonomy remain
+implemented by `src/assistant-actions.ts`; `/act` remains implemented by
+`src/act-envelope.ts`; MCP remains implemented by `src/mcp-action-bridge.ts`.
 
 ## First extraction rule
 
