@@ -27,6 +27,33 @@
     "bun run scripts/pg-verify.ts",
     "scripts/telegram-smoke.sh"
   ],
+  "golden_path_acceptance": {
+    "issue": 685,
+    "child_issues": [745, 746, 747, 748],
+    "closure_report": "docs/golden-path-acceptance-closure-report.json",
+    "human_report": "docs/golden-path-acceptance-closure-report.md",
+    "required_commands": [
+      "bun test --timeout 30000 tests/golden-path-acceptance-closure-report.test.ts",
+      "bun test --timeout 30000 tests/assistant-create-validate-deploy-run-fixture.test.ts",
+      "bun test --timeout 30000 tests/backend-golden-path.test.ts",
+      "ANTHROPIC_API_KEY=ci-placeholder bun x playwright test e2e/AssistantWidgetGoldenPath-747.spec.ts --config=playwright.config.ci.ts"
+    ],
+    "success_contracts": [
+      "assistant.invoke fixture_response without live LLM",
+      "durable Action Spine workflow.create/workflow.validate/workflow.deploy/case.start receipts",
+      "ProcessEditor reload shows persisted workflow state",
+      "Work Items operator view shows the assigned work item",
+      "workitem.dispatch runtime effect and dispatch target details are observable"
+    ],
+    "negative_contracts": [
+      "invalid or missing role readiness blocks deploy/start",
+      "invalid trigger readiness blocks deploy/start",
+      "invalid graph readiness blocks deploy/start",
+      "case.start before executable deploy returns WORKFLOW_NOT_EXECUTABLE",
+      "failed deploy side effects do not leave a runnable workflow",
+      "failed dispatch records outbox failure instead of delivered success"
+    ]
+  },
   "reviewer_checklist": [
     {
       "id": "stable-contract",

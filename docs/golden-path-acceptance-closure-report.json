@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 685,
+  "report_date": "2026-05-22",
+  "status": "ready_for_parent_review",
+  "parent_issue": 685,
+  "release_gate_parent": 686,
+  "summary": "The AI constructor golden path is covered by deterministic assistant, backend Action Spine, browser UI, and negative runtime/deploy fixtures. The accepted evidence proves durable workflow creation, validation, role readiness, deployment, case.start, persisted work item dispatch effects, monitor/work item visibility, and refusal of invalid or non-executable workflows.",
+  "target_invariant": "A workflow created by the assistant only counts as runnable when durable Action Spine actions persist the workflow, validation and deploy receipts are ready, case.start succeeds against an executable workflow, and the first assigned work item plus dispatch receipt are observable. Preview-only, textual-only, or partial failure paths cannot be counted as saved or runnable.",
+  "accepted_child_issues": [
+    {
+      "issue": 745,
+      "title": "Build deterministic assistant fixture for create-validate-deploy-run flow",
+      "status": "accepted",
+      "evidence": [
+        "tests/assistant-create-validate-deploy-run-fixture.test.ts",
+        "docs/workflow-constructor-runtime-release-checklist.md"
+      ],
+      "coverage": [
+        "assistant.invoke fixture_response without live LLM",
+        "Action Spine action_sequence for role.create -> workflow.create -> workflow.validate -> workflow.deploy -> case.start",
+        "successful observable monitor navigation",
+        "negative deploy readiness halt before runtime"
+      ]
+    },
+    {
+      "issue": 746,
+      "title": "Add backend golden-path test for durable workflow creation and execution",
+      "status": "accepted",
+      "evidence": [
+        "tests/backend-golden-path.test.ts"
+      ],
+      "coverage": [
+        "durable role and workflow creation",
+        "canonical workflow.validate readiness receipt",
+        "workflow.deploy executable state and deploy record",
+        "case.start creates a running case",
+        "pending assigned work item and persisted workitem.dispatch runtime effect",
+        "dispatch receipt target details"
+      ]
+    },
+    {
+      "issue": 747,
+      "title": "Add browser E2E golden path through AssistantWidget and ProcessEditor",
+      "status": "accepted",
+      "evidence": [
+        "e2e/AssistantWidgetGoldenPath-747.spec.ts"
+      ],
+      "coverage": [
+        "AssistantWidget deterministic fixture response",
+        "ProcessEditor persisted workflow reload",
+        "visible deploy and run controls",
+        "Work Items operator view shows assigned work item"
+      ]
+    },
+    {
+      "issue": 748,
+      "title": "Add negative golden-path tests for invalid and non-executable workflows",
+      "status": "accepted",
+      "evidence": [
+        "tests/backend-golden-path.test.ts"
+      ],
+      "coverage": [
+        "case.start before deploy returns WORKFLOW_NOT_EXECUTABLE and creates no case",
+        "missing role blocks validation/deploy/start",
+        "invalid trigger blocks deploy/start",
+        "invalid graph blocks deploy/start",
+        "failed deploy side effects demote workflow and block start",
+        "failed work-item dispatch records outbox dead_letter instead of success"
+      ]
+    }
+  ],
+  "acceptance_steps": [
+    {
+      "step": 1,
+      "name": "create durable workflow definition",
+      "status": "covered",
+      "evidence": [
+        "tests/assistant-create-validate-deploy-run-fixture.test.ts",
+        "tests/backend-golden-path.test.ts",
+        "e2e/AssistantWidgetGoldenPath-747.spec.ts"
+      ],
+      "durability_contract": "workflow.create via Action Spine persists workflow state; UI reload verifies persisted state rather than client-only canvas state."
+    },
+    {
+      "step": 2,
+      "name": "validate graph and runtime readiness",
+      "status": "covered",
+      "evidence": [
+        "tests/backend-golden-path.test.ts"
+      ],
+      "durability_contract": "workflow.validate returns canonical readiness with deployment_blocker=false and case_start_blocker=false on the success path; negative paths expose stable blocking codes."
+    },
+    {
+      "step": 3,
+      "name": "assign or request required roles",
+      "status": "covered",
+      "evidence": [
+        "tests/assistant-create-validate-deploy-run-fixture.test.ts",
+        "tests/backend-golden-path.test.ts"
+      ],
+      "durability_contract": "role.create creates an explicit manual role; missing role negative coverage blocks deploy and start."
+    },
+    {
+      "step": 4,
+      "name": "deploy triggers and effects",
+      "status": "covered",
+      "evidence": [
+        "tests/backend-golden-path.test.ts"
+      ],
+      "durability_contract": "workflow.deploy persists executable lifecycle state and deploy record before runtime start; side-effect failures return non-success and demote to validated."
+    },
+    {
+      "step": 5,
+      "name": "start a case",
+      "status": "covered",
+      "evidence": [
+        "tests/assistant-create-validate-deploy-run-fixture.test.ts",
+        "tests/backend-golden-path.test.ts",
+        "e2e/AssistantWidgetGoldenPath-747.spec.ts"
+      ],
+      "durability_contract": "case.start succeeds only for executable workflows; non-executable workflows return WORKFLOW_NOT_EXECUTABLE and create no case."
+    },
+    {
+      "step": 6,
+      "name": "create and dispatch the first work item",
+      "status": "covered",
+      "evidence": [
+        "tests/backend-golden-path.test.ts",
+        "e2e/AssistantWidgetGoldenPath-747.spec.ts"
+      ],
+      "durability_contract": "The first work item is pending and assigned to the role; workitem.dispatch persists a runtime effect and target-detail receipt."
+    },
+    {
+      "step": 7,
+      "name": "show observable receipts and monitor navigation",
+      "status": "covered",
+      "evidence": [
+        "tests/assistant-create-validate-deploy-run-fixture.test.ts",
+        "e2e/AssistantWidgetGoldenPath-747.spec.ts"
+      ],
+      "durability_contract": "Assistant normalized response includes action receipts and monitor navigation; browser path verifies visible operator work item state."
+    }
+  ],
+  "negative_coverage": [
+    {
+      "case": "deploy readiness failure",
+      "expected": "assistant sequence stops before runtime and no case is started",
+      "evidence": "tests/assistant-create-validate-deploy-run-fixture.test.ts"
+    },
+    {
+      "case": "case.start before deploy",
+      "expected": "WORKFLOW_NOT_EXECUTABLE and no case",
+      "evidence": "tests/backend-golden-path.test.ts"
+    },
+    {
+      "case": "missing role",
+      "expected": "ROLE_UNRESOLVABLE readiness blocker, deploy failure, no case",
+      "evidence": "tests/backend-golden-path.test.ts"
+    },
+    {
+      "case": "invalid trigger",
+      "expected": "TRIGGER_READINESS_INVALID deploy blocker, no case",
+      "evidence": "tests/backend-golden-path.test.ts"
+    },
+    {
+      "case": "invalid graph",
+      "expected": "GRAPH_INVALID_TERMINAL_STATE deploy blocker, no case",
+      "evidence": "tests/backend-golden-path.test.ts"
+    },
+    {
+      "case": "deploy side-effect failure",
+      "expected": "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED, workflow demoted to validated, no runnable case",
+      "evidence": "tests/backend-golden-path.test.ts"
+    },
+    {
+      "case": "work-item dispatch transport failure",
+      "expected": "runtime effect becomes dead_letter and no delivered marker is written",
+      "evidence": "tests/backend-golden-path.test.ts"
+    }
+  ],
+  "no_fake_success_guards": {
+    "client_only_state_counted": false,
+    "textual_assistant_reply_counted": false,
+    "preview_only_patch_counted": false,
+    "partial_deploy_counted_as_runnable": false,
+    "failed_dispatch_counted_as_delivered": false,
+    "evidence": [
+      "ProcessEditor reload assertion in e2e/AssistantWidgetGoldenPath-747.spec.ts",
+      "Action Spine envelope assertions in tests/backend-golden-path.test.ts",
+      "assistant action_receipts and skipped case.start assertions in tests/assistant-create-validate-deploy-run-fixture.test.ts"
+    ]
+  },
+  "review_commands": [
+    "python3 -m json.tool docs/golden-path-acceptance-closure-report.json >/dev/null",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/golden-path-acceptance-closure-report.test.ts tests/assistant-create-validate-deploy-run-fixture.test.ts tests/backend-golden-path.test.ts",
+    "ANTHROPIC_API_KEY=ci-placeholder PATH=/home/ubuntu/.bun/bin:$PATH bun x playwright test e2e/AssistantWidgetGoldenPath-747.spec.ts --config=playwright.config.ci.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run typecheck",
+    "git diff --check"
+  ],
+  "closure_decision": {
+    "parent_issue_can_close_after_review": true,
+    "release_gate_686_unblocked_by_this_parent": true,
+    "package_extraction_618_still_requires_686": true,
+    "warnings": [
+      "This closes the golden-path acceptance parent only; production release signoff remains #686.",
+      "Browser E2E remains an on-demand/checklist command for UI changes and release review."
+    ]
+  }
+}

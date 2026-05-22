@@ -67,11 +67,13 @@ python3 scripts/check-route-auth-policy.py
 scripts/staging-smoke.sh --dry-run
 ```
 
-Golden-path assistant/backend fixture evidence for #685/#745/#746:
+Golden-path acceptance evidence for #685/#745/#746/#747/#748:
 
 ```bash
+bun test --timeout 30000 tests/golden-path-acceptance-closure-report.test.ts
 bun test --timeout 30000 tests/assistant-create-validate-deploy-run-fixture.test.ts
 bun test --timeout 30000 tests/backend-golden-path.test.ts
+ANTHROPIC_API_KEY=ci-placeholder bun x playwright test e2e/AssistantWidgetGoldenPath-747.spec.ts --config=playwright.config.ci.ts
 ```
 
 This fixture uses `assistant.invoke` with a deterministic `fixture_response`
@@ -81,6 +83,11 @@ through `workflow.deploy`, starts a case through `case.start`, and asserts the
 assigned work item and monitor navigation receipt without calling a live LLM.
 The backend golden-path companion covers the same durable create, validate,
 deploy, run, work item, and dispatch receipt path without browser dependencies.
+The browser E2E companion verifies AssistantWidget, ProcessEditor reload
+persistence, deploy/run controls, and Work Items operator visibility. The
+machine-readable #685 parent closure receipt is
+`docs/golden-path-acceptance-closure-report.json`; human-readable evidence is
+`docs/golden-path-acceptance-closure-report.md`.
 
 Production-only commands. Do not require these from portable CI:
 
