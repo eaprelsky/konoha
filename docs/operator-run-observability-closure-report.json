@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 681,
+  "report_date": "2026-05-22",
+  "status": "ready_for_parent_review",
+  "parent_issue": 681,
+  "source_contract": "docs/runtime-effect-outbox.md#rollback-and-recovery",
+  "target_invariant": "Operators can inspect runtime progress, failed effects, waits, recovery actions, and alerts through durable machine-readable evidence; failed side effects remain failed/retry/dead-letter until an explicit audited recovery action changes state.",
+  "accepted_child_issues": [720, 729, 730, 731, 732],
+  "acceptance_coverage": [
+    {
+      "criterion": "case timeline records runtime effect state changes and deploy receipts",
+      "status": "covered",
+      "issues": [729],
+      "stable_event_types": [
+        "runtime.effect.enqueued",
+        "runtime.effect.claimed",
+        "runtime.effect.succeeded",
+        "runtime.effect.retry_scheduled",
+        "runtime.effect.dead_lettered",
+        "runtime.effect.cancelled",
+        "runtime.effect.recovery",
+        "workflow.deploy.receipt"
+      ],
+      "evidence": [
+        "src/runtime/timeline-events.ts",
+        "docs/runtime-effect-outbox.md",
+        "tests/runtime-effect-outbox.test.ts",
+        "tests/runtime-effect-recovery.test.ts"
+      ],
+      "notes": "Timeline emission is idempotency-guarded and carries case/work-item/effect/deploy correlation."
+    },
+    {
+      "criterion": "operators can inspect and act on failed effects and waiting states without hidden-artifact leakage",
+      "status": "covered",
+      "issues": [730],
+      "evidence": [
+        "frontend/src/pages/Monitor.tsx",
+        "frontend/src/pages/MonitorOpsPanel.tsx",
+        "frontend/src/__tests__/monitorOpsPanel.test.tsx",
+        "frontend/src/__tests__/operatorView.test.ts"
+      ],
+      "notes": "Monitor recovery lane filters waits and runtime effects through the operator hidden-artifact contract before rendering summaries and actions."
+    },
+    {
+      "criterion": "runtime effect recovery has CLI/API retry, cancel, and dead-letter controls",
+      "status": "covered",
+      "issues": [720],
+      "evidence": [
+        "src/routes/runtime-effects.ts",
+        "scripts/runtime-effect-recovery.ts",
+        "docs/runtime-effect-outbox.md",
+        "tests/runtime-effect-recovery.test.ts"
+      ],
+      "required_operations": ["inspect", "list", "retry", "cancel", "dead_letter"],
+      "notes": "Recovery mutations require an operator reason and reject active in-flight worker claims."
+    },
+    {
+      "criterion": "recovery actions are audit-linked for success and structured failure paths",
+      "status": "covered",
+      "issues": [731],
+      "evidence": [
+        "src/runtime-effect-outbox.ts",
+        "src/runtime/timeline-events.ts",
+        "tests/runtime-effect-recovery.test.ts"
+      ],
+      "required_audit_fields": [
+        "audit.session_id",
+        "audit.action_type",
+        "audit.entry_id",
+        "actor",
+        "reason",
+        "from_status",
+        "to_status",
+        "request_path"
+      ],
+      "notes": "Rejected recovery attempts return structured RuntimeEffectRecoveryError details with result=error audit evidence."
+    },
+    {
+      "criterion": "operational alerts flag stuck cases and failed/dead-letter effects with dedupe and recovery correlation",
+      "status": "covered",
+      "issues": [732],
+      "evidence": [
+        "src/operational-alerts.ts",
+        "src/routes/operational-alerts.ts",
+        "tests/operational-alerts.test.ts"
+      ],
+      "stable_alert_kinds": ["stuck_case", "runtime_effect_failed"],
+      "notes": "Alerts carry severity, idempotency/dedupe keys, case/effect correlation, evidence, and recovery API paths."
+    },
+    {
+      "criterion": "operator evidence does not claim success for failed or partially recovered effects",
+      "status": "covered",
+      "issues": [720, 731, 732],
+      "evidence": [
+        "src/runtime-effect-outbox.ts",
+        "src/routes/runtime-effects.ts",
+        "src/operational-alerts.ts",
+        "tests/runtime-effect-recovery.test.ts",
+        "tests/operational-alerts.test.ts"
+      ],
+      "notes": "Failed/dead-letter statuses remain visible in API, Monitor, timeline, and alerts until an explicit recovery transition is accepted and audited."
+    }
+  ],
+  "operator_surfaces": [
+    {
+      "surface": "runtime effect API",
+      "paths": [
+        "GET /runtime-effects",
+        "GET /runtime-effects/:effect_id",
+        "POST /runtime-effects/:effect_id/retry",
+        "POST /runtime-effects/:effect_id/cancel",
+        "POST /runtime-effects/:effect_id/dead-letter"
+      ]
+    },
+    {
+      "surface": "runtime effect CLI",
+      "paths": ["scripts/runtime-effect-recovery.ts"]
+    },
+    {
+      "surface": "Monitor recovery lane",
+      "paths": ["frontend/src/pages/Monitor.tsx", "frontend/src/pages/MonitorOpsPanel.tsx"]
+    },
+    {
+      "surface": "operational alerts",
+      "paths": ["src/operational-alerts.ts", "src/routes/operational-alerts.ts"]
+    }
+  ],
+  "review_commands": [
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/operator-run-observability-closure-report.test.ts tests/runtime-effect-recovery.test.ts tests/runtime-effect-outbox.test.ts tests/operational-alerts.test.ts tests/event-waits-list.test.ts",
+    "cd frontend && PATH=/home/ubuntu/.bun/bin:$PATH bun run test -- monitorOpsPanel operatorView",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run typecheck"
+  ],
+  "closure_decision": {
+    "parent_issue_can_close_after_review": true,
+    "remaining_blockers": [],
+    "release_claim_unblocked": false,
+    "notes": "This reconciles the #681 parent after #720, #729, #730, #731, and #732. Production release still follows the #686 checklist and #812 terminal-case gate."
+  }
+}

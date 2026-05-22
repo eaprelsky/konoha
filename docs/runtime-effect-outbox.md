@@ -248,3 +248,8 @@ outbox/wait records and does not maintain a separate recovery state.
 For runtime recovery procedures, use
 `docs/workflow-runtime-rollback-recovery.md`. For release gates, use
 `docs/workflow-constructor-runtime-release-checklist.md`.
+
+Issue #681 parent closure evidence for operator-grade run observability,
+recovery, retry controls, and operational alerts lives in
+`docs/operator-run-observability-closure-report.json` and
+`docs/operator-run-observability-closure-report.md`.
