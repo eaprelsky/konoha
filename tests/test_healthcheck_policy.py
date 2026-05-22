@@ -52,6 +52,37 @@ def test_healthcheck_summary_includes_monitor_environment(capsys, monkeypatch):
     assert "summary env=staging: 1 OK, 0 WARN, 0 FAIL" in out
 
 
+def test_operational_alerts_ok_when_empty(monkeypatch):
+    monkeypatch.setattr(healthcheck, "api_get", lambda path: {
+        "summary": {"total": 0, "critical": 0, "warning": 0, "stuck_case": 0, "runtime_effect_failed": 0},
+        "alerts": [],
+    })
+
+    checks = healthcheck.check_operational_alerts()
+
+    assert checks == [healthcheck.Check("OK", "runtime.operational_alerts", "alerts=0 critical=0 warning=0 stuck_case=0 runtime_effect_failed=0")]
+
+
+def test_operational_alerts_warn_with_actionable_correlation(monkeypatch):
+    monkeypatch.setattr(healthcheck, "api_get", lambda path: {
+        "summary": {"total": 2, "critical": 1, "warning": 1, "stuck_case": 1, "runtime_effect_failed": 1},
+        "alerts": [{
+            "alert_id": "opalert_dead",
+            "kind": "runtime_effect_failed",
+            "severity": "critical",
+            "correlation": {"case_id": "case-1", "effect_id": "rte-1"},
+        }],
+    })
+
+    checks = healthcheck.check_operational_alerts()
+
+    assert checks[0].level == "WARN"
+    assert checks[0].name == "runtime.operational_alerts"
+    assert "alerts=2 critical=1 warning=1" in checks[0].detail
+    assert "first=opalert_dead kind=runtime_effect_failed severity=critical case_id=case-1 effect_id=rte-1" in checks[0].detail
+    assert "/operational-alerts" in checks[0].hint
+
+
 def test_prod_core_treats_sdd_worker_absence_as_optional_disabled():
     policy = healthcheck.load_healthcheck_policy(
         environ={"KONOHA_FEATURE_FLAGS_FILE": "/tmp/nonexistent-konoha-feature-flags.json"},

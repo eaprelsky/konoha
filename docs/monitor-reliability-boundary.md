@@ -56,3 +56,18 @@ functions with business roles and instruction documents.
 ## Runbook Rule
 
 Use `scripts/healthcheck-system.py` for deployment readiness and raw runtime diagnostics. Use workflow cases for decisions, assignment, escalation, and post-incident learning.
+
+## Operational Alert Contract
+
+`GET /operational-alerts` is the stable runtime alert surface for stuck cases
+and failed runtime effects. It returns deterministic `alert_id`/`dedupe_key`
+values, severity, case/effect correlation, evidence, and recovery action hints.
+The endpoint is admin-only and does not mutate runtime state.
+
+`scripts/healthcheck-system.py` reads this endpoint and emits
+`runtime.operational_alerts`. Any non-empty alert set is a `WARN` with the first
+alert id, kind, severity, case id, and effect id in the detail line so Akamaru's
+existing severity-aware routing can wake the monitor role without creating a
+new alert transport. Operators should inspect the correlated case/effect and
+use the #720/#731 recovery APIs or Action Spine case actions; alerts are
+idempotent observations, not recovery decisions.

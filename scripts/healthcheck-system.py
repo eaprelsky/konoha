@@ -205,6 +205,9 @@ REDIS_COMMANDSTATS_STATE_FILE = Path(os.environ.get("KONOHA_REDIS_COMMANDSTATS_S
 XREADGROUP_WARN_PER_SEC = float(os.environ.get("KONOHA_XREADGROUP_WARN_PER_SEC", "20"))
 XGROUP_WARN_PER_SEC = float(os.environ.get("KONOHA_XGROUP_WARN_PER_SEC", "1"))
 TELEGRAM_PACKER_CPU_WARN_PERCENT = float(os.environ.get("KONOHA_TELEGRAM_PACKER_CPU_WARN_PERCENT", "25"))
+OPERATIONAL_ALERT_LIMIT = int(os.environ.get("KONOHA_OPERATIONAL_ALERT_LIMIT", "20"))
+STUCK_CASE_WARNING_MS = int(os.environ.get("KONOHA_STUCK_CASE_WARNING_MS", str(4 * 60 * 60 * 1000)))
+STUCK_CASE_CRITICAL_MS = int(os.environ.get("KONOHA_STUCK_CASE_CRITICAL_MS", str(24 * 60 * 60 * 1000)))
 
 
 @dataclass
@@ -787,6 +790,40 @@ def check_api() -> list[Check]:
     except Exception as exc:
         checks.append(Check("WARN", "konoha.agents", str(exc), "Check KONOHA_TOKEN and /agents route"))
     return checks
+
+
+def check_operational_alerts() -> list[Check]:
+    query = (
+        f"/operational-alerts?limit={OPERATIONAL_ALERT_LIMIT}"
+        f"&stuck_case_warning_ms={STUCK_CASE_WARNING_MS}"
+        f"&stuck_case_critical_ms={STUCK_CASE_CRITICAL_MS}"
+    )
+    try:
+        receipt = api_get(query)
+    except Exception as exc:
+        return [Check("WARN", "runtime.operational_alerts", str(exc), "Check /operational-alerts and KONOHA_TOKEN")]
+
+    summary = receipt.get("summary") or {}
+    alerts = receipt.get("alerts") or []
+    total = coerce_int(summary.get("total"))
+    critical = coerce_int(summary.get("critical"))
+    warning = coerce_int(summary.get("warning"))
+    stuck_cases = coerce_int(summary.get("stuck_case"))
+    failed_effects = coerce_int(summary.get("runtime_effect_failed"))
+    first = alerts[0] if alerts else {}
+    correlation = first.get("correlation") or {}
+    detail = (
+        f"alerts={total} critical={critical} warning={warning} "
+        f"stuck_case={stuck_cases} runtime_effect_failed={failed_effects}"
+    )
+    if first:
+        detail += (
+            f" first={first.get('alert_id')} kind={first.get('kind')} severity={first.get('severity')}"
+            f" case_id={correlation.get('case_id')} effect_id={correlation.get('effect_id')}"
+        )
+    if total > 0:
+        return [Check("WARN", "runtime.operational_alerts", detail, "Inspect: curl -sS $KONOHA_URL/operational-alerts -H \"Authorization: Bearer $KONOHA_TOKEN\"")]
+    return [Check("OK", "runtime.operational_alerts", detail)]
 
 
 def check_redis_streams(policy: HealthcheckPolicy | None = None) -> list[Check]:
@@ -1612,6 +1649,7 @@ def main() -> int:
     checks.extend(check_systemd(policy))
     checks.extend(check_systemd_slices(policy))
     checks.extend(check_api())
+    checks.extend(check_operational_alerts())
     checks.extend(check_redis_streams(policy))
     checks.extend(check_telegram_packer_pressure(policy))
     checks.extend(check_redis_polling_storm())
