@@ -57,17 +57,25 @@ function report(overrides: Partial<PgOnlyRetentionReport> = {}): PgOnlyRetention
 
 describe("PG_READ readiness report", () => {
   test("marks entities ready only when Redis shadow is complete and PG-only rows are absent", () => {
-    const readiness = buildPgReadReadinessReportFromRetentionReport(report(), { pgReadEnabled: false });
+    const readiness = buildPgReadReadinessReportFromRetentionReport(report(), {
+      env: {
+        PG_READ_ENTITIES: "documents,cases",
+      },
+    });
 
     expect(readiness.mode).toBe("pg_read_readiness");
     expect(readiness.overall_status).toBe("blocked");
-    expect(readiness.summary).toMatchObject({ ready: 4, blocked: 2, pg_primary: 1 });
+    expect(readiness.rollout_status).toBe("unsafe");
+    expect(readiness.enabled_entities).toEqual(["documents", "cases"]);
+    expect(readiness.summary).toMatchObject({ ready: 4, blocked: 2, pg_primary: 1, enabled: 2, enabled_blocked: 1 });
     expect(readiness.entities.find(entity => entity.entity === "documents")).toMatchObject({
       status: "ready",
+      pg_read_enabled: true,
       recommendation: "documents is eligible for an entity-scoped PG_READ rollout with normal latency monitoring.",
     });
     expect(readiness.entities.find(entity => entity.entity === "cases")).toMatchObject({
       status: "blocked",
+      pg_read_enabled: true,
       blockers: [
         { code: "ONLY_IN_REDIS", count: 1 },
         { code: "PG_ONLY_MANUAL_REVIEW", count: 2 },
@@ -80,6 +88,7 @@ describe("PG_READ readiness report", () => {
     });
     expect(readiness.entities.find(entity => entity.entity === "work_items")).toMatchObject({
       status: "blocked",
+      pg_read_enabled: false,
       blockers: [{ code: "PG_ONLY_RETENTION_REQUIRED", count: 3 }],
       evidence: { safe_cleanup_candidate_count: 3 },
     });
@@ -91,11 +100,14 @@ describe("PG_READ readiness report", () => {
 
   test("renders operator-readable blockers and recommendations", () => {
     const text = renderPgReadReadinessReportText(
-      buildPgReadReadinessReportFromRetentionReport(report(), { pgReadEnabled: true }),
+      buildPgReadReadinessReportFromRetentionReport(report(), { env: { PG_READ_DOCUMENTS: "true" } }),
     );
 
     expect(text).toContain("=== Konoha PG_READ readiness report ===");
+    expect(text).toContain("Enabled entities: documents");
+    expect(text).toContain("Rollout: safe");
     expect(text).toContain("[BLOCKED] cases");
+    expect(text).toContain("[READY] documents: pg_read_enabled=true");
     expect(text).toContain("BLOCKER ONLY_IN_REDIS");
     expect(text).toContain("BLOCKER PG_ONLY_RETENTION_REQUIRED");
     expect(text).toContain("[PG_PRIMARY] agents");

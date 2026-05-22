@@ -119,9 +119,12 @@ Workflow Engine entities are still Redis-primary unless a contract explicitly sa
 - Workflows, cases, work items, roles, reminders, documents: Redis active store.
 - PostgreSQL: shadow durability and analytics store.
 - `PG_READ=false`: current production default.
-- `PG_READ=true`: future cutover mode, gated by `docs/workflow-engine.md` and the persistence roadmap.
+- Staged flags (`PG_READ_ENTITIES` or per-entity `PG_READ_*`) enable
+  PostgreSQL reads one Redis-primary entity at a time after readiness evidence.
+- `PG_READ=true`: legacy all-entity fallback, gated by `docs/workflow-engine.md`
+  and the persistence roadmap.
 
-`scripts/pg-verify.ts` is the current safety check: every active Redis entity must exist in PostgreSQL. `onlyInRedis` is a release/cutover blocker. Extra PostgreSQL rows are treated as archived/historical retention debt; as of 2026-04-30 production has `onlyInRedis=0` and known `onlyInPG` bloat, so `PG_READ=true` must stay gated until retention filtering/cleanup is designed.
+`scripts/pg-verify.ts` is the current safety check: every active Redis entity must exist in PostgreSQL. `onlyInRedis` is a release/cutover blocker. Extra PostgreSQL rows are treated as archived/historical retention debt; as of 2026-04-30 production has `onlyInRedis=0` and known `onlyInPG` bloat, so PG_READ flags must stay gated until retention filtering/cleanup is designed.
 
 ### MCP Surface
 

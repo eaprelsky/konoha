@@ -1,10 +1,10 @@
-import { config } from "./config";
 import {
   buildPgOnlyRetentionReport,
   type PgOnlyRetentionReport,
   type RetentionEntity,
   type RetentionGroup,
 } from "./retention/report";
+import { PG_READ_ENTITIES, resolvePgReadFlags, type PgReadEntity } from "./storage/pg-read-flags";
 
 export type PgReadReadinessStatus = "ready" | "blocked" | "pg_primary";
 
@@ -20,6 +20,7 @@ export interface PgReadEntityReadiness {
   entity: RetentionEntity;
   status: PgReadReadinessStatus;
   pg_read_path: "implemented" | "pg_primary";
+  pg_read_enabled: boolean;
   blockers: PgReadReadinessBlocker[];
   evidence: {
     redis_count: number;
@@ -39,25 +40,21 @@ export interface PgReadReadinessReport {
   mode: "pg_read_readiness";
   schema_version: 1;
   generated_at: string;
+  legacy_pg_read_enabled: boolean;
   pg_read_enabled: boolean;
+  enabled_entities: PgReadEntity[];
+  rollout_status: "safe" | "unsafe";
   overall_status: "ready" | "blocked";
   summary: {
     total_entities: number;
     ready: number;
     blocked: number;
     pg_primary: number;
+    enabled: number;
+    enabled_blocked: number;
   };
   entities: PgReadEntityReadiness[];
 }
-
-const PG_READ_ENTITIES: RetentionEntity[] = [
-  "roles",
-  "documents",
-  "workflows",
-  "cases",
-  "work_items",
-  "reminders",
-];
 
 const PG_PRIMARY_ENTITIES = new Set<RetentionEntity>(["agents"]);
 
@@ -116,8 +113,9 @@ function recommendationFor(entity: RetentionEntity, status: PgReadReadinessStatu
 
 export function buildPgReadReadinessReportFromRetentionReport(
   report: PgOnlyRetentionReport,
-  options: { pgReadEnabled?: boolean } = {},
+  options: { pgReadEnabled?: boolean; env?: NodeJS.ProcessEnv } = {},
 ): PgReadReadinessReport {
+  const flagConfig = resolvePgReadFlags(options.env);
   const byEntity = new Map(report.entityCounts.map(count => [count.entity, count]));
   const entities: PgReadEntityReadiness[] = [];
   const orderedEntities = [...PG_READ_ENTITIES, ...[...PG_PRIMARY_ENTITIES].filter(entity => byEntity.has(entity))];
@@ -129,6 +127,7 @@ export function buildPgReadReadinessReportFromRetentionReport(
     const safeCleanupCount = groupCount(groups, group => group.safe_cleanup_candidate);
     const manualReviewCount = groupCount(groups, group => group.disposition === "manual_review");
     const pgPrimary = PG_PRIMARY_ENTITIES.has(entity);
+    const pgReadEnabled = pgPrimary ? false : flagConfig.entity_flags[entity as PgReadEntity] === true;
     const blockers = pgPrimary
       ? []
       : [
@@ -141,6 +140,7 @@ export function buildPgReadReadinessReportFromRetentionReport(
       entity,
       status,
       pg_read_path: pgPrimary ? "pg_primary" : "implemented",
+      pg_read_enabled: pgReadEnabled,
       blockers,
       evidence: {
         redis_count: count.redisCount,
@@ -168,13 +168,18 @@ export function buildPgReadReadinessReportFromRetentionReport(
     ready: entities.filter(entity => entity.status === "ready").length,
     blocked: entities.filter(entity => entity.status === "blocked").length,
     pg_primary: entities.filter(entity => entity.status === "pg_primary").length,
+    enabled: entities.filter(entity => entity.pg_read_enabled).length,
+    enabled_blocked: entities.filter(entity => entity.pg_read_enabled && entity.status === "blocked").length,
   };
 
   return {
     mode: "pg_read_readiness",
     schema_version: 1,
     generated_at: report.generated_at,
-    pg_read_enabled: options.pgReadEnabled ?? config.storage.pgRead,
+    legacy_pg_read_enabled: options.pgReadEnabled ?? flagConfig.legacy_global_enabled,
+    pg_read_enabled: options.pgReadEnabled ?? flagConfig.legacy_global_enabled,
+    enabled_entities: flagConfig.enabled_entities,
+    rollout_status: summary.enabled_blocked === 0 ? "safe" : "unsafe",
     overall_status: summary.blocked === 0 ? "ready" : "blocked",
     summary,
     entities,
@@ -190,14 +195,16 @@ export function renderPgReadReadinessReportText(report: PgReadReadinessReport): 
   const lines = [
     "=== Konoha PG_READ readiness report ===",
     `Generated: ${report.generated_at}`,
-    `PG_READ enabled: ${report.pg_read_enabled}`,
+    `Legacy PG_READ enabled: ${report.legacy_pg_read_enabled}`,
+    `Enabled entities: ${report.enabled_entities.length ? report.enabled_entities.join(",") : "(none)"}`,
+    `Rollout: ${report.rollout_status}`,
     `Overall: ${report.overall_status}`,
-    `Summary: ready=${report.summary.ready} blocked=${report.summary.blocked} pg_primary=${report.summary.pg_primary}`,
+    `Summary: ready=${report.summary.ready} blocked=${report.summary.blocked} pg_primary=${report.summary.pg_primary} enabled=${report.summary.enabled} enabled_blocked=${report.summary.enabled_blocked}`,
     "",
   ];
 
   for (const entity of report.entities) {
-    lines.push(`[${entity.status.toUpperCase()}] ${entity.entity}: redis=${entity.evidence.redis_count} pg=${entity.evidence.pg_count} onlyInRedis=${entity.evidence.only_in_redis_count} onlyInPg=${entity.evidence.only_in_pg_count}`);
+    lines.push(`[${entity.status.toUpperCase()}] ${entity.entity}: pg_read_enabled=${entity.pg_read_enabled} redis=${entity.evidence.redis_count} pg=${entity.evidence.pg_count} onlyInRedis=${entity.evidence.only_in_redis_count} onlyInPg=${entity.evidence.only_in_pg_count}`);
     for (const blocker of entity.blockers) {
       lines.push(`  BLOCKER ${blocker.code}: count=${blocker.count} ${blocker.message}`);
       if (blocker.sample_ids?.length) lines.push(`    samples=${blocker.sample_ids.join(", ")}`);

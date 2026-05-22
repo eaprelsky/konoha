@@ -70,7 +70,9 @@ PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-only-retention-report.ts --j
 `retention.pg_read_readiness`, `GET /pg-read-readiness`, and
 `scripts/pg-read-readiness-report.ts` are the operator-facing PG_READ gate. The
 report is read-only and answers, per entity, whether PG_READ is eligible and
-what blocks it:
+what blocks it. It also reports staged rollout state from `PG_READ_ENTITIES`
+and per-entity `PG_READ_*` flags, including `enabled_entities` and
+`rollout_status=safe|unsafe`:
 
 - `ONLY_IN_REDIS`: PostgreSQL shadow is missing active Redis-primary rows;
 - `PG_ONLY_MANUAL_REVIEW`: PostgreSQL has historical rows that need operator

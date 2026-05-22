@@ -5,8 +5,7 @@
 import { redis } from "../redis";
 import { silentCatch } from "../logger";
 import { pgUpsertRole, pgDeleteRole, pgGetRole, pgListRoles as pgListRolesRaw } from "../storage/pg";
-
-const PG_READ = process.env.PG_READ === "true";
+import { isPgReadEnabledFor } from "../storage/pg-read-flags";
 
 const ROLE_KEY_PREFIX = "role:";
 const ROLES_IDX_ALL = "konoha:roles:all";
@@ -60,7 +59,7 @@ async function saveRole(r: RoleDef): Promise<void> {
 }
 
 export async function loadRole(role_id: string): Promise<RoleDef | null> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("roles")) {
     const row = await pgGetRole(role_id);
     return row ? pgRowToRole(row) : null;
   }
@@ -76,7 +75,7 @@ export async function createRole(params: Omit<RoleDef, "created_at" | "updated_a
 }
 
 export async function listRoles(): Promise<RoleDef[]> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("roles")) {
     const rows = await pgListRolesRaw();
     return rows.map(pgRowToRole);
   }

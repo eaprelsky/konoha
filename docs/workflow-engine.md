@@ -253,7 +253,12 @@ subscription diff counts, and failure evidence for operator recovery views.
 
 `src/storage/pg.ts` provides the persistence layer. Redis is used as the primary read/write store; PostgreSQL receives shadow writes for durability and analytics.
 
-The flag `PG_READ=true` switches reads to PostgreSQL (Phase 2 migration, issue #332).
+Staged PG_READ flags switch Redis-primary entities to PostgreSQL reads one
+entity at a time. Use `PG_READ_ENTITIES=documents,roles` or explicit
+per-entity flags (`PG_READ_DOCUMENTS=true`, `PG_READ_CASES=true`, etc.) after
+`scripts/pg-read-readiness-report.ts` marks that entity ready. `PG_READ=true`
+is kept only as a legacy all-entity fallback and should not be used for
+production-core rollout without separate approval.
 
 ### Tables
 
@@ -274,11 +279,13 @@ All mutations go through `pgUpsertCase` / `pgUpsertWorkItem` / etc. Most runtime
 
 ### Read path
 
-When `PG_READ=true`, `loadCase` / `loadWorkItem` / `listCases` etc. query PostgreSQL instead of Redis. Row converters (`pgRowToCase`, `pgRowToWorkItem`) normalise DB rows to the runtime types.
+When an entity PG_READ flag is enabled, that entity's read helpers query
+PostgreSQL instead of Redis. Row converters (`pgRowToCase`, `pgRowToWorkItem`)
+normalise DB rows to the runtime types.
 
 ### Verification gate
 
-Before switching `PG_READ=true` or delegating runtime changes that affect persisted entities, run:
+Before enabling any PG_READ entity flag or delegating runtime changes that affect persisted entities, run:
 
 ```bash
 cd /home/ubuntu/konoha

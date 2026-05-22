@@ -10,10 +10,9 @@ import {
   pgGetCase, pgListCases, pgDeleteCasesByProcess,
   pgGetWorkItem, pgListWorkItems,
 } from "../../storage/pg";
+import { isPgReadEnabledFor } from "../../storage/pg-read-flags";
 import type { Case, WorkItem, WorkItemStatus, CaseStatus } from "./types";
 import { payloadWithWorkflowSnapshot, workflowSnapshotBindingFromPayload } from "./workflow-binding";
-
-const PG_READ = process.env.PG_READ === "true";
 
 // ── Redis key prefixes ────────────────────────────────────────────────────────
 
@@ -90,7 +89,7 @@ export async function saveCase(c: Case): Promise<void> {
 }
 
 export async function loadCase(case_id: string): Promise<Case | null> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("cases")) {
     const row = await pgGetCase(case_id);
     return row ? pgRowToCase(row) : null;
   }
@@ -119,7 +118,7 @@ export async function saveWorkItem(wi: WorkItem, prevStatus?: WorkItemStatus, pr
 }
 
 export async function loadWorkItem(work_item_id: string): Promise<WorkItem | null> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("work_items")) {
     const row = await pgGetWorkItem(work_item_id);
     return row ? pgRowToWorkItem(row) : null;
   }

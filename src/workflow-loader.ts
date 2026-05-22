@@ -10,10 +10,9 @@ import { analyzeGatewayCondition } from "./workflow-gateway-conditions";
 import * as nodeCron from "node-cron";
 import { parseBdDuration } from "./work-calendar";
 import { parseDurationMs } from "./events/utils";
+import { isPgReadEnabledFor } from "./storage/pg-read-flags";
 
 const log = createLogger("workflow-loader");
-
-const PG_READ = process.env.PG_READ === "true";
 
 export interface SystemBinding {
   binding_id?: string; // stable payload scope key for action_args, unique within a workflow
@@ -1670,7 +1669,7 @@ export async function loadWorkflows(workflowsDir: string): Promise<{ loaded: num
 }
 
 export async function getWorkflow(id: string): Promise<WorkflowDefinition | null> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("workflows")) {
     const row = await pgGetWorkflow(id);
     if (!row) return null;
     return normalizeWorkflow(row as unknown as WorkflowDefinition);
@@ -1681,7 +1680,7 @@ export async function getWorkflow(id: string): Promise<WorkflowDefinition | null
 }
 
 export async function listWorkflows(): Promise<WorkflowDefinition[]> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("workflows")) {
     const rows = await pgListWorkflowsRaw();
     return rows.map(r => normalizeWorkflow(r as unknown as WorkflowDefinition));
   }

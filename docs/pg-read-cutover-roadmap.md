@@ -2,13 +2,15 @@
 
 Date: 2026-04-30
 
-This document defines the phased plan for migrating read paths from Redis to PostgreSQL, using the `PG_READ=true` feature flag.
+This document defines the phased plan for migrating read paths from Redis to PostgreSQL, using staged PG_READ entity flags.
 
 ## Current State
 
 - **Redis is primary**: All reads and writes go through Redis.
 - **PG is shadow**: Writes are dual-written via `pgWrite()` wrapper; failures are silently caught.
-- **PG_READ flag exists**: Individual read paths check `PG_READ=true` to switch to PG.
+- **Staged PG_READ flags exist**: read paths use `PG_READ_ENTITIES` or
+  per-entity `PG_READ_*` flags to switch to PG one entity at a time. `PG_READ`
+  remains a legacy all-entity fallback.
 - **pg-verify.ts**: Compares Redis ↔ PG for 8 entities; reports `onlyInRedis` (data loss risk) and `onlyInPG` (historical retention / bloat).
 - **Current production finding (2026-04-30)**: after `main@9739ac5`, `onlyInRedis=0`, but `pg-verify.ts` exits `2` because PG historical rows exceed the default bloat threshold. This is retention debt, not a deploy regression.
 
@@ -25,6 +27,7 @@ This document defines the phased plan for migrating read paths from Redis to Pos
 - [x] Add a dry-run PG-only retention report before strict mode is required (`bun run scripts/pg-only-retention-report.ts`)
 - [x] Define PG-only retention classes and safe cleanup candidate policy from dry-run reports (#738)
 - [x] Add PG_READ entity readiness report with blocker reasons (`bun run scripts/pg-read-readiness-report.ts`) (#739)
+- [x] Add staged PG_READ entity flags with conservative default-off rollout (#740)
 - [ ] Decide whether non-strict bloat should be warning-only or a release blocker
 
 **Exit criteria**: non-strict `bun run scripts/pg-verify.ts` has zero `onlyInRedis` daily for one week, and PG-only retention policy is documented. `--strict` remains a later hardening target after retention cleanup exists.
@@ -47,7 +50,8 @@ This document defines the phased plan for migrating read paths from Redis to Pos
 
 **Goal**: Shift read traffic incrementally, one entity at a time.
 
-1. **Week 1**: `PG_READ=true` for agents, roles, documents (static/low-volume)
+1. **Week 1**: enable PG_READ for roles and documents (static/low-volume);
+   agents are already PG-primary and are not controlled by PG_READ.
 2. **Week 2**: + workflows (cached reads, moderate volume)
 3. **Week 3**: + cases, work_items (high volume, filtered queries)
 4. **Week 4**: + messages, reminders, audit (streaming/pagination)
@@ -84,7 +88,7 @@ Each shift:
 ## Rollback Procedures
 
 At any phase, rollback is:
-1. Set `PG_READ=false`
+1. Remove the entity from `PG_READ_ENTITIES` or set its `PG_READ_*` flag to `false`
 2. Restart server
 3. All reads return to Redis
 

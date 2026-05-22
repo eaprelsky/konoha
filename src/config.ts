@@ -1,4 +1,5 @@
 import { ConfigError } from "./errors";
+import { resolvePgReadFlags } from "./storage/pg-read-flags";
 
 export type LlmProvider = "anthropic" | "glm";
 
@@ -10,6 +11,8 @@ function readString(name: string, fallback?: string): string {
 function normalizeProvider(value: string): LlmProvider {
   return value === "glm" ? "glm" : "anthropic";
 }
+
+const pgReadFlags = resolvePgReadFlags();
 
 export const config = {
   auth: {
@@ -38,7 +41,9 @@ export const config = {
   },
   storage: {
     databaseUrl: readString("DATABASE_URL", "postgres://127.0.0.1:5432/konoha"),
-    pgRead: readString("PG_READ") === "true",
+    pgRead: pgReadFlags.legacy_global_enabled,
+    pgReadEntities: pgReadFlags.enabled_entities,
+    pgReadEntityFlags: pgReadFlags.entity_flags,
     redisDb: Number(readString("REDIS_DB", "0")),
   },
 };

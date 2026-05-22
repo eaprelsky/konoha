@@ -19,10 +19,10 @@ import { createLogger } from "../logger";
 import { dispatchWorkItem, isSystemDispatchRole } from "../dispatcher";
 import { loadWorkflowForCase } from "./cases/workflow-binding";
 import { enqueueWorkItemDispatchEffect } from "./workitem-dispatch-outbox";
+import { isPgReadEnabledFor } from "../storage/pg-read-flags";
 
 const log = createLogger("runtime:work-items");
 
-const PG_READ = process.env.PG_READ === "true";
 const TERMINAL_WORKITEM_STATUSES = new Set<WorkItemStatus>(["done", "cancelled", "error"]);
 
 // Re-dispatch dedup: prevent infinite re-dispatch loops for stuck cases (#811)
@@ -31,7 +31,7 @@ const REDISPATCH_DEDUP_TTL = 900; // 15 min window
 const REDISPATCH_MAX_ATTEMPTS = 3;
 
 export async function getWorkItem(work_item_id: string): Promise<WorkItem | null> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("work_items")) {
     const row = await pgGetWorkItem(work_item_id);
     return row ? pgRowToWorkItem(row) : null;
   }
@@ -181,7 +181,7 @@ export async function listWorkItems(filters: {
 }): Promise<ListWorkItemsResult> {
   const offset = filters.offset ?? 0;
   const limit = filters.limit ?? 50;
-  if (PG_READ) {
+  if (isPgReadEnabledFor("work_items")) {
     const rows = await pgListWorkItems(filters);
     const all = rows.map(pgRowToWorkItem);
     all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());

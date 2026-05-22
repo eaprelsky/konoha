@@ -2,7 +2,7 @@
 
 Date: 2026-04-30
 
-This document defines which store is canonical for each entity in the Konoha system. Workflow/runtime entities are Redis-primary today; Konoha bus presence is PostgreSQL-primary with a legacy Redis compatibility hash. The default migration direction for workflow data is Redis -> PG until `PG_READ=true` cutover criteria are met.
+This document defines which store is canonical for each entity in the Konoha system. Workflow/runtime entities are Redis-primary today; Konoha bus presence is PostgreSQL-primary with a legacy Redis compatibility hash. The default migration direction for workflow data is Redis -> PG until staged PG_READ entity cutover criteria are met.
 
 ## Entity SOT Matrix
 
@@ -24,7 +24,7 @@ This document defines which store is canonical for each entity in the Konoha sys
 1. **Workflow writes go to Redis first.** Redis is the system of record for active Workflow Engine data until the PG cutover.
 2. **Bus presence writes go to PostgreSQL first.** `konoha:registry` exists only for legacy compatibility and verification.
 3. **PG shadow for workflow data is async.** `pgWrite()` / `pgStoreMessage()` fire after Redis write succeeds. PG failures are logged but never block the Redis write path.
-4. **PG_READ feature flag** (`PG_READ=true`) switches workflow reads to PG for gradual cutover testing. When enabled, read paths query PG tables instead of Redis keys.
+4. **PG_READ entity flags** switch Redis-primary entity reads to PG for gradual cutover testing. Default is all entities off. Operators can use `PG_READ_ENTITIES=documents,roles` or explicit flags like `PG_READ_DOCUMENTS=true`; `PG_READ=true` is a legacy all-entity fallback and is not the production-core rollout path.
 5. **Verification** runs via `bun run scripts/pg-verify.ts`:
    - `onlyInRedis > 0` is a data-loss risk and blocks PG cutover work.
    - `onlyInPG` is historical/shadow retention by default, but the script currently exits `2` when it exceeds the configured bloat threshold.
@@ -46,6 +46,7 @@ This document defines which store is canonical for each entity in the Konoha sys
 7. **PG_READ readiness reporting** runs via `bun run scripts/pg-read-readiness-report.ts`,
    `GET /pg-read-readiness`, or Action Spine `retention.pg_read_readiness`:
    - returns per-entity `ready`, `blocked`, or `pg_primary` status;
+   - reports enabled entity flags and `rollout_status=safe|unsafe`;
    - blocks on any `onlyInRedis` rows;
    - blocks on PG-only manual-review rows or safe cleanup candidates until the
      entity has an approved cleanup/filtering path;
@@ -61,7 +62,7 @@ Records exist in Redis but not in PG.
 
 ### PG → Redis divergence (onlyInPG)
 Records exist in PG but not in Redis.
-- **Risk**: stale data if `PG_READ=true` is enabled without retention filtering; otherwise mostly archived/historical rows.
+- **Risk**: stale data if an entity PG_READ flag is enabled without retention filtering; otherwise mostly archived/historical rows.
 - **Current production status (2026-04-30)**: `onlyInRedis=0`, but PG has historical bloat in cases, work items, workflows, and documents. This is not a `9739ac5` deploy regression.
 - **Threshold**: non-strict `pg-verify.ts` exits `2` when `onlyInPG` exceeds 100% of `redisCount` unless `PG_BLOAT_THRESHOLD` is raised for diagnostics.
 - **Fix**: define retention policy first. Do not run destructive cleanup from `pg-verify` output alone. `migrate-redis-to-pg.ts --dry-run` is useful for `onlyInRedis`, but it does not classify or remove `onlyInPG` rows.

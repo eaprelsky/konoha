@@ -86,21 +86,23 @@ def test_operational_alerts_warn_with_actionable_correlation(monkeypatch):
 def test_pg_read_readiness_ok_when_all_entities_ready(monkeypatch):
     monkeypatch.setattr(healthcheck, "api_get", lambda path: {
         "overall_status": "ready",
-        "pg_read_enabled": False,
-        "summary": {"ready": 6, "blocked": 0, "pg_primary": 1},
+        "rollout_status": "safe",
+        "legacy_pg_read_enabled": False,
+        "summary": {"ready": 6, "blocked": 0, "pg_primary": 1, "enabled": 0, "enabled_blocked": 0},
         "entities": [],
     })
 
     checks = healthcheck.check_pg_read_readiness()
 
-    assert checks == [healthcheck.Check("OK", "storage.pg_read_readiness", "overall=ready pg_read_enabled=False ready=6 blocked=0 pg_primary=1")]
+    assert checks == [healthcheck.Check("OK", "storage.pg_read_readiness", "overall=ready rollout=safe legacy_pg_read_enabled=False ready=6 blocked=0 pg_primary=1 enabled=0 enabled_blocked=0")]
 
 
 def test_pg_read_readiness_warns_with_first_blocker(monkeypatch):
     monkeypatch.setattr(healthcheck, "api_get", lambda path: {
         "overall_status": "blocked",
-        "pg_read_enabled": True,
-        "summary": {"ready": 1, "blocked": 5, "pg_primary": 1},
+        "rollout_status": "unsafe",
+        "legacy_pg_read_enabled": False,
+        "summary": {"ready": 1, "blocked": 5, "pg_primary": 1, "enabled": 2, "enabled_blocked": 1},
         "entities": [{
             "entity": "cases",
             "status": "blocked",
@@ -112,7 +114,7 @@ def test_pg_read_readiness_warns_with_first_blocker(monkeypatch):
 
     assert checks[0].level == "WARN"
     assert checks[0].name == "storage.pg_read_readiness"
-    assert "overall=blocked pg_read_enabled=True ready=1 blocked=5 pg_primary=1" in checks[0].detail
+    assert "overall=blocked rollout=unsafe legacy_pg_read_enabled=False ready=1 blocked=5 pg_primary=1 enabled=2 enabled_blocked=1" in checks[0].detail
     assert "first_blocked_entity=cases blocker=ONLY_IN_REDIS blocker_count=6" in checks[0].detail
     assert "/pg-read-readiness" in checks[0].hint
 

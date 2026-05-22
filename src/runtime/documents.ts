@@ -5,8 +5,7 @@
 import { randomUUID } from "crypto";
 import { redis } from "../redis";
 import { pgUpsertDoc, pgDeleteDoc, pgGetDoc, pgListDocs as pgListDocsRaw } from "../storage/pg";
-
-const PG_READ = process.env.PG_READ === "true";
+import { isPgReadEnabledFor } from "../storage/pg-read-flags";
 
 const DOC_KEY_PREFIX = "doc:";
 const DOCS_IDX_ALL = "konoha:docs:all";
@@ -56,7 +55,7 @@ async function saveDoc(d: DocTemplate): Promise<void> {
 }
 
 async function loadDoc(doc_id: string): Promise<DocTemplate | null> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("documents")) {
     const row = await pgGetDoc(doc_id);
     return row ? pgRowToDoc(row) : null;
   }
@@ -101,7 +100,7 @@ export async function upsertDoc(params: {
 }
 
 export async function listDocs(): Promise<DocTemplate[]> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("documents")) {
     const rows = await pgListDocsRaw();
     return rows.map(pgRowToDoc);
   }

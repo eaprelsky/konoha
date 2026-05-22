@@ -8,6 +8,7 @@ import { Queue, Worker } from "bullmq";
 import { redis, REDIS_CONNECTION_OPTS } from "../redis";
 import { pgUpsertReminder, pgDeleteReminder, pgGetReminder, pgListReminders } from "../storage/pg";
 import { createLogger } from "../logger";
+import { isPgReadEnabledFor } from "../storage/pg-read-flags";
 import {
   enqueueRuntimeEffect,
   type RuntimeEffectEnqueueResult,
@@ -17,8 +18,6 @@ import {
 } from "../runtime-effect-outbox";
 
 const log = createLogger("runtime:reminders");
-
-const PG_READ = process.env.PG_READ === "true";
 
 const REMINDER_KEY_PREFIX = "reminder:";
 const REMINDERS_IDX_ALL = "konoha:reminders:all";
@@ -79,7 +78,7 @@ async function saveReminder(r: Reminder, prevStatus?: ReminderStatus): Promise<v
 }
 
 async function loadReminder(reminder_id: string): Promise<Reminder | null> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("reminders")) {
     const row = await pgGetReminder(reminder_id);
     return row ? pgRowToReminder(row) : null;
   }
@@ -277,7 +276,7 @@ export async function listReminders(filters: {
   status?: ReminderStatus;
   recipient?: string;
 } = {}): Promise<Reminder[]> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("reminders")) {
     const rows = await pgListReminders({ status: filters.status });
     let result = rows.map(pgRowToReminder);
     if (filters.recipient) result = result.filter(r => r.recipient === filters.recipient);

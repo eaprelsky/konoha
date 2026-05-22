@@ -839,9 +839,11 @@ def check_pg_read_readiness() -> list[Check]:
     blockers = first.get("blockers") or []
     first_blocker = blockers[0] if blockers else {}
     detail = (
-        f"overall={receipt.get('overall_status')} pg_read_enabled={receipt.get('pg_read_enabled')} "
+        f"overall={receipt.get('overall_status')} rollout={receipt.get('rollout_status')} "
+        f"legacy_pg_read_enabled={receipt.get('legacy_pg_read_enabled', receipt.get('pg_read_enabled'))} "
         f"ready={coerce_int(summary.get('ready'))} blocked={coerce_int(summary.get('blocked'))} "
-        f"pg_primary={coerce_int(summary.get('pg_primary'))}"
+        f"pg_primary={coerce_int(summary.get('pg_primary'))} enabled={coerce_int(summary.get('enabled'))} "
+        f"enabled_blocked={coerce_int(summary.get('enabled_blocked'))}"
     )
     if first:
         detail += (

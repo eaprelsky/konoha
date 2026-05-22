@@ -32,7 +32,9 @@ All configuration is done through environment variables. In production they are 
 |---|---|---|
 | `DATABASE_URL` | `postgresql://...` (local) | PostgreSQL connection string. |
 | `REDIS_DB` | `0` | Redis database index. Runtime defaults to DB 0; Bun tests set an isolated non-zero DB through `tests/setup.ts`. |
-| `PG_READ` | `false` | Set to `true` to enable Phase 2 migration: read cases/work-items from PostgreSQL instead of Redis. |
+| `PG_READ` | `false` | Legacy all-entity PG read fallback. Keep `false` in production-core unless a separate cutover is approved. |
+| `PG_READ_ENTITIES` / `KONOHA_PG_READ_ENTITIES` | empty | Comma-separated staged PG_READ allowlist: `roles,documents,workflows,cases,work_items,reminders`. Defaults to no Redis-primary entity reads from PG. |
+| `PG_READ_ROLES`, `PG_READ_DOCUMENTS`, `PG_READ_WORKFLOWS`, `PG_READ_CASES`, `PG_READ_WORK_ITEMS`, `PG_READ_REMINDERS` | unset | Per-entity staged PG_READ flags. `true` enables that entity, `false` explicitly disables it even if `PG_READ=true`. `KONOHA_`-prefixed aliases are also accepted. |
 
 ## Staging Environment
 

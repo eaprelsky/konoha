@@ -15,6 +15,7 @@ import {
   type ActivationDecision,
 } from "../../event-activation-policy";
 import { createLogger } from "../../logger";
+import { isPgReadEnabledFor } from "../../storage/pg-read-flags";
 import { loadActiveWaitsForCase, cancelEventWaitsForCase, resolveEventWaitForNode } from "../event-waits";
 import {
   saveCase,
@@ -37,7 +38,6 @@ import type { Case, CaseStatus } from "./types";
 import { loadWorkflowForCase } from "./workflow-binding";
 
 const log = createLogger("runtime:cases");
-const PG_READ = process.env.PG_READ === "true";
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
@@ -439,7 +439,7 @@ export async function listCases(filters: {
   limit?: number;
   offset?: number;
 }): Promise<{ cases: Case[]; total: number }> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("cases")) {
     const { pgListCases } = await import("../../storage/pg");
     const { pgRowToCase } = await import("./persistence");
     const { rows, total } = await pgListCases(filters);
@@ -484,7 +484,7 @@ export async function listCases(filters: {
 
 /** Delete all cases (and their index entries) for a given process_id. Returns count deleted. */
 export async function deleteCasesByProcess(process_id: string): Promise<number> {
-  if (PG_READ) {
+  if (isPgReadEnabledFor("cases")) {
     return pgDeleteCasesByProcess(process_id);
   }
 
