@@ -9,6 +9,8 @@ This checklist depends on `docs/release-policy.md`,
 `docs/workflow-engine-preflight-tiers.md`, and
 `docs/workflow-runtime-rollback-recovery.md`. It does not replace Shikadai
 review, #686, or the #812 terminal-case fix.
+The final Workflow Engine release signoff contract is
+`docs/workflow-engine-release-gate.md`.
 
 ## When To Use
 

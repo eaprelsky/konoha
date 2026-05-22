@@ -7,7 +7,8 @@ handoff, versioning, rollback, and audit evidence into one policy.
 Related gates and roadmap issues:
 
 - #686 remains the Workflow Engine child release gate/runbook. It must inherit
-  this policy instead of replacing it.
+  this policy instead of replacing it. The #686 source of truth is
+  `docs/workflow-engine-release-gate.md`.
 - #795 log retention and disk hygiene are release-readiness checks because
   unbounded logs can block agents and systemd services.
 - #793 defines canonical labels used by this policy.
@@ -105,6 +106,11 @@ Constructor/runtime PRs must satisfy
 `docs/workflow-constructor-runtime-release-checklist.md` before #686 release
 signoff. The checklist separates portable CI evidence from production-only
 gates and records when Shikadai must request Shino/Hinata explicitly.
+Workflow Engine release signoff must also satisfy
+`docs/workflow-engine-release-gate.md`, which ties accepted BPMS architecture,
+durable edit, outbox, role readiness, state-machine, observability, PG_READ,
+Action Spine extraction, golden-path, rollback, staging, healthcheck, and #812
+terminal-case evidence into one blocker/warning gate.
 
 ## Blockers And Warnings
 

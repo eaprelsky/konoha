@@ -5,6 +5,7 @@
   "release_policy": "docs/release-policy.md",
   "preflight_tiers": "docs/workflow-engine-preflight-tiers.md",
   "runtime_recovery_runbook": "docs/workflow-runtime-rollback-recovery.md",
+  "workflow_engine_release_gate": "docs/workflow-engine-release-gate.json",
   "security_boundary": "docs/workflow-security-boundary.md",
   "action_surface": "docs/action-surface.json",
   "staging_contract": "docs/staging-environment.json",

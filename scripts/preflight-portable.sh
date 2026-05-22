@@ -18,6 +18,7 @@ run_backend_tests() {
   bun test --timeout 30000 \
     tests/test-storage-guardrails.test.ts \
     tests/release-policy.test.ts \
+    tests/workflow-engine-release-gate.test.ts \
     tests/workflow-engine-preflight-tiers.test.ts \
     tests/workflow-runtime-rollback-recovery.test.ts \
     tests/workflow-constructor-runtime-release-checklist.test.ts \

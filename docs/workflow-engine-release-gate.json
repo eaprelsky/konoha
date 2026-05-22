@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 686,
+  "report_date": "2026-05-22",
+  "status": "ready_for_release_gate_review",
+  "source_of_truth": "docs/workflow-engine-release-gate.md",
+  "inherits": [
+    "docs/release-policy.md",
+    "docs/workflow-engine-preflight-tiers.md",
+    "docs/workflow-runtime-rollback-recovery.md",
+    "docs/workflow-constructor-runtime-release-checklist.md",
+    "docs/golden-path-acceptance-closure-report.json"
+  ],
+  "summary": "Workflow Engine release signoff is allowed only after portable, staging, production, storage, health, golden-path, rollback, Action Spine, and reviewer evidence are attached. This gate separates blockers from warnings and does not override the paused #812 terminal-case rule.",
+  "accepted_parent_evidence": [
+    {
+      "issue": 672,
+      "capability": "flight-grade BPMS architecture program",
+      "status": "accepted",
+      "evidence": [
+        "docs/bpms-architecture-closure-report.json",
+        "docs/bpms-architecture-closure-report.md",
+        "tests/bpms-architecture-closure-report.test.ts"
+      ]
+    },
+    {
+      "issue": 675,
+      "capability": "durable assistant edits through Action Spine",
+      "status": "accepted",
+      "evidence": [
+        "tests/workflow-patch-service.test.ts",
+        "tests/assistant-response.test.ts",
+        "docs/workflow-constructor-runtime-release-checklist.json"
+      ]
+    },
+    {
+      "issue": 678,
+      "capability": "durable runtime side-effect outbox",
+      "status": "accepted",
+      "evidence": [
+        "docs/runtime-effect-outbox-closure-report.json",
+        "docs/runtime-effect-outbox-closure-report.md",
+        "tests/runtime-effect-outbox.test.ts"
+      ]
+    },
+    {
+      "issue": 679,
+      "capability": "role readiness and dispatch target receipts",
+      "status": "accepted",
+      "evidence": [
+        "docs/role-readiness-closure-report.json",
+        "docs/role-readiness-closure-report.md",
+        "tests/role-readiness-closure-report.test.ts"
+      ]
+    },
+    {
+      "issue": 680,
+      "capability": "deterministic state-machine core plus effect boundary",
+      "status": "accepted",
+      "evidence": [
+        "docs/state-machine-core-closure-report.json",
+        "docs/state-machine-core-closure-report.md",
+        "tests/state-machine-core-closure-report.test.ts"
+      ]
+    },
+    {
+      "issue": 681,
+      "capability": "operator observability, recovery, and retry controls",
+      "status": "accepted",
+      "evidence": [
+        "docs/operator-run-observability-closure-report.json",
+        "docs/operator-run-observability-closure-report.md",
+        "tests/operator-run-observability-closure-report.test.ts"
+      ]
+    },
+    {
+      "issue": 683,
+      "capability": "Redis/PostgreSQL consistency and PG_READ retention gate",
+      "status": "accepted",
+      "evidence": [
+        "docs/pg-read-consistency-closure-report.json",
+        "docs/pg-read-consistency-closure-report.md",
+        "tests/pg-read-consistency-closure-report.test.ts"
+      ]
+    },
+    {
+      "issue": 684,
+      "capability": "Action Spine extraction readiness boundary",
+      "status": "accepted",
+      "evidence": [
+        "docs/action-spine-extraction-closure-report.json",
+        "docs/action-spine-extraction-closure-report.md",
+        "tests/action-spine-extraction-closure-report.test.ts"
+      ]
+    },
+    {
+      "issue": 685,
+      "capability": "AI constructor golden path to assigned work item",
+      "status": "accepted",
+      "evidence": [
+        "docs/golden-path-acceptance-closure-report.json",
+        "docs/golden-path-acceptance-closure-report.md",
+        "tests/golden-path-acceptance-closure-report.test.ts"
+      ]
+    }
+  ],
+  "required_release_gates": [
+    {
+      "id": "portable-ci",
+      "class": "blocker",
+      "source": "docs/workflow-engine-preflight-tiers.json",
+      "commands": [
+        "scripts/preflight-portable.sh"
+      ],
+      "required_for": [
+        "normal release",
+        "workflow runtime change",
+        "constructor/editor change",
+        "storage or Action Spine change"
+      ],
+      "blocks_release_when": "portable preflight fails or M1 isolation detects production Redis DB0/PostgreSQL public/connector contamination"
+    },
+    {
+      "id": "golden-path",
+      "class": "blocker",
+      "source": "docs/golden-path-acceptance-closure-report.json",
+      "commands": [
+        "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/golden-path-acceptance-closure-report.test.ts tests/assistant-create-validate-deploy-run-fixture.test.ts tests/backend-golden-path.test.ts",
+        "ANTHROPIC_API_KEY=ci-placeholder PATH=/home/ubuntu/.bun/bin:$PATH bun x playwright test e2e/AssistantWidgetGoldenPath-747.spec.ts --config=playwright.config.ci.ts"
+      ],
+      "required_for": [
+        "normal Workflow Engine release",
+        "constructor/runtime release claim"
+      ],
+      "blocks_release_when": "assistant-created workflow cannot persist, deploy, start, dispatch, reload, or show the assigned work item through durable receipts"
+    },
+    {
+      "id": "action-spine-security",
+      "class": "blocker",
+      "source": "docs/workflow-security-boundary.md",
+      "commands": [
+        "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/action-surface-report.ts --check",
+        "python3 scripts/check-route-auth-policy.py"
+      ],
+      "required_for": [
+        "any user-visible mutation",
+        "Action Spine or route change"
+      ],
+      "blocks_release_when": "action surface drifts, route auth policy fails, or durable mutation bypasses Action Spine/accepted compatibility executor"
+    },
+    {
+      "id": "staging-core",
+      "class": "blocker",
+      "source": "docs/staging-environment.json",
+      "commands": [
+        "scripts/staging-smoke.sh --dry-run"
+      ],
+      "required_for": [
+        "broad Workflow Engine release",
+        "deploy/runtime/connector behavior change"
+      ],
+      "blocks_release_when": "staging-core violates isolation or waiver enables production connectors/weakens prod-core"
+    },
+    {
+      "id": "production-smoke",
+      "class": "blocker",
+      "source": "docs/release-policy.md",
+      "commands": [
+        "scripts/preflight.sh"
+      ],
+      "required_for": [
+        "normal production release",
+        "post-deploy verification"
+      ],
+      "blocks_release_when": "production preflight or required live service check fails"
+    },
+    {
+      "id": "pg-verify",
+      "class": "blocker",
+      "source": "docs/pg-read-consistency-closure-report.json",
+      "commands": [
+        "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-verify.ts"
+      ],
+      "required_for": [
+        "normal production release",
+        "PG_READ/storage/runtime release"
+      ],
+      "blocks_release_when": "onlyInRedis > 0"
+    },
+    {
+      "id": "healthcheck",
+      "class": "blocker",
+      "source": "docs/release-policy.md",
+      "commands": [
+        "KONOHA_SERVICE_PROFILE=prod-core python3 scripts/healthcheck-system.py"
+      ],
+      "required_for": [
+        "normal production release",
+        "infra/lifecycle/monitor change"
+      ],
+      "blocks_release_when": "required prod-core service/profile reports FAIL"
+    },
+    {
+      "id": "rollback-recovery",
+      "class": "blocker",
+      "source": "docs/workflow-runtime-rollback-recovery.json",
+      "commands": [
+        "python3 -m json.tool docs/workflow-runtime-rollback-recovery.json >/dev/null",
+        "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/workflow-runtime-rollback-recovery.test.ts"
+      ],
+      "required_for": [
+        "runtime release",
+        "deploy/subscription/outbox/work item behavior change"
+      ],
+      "blocks_release_when": "rollback command, recovery scenario, destructive data gate, or audit evidence is missing"
+    },
+    {
+      "id": "reviewer-acceptance",
+      "class": "blocker",
+      "source": "docs/release-policy.md",
+      "commands": [],
+      "required_for": [
+        "all releases"
+      ],
+      "blocks_release_when": "Shikadai has not accepted the implementation/release evidence or owner/operator approval is missing for production release"
+    }
+  ],
+  "warnings": [
+    {
+      "id": "only-in-pg-bloat",
+      "source": "docs/pg-read-consistency-closure-report.json",
+      "condition": "pg-verify reports onlyInPG while onlyInRedis=0",
+      "release_effect": "warning requiring release-note acknowledgement; not a release blocker until retention/manual-review policy marks the rows unsafe"
+    },
+    {
+      "id": "optional-services-disabled",
+      "source": "docs/resource-budget-policy.md",
+      "condition": "optional worker, TestBench, browser, or connector disabled by service profile",
+      "release_effect": "warning when intentional and documented by profile"
+    },
+    {
+      "id": "known-infra-warn",
+      "source": "docs/release-policy.md",
+      "condition": "healthcheck reports a known WARN already recorded in the issue/release notes",
+      "release_effect": "warning; required prod-core FAIL remains a blocker"
+    },
+    {
+      "id": "browser-tier-not-applicable",
+      "source": "docs/workflow-engine-preflight-tiers.json",
+      "condition": "backend-only or docs-only change does not touch constructor/editor UX",
+      "release_effect": "warning/non-applicability note; #685 browser evidence remains required for normal Workflow Engine release signoff"
+    }
+  ],
+  "terminal_case_gate": {
+    "issue": 812,
+    "status": "open_paused_by_yegor",
+    "class": "blocker_for_terminal_routing_regressions",
+    "rule": "Release signoff must not route new work, waits, subscriptions, reminders, dispatch effects, or recovery retries to closed/done/cancelled/error terminal cases.",
+    "release_policy": "A production release can proceed only if the release evidence proves the changed surface cannot bypass the terminal-case rule, or if #812 remains explicitly listed as an unresolved blocker for the affected path. #686 does not close, unpause, or waive #812."
+  },
+  "rollback_and_recovery": [
+    {
+      "scenario": "failed deploy or partial deploy",
+      "runbook": "docs/workflow-runtime-rollback-recovery.md#partial-deploy-or-failed-deploy",
+      "required_evidence": [
+        "git revert command or non-code recovery command",
+        "workflow.deploy receipt",
+        "deploy record or rollback failure evidence",
+        "pg-verify output",
+        "staging/preflight result"
+      ]
+    },
+    {
+      "scenario": "stuck work item or running case",
+      "runbook": "docs/workflow-runtime-rollback-recovery.md#stuck-running-case",
+      "required_evidence": [
+        "case id and work item id",
+        "case.get/workitem.list evidence",
+        "Action Spine recovery receipt",
+        "#812 terminal-case check"
+      ]
+    },
+    {
+      "scenario": "failed runtime effect",
+      "runbook": "docs/workflow-runtime-rollback-recovery.md#failed-connector",
+      "required_evidence": [
+        "runtime effect id",
+        "retry/dead_letter status",
+        "operator actor and reason",
+        "audit-linked recovery receipt"
+      ]
+    },
+    {
+      "scenario": "PG/Redis divergence",
+      "runbook": "docs/workflow-runtime-rollback-recovery.md#postgresqlredis-divergence",
+      "required_evidence": [
+        "pg-verify output",
+        "reconcile dry-run output",
+        "onlyInRedis blocker resolution or accepted stop decision"
+      ]
+    }
+  ],
+  "mandatory_review_commands": [
+    "python3 -m json.tool docs/workflow-engine-release-gate.json >/dev/null",
+    "python3 -m json.tool docs/workflow-engine-preflight-tiers.json >/dev/null",
+    "python3 -m json.tool docs/workflow-runtime-rollback-recovery.json >/dev/null",
+    "python3 -m json.tool docs/workflow-constructor-runtime-release-checklist.json >/dev/null",
+    "python3 -m json.tool docs/golden-path-acceptance-closure-report.json >/dev/null",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/workflow-engine-release-gate.test.ts tests/release-policy.test.ts tests/workflow-engine-preflight-tiers.test.ts tests/workflow-runtime-rollback-recovery.test.ts tests/workflow-constructor-runtime-release-checklist.test.ts tests/golden-path-acceptance-closure-report.test.ts tests/bpms-architecture-closure-report.test.ts tests/runtime-effect-outbox-closure-report.test.ts tests/role-readiness-closure-report.test.ts tests/state-machine-core-closure-report.test.ts tests/operator-run-observability-closure-report.test.ts tests/pg-read-consistency-closure-report.test.ts tests/action-spine-extraction-closure-report.test.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/assistant-create-validate-deploy-run-fixture.test.ts tests/backend-golden-path.test.ts",
+    "ANTHROPIC_API_KEY=ci-placeholder PATH=/home/ubuntu/.bun/bin:$PATH bun x playwright test e2e/AssistantWidgetGoldenPath-747.spec.ts --config=playwright.config.ci.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run typecheck",
+    "git diff --check"
+  ],
+  "release_decision": {
+    "issue_686_can_close_after_review": true,
+    "production_release_claimed_by_this_commit": false,
+    "normal_production_release_requires_owner_approval": true,
+    "emergency_bypass_allowed_without_owner_acceptance": false,
+    "package_extraction_618_unblocked_after_686": false,
+    "notes": "This records the Workflow Engine release gate/runbook. A versioned production release still follows kakashi:release, owner approval, version/tag/GitHub release artifacts, and live production gates."
+  }
+}
