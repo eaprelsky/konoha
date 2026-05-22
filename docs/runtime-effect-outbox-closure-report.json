@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 678,
+  "report_date": "2026-05-22",
+  "status": "ready_for_parent_review",
+  "parent_issue": 678,
+  "source_contract": "docs/runtime-effect-outbox.md",
+  "target_invariant": "Runtime state may record progress only when the intended side effects are durably represented by runtime effect records, or when a path is explicitly documented as synchronous/direct because immediate deterministic output is required.",
+  "acceptance_coverage": [
+    {
+      "criterion": "advanceCase records intended dispatch effects durably before workers execute them",
+      "status": "covered",
+      "issues": [717],
+      "evidence": [
+        "src/runtime/workitem-dispatch-outbox.ts",
+        "tests/workitem-dispatch-outbox.test.ts"
+      ],
+      "notes": "Normal and branch work-item dispatch create workitem.dispatch runtime effects with case/work_item links and stable idempotency before transport delivery."
+    },
+    {
+      "criterion": "adapter side effects are durable where safe",
+      "status": "covered",
+      "issues": [718],
+      "evidence": [
+        "src/runtime/adapter-outbox.ts",
+        "tests/adapter-outbox.test.ts"
+      ],
+      "notes": "Only bindings marked execution=async_effect enqueue adapter.invoke; sync bindings stay direct when runtime needs immediate output."
+    },
+    {
+      "criterion": "connector notifications can be represented and delivered through outbox",
+      "status": "covered",
+      "issues": [678],
+      "evidence": [
+        "src/runtime/connector-outbox.ts",
+        "tests/connector-outbox.test.ts"
+      ],
+      "notes": "connector.send_message effects now have enqueue/handler/dedupe/retry/dead-letter coverage; direct Action Spine sends remain explicit operator actions."
+    },
+    {
+      "criterion": "subscription activation/cancellation and reminder scheduling are durable where safe",
+      "status": "covered",
+      "issues": [719],
+      "evidence": [
+        "src/events/subscriptions.ts",
+        "src/runtime/reminders.ts",
+        "tests/scheduled-effects-outbox.test.ts"
+      ],
+      "notes": "Durable subscription/reminder rows remain source of truth; outbox effects activate scheduler/listener resources and skip stale creates."
+    },
+    {
+      "criterion": "each effect has bounded status, retry, idempotency, and dead-letter semantics",
+      "status": "covered",
+      "issues": [715, 716],
+      "evidence": [
+        "src/runtime-effect-outbox.ts",
+        "tests/runtime-effect-outbox.test.ts"
+      ],
+      "notes": "RuntimeEffectRecord status machine covers pending/in_flight/succeeded/failed/retry/dead_letter/cancelled with lock recovery and max-attempt guards."
+    },
+    {
+      "criterion": "case/work item observability shows failed side effects",
+      "status": "covered",
+      "issues": [729, 730, 732],
+      "evidence": [
+        "src/runtime/timeline-events.ts",
+        "src/operational-alerts.ts",
+        "tests/operational-alerts.test.ts",
+        "tests/runtime-effect-outbox.test.ts"
+      ],
+      "notes": "Runtime effect state changes emit timeline evidence; monitor/alert views surface retry/failed/dead_letter effects with visible-case filtering."
+    },
+    {
+      "criterion": "recovery command can replay pending/failed effects safely",
+      "status": "covered",
+      "issues": [720, 731],
+      "evidence": [
+        "src/routes/runtime-effects.ts",
+        "scripts/runtime-effect-recovery.ts",
+        "tests/runtime-effect-recovery.test.ts"
+      ],
+      "notes": "Recovery API/CLI requires actor/reason, records audit links for success and structured errors, and preserves in-flight worker ownership."
+    }
+  ],
+  "closed_child_issues": [715, 716, 717, 718, 719, 720, 729, 730, 731, 732],
+  "direct_paths_kept": [
+    {
+      "path": "sync adapter bindings",
+      "reason": "Runtime needs immediate deterministic output for auto-complete, payload updates, and gateway conditions."
+    },
+    {
+      "path": "manual subscriptions/direct admin subscription commands",
+      "reason": "State mutation is the durable source of truth and no scheduler resource is needed for manual waits."
+    },
+    {
+      "path": "explicit operator connector.send_message Action Spine calls",
+      "reason": "Operator-triggered external sends remain deliberate actions; runtime-originated connector notifications can use connector.send_message effects."
+    }
+  ],
+  "review_commands": [
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/runtime-effect-outbox.test.ts tests/connector-outbox.test.ts tests/workitem-dispatch-outbox.test.ts tests/adapter-outbox.test.ts tests/scheduled-effects-outbox.test.ts tests/runtime-effect-recovery.test.ts tests/operational-alerts.test.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/workflow-deployment-service.test.ts tests/workflow-constructor-runtime-release-checklist.test.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run typecheck"
+  ],
+  "closure_decision": {
+    "parent_issue_can_close_after_review": true,
+    "remaining_blockers": [],
+    "release_claim_unblocked": false,
+    "notes": "This reconciles the #678 umbrella. Production release still follows the #686 checklist and #812 terminal-case gate."
+  }
+}

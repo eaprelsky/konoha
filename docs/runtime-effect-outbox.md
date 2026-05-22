@@ -133,6 +133,16 @@ fallback cases. `dispatch_status` is `queued` after a transport handoff,
 queue, and `failed` in retry/dead-letter error details when transport handoff
 throws before a delivery receipt can be persisted.
 
+`connector.send_message` is the durable boundary for external connector
+notifications that do not need synchronous runtime output. The effect payload
+matches the Action Spine `connector.send_message` arguments and carries
+connector/case/work item/action trace links when available. The handler stores a
+delivered receipt under the effect id before marking the record succeeded, so
+retrying a completed send returns the stored receipt instead of publishing a
+second external message. Direct Action Spine `connector.send_message` remains
+available for explicitly requested operator actions and dry-run recovery
+commands.
+
 `adapter.invoke` is only used for adapter bindings explicitly marked
 `execution: "async_effect"`. Default `sync` adapter bindings continue to run in
 the runtime loop because their output can auto-complete the work item, update
@@ -161,6 +171,9 @@ The idempotency key must be scoped by the source that creates the effect:
 - deploy subscription effects use the existing deployment-scoped keys such as
   `workflow.deploy:<workflow_id>:v<deploy_version>:subscription:<operation>:<event_id>`;
 - work-item dispatch effects should include `case_id` and `work_item_id`;
+- connector message effects should include connector, endpoint, chat, message,
+  and case/work-item/action trace context when the send originates from runtime
+  state;
 - adapter invoke effects should include `case_id`, `work_item_id`, binding key,
   connector, and operation;
 - subscription resource effects should include `subscription_id`, `event_id`,

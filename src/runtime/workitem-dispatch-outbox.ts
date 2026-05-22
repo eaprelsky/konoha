@@ -2,6 +2,7 @@ import { dispatchWorkItem, type DispatchParams, type DispatchReceipt } from "../
 import { handleSubscriptionRuntimeEffect } from "../events/subscriptions";
 import { redis } from "../redis";
 import { handleAdapterInvokeEffect } from "./adapter-outbox";
+import { handleConnectorSendMessageEffect } from "./connector-outbox";
 import { handleReminderScheduleEffect } from "./reminders";
 import {
   enqueueRuntimeEffect,
@@ -161,6 +162,8 @@ export async function handleRuntimeEffect(record: RuntimeEffectRecord): Promise<
   switch (record.kind) {
     case "adapter.invoke":
       return handleAdapterInvokeEffect(record);
+    case "connector.send_message":
+      return handleConnectorSendMessageEffect(record);
     case "subscription.create":
     case "subscription.cancel":
       return handleSubscriptionRuntimeEffect(record);

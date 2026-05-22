@@ -160,6 +160,7 @@ export interface RuntimeEffectClaimOptions {
   now?: string;
   lock_ms?: number;
   batch_size?: number;
+  kinds?: RuntimeEffectKind[];
 }
 
 export interface RuntimeEffectHandlerResult {
@@ -965,13 +966,15 @@ function hasActiveClaim(record: RuntimeEffectRecord, workerId?: string, now = ne
 }
 
 export async function recoverStaleRuntimeEffects(
-  options: { now?: string; limit?: number } = {},
+  options: { now?: string; limit?: number; kinds?: RuntimeEffectKind[] } = {},
 ): Promise<RuntimeEffectStaleRecoveryResult> {
   const now = options.now ?? new Date().toISOString();
   assertIso(now, "now");
+  const kinds = options.kinds ? new Set(options.kinds) : null;
   const inFlight = await listRuntimeEffectsByStatus("in_flight", { now: undefined, limit: options.limit ?? 50 });
   const recovered: RuntimeEffectRecord[] = [];
   for (const record of inFlight) {
+    if (kinds && !kinds.has(record.kind)) continue;
     if (!record.locked_until || Date.parse(record.locked_until) > Date.parse(now)) continue;
     const lockKey = runtimeEffectLockKey(record.effect_id);
     const currentLock = await redis.get(lockKey);
@@ -997,12 +1000,15 @@ export async function claimNextRuntimeEffect(
 ): Promise<RuntimeEffectRecord | null> {
   const now = options.now ?? new Date().toISOString();
   assertIso(now, "now");
-  await recoverStaleRuntimeEffects({ now, limit: options.batch_size ?? 25 });
+  const kinds = options.kinds ? new Set(options.kinds) : null;
+  await recoverStaleRuntimeEffects({ now, limit: options.batch_size ?? 25, kinds: options.kinds });
   const batchSize = options.batch_size ?? 25;
   const candidates = [
     ...(await listRuntimeEffectsByStatus("pending", { now, limit: batchSize })),
     ...(await listRuntimeEffectsByStatus("retry", { now, limit: batchSize })),
-  ].sort((a, b) => statusScore(a) - statusScore(b));
+  ]
+    .filter(candidate => !kinds || kinds.has(candidate.kind))
+    .sort((a, b) => statusScore(a) - statusScore(b));
 
   for (const candidate of candidates) {
     const lockKey = runtimeEffectLockKey(candidate.effect_id);
