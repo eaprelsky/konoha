@@ -7,6 +7,52 @@ Program dependency gate: #618 remains blocked by the BPMS milestone graph in
 `docs/bpms-program-dependency-graph.md`. Do not start package extraction until
 #684, #685, and #741-#744 are complete.
 
+## Current Extraction Readiness (2026-05-22)
+
+Issue #618 is still an extraction backlog item, not an active package move.
+The accepted #741/#742 slices define the in-repo seams needed before extraction:
+
+| Area | Status | Evidence | Extraction impact |
+|---|---|---|---|
+| Generic core shapes | Ready | `src/action-spine/core-types.ts`, #742 | Reusable core types no longer encode Konoha action IDs or scopes. |
+| Host ports | Ready | `src/action-spine/ports.ts`, #741 | Executor, audit, autonomy, HTTP route, and MCP bridge seams are explicit before package extraction. |
+| Konoha host vocabulary split | Ready | `src/action-definitions.ts`, `src/action-registry.ts`, `src/action-policy.ts`, #742 | Concrete Konoha actions stay host-owned and are not part of generic core abstractions. |
+| Boundary manifest | Ready | `src/action-spine/boundary.ts`, `tests/action-spine-boundary.test.ts` | Generic core, Konoha vocabulary, and Konoha adapters are mechanically distinguished. |
+| MCP bridge extraction | Blocked | `src/mcp-action-bridge.ts` remains adapter-side | Needs #744 bridge/consumer readiness before moving into a package. |
+| HTTP route extraction | Blocked | `src/act-envelope.ts` still owns Hono/auth/audit routing | Needs a factory over ports plus route/auth regression evidence. |
+| Konoha executor extraction | Blocked | `src/action-executor.ts` imports workflow/runtime/agent modules | Must remain a Konoha adapter behind `ActionExecutorPort`. |
+| Golden-path acceptance | Blocked | #685/#686 not accepted yet | Package extraction must wait until constructor -> deploy -> run -> assigned work item is proven. |
+
+### #618 Checklist
+
+Before starting any package extraction commit for #618:
+
+- [x] #741 accepted: Action Spine port interfaces are defined in-repo first.
+- [x] #742 accepted: generic core types are split from Konoha host vocabulary.
+- [ ] #743 accepted: this readiness checklist and blocker set is reviewed.
+- [ ] #744 accepted: bridge/package extraction readiness is reviewed.
+- [ ] #684 accepted: Action Spine extraction readiness umbrella is closed.
+- [ ] #685 accepted: golden-path acceptance suite proves assistant-created workflows can be deployed and executed.
+- [ ] #686 accepted: final release gate/runbook signs off production readiness.
+- [ ] No generic core file imports Konoha runtime, routes, storage, agent lifecycle, or concrete action vocabulary.
+- [ ] `docs/action-surface.json` remains generated from the Konoha host vocabulary and does not become a hand-maintained package artifact.
+- [ ] Extraction PR/commit includes `bun test --timeout 30000 tests/action-spine-boundary.test.ts tests/workflow-action-contract.test.ts`, `bun run typecheck`, `bun run scripts/action-surface-report.ts --check`, `python3 scripts/check-route-auth-policy.py`, and package-specific bridge tests.
+
+### Current Blockers
+
+- #618 must not move `src/action-executor.ts` into reusable core; it is still a
+  Konoha adapter with workflow/runtime/agent dependencies.
+- #618 must not publish Konoha scopes such as `workflow`, `case`, `agent`,
+  `retention`, or concrete IDs such as `workflow.deploy` as generic package
+  vocabulary.
+- #618 must not create a second mutation path outside `/act` and the accepted
+  compatibility executors.
+- #618 must not extract MCP or HTTP bridge code until the host registry,
+  executor, audit, autonomy, auth, and token dependencies are injectable and
+  covered by focused bridge tests.
+- #618 must remain blocked by M6 acceptance until #685/#686 verify runtime
+  semantics and release rollback evidence.
+
 ## 1. Context
 
 Action Spine guarantees one canonical contract per business operation across HTTP, MCP, CLI, and UI surfaces. Today it lives inside Konoha as a set of source modules with a mechanically enforced boundary (`tests/action-spine-boundary.test.ts`). The goal is to extract the generic core into a reusable npm package so other projects can depend on it without pulling Konoha.
