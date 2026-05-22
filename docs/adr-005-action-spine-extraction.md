@@ -7,6 +7,10 @@ Program dependency gate: #618 remains blocked by the BPMS milestone graph in
 `docs/bpms-program-dependency-graph.md`. Do not start package extraction until
 #684, #685, and #741-#744 are complete.
 
+Package extraction spike/readiness evidence after #741/#742 lives in
+`docs/action-spine-package-extraction-spike.md`. Treat that document as the
+current checklist for #618 until the M6 acceptance gates are closed.
+
 ## Current Extraction Readiness (2026-05-22)
 
 Issue #618 is still an extraction backlog item, not an active package move.
@@ -230,6 +234,8 @@ Every slice keeps Konoha green:
 ## 7. References
 
 - `docs/action-spine-boundary.md` — current boundary manifest docs
+- `docs/action-spine-package-extraction-spike.md` — post-#741/#742 extraction
+  spike, injectable dependency map, and blocker checklist
 - `docs/action-spine-runbook.md` — operational runbook
 - `docs/action-spine-cli.md` — CLI design notes
 - `tests/action-spine-boundary.test.ts` — mechanical boundary enforcement
