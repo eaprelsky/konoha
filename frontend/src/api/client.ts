@@ -258,7 +258,7 @@ export const api = {
       const qs = p.toString();
       return apiFetch<RuntimeEffectsResponse>(`${BASE}/runtime-effects${qs ? '?' + qs : ''}`);
     },
-    retry: async (id: string, params: { actor?: string; reason: string }) => {
+    retry: async (id: string, params: { actor?: string; reason: string; source?: string }) => {
       const result = await apiFetch<{ ok: true; receipt: { record: RuntimeEffectRecord } }>(`${BASE}/runtime-effects/${encodeURIComponent(id)}/retry`, {
         method: 'POST',
         body: JSON.stringify(params),
@@ -266,7 +266,7 @@ export const api = {
       invalidateCache(`${BASE}/runtime-effects`);
       return result;
     },
-    cancel: async (id: string, params: { actor?: string; reason: string }) => {
+    cancel: async (id: string, params: { actor?: string; reason: string; source?: string }) => {
       const result = await apiFetch<{ ok: true; receipt: { record: RuntimeEffectRecord } }>(`${BASE}/runtime-effects/${encodeURIComponent(id)}/cancel`, {
         method: 'POST',
         body: JSON.stringify(params),
@@ -274,7 +274,7 @@ export const api = {
       invalidateCache(`${BASE}/runtime-effects`);
       return result;
     },
-    deadLetter: async (id: string, params: { actor?: string; reason: string }) => {
+    deadLetter: async (id: string, params: { actor?: string; reason: string; source?: string }) => {
       const result = await apiFetch<{ ok: true; receipt: { record: RuntimeEffectRecord } }>(`${BASE}/runtime-effects/${encodeURIComponent(id)}/dead-letter`, {
         method: 'POST',
         body: JSON.stringify(params),

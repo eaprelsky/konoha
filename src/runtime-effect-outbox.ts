@@ -192,6 +192,15 @@ export interface RuntimeEffectRecoveryInput {
   actor: string;
   reason: string;
   now?: string;
+  source?: string;
+  request_path?: string;
+}
+
+export interface RuntimeEffectRecoveryAuditLink {
+  session_id: string;
+  action_type: string;
+  entry_id?: string;
+  parameters: Record<string, unknown>;
 }
 
 export interface RuntimeEffectRecoveryReceipt {
@@ -207,6 +216,9 @@ export interface RuntimeEffectRecoveryReceipt {
   previous_attempts: number;
   attempts: number;
   audited: boolean;
+  audit: RuntimeEffectRecoveryAuditLink;
+  recovery_source: string;
+  request_path?: string;
   recovered_at: string;
   record: RuntimeEffectRecord;
 }
@@ -368,27 +380,115 @@ async function saveRuntimeEffectRecord(
   return record;
 }
 
-async function writeRuntimeEffectRecoveryAudit(receipt: Omit<RuntimeEffectRecoveryReceipt, "record" | "audited">): Promise<boolean> {
+async function writeRuntimeEffectRecoveryAudit(
+  receipt: Omit<RuntimeEffectRecoveryReceipt, "record" | "audited" | "audit">,
+): Promise<RuntimeEffectRecoveryAuditLink & { audited: boolean }> {
+  const actionType = `runtime_effect.${receipt.operation}`;
+  const sessionId = `runtime-effect-recovery:${receipt.effect_id}`;
+  const parameters = {
+    effect_id: receipt.effect_id,
+    operation: receipt.operation,
+    actor: receipt.actor,
+    reason: receipt.reason,
+    from_status: receipt.from_status,
+    to_status: receipt.to_status,
+    previous_attempts: receipt.previous_attempts,
+    attempts: receipt.attempts,
+    noop: receipt.noop,
+    terminal_override: receipt.terminal_override,
+    recovery_source: receipt.recovery_source,
+    request_path: receipt.request_path,
+  };
   try {
-    await auditLog({
+    const entryId = await auditLog({
       timestamp: receipt.recovered_at,
-      session_id: `runtime-effect-recovery:${receipt.effect_id}`,
-      action_type: `runtime_effect.${receipt.operation}`,
-      parameters: JSON.stringify({
-        effect_id: receipt.effect_id,
-        reason: receipt.reason,
-        from_status: receipt.from_status,
-        to_status: receipt.to_status,
-        noop: receipt.noop,
-        terminal_override: receipt.terminal_override,
-      }),
+      session_id: sessionId,
+      action_type: actionType,
+      parameters: JSON.stringify(parameters),
       result: "ok",
       agent_chain: receipt.actor,
     });
-    return true;
+    return {
+      audited: Boolean(entryId),
+      session_id: sessionId,
+      action_type: actionType,
+      ...(entryId ? { entry_id: entryId } : {}),
+      parameters,
+    };
   } catch {
-    return false;
+    return {
+      audited: false,
+      session_id: sessionId,
+      action_type: actionType,
+      parameters,
+    };
   }
+}
+
+async function writeRuntimeEffectRecoveryFailureAudit(input: {
+  effect_id: string;
+  operation: RuntimeEffectRecoveryOperation;
+  actor: string;
+  reason: string;
+  now: string;
+  recovery_source: string;
+  request_path?: string;
+  error: unknown;
+}): Promise<RuntimeEffectRecoveryAuditLink & { audited: boolean }> {
+  const actionType = `runtime_effect.${input.operation}`;
+  const sessionId = `runtime-effect-recovery:${input.effect_id}`;
+  const errorCode = input.error instanceof RuntimeEffectRecoveryError
+    ? input.error.code
+    : "RUNTIME_EFFECT_RECOVERY_FAILED";
+  const errorMessage = input.error instanceof Error ? input.error.message : String(input.error);
+  const parameters = {
+    effect_id: input.effect_id,
+    operation: input.operation,
+    actor: input.actor,
+    reason: input.reason,
+    recovery_source: input.recovery_source,
+    request_path: input.request_path,
+    error: errorCode,
+  };
+  try {
+    const entryId = await auditLog({
+      timestamp: input.now,
+      session_id: sessionId,
+      action_type: actionType,
+      parameters: JSON.stringify(parameters),
+      result: "error",
+      agent_chain: input.actor,
+      error: errorMessage,
+    });
+    return {
+      audited: Boolean(entryId),
+      session_id: sessionId,
+      action_type: actionType,
+      ...(entryId ? { entry_id: entryId } : {}),
+      parameters,
+    };
+  } catch {
+    return {
+      audited: false,
+      session_id: sessionId,
+      action_type: actionType,
+      parameters,
+    };
+  }
+}
+
+function attachRecoveryFailureAudit(error: unknown, audit: RuntimeEffectRecoveryAuditLink & { audited: boolean }): void {
+  if (!(error instanceof RuntimeEffectRecoveryError)) return;
+  error.details = {
+    ...(error.details ?? {}),
+    audit: {
+      audited: audit.audited,
+      session_id: audit.session_id,
+      action_type: audit.action_type,
+      ...(audit.entry_id ? { entry_id: audit.entry_id } : {}),
+      parameters: audit.parameters,
+    },
+  };
 }
 
 function operatorRecoveryError(input: {
@@ -565,6 +665,8 @@ export async function recoverRuntimeEffect(
   assertIso(now, "now");
   const actor = assertRecoveryText(input.actor, "actor");
   const reason = assertRecoveryText(input.reason, "reason");
+  const recoverySource = input.source?.trim() || "service:runtime-effect-recovery";
+  const requestPath = input.request_path?.trim() || undefined;
   const operation = input.operation;
   if (operation !== "retry" && operation !== "cancel" && operation !== "dead_letter") {
     throw new RuntimeEffectRecoveryError("RUNTIME_EFFECT_RECOVERY_BAD_REQUEST", `Unsupported recovery operation: ${operation}`, 400);
@@ -574,7 +676,19 @@ export async function recoverRuntimeEffect(
   const lockOwner = `recovery:${actor}:${operation}`;
   const locked = await redis.set(lockKey, lockOwner, "PX", DEFAULT_RUNTIME_EFFECT_LOCK_MS, "NX");
   if (locked !== "OK") {
-    throw new RuntimeEffectRecoveryError("RUNTIME_EFFECT_RECOVERY_BUSY", "Runtime effect is locked by a worker or another recovery operation", 409);
+    const error = new RuntimeEffectRecoveryError("RUNTIME_EFFECT_RECOVERY_BUSY", "Runtime effect is locked by a worker or another recovery operation", 409);
+    const audit = await writeRuntimeEffectRecoveryFailureAudit({
+      effect_id: effectId,
+      operation,
+      actor,
+      reason,
+      now,
+      recovery_source: recoverySource,
+      request_path: requestPath,
+      error,
+    });
+    attachRecoveryFailureAudit(error, audit);
+    throw error;
   }
 
   try {
@@ -613,16 +727,37 @@ export async function recoverRuntimeEffect(
       terminal_override: recovered.terminal_override,
       previous_attempts: previousAttempts,
       attempts: recovered.record.attempts,
+      recovery_source: recoverySource,
+      ...(requestPath ? { request_path: requestPath } : {}),
       recovered_at: now,
     };
-    const audited = await writeRuntimeEffectRecoveryAudit(receiptBase);
+    const audit = await writeRuntimeEffectRecoveryAudit(receiptBase);
     const receipt = {
       ...receiptBase,
-      audited,
+      audited: audit.audited,
+      audit: {
+        session_id: audit.session_id,
+        action_type: audit.action_type,
+        ...(audit.entry_id ? { entry_id: audit.entry_id } : {}),
+        parameters: audit.parameters,
+      },
       record: recovered.record,
     };
     await emitRuntimeEffectRecoveryTimelineEvent(receipt);
     return receipt;
+  } catch (e) {
+    const audit = await writeRuntimeEffectRecoveryFailureAudit({
+      effect_id: effectId,
+      operation,
+      actor,
+      reason,
+      now,
+      recovery_source: recoverySource,
+      request_path: requestPath,
+      error: e,
+    });
+    attachRecoveryFailureAudit(e, audit);
+    throw e;
   } finally {
     const owner = await redis.get(lockKey).catch(() => null);
     if (owner === lockOwner) await redis.del(lockKey);

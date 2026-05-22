@@ -203,10 +203,17 @@ The HTTP API is admin-only:
 - `POST /runtime-effects/:effect_id/cancel`
 - `POST /runtime-effects/:effect_id/dead-letter`
 
-Mutation bodies require `reason` and may include `actor`; every mutation returns
-a machine-readable recovery receipt and writes `runtime_effect.<operation>` to
-the `konoha:audit` stream. Active `in_flight` worker claims are not overridden by
-the recovery API.
+Mutation bodies require `reason` and may include `actor` and `source`; every
+mutation returns a machine-readable recovery receipt and writes
+`runtime_effect.<operation>` to the `konoha:audit` stream. The receipt includes
+`audit.session_id`, `audit.action_type`, `audit.entry_id`, state transition
+fields, actor/reason, `recovery_source`, and the API `request_path` where
+applicable. The case timeline event mirrors the audit link so an operator can
+move from a failed effect, to the recovery action, to the exact audit entry.
+Active `in_flight` worker claims are not overridden by the recovery API.
+Rejected recovery attempts, including active worker claims and busy recovery
+locks, also write `result=error` audit entries with the same effect/source/path
+correlation and return the audit link in error details when possible.
 
 The local CLI uses the same service:
 
@@ -222,8 +229,8 @@ The operator Monitor page also exposes the same recovery contract. Its recovery
 lane reads `GET /runtime-effects?status=retry,failed,dead_letter` plus
 `GET /waits`, shows failed/dead-lettered effects next to active/overdue waits,
 and calls the existing retry/dead-letter endpoints with an operator reason.
-The UI is a view over the canonical outbox/wait records; it does not maintain a
-separate recovery state.
+The UI sends `source=monitor.recovery_lane`. It is a view over the canonical
+outbox/wait records and does not maintain a separate recovery state.
 
 For runtime recovery procedures, use
 `docs/workflow-runtime-rollback-recovery.md`. For release gates, use

@@ -77,6 +77,7 @@ async function main(): Promise<void> {
     operation,
     actor: actor(rest),
     reason: reason(rest),
+    source: "cli:runtime-effect-recovery",
   });
   print({ ok: true, receipt });
 }

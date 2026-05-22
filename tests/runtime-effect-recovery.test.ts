@@ -64,6 +64,20 @@ describe("runtime effect recovery", () => {
       to_status: "cancelled",
       noop: false,
       audited: true,
+      recovery_source: "service:runtime-effect-recovery",
+      audit: {
+        action_type: "runtime_effect.cancel",
+        session_id: `runtime-effect-recovery:${enqueued.record.effect_id}`,
+        parameters: {
+          effect_id: enqueued.record.effect_id,
+          operation: "cancel",
+          actor: "kakashi",
+          reason: "case cancelled by operator",
+          from_status: "pending",
+          to_status: "cancelled",
+          recovery_source: "service:runtime-effect-recovery",
+        },
+      },
       record: {
         status: "cancelled",
         receipt: {
@@ -78,7 +92,18 @@ describe("runtime effect recovery", () => {
     });
 
     const audit = await readAuditLog({ actionType: "runtime_effect.cancel", limit: 20 });
-    expect(audit.some(entry => entry.session_id === `runtime-effect-recovery:${enqueued.record.effect_id}` && entry.agent_chain === "kakashi")).toBe(true);
+    const auditEntry = audit.find(entry => entry.session_id === `runtime-effect-recovery:${enqueued.record.effect_id}` && entry.agent_chain === "kakashi");
+    expect(auditEntry).toBeTruthy();
+    expect(auditEntry?.id).toBe(receipt.audit.entry_id);
+    expect(JSON.parse(auditEntry!.parameters)).toMatchObject({
+      effect_id: enqueued.record.effect_id,
+      operation: "cancel",
+      actor: "kakashi",
+      reason: "case cancelled by operator",
+      from_status: "pending",
+      to_status: "cancelled",
+      recovery_source: "service:runtime-effect-recovery",
+    });
 
     const timelineEvents = (await listEvents({ type: "runtime.effect.cancelled", limit: 1000 }))
       .filter(event => event.effect_id === enqueued.record.effect_id);
@@ -89,6 +114,10 @@ describe("runtime effect recovery", () => {
       recovery_operation: "cancel",
       recovery_actor: "kakashi",
       recovery_noop: "false",
+      recovery_source: "service:runtime-effect-recovery",
+      recovery_audit_session_id: `runtime-effect-recovery:${enqueued.record.effect_id}`,
+      recovery_audit_action_type: "runtime_effect.cancel",
+      recovery_audit_entry_id: receipt.audit.entry_id,
       previous_status: "pending",
       effect_status: "cancelled",
     });
@@ -191,10 +220,38 @@ describe("runtime effect recovery", () => {
       operation: "dead_letter",
       actor: "kakashi",
       reason: "should not override worker",
+      source: "monitor.recovery_lane",
       now: "2026-05-21T22:24:02.000Z",
     })).rejects.toMatchObject({
       code: "RUNTIME_EFFECT_RECOVERY_ACTIVE_CLAIM",
       status: 409,
+      details: {
+        audit: {
+          audited: true,
+          action_type: "runtime_effect.dead_letter",
+          session_id: `runtime-effect-recovery:${inFlight.effect_id}`,
+          parameters: {
+            effect_id: inFlight.effect_id,
+            operation: "dead_letter",
+            actor: "kakashi",
+            reason: "should not override worker",
+            recovery_source: "monitor.recovery_lane",
+            error: "RUNTIME_EFFECT_RECOVERY_ACTIVE_CLAIM",
+          },
+        },
+      },
+    });
+
+    const audit = await readAuditLog({ actionType: "runtime_effect.dead_letter", limit: 20 });
+    const auditEntry = audit.find(entry => entry.session_id === `runtime-effect-recovery:${inFlight.effect_id}` && entry.result === "error");
+    expect(auditEntry).toBeTruthy();
+    expect(JSON.parse(auditEntry!.parameters)).toMatchObject({
+      effect_id: inFlight.effect_id,
+      operation: "dead_letter",
+      actor: "kakashi",
+      reason: "should not override worker",
+      recovery_source: "monitor.recovery_lane",
+      error: "RUNTIME_EFFECT_RECOVERY_ACTIVE_CLAIM",
     });
   });
 
@@ -225,7 +282,7 @@ describe("runtime effect recovery", () => {
     const retryRes = await app.fetch(new Request(`http://localhost/runtime-effects/${record.effect_id}/retry`, {
       method: "POST",
       headers: adminHeaders(),
-      body: JSON.stringify({ actor: "kakashi", reason: "api recovery test", now: "2026-05-21T22:25:00.000Z" }),
+      body: JSON.stringify({ actor: "kakashi", reason: "api recovery test", source: "monitor.recovery_lane", now: "2026-05-21T22:25:00.000Z" }),
     }));
     expect(retryRes.status).toBe(200);
     await expect(retryRes.json()).resolves.toMatchObject({
@@ -235,6 +292,22 @@ describe("runtime effect recovery", () => {
         from_status: "dead_letter",
         to_status: "pending",
         terminal_override: true,
+        recovery_source: "monitor.recovery_lane",
+        request_path: `/runtime-effects/${record.effect_id}/retry`,
+        audit: {
+          action_type: "runtime_effect.retry",
+          session_id: `runtime-effect-recovery:${record.effect_id}`,
+          parameters: {
+            effect_id: record.effect_id,
+            operation: "retry",
+            actor: "kakashi",
+            reason: "api recovery test",
+            from_status: "dead_letter",
+            to_status: "pending",
+            recovery_source: "monitor.recovery_lane",
+            request_path: `/runtime-effects/${record.effect_id}/retry`,
+          },
+        },
       },
     });
 

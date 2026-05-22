@@ -31,11 +31,13 @@ function parseStatuses(raw: string | undefined): RuntimeEffectStatus[] {
   return statuses.length ? statuses : ["pending", "retry", "failed", "dead_letter"];
 }
 
-async function parseRecoveryBody(c: any): Promise<{ actor: string; reason: string; now?: string }> {
+async function parseRecoveryBody(c: any): Promise<{ actor: string; reason: string; now?: string; source: string; request_path: string }> {
   const body = await c.req.json().catch(() => ({}));
   return {
     actor: typeof body.actor === "string" ? body.actor : "api:admin",
     reason: typeof body.reason === "string" ? body.reason : "",
+    source: typeof body.source === "string" ? body.source : "api:runtime-effects",
+    request_path: c.req.path,
     ...(typeof body.now === "string" ? { now: body.now } : {}),
   };
 }

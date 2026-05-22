@@ -141,6 +141,11 @@ export async function emitRuntimeEffectRecoveryTimelineEvent(
       recovery_noop: receipt.noop,
       recovery_terminal_override: receipt.terminal_override,
       recovery_audited: receipt.audited,
+      recovery_audit_session_id: receipt.audit.session_id,
+      recovery_audit_action_type: receipt.audit.action_type,
+      recovery_audit_entry_id: receipt.audit.entry_id,
+      recovery_source: receipt.recovery_source,
+      recovery_request_path: receipt.request_path,
       previous_attempts: receipt.previous_attempts,
     },
   );

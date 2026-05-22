@@ -170,6 +170,7 @@ export const AUDIT_STREAM = "konoha:audit";
 const AUDIT_MAX_LEN = 10000;
 
 export interface AuditEntry {
+  id?: string;
   timestamp: string;
   session_id: string;
   action_type: string;
@@ -180,13 +181,15 @@ export interface AuditEntry {
   error?: string;
 }
 
-export async function auditLog(entry: AuditEntry): Promise<void> {
+export async function auditLog(entry: AuditEntry): Promise<string | null> {
   const fields: string[] = [];
   for (const [k, v] of Object.entries(entry)) {
+    if (k === "id") continue;
     if (v !== undefined) fields.push(k, String(v));
   }
-  await redis.xadd(AUDIT_STREAM, "MAXLEN", "~", AUDIT_MAX_LEN, "*", ...fields).catch(e => {
+  return await redis.xadd(AUDIT_STREAM, "MAXLEN", "~", AUDIT_MAX_LEN, "*", ...fields).catch(e => {
     log.error("audit write error", { error: e.message });
+    return null;
   });
 }
 
@@ -200,10 +203,10 @@ export async function readAuditLog(opts: {
   const limit = opts.limit ?? 100;
   const raw = await redis.xrevrange(AUDIT_STREAM, "+", "-", "COUNT", limit).catch(() => []);
 
-  const entries: AuditEntry[] = raw.map(([, fields]) => {
+  const entries: AuditEntry[] = raw.map(([id, fields]) => {
     const obj: Record<string, string> = {};
     for (let i = 0; i < fields.length; i += 2) obj[fields[i]] = fields[i + 1];
-    return obj as unknown as AuditEntry;
+    return { ...obj, id } as unknown as AuditEntry;
   });
 
   return entries.filter(e => {

@@ -236,9 +236,9 @@ export function Monitor() {
         ? 'operator retry from monitor failed-effect view'
         : 'operator dead-letter from monitor failed-effect view';
       if (action === 'retry') {
-        await api.runtimeEffects.retry(effect.effect_id, { actor: 'operator:monitor', reason });
+        await api.runtimeEffects.retry(effect.effect_id, { actor: 'operator:monitor', reason, source: 'monitor.recovery_lane' });
       } else {
-        await api.runtimeEffects.deadLetter(effect.effect_id, { actor: 'operator:monitor', reason });
+        await api.runtimeEffects.deadLetter(effect.effect_id, { actor: 'operator:monitor', reason, source: 'monitor.recovery_lane' });
       }
       await loadOps();
     } catch (e: any) {
