@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 754,
+  "policy_id": "runtime-retention-high-volume-v1",
+  "description": "High-volume runtime retention, archival, and UI compaction policy for process instances and related runtime artifacts.",
+  "source_of_truth": {
+    "active_runtime": "redis-primary",
+    "historical_shadow": "postgres-shadow",
+    "pg_read_cutover": "entity-gated by PG_READ readiness; destructive cleanup remains Redis-primary-safe until cutover is explicitly approved"
+  },
+  "defaults": {
+    "active_states": ["active"],
+    "terminal_states": ["completed", "archived", "compacted"],
+    "completed_archive_after_hours": 168,
+    "completed_compact_after_hours": 24,
+    "audit_delete_after_days": 365,
+    "max_cleanup_batch": 200,
+    "ui_default_filter": {
+      "hide_states": ["archived", "compacted"],
+      "hide_terminal_older_than_hours": 24,
+      "default_page_size": 50,
+      "audit_query_can_include_states": ["archived", "compacted"],
+      "audit_export_requires_role": "platform_owner"
+    }
+  },
+  "safety_gates": {
+    "require_dry_run_preview": true,
+    "require_operator_confirmation": true,
+    "require_no_active_work_items": true,
+    "require_no_active_waits": true,
+    "require_no_pending_or_retry_effects": true,
+    "require_pg_shadow_consistent": true,
+    "block_when_redis_only_rows": true,
+    "require_archive_before_delete": true,
+    "redis_primary_until_pg_read_entity_safe": true
+  },
+  "retention_classes": [
+    {
+      "id": "runtime.case.active",
+      "entity": "case",
+      "volume": "all",
+      "states": ["active"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": null,
+      "compact_after_hours": null,
+      "delete_after_days": null,
+      "ui_visibility": "visible",
+      "audit_access": "full_history",
+      "cleanup_disposition": "never_auto_delete"
+    },
+    {
+      "id": "runtime.case.completed.high_volume",
+      "entity": "case",
+      "volume": "high",
+      "states": ["completed", "archived", "compacted"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": 168,
+      "compact_after_hours": 24,
+      "delete_after_days": 365,
+      "ui_visibility": "hidden_by_default_after_compaction",
+      "audit_access": "summary_by_default_full_history_on_audit_query",
+      "cleanup_disposition": "archive_then_manual_or_safe_class_cleanup"
+    },
+    {
+      "id": "runtime.event.timeline",
+      "entity": "event",
+      "volume": "high",
+      "states": ["active", "completed", "archived", "compacted"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": 168,
+      "compact_after_hours": 24,
+      "delete_after_days": 365,
+      "ui_visibility": "summarize_repeated_events_by_default",
+      "audit_access": "full_event_stream_on_audit_query",
+      "cleanup_disposition": "compact_before_archive"
+    },
+    {
+      "id": "runtime.work_item",
+      "entity": "work_item",
+      "volume": "all",
+      "states": ["active", "completed", "archived", "compacted"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": 168,
+      "compact_after_hours": 24,
+      "delete_after_days": 365,
+      "ui_visibility": "active_visible_completed_hidden_by_default_after_compaction",
+      "audit_access": "full_assignment_history_on_audit_query",
+      "cleanup_disposition": "case_lifecycle_bound"
+    },
+    {
+      "id": "runtime.effect.outbox",
+      "entity": "runtime_effect",
+      "volume": "high",
+      "states": ["active", "completed", "archived", "compacted"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": 168,
+      "compact_after_hours": 24,
+      "delete_after_days": 365,
+      "ui_visibility": "show_failed_retry_dead_letter_only_by_default",
+      "audit_access": "full_effect_receipt_on_audit_query",
+      "cleanup_disposition": "retain_until_terminal_and_case_archived"
+    },
+    {
+      "id": "runtime.event_wait",
+      "entity": "event_wait",
+      "volume": "all",
+      "states": ["active", "completed", "archived"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": 168,
+      "compact_after_hours": null,
+      "delete_after_days": 365,
+      "ui_visibility": "active_visible_terminal_hidden_with_case_archive",
+      "audit_access": "full_wait_state_on_audit_query",
+      "cleanup_disposition": "must_be_terminal_before_case_archive"
+    },
+    {
+      "id": "runtime.reminder",
+      "entity": "reminder",
+      "volume": "all",
+      "states": ["active", "completed", "archived"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": 720,
+      "compact_after_hours": null,
+      "delete_after_days": 365,
+      "ui_visibility": "active_visible_completed_hidden_by_default",
+      "audit_access": "full_reminder_receipt_on_audit_query",
+      "cleanup_disposition": "safe_candidate_after_terminal_threshold"
+    },
+    {
+      "id": "runtime.message.high_volume",
+      "entity": "message",
+      "volume": "high",
+      "states": ["active", "completed", "archived", "compacted"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": 168,
+      "compact_after_hours": 6,
+      "delete_after_days": 365,
+      "ui_visibility": "thread_summary_by_default",
+      "audit_access": "full_connector_event_on_audit_query",
+      "cleanup_disposition": "dedupe_then_compact_then_archive"
+    },
+    {
+      "id": "runtime.deploy_record",
+      "entity": "deploy_record",
+      "volume": "all",
+      "states": ["active", "completed", "archived"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": 2160,
+      "compact_after_hours": null,
+      "delete_after_days": null,
+      "ui_visibility": "latest_visible_history_on_audit_query",
+      "audit_access": "deploy_receipt_full_retention",
+      "cleanup_disposition": "never_auto_delete"
+    },
+    {
+      "id": "runtime.timeline_event",
+      "entity": "timeline_event",
+      "volume": "high",
+      "states": ["active", "completed", "archived", "compacted"],
+      "redis_primary": true,
+      "postgres_shadow": true,
+      "archive_after_hours": 168,
+      "compact_after_hours": 24,
+      "delete_after_days": 365,
+      "ui_visibility": "summary_default_full_timeline_on_audit_query",
+      "audit_access": "full_timeline_on_audit_query",
+      "cleanup_disposition": "compact_before_archive"
+    }
+  ],
+  "workflow_activation_policies": [
+    {
+      "workflow_category": "messenger",
+      "profile": "high_volume_messenger",
+      "default_runtime_retention_class": "runtime.case.completed.high_volume",
+      "requires_explicit_activation": true,
+      "activation_fields": ["retention.volume_profile", "retention.completed_archive_after_hours", "retention.compact_after_hours"],
+      "dedupe_key": ["connector", "chat_id", "message_id"],
+      "budgets": {
+        "max_cases_per_hour": 1000,
+        "max_events_per_case_visible_by_default": 25,
+        "max_timeline_events_visible_by_default": 50,
+        "max_open_waits_per_workflow": 500,
+        "max_pending_effects_per_workflow": 500
+      },
+      "backpressure": {
+        "on_budget_exceeded": "block_activation_or_require_platform_owner_waiver",
+        "monitor_signal": "runtime_retention.high_volume_budget_pressure"
+      }
+    }
+  ],
+  "ui_compaction": {
+    "monitor": {
+      "default_statuses": ["running", "retry", "failed", "dead_letter", "escalated", "overdue"],
+      "hide_retention_states": ["archived", "compacted"],
+      "include_archived_param": "include_archived",
+      "include_compacted_param": "include_compacted"
+    },
+    "work_items": {
+      "default_statuses": ["pending", "running"],
+      "hide_retention_states": ["archived", "compacted"],
+      "show_completed_filter": "status=done"
+    },
+    "case_timeline": {
+      "collapse_repeated_event_types": ["runtime.effect.retry_scheduled", "runtime.effect.succeeded", "message.received"],
+      "summary_fields": ["count", "first_seen_at", "last_seen_at", "sample_event_id"],
+      "audit_expand_param": "timeline=full"
+    }
+  },
+  "pg_read_and_retention_tooling": {
+    "pg_verify_must_report_states": ["active", "completed", "archived", "compacted"],
+    "retention_report_must_group_by": ["entity", "retention_class", "disposition", "status", "process_prefix", "age_bucket"],
+    "cleanup_apply_scope": "exact_safe_candidate_ids_only",
+    "cutover_guard": "PG_READ entity flags may read archived/compacted rows only after no Redis-only rows and no manual-review PG-only blockers remain"
+  },
+  "runbook": {
+    "report": "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/pg-only-retention-report.ts --json",
+    "preview": "/act retention.cleanup_preview {\"limit\":200}",
+    "runtime_cleanup_dry_run": "/act retention.runtime_cleanup {\"dry_run\":true}",
+    "runtime_cleanup_apply": "/act retention.runtime_cleanup {\"dry_run\":false,\"max_delete\":100}",
+    "audit_expand": "Use Monitor/Work Items audit filters with include_archived/include_compacted or timeline=full; do not delete from UI filters."
+  }
+}

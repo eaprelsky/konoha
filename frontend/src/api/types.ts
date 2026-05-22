@@ -424,6 +424,7 @@ export interface OperatorArtifactMetadata {
   source?: string;
   tags?: string[];
   lifecycle?: 'active' | 'deprecated' | string;
+  retention_state?: 'active' | 'completed' | 'archived' | 'compacted' | string;
   operator_visible?: boolean;
 }
 

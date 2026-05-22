@@ -4,6 +4,8 @@ Operator UI filters are presentation rules only. They must not be treated as a d
 
 Konoha stores active runtime data in Redis and shadows operational history into Postgres. A healthy migration state has no Redis-only rows. Postgres-only rows can still be expected historical/shadow data, but they need explicit retention policy so test/demo artifacts do not grow without bound.
 
+Machine-readable high-volume runtime policy: `docs/runtime-retention-policy.json`.
+
 ## Current Safe Surface
 
 `retention.report` is the canonical read-only Action Spine entry point for retention visibility. It runs the same PG-only grouping logic as `scripts/pg-only-retention-report.ts` and returns:
@@ -15,6 +17,62 @@ Konoha stores active runtime data in Redis and shadows operational history into 
 - `mode: "dry_run"` to make the non-destructive behavior explicit.
 
 `retention.cleanup_preview` is also read-only. It returns exact IDs only for rows classified as `safe_candidate:*`, omits review-only rows, and blocks candidate output when Redis-only mismatches exist. It is a preview contract for future cleanup, not a delete operation.
+
+## High-Volume Runtime Policy
+
+Issue #754 adds an explicit policy contract for process instances and their
+related runtime artifacts. The policy covers these entity classes:
+
+- `case`
+- `event`
+- `work_item`
+- `runtime_effect`
+- `event_wait`
+- `reminder`
+- `message`
+- `deploy_record`
+- `timeline_event`
+
+The runtime lifecycle is intentionally staged:
+
+| State | Meaning | Default UI behavior | Cleanup behavior |
+| --- | --- | --- | --- |
+| `active` | Case, wait, effect, work item, or deploy record may still change runtime state. | Visible in Monitor and Work Items views. | Never archived, compacted, or deleted automatically. |
+| `completed` | Runtime artifact is terminal but still recent enough to inspect inline. | Visible until the completed compaction window is reached. | Can be compacted only when no active work items, waits, or pending/retry effects remain. |
+| `compacted` | Noisy repeated event/effect/message streams are summarized for normal operator views. | Hidden or summarized by default; full audit view can include it. | Remains audit-addressable; delete is not implied. |
+| `archived` | Historical record is removed from the active operator lane but retained for audit/readiness. | Hidden by default; audit query can include it. | Delete requires a safe retention class, dry-run preview, confirmation, and Redis/PG consistency gates. |
+
+Default thresholds in `docs/runtime-retention-policy.json`:
+
+- completed high-volume cases compact after 24 hours;
+- completed high-volume cases archive after 168 hours;
+- audit deletion threshold is 365 days unless a class says `null`;
+- cleanup batches are capped at 200 candidates;
+- Monitor and Work Items hide `archived` and `compacted` by default but expose audit expansion with `include_archived`, `include_compacted`, or `timeline=full`.
+
+High-volume messenger workflows require explicit activation through
+retention/profile fields before they can use the high-volume class. The policy
+requires dedupe by connector/chat/message ID and defines per-workflow budgets
+for case rate, visible timeline size, open waits, and pending effects. Exceeding
+those budgets must block activation or require a platform-owner waiver and emit
+`runtime_retention.high_volume_budget_pressure`.
+
+## Runtime Archive And Compaction Safety
+
+Archive/compaction decisions are blocked when any of these are true:
+
+- active work items still exist;
+- active waits can still fire;
+- pending or retry runtime effects can still mutate external systems;
+- PostgreSQL shadow consistency is unknown or false;
+- Redis-only rows exist;
+- the operator has not reviewed a dry-run preview for destructive cleanup.
+
+This matches the Redis-primary / PG-shadow contract from the PG_READ work:
+Postgres can report archived/compacted history, but PG_READ entity cutover must
+still wait for no Redis-only rows and no manual-review PG-only blockers. `pg-verify`
+and readiness reports must treat `active`, `completed`, `archived`, and
+`compacted` as explicit retention states instead of unclassified row drift.
 
 ## PG-Only Retention Classes
 
@@ -115,8 +173,14 @@ Default cleanup rules must not delete business artifacts. Only generated/test/de
 
 Runtime auto-cleanup follows the same rule: production-looking workflows are retained by default even when their cases are terminal or stuck. They need an explicit per-case auto-delete opt-in before Tsunade can remove them.
 
+High-volume archive/compaction follows a stricter rule: compaction changes only
+presentation and summary shape, while archive moves data out of default active
+lanes. Neither state grants deletion by itself. Deletion still needs a
+machine-readable safe class, exact candidate ID, dry-run evidence, operator
+confirmation, and Redis/PG consistency.
+
 ## Non-Goals
 
 - PG-only destructive cleanup is limited to exact `safe_candidate:*` rows via `retention.cleanup_apply`.
-- UI hidden-artifact filtering remains independent from retention.
+- UI filtering and compaction are presentation gates; they must not be used as destructive cleanup evidence.
 - Sales/business workflow runs are retained unless an operator chooses a narrower future policy.

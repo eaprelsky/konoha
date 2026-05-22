@@ -163,6 +163,31 @@ describe('operatorView filtering', () => {
     ]);
   });
 
+  test('hides archived and compacted runtime artifacts by default while preserving audit view', () => {
+    const hiddenProcesses = new Set<string>();
+    const cases: Run[] = [
+      baseRun,
+      { ...baseRun, case_id: 'case-archived', metadata: { retention_state: 'archived' } },
+      { ...baseRun, case_id: 'case-compacted', metadata: { retention_state: 'compacted' } },
+    ];
+    const effects: RuntimeEffectRecord[] = [
+      baseRuntimeEffect,
+      { ...baseRuntimeEffect, effect_id: 'effect-compacted', payload: { metadata: { retention_state: 'compacted' } } },
+    ];
+
+    expect(filterOperatorCases(cases, hiddenProcesses).map(kase => kase.case_id)).toEqual(['case-1']);
+    expect(filterOperatorRuntimeEffects(effects, hiddenProcesses).map(effect => effect.effect_id)).toEqual(['effect-visible']);
+    expect(filterOperatorCases(cases, hiddenProcesses, { showHiddenArtifacts: true }).map(kase => kase.case_id)).toEqual([
+      'case-1',
+      'case-archived',
+      'case-compacted',
+    ]);
+    expect(filterOperatorRuntimeEffects(effects, hiddenProcesses, { showHiddenArtifacts: true }).map(effect => effect.effect_id)).toEqual([
+      'effect-visible',
+      'effect-compacted',
+    ]);
+  });
+
   test('supports debug view from url or local storage', () => {
     window.localStorage.setItem('konoha.operatorView.showHiddenArtifacts', 'true');
     expect(readShowHiddenArtifacts()).toBe(true);

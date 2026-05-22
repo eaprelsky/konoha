@@ -221,6 +221,14 @@ tests. Generate `bpms-load-regression-report.json` with
 `scripts/bpms-load-regression.ts` and attach it to the release gate before broad
 Workflow Engine changes.
 
+High-volume runtime retention for #754 is defined in
+`docs/runtime-retention-policy.json`. Messenger-heavy workflows must explicitly
+activate the `high_volume_messenger` profile before relying on compacted
+operator views. That profile sets cardinality budgets for cases, visible
+timeline events, open waits, and pending effects so runtime growth is handled by
+retention/compaction policy before it becomes a Redis/PostgreSQL or Monitor UI
+budget problem.
+
 ## Scale-Out Policy
 
 Scale out to a second VM when any of these conditions remains true after

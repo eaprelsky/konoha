@@ -5,6 +5,7 @@ const STORAGE_KEY = 'konoha.operatorView.showHiddenArtifacts';
 
 const HIDDEN_VISIBILITY = new Set(['debug', 'internal', 'test', 'generated', 'deprecated']);
 const HIDDEN_SOURCE = new Set(['test', 'e2e', 'playwright', 'testbench', 'operator_eval']);
+const HIDDEN_RETENTION_STATE = new Set(['archived', 'compacted']);
 const LEGACY_TEST_ROLE_IDS = new Set(['tester', 'qa', 'reviewer']);
 
 export interface OperatorViewOptions {
@@ -39,6 +40,7 @@ export function isHiddenByMetadata(item: MetadataCarrier): boolean {
   if (!metadata) return false;
   if (metadata.operator_visible === false) return true;
   if (normalize(metadata.lifecycle) === 'deprecated') return true;
+  if (HIDDEN_RETENTION_STATE.has(normalize(metadata.retention_state))) return true;
   if (HIDDEN_VISIBILITY.has(normalize(metadata.visibility))) return true;
   if (HIDDEN_SOURCE.has(normalize(metadata.source))) return true;
   if (metadata.tags?.map(normalize).some(tag => HIDDEN_VISIBILITY.has(tag) || HIDDEN_SOURCE.has(tag))) return true;
