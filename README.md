@@ -140,6 +140,11 @@ The production gate includes system health, lifecycle/watchdog checks, Telegram 
 
 ## Documentation
 
+The public, human-friendly handbook is the
+[Konoha GitHub Wiki](https://github.com/eaprelsky/konoha/wiki). Wiki pages are
+generated from reviewed source files in `docs/wiki/`; do not edit the Wiki as a
+separate source of truth.
+
 - [Architecture](docs/architecture.md) — current component map and operational gates.
 - [Workflow Engine](docs/workflow-engine.md) — eEPC runtime, cases, work items, events, and assignment.
 - [Action Spine Boundary](docs/action-spine-boundary.md) — action contract direction and boundaries.
