@@ -276,6 +276,11 @@ function assertRecoveryText(value: string | undefined, field: string): string {
   return trimmed;
 }
 
+function safeRecoveryText(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  return trimmed || fallback;
+}
+
 function normalizeRetryPolicy(policy: Partial<RuntimeEffectRetryPolicy> | undefined): RuntimeEffectRetryPolicy {
   const merged = { ...DEFAULT_RUNTIME_EFFECT_RETRY_POLICY, ...(policy ?? {}) };
   if (!Number.isInteger(merged.max_attempts) || merged.max_attempts < 1) {
@@ -663,13 +668,45 @@ export async function recoverRuntimeEffect(
 ): Promise<RuntimeEffectRecoveryReceipt> {
   const now = input.now ?? new Date().toISOString();
   assertIso(now, "now");
-  const actor = assertRecoveryText(input.actor, "actor");
-  const reason = assertRecoveryText(input.reason, "reason");
+  const actorForAudit = safeRecoveryText(input.actor, "unknown");
+  const reasonForAudit = safeRecoveryText(input.reason, "invalid recovery request");
   const recoverySource = input.source?.trim() || "service:runtime-effect-recovery";
   const requestPath = input.request_path?.trim() || undefined;
   const operation = input.operation;
   if (operation !== "retry" && operation !== "cancel" && operation !== "dead_letter") {
-    throw new RuntimeEffectRecoveryError("RUNTIME_EFFECT_RECOVERY_BAD_REQUEST", `Unsupported recovery operation: ${operation}`, 400);
+    const error = new RuntimeEffectRecoveryError("RUNTIME_EFFECT_RECOVERY_BAD_REQUEST", `Unsupported recovery operation: ${operation}`, 400);
+    const audit = await writeRuntimeEffectRecoveryFailureAudit({
+      effect_id: effectId,
+      operation: "retry",
+      actor: actorForAudit,
+      reason: reasonForAudit,
+      now,
+      recovery_source: recoverySource,
+      request_path: requestPath,
+      error,
+    });
+    attachRecoveryFailureAudit(error, audit);
+    throw error;
+  }
+
+  let actor: string;
+  let reason: string;
+  try {
+    actor = assertRecoveryText(input.actor, "actor");
+    reason = assertRecoveryText(input.reason, "reason");
+  } catch (e) {
+    const audit = await writeRuntimeEffectRecoveryFailureAudit({
+      effect_id: effectId,
+      operation,
+      actor: actorForAudit,
+      reason: reasonForAudit,
+      now,
+      recovery_source: recoverySource,
+      request_path: requestPath,
+      error: e,
+    });
+    attachRecoveryFailureAudit(e, audit);
+    throw e;
   }
 
   const lockKey = runtimeEffectLockKey(effectId);

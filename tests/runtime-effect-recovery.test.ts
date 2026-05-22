@@ -316,4 +316,58 @@ describe("runtime effect recovery", () => {
       attempts: 0,
     });
   });
+
+  test("admin API rejects blank recovery reason with structured error audit link", async () => {
+    const record = recoveryRecord("api-blank-reason", "failed");
+    await enqueueRuntimeEffect(record);
+
+    const retryRes = await app.fetch(new Request(`http://localhost/runtime-effects/${record.effect_id}/retry`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({ actor: "kakashi", reason: "   ", source: "monitor.recovery_lane", now: "2026-05-21T22:26:00.000Z" }),
+    }));
+    expect(retryRes.status).toBe(400);
+    const body = await retryRes.json();
+    expect(body).toMatchObject({
+      ok: false,
+      error: "RUNTIME_EFFECT_RECOVERY_BAD_REQUEST",
+      message: "reason is required",
+      details: {
+        audit: {
+          audited: true,
+          action_type: "runtime_effect.retry",
+          session_id: `runtime-effect-recovery:${record.effect_id}`,
+          parameters: {
+            effect_id: record.effect_id,
+            operation: "retry",
+            actor: "kakashi",
+            reason: "invalid recovery request",
+            recovery_source: "monitor.recovery_lane",
+            request_path: `/runtime-effects/${record.effect_id}/retry`,
+            error: "RUNTIME_EFFECT_RECOVERY_BAD_REQUEST",
+          },
+        },
+      },
+    });
+
+    const audit = await readAuditLog({ actionType: "runtime_effect.retry", limit: 20 });
+    const auditEntry = audit.find(entry => entry.id === body.details.audit.entry_id);
+    expect(auditEntry).toBeTruthy();
+    expect(auditEntry?.result).toBe("error");
+    expect(auditEntry?.error).toBe("reason is required");
+    expect(JSON.parse(auditEntry!.parameters)).toMatchObject({
+      effect_id: record.effect_id,
+      operation: "retry",
+      actor: "kakashi",
+      reason: "invalid recovery request",
+      recovery_source: "monitor.recovery_lane",
+      request_path: `/runtime-effects/${record.effect_id}/retry`,
+      error: "RUNTIME_EFFECT_RECOVERY_BAD_REQUEST",
+    });
+
+    await expect(getRuntimeEffect(record.effect_id)).resolves.toMatchObject({
+      status: "failed",
+      attempts: 1,
+    });
+  });
 });
