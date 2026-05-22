@@ -323,5 +323,15 @@ describe("work item dispatch outbox", () => {
         },
       });
     }
+
+    const branches = [...(advanced.case?.active_branches ?? [])].sort((a, b) => a.element_id.localeCompare(b.element_id));
+    const first = await completeWorkItem(branches[0].work_item_id, { branch_a: true });
+    expect(first.case?.status).toBe("running");
+    expect(first.case?.active_branches?.filter(branch => branch.done)).toHaveLength(1);
+
+    const second = await completeWorkItem(branches[1].work_item_id, { branch_b: true });
+    expect(second.case?.status).toBe("done");
+    expect(second.case?.position).toBe("done");
+    expect(second.case?.active_branches).toBeUndefined();
   });
 });

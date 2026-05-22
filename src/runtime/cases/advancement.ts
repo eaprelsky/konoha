@@ -26,6 +26,7 @@ import {
   buildGraphAdjacency,
   evaluateGraphCondition,
   findGraphJoinGateway,
+  planGraphJoinTransition,
   planGraphTransition,
   type GraphTransitionPlan,
 } from "./transition-planner";
@@ -156,6 +157,56 @@ async function enqueueAsyncAdapterEffectsForElement(
       error: e.message,
     }));
   }
+}
+
+function systemBindingsForElement(el: WorkflowElement): SystemBinding[] {
+  return el.systems ?? (el.system ? [{ connector: el.system, operation: "default" }] : []);
+}
+
+type DirectAdapterResult =
+  | { kind: "none" }
+  | { kind: "done"; output: Record<string, unknown> }
+  | { kind: "error" };
+
+async function runDirectAdapterBindingsForElement(
+  kase: Case,
+  elementId: string,
+  el: WorkflowElement,
+  bindings: SystemBinding[],
+  logMessage: string,
+): Promise<DirectAdapterResult> {
+  const directBindings = bindings.filter(binding => !isAsyncAdapterBinding(binding));
+  if (directBindings.length === 0) return { kind: "none" };
+
+  let mergedOutput: Record<string, unknown> = {};
+  let executed = false;
+  for (const binding of directBindings) {
+    const adapter = getAdapter(binding.connector);
+    if (!adapter) continue;
+    executed = true;
+    try {
+      const op = operationForBinding(binding, el.label);
+      const out = await adapter.execute(op, kase.payload);
+      mergedOutput = { ...mergedOutput, ...out };
+    } catch (e: any) {
+      log.error(logMessage, { connector: binding.connector, element_id: elementId, label: el.label, error: e.message });
+      return { kind: "error" };
+    }
+  }
+
+  return executed ? { kind: "done", output: mergedOutput } : { kind: "none" };
+}
+
+function markWorkItemDone(
+  kase: Case,
+  wi: WorkItem,
+  output: Record<string, unknown>,
+): void {
+  wi.status = "done";
+  wi.output = output;
+  wi.updated_at = new Date().toISOString();
+  const histEntry = kase.history.find(h => h.work_item_id === wi.work_item_id);
+  if (histEntry) histEntry.output = output;
 }
 
 async function subscribeEventNode(kase: Case, el: WorkflowElement): Promise<void> {
@@ -381,47 +432,24 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
 
       await dispatchWorkItemForElement(kase, def, nextId, nextEl, wi);
 
-      const systemBindings = nextEl.systems ?? (nextEl.system ? [{ connector: nextEl.system, operation: "default" }] : []);
+      const systemBindings = systemBindingsForElement(nextEl);
       await enqueueAsyncAdapterEffectsForElement(kase, def, nextId, nextEl, wi, systemBindings);
-      const directSystemBindings = systemBindings.filter(binding => !isAsyncAdapterBinding(binding));
-      if (directSystemBindings.length > 0) {
-        let mergedOutput: Record<string, unknown> = {};
-        let adapterError = false;
+      const directAdapterResult = await runDirectAdapterBindingsForElement(kase, nextId, nextEl, systemBindings, "adapter error");
+      if (directAdapterResult.kind === "error") {
+        wi.status = "error";
+        wi.updated_at = new Date().toISOString();
+        await saveWorkItem(wi, "pending");
+        kase.status = "error";
+        await saveCase(kase);
+        return kase;
+      }
 
-        for (const binding of directSystemBindings) {
-          const adapter = getAdapter(binding.connector);
-          if (!adapter) continue;
-          try {
-            const op = operationForBinding(binding, nextEl.label);
-            const out = await adapter.execute(op, kase.payload);
-            mergedOutput = { ...mergedOutput, ...out };
-          } catch (e: any) {
-            log.error("adapter error", { connector: binding.connector, label: nextEl.label, error: e.message });
-            adapterError = true;
-            break;
-          }
-        }
-
-        if (adapterError) {
-          wi.status = "error";
-          wi.updated_at = new Date().toISOString();
-          await saveWorkItem(wi, "pending");
-          kase.status = "error";
-          await saveCase(kase);
-          return kase;
-        }
-
-        if (Object.keys(mergedOutput).length > 0 || directSystemBindings.some(b => getAdapter(b.connector))) {
-          const prevStatus = wi.status;
-          wi.status = "done";
-          wi.output = mergedOutput;
-          wi.updated_at = new Date().toISOString();
-          await saveWorkItem(wi, prevStatus);
-          const histEntry = kase.history.find(h => h.work_item_id === wi.work_item_id);
-          if (histEntry) histEntry.output = mergedOutput;
-          current = nextId;
-          continue;
-        }
+      if (directAdapterResult.kind === "done") {
+        const prevStatus = wi.status;
+        markWorkItemDone(kase, wi, directAdapterResult.output);
+        await saveWorkItem(wi, prevStatus);
+        current = nextId;
+        continue;
       }
 
       return kase;
@@ -476,33 +504,14 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
         kase.history.push({ element_id: branchElId, element_type: "function", label: branchEl.label, timestamp: wi.created_at, work_item_id: wi.work_item_id });
         await dispatchWorkItemForElement(kase, def, branchElId, branchEl, wi);
 
-        const branchBindings = branchEl.systems ?? (branchEl.system ? [{ connector: branchEl.system, operation: "default" }] : []);
+        const branchBindings = systemBindingsForElement(branchEl);
         await enqueueAsyncAdapterEffectsForElement(kase, def, branchElId, branchEl, wi, branchBindings);
-        const directBranchBindings = branchBindings.filter(binding => !isAsyncAdapterBinding(binding));
-        if (directBranchBindings.length > 0) {
-          let mergedOut: Record<string, unknown> = {};
-          let branchErr = false;
-          for (const binding of directBranchBindings) {
-            const adapter = getAdapter(binding.connector);
-            if (!adapter) continue;
-            try {
-              const op = operationForBinding(binding, branchEl.label);
-              const out = await adapter.execute(op, kase.payload);
-              mergedOut = { ...mergedOut, ...out };
-            } catch (e: any) {
-              log.error("adapter error in branch", { element_id: branchElId, error: e.message });
-              branchErr = true;
-              break;
-            }
-          }
-          if (!branchErr && directBranchBindings.some(b => getAdapter(b.connector))) {
-            wi.status = "done"; wi.output = mergedOut; wi.updated_at = new Date().toISOString();
-            await saveWorkItem(wi, "pending");
-            const h = kase.history.find(h => h.work_item_id === wi.work_item_id);
-            if (h) h.output = mergedOut;
-            branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: true });
-            continue;
-          }
+        const directAdapterResult = await runDirectAdapterBindingsForElement(kase, branchElId, branchEl, branchBindings, "adapter error in branch");
+        if (directAdapterResult.kind === "done") {
+          markWorkItemDone(kase, wi, directAdapterResult.output);
+          await saveWorkItem(wi, "pending");
+          branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: true });
+          continue;
         }
         branches.push({ element_id: branchElId, work_item_id: wi.work_item_id, done: false });
       }
@@ -535,19 +544,19 @@ export async function advanceCase(kase: Case, def: WorkflowDefinition): Promise<
 }
 
 export async function advancePastJoin(kase: Case, def: WorkflowDefinition, branchElementIds: string[]): Promise<Case> {
-  const { outEdges, byId } = buildAdjacency(def);
-  const joinId = findJoinGateway(branchElementIds, outEdges, byId);
+  const adjacency = buildAdjacency(def);
+  const plan = planGraphJoinTransition(branchElementIds, adjacency);
 
   kase.active_branches = undefined;
-  kase.history.push({ element_id: joinId || "(join)", element_type: "gateway", label: "join", timestamp: new Date().toISOString() });
+  appendPlannedHistory(kase, plan.history);
 
-  if (!joinId) {
+  if (plan.kind === "error") {
     kase.status = "error";
     await saveCase(kase);
     return kase;
   }
 
-  kase.position = joinId;
+  kase.position = plan.position;
   await saveCase(kase);
   return advanceCase(kase, def);
 }

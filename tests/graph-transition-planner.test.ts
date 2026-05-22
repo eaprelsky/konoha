@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeCase, makeWorkflowDefinition } from "./factories";
-import { planGraphTransition } from "../src/runtime/cases/transition-planner";
+import { buildGraphAdjacency, planGraphJoinTransition, planGraphTransition } from "../src/runtime/cases/transition-planner";
 
 describe("pure graph transition planner", () => {
   test("selects a deterministic XOR branch without mutating the case", () => {
@@ -69,6 +69,60 @@ describe("pure graph transition planner", () => {
       { branch_start_id: "event_a", element_id: "task_a", skipped_history: [{ element_id: "event_a", element_type: "event", label: "A ready" }] },
       { branch_start_id: "event_b", element_id: "task_b", skipped_history: [{ element_id: "event_b", element_type: "event", label: "B ready" }] },
     ]);
+  });
+
+  test("plans branch join resolution through the same pure graph contract", () => {
+    const workflow = makeWorkflowDefinition({
+      elements: [
+        { id: "split", type: "gateway", label: "Split", operator: "AND" },
+        { id: "task_a", type: "function", label: "Task A", role: "qa" },
+        { id: "task_b", type: "function", label: "Task B", role: "qa" },
+        { id: "join", type: "gateway", label: "Join", operator: "AND" },
+        { id: "done", type: "event", label: "Done" },
+      ],
+      flow: [
+        ["split", "task_a"],
+        ["split", "task_b"],
+        ["task_a", "join"],
+        ["task_b", "join"],
+        ["join", "done"],
+      ],
+    });
+
+    const plan = planGraphJoinTransition(["task_a", "task_b"], buildGraphAdjacency(workflow));
+
+    expect(plan).toEqual({
+      kind: "gateway_join",
+      position: "join",
+      history: [{ element_id: "join", element_type: "gateway", label: "join" }],
+      effects: [],
+    });
+  });
+
+  test("plans join gateways as pass-through transitions instead of split work", () => {
+    const workflow = makeWorkflowDefinition({
+      elements: [
+        { id: "task_a", type: "function", label: "Task A", role: "qa" },
+        { id: "task_b", type: "function", label: "Task B", role: "qa" },
+        { id: "join", type: "gateway", label: "Join", operator: "AND" },
+        { id: "done", type: "event", label: "Done" },
+      ],
+      flow: [
+        ["task_a", "join"],
+        ["task_b", "join"],
+        ["join", "done"],
+      ],
+    });
+
+    const plan = planGraphTransition({ workflow, case: makeCase({ position: "join" }) });
+
+    expect(plan).toMatchObject({
+      kind: "continue",
+      position: "join",
+      forced_next_id: "done",
+      history: [{ element_id: "join", element_type: "gateway", label: "Join" }],
+      effects: [{ kind: "gateway.evaluated", element_id: "join", label: "Join" }],
+    });
   });
 
   test("returns event wait intents without creating waits, reminders, or subscriptions", () => {

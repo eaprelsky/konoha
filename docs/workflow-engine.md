@@ -120,6 +120,7 @@ Condition syntax: `payload.<field> <op> <value>` where op ∈ `=== !== > < >= <=
 
 - **Split**: all outgoing edges are activated simultaneously. Each branch starts a work item. `kase.active_branches` is populated.
 - **Join** (`advancePastJoin`): when **all** branches are `done`, find the join gateway via graph reachability and resume.
+- Split and join decisions are planned by `transition-planner.ts`; `advanceCase` and `advancePastJoin` only apply the resulting branch work-item and join-state intents.
 
 ### OR (inclusive)
 

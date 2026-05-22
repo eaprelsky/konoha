@@ -23,6 +23,10 @@ export interface PlannedBranchWorkItem {
   skipped_history: Omit<HistoryEntry, "timestamp">[];
 }
 
+export type GraphJoinTransitionPlan =
+  | { kind: "gateway_join"; position: string; history: Omit<HistoryEntry, "timestamp">[]; effects: GraphTransitionEffectIntent[] }
+  | { kind: "error"; position: string; reason: string; history: Omit<HistoryEntry, "timestamp">[]; effects: GraphTransitionEffectIntent[] };
+
 export type GraphTransitionPlan =
   | { kind: "inactive"; effects: GraphTransitionEffectIntent[] }
   | { kind: "continue"; position: string; history: Omit<HistoryEntry, "timestamp">[]; next_current: string; forced_next_id?: string; effects: GraphTransitionEffectIntent[] }
@@ -86,6 +90,29 @@ export function findGraphJoinGateway(
     }
   }
   return null;
+}
+
+export function planGraphJoinTransition(
+  branchIds: string[],
+  adjacency: Pick<GraphAdjacency, "outEdges" | "byId">,
+): GraphJoinTransitionPlan {
+  const joinId = findGraphJoinGateway(branchIds, adjacency.outEdges, adjacency.byId);
+  const history = [historyEntry(joinId || "(join)", "gateway", "join")];
+  if (!joinId) {
+    return {
+      kind: "error",
+      position: "(join)",
+      reason: "join gateway not found",
+      history,
+      effects: [],
+    };
+  }
+  return {
+    kind: "gateway_join",
+    position: joinId,
+    history,
+    effects: [],
+  };
 }
 
 export function planGraphTransition(input: PlanGraphTransitionInput): GraphTransitionPlan {
@@ -226,51 +253,85 @@ function planGateway(
   if (operator === "AND" || operator === "OR") {
     const gwIns = adjacency.inEdges.get(gatewayId) || [];
     if (gwIns.length > 1) {
-      if (gwOuts.length === 0) return errorPlan(gatewayId, `join gateway ${gatewayId} has no outgoing branch`, [gatewayHistory], effects);
-      return {
-        kind: "continue",
-        position: gatewayId,
-        history: [gatewayHistory],
-        next_current: gatewayId,
-        forced_next_id: gwOuts[0],
-        effects,
-      };
+      return planGatewayPassThrough(gatewayId, gatewayHistory, gwOuts, effects);
     }
 
-    const activeBranchIds = operator === "AND"
-      ? gwOuts
-      : gwOuts.filter(outId => {
-          const cond = adjacency.edgeConditions.get(`${gatewayId}->${outId}`);
-          return !cond || evaluateGraphCondition(cond, payload);
-        });
-    if (operator === "OR" && activeBranchIds.length === 0) {
-      return errorPlan(gatewayId, `gateway ${gatewayId} has no matching branch`, [gatewayHistory], effects);
-    }
-
-    const branchWorkItems = activeBranchIds
-      .map(branchStartId => planBranchWorkItem(branchStartId, adjacency))
-      .filter((branch): branch is PlannedBranchWorkItem => branch !== null);
-    return {
-      kind: "gateway_split",
-      position: gatewayId,
-      gateway_id: gatewayId,
-      gateway,
-      operator,
-      active_branch_ids: activeBranchIds,
-      branch_work_items: branchWorkItems,
-      history: [gatewayHistory],
-      split_history: historyEntry(gatewayId, "gateway", `${operator} split (${branchWorkItems.length} branches)`),
-      effects,
-      ...(branchWorkItems.length === 0 && activeBranchIds.length > 0
-        ? {
-            empty_branch_join_id: findGraphJoinGateway(activeBranchIds, adjacency.outEdges, adjacency.byId) ?? undefined,
-            empty_branch_next_id: gwOuts[0],
-          }
-        : {}),
-    };
+    return planGatewaySplit(gatewayId, gateway, operator, gatewayHistory, gwOuts, adjacency, payload, effects);
   }
 
   return errorPlan(gatewayId, `unsupported gateway operator at ${gatewayId}`, [gatewayHistory], effects);
+}
+
+function planGatewayPassThrough(
+  gatewayId: string,
+  gatewayHistory: Omit<HistoryEntry, "timestamp">,
+  gwOuts: string[],
+  effects: GraphTransitionEffectIntent[],
+): GraphTransitionPlan {
+  if (gwOuts.length === 0) return errorPlan(gatewayId, `join gateway ${gatewayId} has no outgoing branch`, [gatewayHistory], effects);
+  return {
+    kind: "continue",
+    position: gatewayId,
+    history: [gatewayHistory],
+    next_current: gatewayId,
+    forced_next_id: gwOuts[0],
+    effects,
+  };
+}
+
+function planGatewaySplit(
+  gatewayId: string,
+  gateway: WorkflowElement,
+  operator: "AND" | "OR",
+  gatewayHistory: Omit<HistoryEntry, "timestamp">,
+  gwOuts: string[],
+  adjacency: GraphAdjacency,
+  payload: Record<string, unknown>,
+  effects: GraphTransitionEffectIntent[],
+): GraphTransitionPlan {
+  const activeBranchIds = selectGatewaySplitBranches(operator, gatewayId, gwOuts, adjacency, payload);
+  if (operator === "OR" && activeBranchIds.length === 0) {
+    return errorPlan(gatewayId, `gateway ${gatewayId} has no matching branch`, [gatewayHistory], effects);
+  }
+
+  const branchWorkItems = activeBranchIds
+    .map(branchStartId => planBranchWorkItem(branchStartId, adjacency))
+    .filter((branch): branch is PlannedBranchWorkItem => branch !== null);
+  const emptyBranchResolution = branchWorkItems.length === 0 && activeBranchIds.length > 0
+    ? planGraphJoinTransition(activeBranchIds, adjacency)
+    : null;
+  return {
+    kind: "gateway_split",
+    position: gatewayId,
+    gateway_id: gatewayId,
+    gateway,
+    operator,
+    active_branch_ids: activeBranchIds,
+    branch_work_items: branchWorkItems,
+    history: [gatewayHistory],
+    split_history: historyEntry(gatewayId, "gateway", `${operator} split (${branchWorkItems.length} branches)`),
+    effects,
+    ...(emptyBranchResolution
+      ? {
+          empty_branch_join_id: emptyBranchResolution.kind === "gateway_join" ? emptyBranchResolution.position : undefined,
+          empty_branch_next_id: gwOuts[0],
+        }
+      : {}),
+  };
+}
+
+function selectGatewaySplitBranches(
+  operator: "AND" | "OR",
+  gatewayId: string,
+  gwOuts: string[],
+  adjacency: Pick<GraphAdjacency, "edgeConditions">,
+  payload: Record<string, unknown>,
+): string[] {
+  if (operator === "AND") return gwOuts;
+  return gwOuts.filter(outId => {
+    const cond = adjacency.edgeConditions.get(`${gatewayId}->${outId}`);
+    return !cond || evaluateGraphCondition(cond, payload);
+  });
 }
 
 function planBranchWorkItem(branchStartId: string, adjacency: GraphAdjacency): PlannedBranchWorkItem | null {
