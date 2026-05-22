@@ -14,9 +14,11 @@ The registry is the source of truth. The generated machine-readable surface is
 Workflow construction/runtime security, authorization, and audit semantics are
 defined in `docs/workflow-security-boundary.md`.
 Package-boundary and host-adapter seams are defined in
-`docs/action-spine-boundary.md` and `src/action-spine/ports.ts`; new Action
-Spine work should use those ports before adding another direct dependency on
-Konoha workflow/runtime modules.
+`docs/action-spine-boundary.md`, `src/action-spine/core-types.ts`, and
+`src/action-spine/ports.ts`; new Action Spine work should use those generic
+types/ports before adding another direct dependency on Konoha workflow/runtime
+modules. Concrete action IDs such as `workflow.deploy` are Konoha host
+vocabulary in `src/action-definitions.ts`, not reusable core types.
 
 ## Current Surface
 

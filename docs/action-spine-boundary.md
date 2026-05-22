@@ -2,17 +2,27 @@
 
 Issue #618 tracks extracting Action Spine into a reusable TypeScript framework. This slice defines the first boundary without moving behavior-heavy Konoha adapters.
 
-## Core
+## Generic Core
 
-Core files are registry/policy/bridge code that can be imported without Konoha workflow runtime state:
+Generic core files define reusable shapes and host ports. They must not contain
+concrete Konoha action IDs, scopes, policy defaults, routes, or runtime imports:
 
 | File | Role | Coupling rule |
 | --- | --- | --- |
+| `src/action-spine/core-types.ts` | Generic action definition/result/security shapes | No Konoha action IDs, scopes, or runtime imports |
 | `src/action-spine/ports.ts` | Type-only core port interfaces for host adapters | No workflow/runtime/agent imports |
+
+## Konoha Host Vocabulary
+
+Konoha owns the concrete action vocabulary and policy defaults. These files are
+kept in-repo for now, but they are host vocabulary rather than generic Action
+Spine core:
+
+| File | Role | Coupling rule |
+| --- | --- | --- |
 | `src/action-definitions.ts` | Declarative action vocabulary | No workflow/runtime/agent imports |
-| `src/action-registry.ts` | Registry API, contracts, validation, surface dump | No workflow/runtime/agent imports |
-| `src/action-policy.ts` | Category and default security classification | No workflow/runtime/agent imports |
-| `src/mcp-action-bridge.ts` | MCP catalog/get/call helpers over injected HTTP API | May depend on `zod` and registry only |
+| `src/action-registry.ts` | Konoha registry API, contracts, validation, surface dump | Uses generic core types with `KonohaActionScope` |
+| `src/action-policy.ts` | Konoha category and default security classification | May contain Konoha scope defaults |
 
 `src/action-spine/boundary.ts` is the machine-readable manifest for this boundary.
 The ports are intentionally defined inside Konoha first; this is an interface
@@ -27,6 +37,7 @@ Adapters bind the generic action surface to this deployment:
 | `src/act-envelope.ts` | Hono `/act` route, auth, audit/autonomy calls, endpoint fallback |
 | `src/action-executor.ts` | Direct execution against workflow, case, work item, role, agent, reminder, access, and KB services |
 | `src/action-handlers.ts` | Registered Konoha handlers such as GitHub issue creation |
+| `src/mcp-action-bridge.ts` | MCP catalog/get/call helpers over injected HTTP API and Konoha registry |
 | `src/routes/agents.ts`, `src/routes/roles.ts` | Legacy REST routes using the direct executor |
 
 ## Ports

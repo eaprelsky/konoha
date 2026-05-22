@@ -219,11 +219,12 @@ This is compatible with ADR-005: generic Action Spine moves toward a package,
 while Konoha-specific execution remains a host adapter that calls product
 ports.
 
-Before extracting the Action Spine package, Konoha defines the core host
-interfaces in `src/action-spine/ports.ts`. These interfaces cover executor,
-audit, autonomy, HTTP route, and MCP bridge seams while keeping
-`src/action-executor.ts` and other workflow/runtime imports on the Konoha
-adapter side.
+Before extracting the Action Spine package, Konoha defines generic core action
+shapes in `src/action-spine/core-types.ts` and host interfaces in
+`src/action-spine/ports.ts`. Concrete Konoha action IDs/scopes remain host
+vocabulary in `src/action-definitions.ts`, `src/action-registry.ts`, and
+`src/action-policy.ts`; `src/action-executor.ts` and other workflow/runtime
+imports stay on the Konoha adapter side.
 
 ## Old `konoha-dashboard`
 

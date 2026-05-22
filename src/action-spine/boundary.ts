@@ -6,17 +6,21 @@
  */
 
 export const ACTION_SPINE_CORE_FILES = [
+  "src/action-spine/core-types.ts",
   "src/action-spine/ports.ts",
+] as const;
+
+export const ACTION_SPINE_KONOHA_VOCABULARY_FILES = [
   "src/action-definitions.ts",
   "src/action-registry.ts",
   "src/action-policy.ts",
-  "src/mcp-action-bridge.ts",
 ] as const;
 
 export const ACTION_SPINE_KONOHA_ADAPTER_FILES = [
   "src/act-envelope.ts",
   "src/action-executor.ts",
   "src/action-handlers.ts",
+  "src/mcp-action-bridge.ts",
   "src/routes/agents.ts",
   "src/routes/roles.ts",
 ] as const;
@@ -55,6 +59,10 @@ export const ACTION_SPINE_PORTS = [
 ] as const;
 
 export const ACTION_SPINE_FORBIDDEN_CORE_IMPORTS = [
+  "action-definitions",
+  "action-registry",
+  "action-policy",
+  "mcp-action-bridge",
   "workflow-loader",
   "runtime",
   "trigger-resolver",

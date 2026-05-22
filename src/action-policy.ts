@@ -1,14 +1,5 @@
-import type { ActionDef, ObjectScope } from "./action-registry";
-
-export type ActionCategory = "act" | "inspect" | "drill";
-export type ActionActorPolicy = "admin" | "authenticated" | "agent_self";
-
-export interface ActionSecurityPolicy {
-  /** Minimum actor boundary enforced by /act before execution. */
-  actor: ActionActorPolicy;
-  /** Argument carrying the target agent id when actor = agent_self. */
-  selfArg?: string;
-}
+import type { ActionDef, KonohaActionScope } from "./action-registry";
+import type { ActionCategory, ActionSecurityPolicy } from "./action-spine/core-types";
 
 const MUTATION_VERBS = new Set([
   "add", "apply", "create", "update", "delete", "remove", "close", "complete",
@@ -25,7 +16,7 @@ const DRILL_VERBS = new Set([
   "stream", "history", "versions", "tree",
 ]);
 
-const ADMIN_DEFAULT_SCOPES = new Set<ObjectScope>([
+const ADMIN_DEFAULT_SCOPES = new Set<KonohaActionScope>([
   "workflow",
   "element",
   "flow",

@@ -12,17 +12,34 @@
  */
 
 import { ACTIONS } from "./action-definitions";
-import { classifyAction, getActionSecurity, type ActionCategory, type ActionSecurityPolicy } from "./action-policy";
+import { classifyAction, getActionSecurity } from "./action-policy";
+import type {
+  ActionCategory,
+  ActionDef as CoreActionDef,
+  ActionImplementation,
+  ActionSecurityPolicy,
+  ActionSurfaceEntry as CoreActionSurfaceEntry,
+  ValidationResult,
+} from "./action-spine/core-types";
 export { classifyAction, getActionSecurity } from "./action-policy";
-export type { ActionActorPolicy, ActionCategory, ActionSecurityPolicy } from "./action-policy";
+export type {
+  ActionActorPolicy,
+  ActionCategory,
+  ActionImplementation,
+  ActionImplementationKind,
+  ActionSecurityPolicy,
+  ArgumentDef,
+  AutonomyLevel,
+  ValidationResult,
+} from "./action-spine/core-types";
 
 // ── Version ─────────────────────────────────────────────────────────────────
 
 export const ACTION_VERSION = 24;
 
-// ── Core types ──────────────────────────────────────────────────────────────
+// ── Konoha host vocabulary ──────────────────────────────────────────────────
 
-export type ObjectScope =
+export type KonohaActionScope =
   | "workflow"    // process definitions
   | "element"     // nodes inside a workflow (event, function, gateway)
   | "flow"        // edges between elements
@@ -45,49 +62,9 @@ export type ObjectScope =
   | "retention"   // data lifecycle reports, cleanup previews, and cleanup apply
   | "message";    // bus messages
 
-export type AutonomyLevel = "auto" | "confirm" | "disabled";
-export type ActionImplementationKind = "direct" | "endpoint" | "registered-handler" | "planned";
-
-export interface ActionImplementation {
-  kind: ActionImplementationKind;
-  /** Short migration note for planned/legacy implementations. */
-  note?: string;
-}
-
-export interface ArgumentDef {
-  name: string;
-  type: "string" | "number" | "boolean" | "object" | "array" | "date";
-  required: boolean;
-  description: string;
-}
-
-export interface ActionDef {
-  /** Unique dotted name: `{scope}.{verb}` */
-  id: string;
-  /** Human-readable summary */
-  description: string;
-  /** Object scope this action belongs to */
-  scope: ObjectScope;
-  /** Argument contract */
-  args: ArgumentDef[];
-  /** Current HTTP method + path that handles this action (for migration tracking) */
-  currentEndpoint?: string;
-  /** Explicit implementation metadata when currentEndpoint is not sufficient. */
-  implementation?: ActionImplementation;
-  /** Actor policy enforced by /act. If omitted, inferred from scope/category. */
-  security?: ActionSecurityPolicy;
-  /** Default autonomy level */
-  autonomy: AutonomyLevel;
-  /** Whether this action writes to the audit log */
-  audited: boolean;
-}
-
-export interface ActionSurfaceEntry extends ActionDef {
-  category: ActionCategory;
-  implementation: ActionImplementation;
-  security: ActionSecurityPolicy;
-  implemented: boolean;
-}
+export type ObjectScope = KonohaActionScope;
+export type ActionDef = CoreActionDef<KonohaActionScope>;
+export type ActionSurfaceEntry = CoreActionSurfaceEntry<KonohaActionScope>;
 
 // ── Registry API ────────────────────────────────────────────────────────────
 
@@ -157,11 +134,6 @@ export function dumpRegistry(): { version: number; actions: ActionDef[]; surface
 }
 
 // ── Argument Validation ──────────────────────────────────────────────────────
-
-export interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-}
 
 /** Validate that provided args match the ActionDef argument contract */
 export function validateActionArgs(actionId: string, args: Record<string, unknown>): ValidationResult {

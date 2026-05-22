@@ -2,7 +2,7 @@ import type {
   ActionCategory,
   ActionDef,
   AutonomyLevel,
-} from "../action-registry";
+} from "./core-types";
 
 export interface ActionExecutionRequest {
   action: string;

@@ -53,10 +53,9 @@ Extract Action Spine into `@konoha/action-spine` as a scoped npm package with th
 ┌─────────────────────────────────────────────────┐
 │ @konoha/action-spine-core                       │
 │ ┌─────────────────────────────────────────────┐ │
-│ │ ActionRegistry  ActionPolicy               │ │
-│ │ ActionDef       ActionSurfaceEntry          │ │
-│ │ validateActionArgs  dumpRegistry            │ │
+│ │ Generic ActionDef/ActionSurfaceEntry shapes│ │
 │ │ ActionCategory  ActionSecurityPolicy        │ │
+│ │ Executor/Audit/Autonomy/HTTP/MCP ports      │ │
 │ └─────────────────────────────────────────────┘ │
 │ Action vocabulary lives in the host app,        │
 │ not in core. Core defines the shape.            │
@@ -69,6 +68,8 @@ Extract Action Spine into `@konoha/action-spine` as a scoped npm package with th
 │ actionCatalog()   │  │ act-envelope.ts          │
 │ actionCall()      │  │ action-handlers.ts       │
 │ actionGet()       │  │ action-definitions.ts    │
+│                   │  │ action-registry.ts       │
+│                   │  │ action-policy.ts         │
 └───────────────────┘  └─────────────────────────┘
 ```
 
