@@ -148,6 +148,7 @@ separate source of truth.
 - [Architecture](docs/architecture.md) — current component map and operational gates.
 - [Workflow Engine](docs/workflow-engine.md) — eEPC runtime, cases, work items, events, and assignment.
 - [Action Spine Boundary](docs/action-spine-boundary.md) — action contract direction and boundaries.
+- [Action Spine Package](docs/action-spine-package.md) — reusable TypeScript package scaffold and host boundary.
 - [API Reference](docs/api.md) — HTTP endpoints.
 - [MCP Integration](docs/mcp.md) — agent-facing MCP setup.
 - [Agent Lifecycle](docs/agent-lifecycle.md) — managed agent definitions and runtime modes.

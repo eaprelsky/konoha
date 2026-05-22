@@ -8,6 +8,16 @@
 export const ACTION_SPINE_CORE_FILES = [
   "src/action-spine/core-types.ts",
   "src/action-spine/ports.ts",
+  "packages/action-spine/src/core-types.ts",
+  "packages/action-spine/src/ports.ts",
+  "packages/action-spine/src/registry.ts",
+  "packages/action-spine/src/index.ts",
+] as const;
+
+export const ACTION_SPINE_PACKAGE_BRIDGE_FILES = [
+  "packages/action-spine/src/bridges/mcp.ts",
+  "packages/action-spine/src/bridges/cli.ts",
+  "packages/action-spine/src/bridges/http.ts",
 ] as const;
 
 export const ACTION_SPINE_KONOHA_VOCABULARY_FILES = [

@@ -18,6 +18,12 @@ machine-readable report
 the boundary/readiness evidence from #741-#744 is reconciled; it does not start
 package extraction or unblock #618 before #685/#686.
 
+Issue #618 now owns the first reusable package scaffold in
+`packages/action-spine`. The package exposes generic types, ports, a registry
+factory, and injected MCP/CLI/HTTP adapters. Konoha action vocabulary, route
+auth, MCP server wiring, workflow runtime, storage, and executor logic remain
+host-owned.
+
 ## Current Extraction Readiness (2026-05-22)
 
 Issue #618 is still an extraction backlog item, not an active package move.
@@ -29,6 +35,7 @@ The accepted #741/#742 slices define the in-repo seams needed before extraction:
 | Host ports | Ready | `src/action-spine/ports.ts`, #741 | Executor, audit, autonomy, HTTP route, and MCP bridge seams are explicit before package extraction. |
 | Konoha host vocabulary split | Ready | `src/action-definitions.ts`, `src/action-registry.ts`, `src/action-policy.ts`, #742 | Concrete Konoha actions stay host-owned and are not part of generic core abstractions. |
 | Boundary manifest | Ready | `src/action-spine/boundary.ts`, `tests/action-spine-boundary.test.ts` | Generic core, Konoha vocabulary, and Konoha adapters are mechanically distinguished. |
+| Package scaffold | Ready | `packages/action-spine`, `tests/action-spine-package-core.test.ts`, `tests/action-spine-package-bridges.test.ts` | Reusable core/bridge API exists and uses injected ports. |
 | MCP bridge extraction | Blocked | `src/mcp-action-bridge.ts` remains adapter-side | Needs #744 bridge/consumer readiness before moving into a package. |
 | HTTP route extraction | Blocked | `src/act-envelope.ts` still owns Hono/auth/audit routing | Needs a factory over ports plus route/auth regression evidence. |
 | Konoha executor extraction | Blocked | `src/action-executor.ts` imports workflow/runtime/agent modules | Must remain a Konoha adapter behind `ActionExecutorPort`. |
@@ -45,6 +52,9 @@ Before starting any package extraction commit for #618:
 - [ ] #684 accepted: Action Spine extraction readiness umbrella is closed.
 - [ ] #685 accepted: golden-path acceptance suite proves assistant-created workflows can be deployed and executed.
 - [ ] #686 accepted: final release gate/runbook signs off production readiness.
+- [x] #618 initial package scaffold: `packages/action-spine` exposes generic
+  core/ports/registry/bridge APIs without importing Konoha runtime or host
+  vocabulary.
 - [ ] No generic core file imports Konoha runtime, routes, storage, agent lifecycle, or concrete action vocabulary.
 - [ ] `docs/action-surface.json` remains generated from the Konoha host vocabulary and does not become a hand-maintained package artifact.
 - [ ] Extraction PR/commit includes `bun test --timeout 30000 tests/action-spine-boundary.test.ts tests/workflow-action-contract.test.ts`, `bun run typecheck`, `bun run scripts/action-surface-report.ts --check`, `python3 scripts/check-route-auth-policy.py`, and package-specific bridge tests.

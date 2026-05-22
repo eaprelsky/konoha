@@ -9,6 +9,8 @@ Issue #684 reconciles this spike with the accepted boundary/checklist slices in
 `docs/action-spine-extraction-closure-report.md` and
 `docs/action-spine-extraction-closure-report.json`; that report is parent
 evidence only and does not authorize #618 extraction before #685/#686.
+Issue #618 now adds the first package scaffold in `packages/action-spine`;
+runtime adapters still remain host-owned.
 
 ## Current State
 
@@ -16,6 +18,7 @@ evidence only and does not authorize #618 extraction before #685/#686.
 | --- | --- | --- |
 | Generic core shapes | `src/action-spine/core-types.ts` | Ready to become package-owned after gates. No Konoha action IDs/scopes. |
 | Generic host ports | `src/action-spine/ports.ts` | Ready to become package-owned after gates. Defines executor, audit, autonomy, HTTP, and MCP seams. |
+| Extracted package scaffold | `packages/action-spine/src` | Initial #618 package surface. Owns generic types, ports, registry factory, and injected bridge adapters. |
 | Konoha host vocabulary | `src/action-definitions.ts`, `src/action-registry.ts`, `src/action-policy.ts` | Stays in Konoha. Owns `KonohaActionScope`, concrete action IDs, defaults, and generated surface. |
 | Konoha executor adapter | `src/action-executor.ts` | Stays in Konoha. Imports workflow/runtime/agent modules and implements `ActionExecutorPort`. |
 | HTTP adapter | `src/act-envelope.ts` | Not ready to extract. Still owns Hono, auth, audit/autonomy, direct executor routing, and endpoint fallback. |
@@ -63,6 +66,10 @@ src/act-envelope.ts          # Konoha HTTP adapter until route factory is accept
 src/mcp-action-bridge.ts     # Konoha MCP adapter until registry injection is accepted
 ```
 
+The implemented #618 scaffold uses a single private workspace package at
+`packages/action-spine` first. It can later split into `core`, `bridge-mcp`, and
+`bridge-http` packages without changing the host vocabulary boundary.
+
 ## Required Injectable Dependencies
 
 Before any bridge moves into a package, the package-facing API must inject these
@@ -92,6 +99,8 @@ host dependencies instead of importing Konoha modules:
 - [ ] HTTP bridge has a port-injected route factory test covering auth, autonomy, audit, endpoint fallback, and direct executor paths.
 - [ ] Package scaffold has no Konoha runtime, route, storage, workflow, agent, or concrete action vocabulary imports.
 - [ ] Konoha still passes `action-surface-report.ts --check`; `docs/action-surface.json` remains host-generated.
+- [x] #618 initial package scaffold exists with package-local tests for core,
+  MCP, CLI, and HTTP bridge injection.
 
 ## Blockers For #618
 

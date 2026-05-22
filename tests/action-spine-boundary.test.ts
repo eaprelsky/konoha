@@ -6,6 +6,7 @@ import {
   ACTION_SPINE_FORBIDDEN_CORE_IMPORTS,
   ACTION_SPINE_KONOHA_ADAPTER_FILES,
   ACTION_SPINE_KONOHA_VOCABULARY_FILES,
+  ACTION_SPINE_PACKAGE_BRIDGE_FILES,
   ACTION_SPINE_PORTS,
 } from "../src/action-spine/boundary";
 import { konohaActionExecutorPort } from "../src/action-executor";
@@ -30,6 +31,10 @@ describe("Action Spine package boundary", () => {
     expect(ACTION_SPINE_CORE_FILES).toEqual([
       "src/action-spine/core-types.ts",
       "src/action-spine/ports.ts",
+      "packages/action-spine/src/core-types.ts",
+      "packages/action-spine/src/ports.ts",
+      "packages/action-spine/src/registry.ts",
+      "packages/action-spine/src/index.ts",
     ]);
     expect(ACTION_SPINE_CORE_FILES).toContain("src/action-spine/ports.ts");
     expect(ACTION_SPINE_CORE_FILES).not.toContain("src/action-definitions.ts");
@@ -41,6 +46,11 @@ describe("Action Spine package boundary", () => {
     ]);
     expect(ACTION_SPINE_KONOHA_ADAPTER_FILES).toContain("src/action-executor.ts");
     expect(ACTION_SPINE_KONOHA_ADAPTER_FILES).toContain("src/mcp-action-bridge.ts");
+    expect(ACTION_SPINE_PACKAGE_BRIDGE_FILES).toEqual([
+      "packages/action-spine/src/bridges/mcp.ts",
+      "packages/action-spine/src/bridges/cli.ts",
+      "packages/action-spine/src/bridges/http.ts",
+    ]);
     expect(ACTION_SPINE_PORTS.map(port => port.name)).toEqual([
       "ActionExecutorPort",
       "ActionAuditPort",
@@ -53,6 +63,7 @@ describe("Action Spine package boundary", () => {
   test("defines the core port interfaces before package extraction", () => {
     const coreTypesSource = readRepoFile("src/action-spine/core-types.ts");
     const portsSource = readRepoFile("src/action-spine/ports.ts");
+    const packageIndexSource = readRepoFile("packages/action-spine/src/index.ts");
     expect(coreTypesSource).toContain("interface ActionDef<TScope extends string = string>");
     expect(coreTypesSource).not.toContain("workflow.create");
     expect(coreTypesSource).not.toContain("type KonohaActionScope");
@@ -63,6 +74,10 @@ describe("Action Spine package boundary", () => {
     expect(portsSource).not.toContain("../action-registry");
     expect(portsSource).toContain("interface ActionExecutionRequest");
     expect(portsSource).toContain("interface ActionEnvelopeResult");
+    expect(packageIndexSource).toContain("createActionRegistry");
+    expect(packageIndexSource).toContain("createMcpActionBridge");
+    expect(packageIndexSource).toContain("createCliBridge");
+    expect(packageIndexSource).toContain("createHttpActionAdapter");
   });
 
   test("keeps concrete Konoha action vocabulary out of generic core types", () => {
@@ -70,6 +85,7 @@ describe("Action Spine package boundary", () => {
     expect(coreSource).not.toContain('"workflow"');
     expect(coreSource).not.toContain("workflow.create");
     expect(coreSource).not.toContain("konoha:config");
+    expect(coreSource).not.toContain("KonohaActionScope");
 
     const registrySource = readRepoFile("src/action-registry.ts");
     const definitionsSource = readRepoFile("src/action-definitions.ts");
@@ -78,7 +94,7 @@ describe("Action Spine package boundary", () => {
   });
 
   test("core files do not import Konoha runtime or agent modules directly", () => {
-    for (const file of ACTION_SPINE_CORE_FILES) {
+    for (const file of [...ACTION_SPINE_CORE_FILES, ...ACTION_SPINE_PACKAGE_BRIDGE_FILES]) {
       const imports = importSpecifiers(readRepoFile(file));
       for (const spec of imports) {
         for (const forbidden of ACTION_SPINE_FORBIDDEN_CORE_IMPORTS) {

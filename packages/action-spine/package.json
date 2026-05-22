@@ -1,0 +1,21 @@
+{
+  "name": "@konoha/action-spine",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Reusable Action Spine core contracts and injected bridge adapters.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./core": "./src/index.ts",
+    "./bridges/mcp": "./src/bridges/mcp.ts",
+    "./bridges/cli": "./src/bridges/cli.ts",
+    "./bridges/http": "./src/bridges/http.ts"
+  },
+  "scripts": {
+    "test": "bun test ../../tests/action-spine-package-core.test.ts ../../tests/action-spine-package-bridges.test.ts",
+    "typecheck": "bun x tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

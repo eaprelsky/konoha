@@ -11,6 +11,24 @@ concrete Konoha action IDs, scopes, policy defaults, routes, or runtime imports:
 | --- | --- | --- |
 | `src/action-spine/core-types.ts` | Generic action definition/result/security shapes | No Konoha action IDs, scopes, or runtime imports |
 | `src/action-spine/ports.ts` | Type-only core port interfaces for host adapters | No workflow/runtime/agent imports |
+| `packages/action-spine/src/core-types.ts` | Package-owned generic action shapes | No Konoha action IDs, scopes, or runtime imports |
+| `packages/action-spine/src/ports.ts` | Package-owned generic port interfaces | No workflow/runtime/agent imports |
+| `packages/action-spine/src/registry.ts` | Package-owned registry factory over host vocabulary | Host injects action definitions, classification, and security |
+| `packages/action-spine/src/index.ts` | Public package exports | Re-export generic package surface only |
+
+## Package Bridges
+
+The reusable package also contains injected bridge adapters:
+
+| File | Role | Coupling rule |
+| --- | --- | --- |
+| `packages/action-spine/src/bridges/mcp.ts` | Registry-backed MCP catalog/get/call helper | Calls only an injected action port |
+| `packages/action-spine/src/bridges/cli.ts` | CLI parser/dry-run/executor bridge | Executes only through an injected executor |
+| `packages/action-spine/src/bridges/http.ts` | Framework-neutral HTTP envelope adapter | Uses injected registry, executor, audit, and autonomy ports |
+
+These bridges are package-local compatibility scaffolds. Konoha's production
+Hono route, MCP server integration, and direct executor remain host adapters
+until separate compatibility migrations are reviewed.
 
 ## Konoha Host Vocabulary
 
@@ -43,7 +61,8 @@ Adapters bind the generic action surface to this deployment:
 ## Ports
 
 The reusable package should depend on ports, not Konoha modules. The current
-canonical definitions live in `src/action-spine/ports.ts`:
+canonical definitions live in `src/action-spine/ports.ts` and are mirrored in
+`packages/action-spine/src/ports.ts` for the extracted package surface:
 
 - `ActionExecutorPort`: execute a validated action ID with typed args and return
   `{status, data}` or `null` when the host has no direct executor.
@@ -68,5 +87,5 @@ Do not move `src/action-executor.ts` into core yet. It imports Konoha workflow/r
 Before adding core imports, run:
 
 ```bash
-bun test tests/action-spine-boundary.test.ts
+bun test --timeout 30000 tests/action-spine-package-core.test.ts tests/action-spine-package-bridges.test.ts tests/action-spine-boundary.test.ts
 ```

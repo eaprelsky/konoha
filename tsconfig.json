@@ -9,6 +9,6 @@
     "skipLibCheck": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*.ts", "core/**/*.ts", "modules/**/*.ts"],
+  "include": ["src/**/*.ts", "core/**/*.ts", "modules/**/*.ts", "packages/**/*.ts"],
   "exclude": ["node_modules", "dist", "modules/workflow-engine/frontend/**"]
 }
