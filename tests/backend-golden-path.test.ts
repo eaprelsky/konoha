@@ -10,6 +10,7 @@ import {
   workItemDispatchIdempotencyKey,
 } from "../src/runtime/workitem-dispatch-outbox";
 import {
+  failRuntimeEffect,
   getRuntimeEffect,
   runtimeEffectIdFromIdempotencyKey,
   runtimeEffectStorageKeys,
@@ -18,6 +19,7 @@ import {
 import { pgDeleteWorkflow } from "../src/storage/pg";
 import {
   getWorkflowDeploymentRecord,
+  setWorkflowDeploymentSubscriptionDepsForTest,
   WORKFLOW_DEPLOY_RECORD_GLOBAL_INDEX,
   workflowDeploymentRecordIndexKey,
 } from "../src/workflow-deployment-service";
@@ -45,6 +47,39 @@ function workflowDefinition(id: string, roleId: string): WorkflowDefinition {
       { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
     ],
     flow: [["start", "review"], ["review", "done"]],
+  };
+}
+
+function invalidTriggerWorkflow(id: string, roleId: string): WorkflowDefinition {
+  return {
+    ...workflowDefinition(id, roleId),
+    elements: [
+      { id: "start", type: "event", label: "Start", trigger: { kind: "timer", delay_after: { duration: "PT5M" }, confidence: 1 } as any },
+      { id: "review", type: "function", label: "Review request", role: roleId },
+      { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
+    ],
+  };
+}
+
+function invalidGraphWorkflow(id: string, roleId: string): WorkflowDefinition {
+  return {
+    ...workflowDefinition(id, roleId),
+    elements: [
+      { id: "start", type: "event", label: "Start", trigger: { kind: "manual", manual_override: true } },
+      { id: "review", type: "function", label: "Review request", role: roleId },
+    ],
+    flow: [["start", "review"]],
+  };
+}
+
+function subscriptionWorkflow(id: string, roleId: string): WorkflowDefinition {
+  return {
+    ...workflowDefinition(id, roleId),
+    elements: [
+      { id: "start", type: "event", label: "Start", trigger: { kind: "timer", cron: "*/5 * * * *", confidence: 1 } },
+      { id: "review", type: "function", label: "Review request", role: roleId },
+      { id: "done", type: "event", label: "Done", trigger: { kind: "manual", manual_override: true } },
+    ],
   };
 }
 
@@ -104,6 +139,15 @@ async function cleanupWorkflow(id: string): Promise<void> {
   await redis.del(`konoha:workflow:versionctr:${id}`);
   await redis.srem(WORKFLOW_INDEX_KEY, id);
   await pgDeleteWorkflow(id).catch(() => {});
+}
+
+async function expectNoCases(workflowId: string): Promise<void> {
+  const cases = await act("case.list", { process_id: workflowId });
+  expect(cases).toMatchObject({
+    ok: true,
+    status: 200,
+    data: { cases: [], total: 0 },
+  });
 }
 
 afterAll(async () => {
@@ -273,6 +317,8 @@ describe("backend golden path create-validate-deploy-run", () => {
       lifecycle_state: "executable",
       deploy_version: 1,
     });
+    await cleanupRuntimeEffect(dispatchEffect);
+    touchedEffects.delete(dispatchEffect.effect_id);
   });
 
   test("blocks case.start before durable deploy makes the workflow executable", async () => {
@@ -316,5 +362,306 @@ describe("backend golden path create-validate-deploy-run", () => {
       status: 200,
       data: { cases: [], total: 0 },
     });
+  });
+
+  test("refuses missing-role workflows through validation, deploy, and case.start contracts", async () => {
+    const workflowId = `${RUN}-missing-role`;
+    const missingRole = `${workflowId}-reviewer`;
+    touchedWorkflows.add(workflowId);
+
+    const created = await act("workflow.create", { ...workflowDefinition(workflowId, missingRole), draft: false });
+    expect(created).toMatchObject({
+      ok: true,
+      status: 201,
+      data: { lifecycle_state: "validated" },
+    });
+
+    const validation = await act("workflow.validate", { id: workflowId });
+    expect(validation).toMatchObject({
+      ok: true,
+      status: 200,
+      data: {
+        readiness: "blocked",
+        gates: {
+          deployment_blocker: true,
+          case_start_blocker: true,
+        },
+      },
+    });
+    expect((validation.data as any).errors).toContainEqual(expect.objectContaining({
+      code: "ROLE_UNRESOLVABLE",
+      class: "role",
+    }));
+
+    const deployed = await act("workflow.deploy", { id: workflowId, deployed_by: "backend-negative-golden" });
+    expect(deployed).toMatchObject({
+      ok: false,
+      status: 422,
+      action: "workflow.deploy",
+      data: {
+        code: "WORKFLOW_VALIDATION_BLOCKED",
+        lifecycle_state: "validated",
+        validation: { readiness: "blocked" },
+      },
+    });
+    expect((deployed.data as any).validation.errors).toContainEqual(expect.objectContaining({
+      code: "ROLE_UNRESOLVABLE",
+    }));
+
+    const blockedStart = await act("case.start", {
+      process_id: workflowId,
+      subject: "Should not start with missing role",
+      payload: {},
+    });
+    expect(blockedStart).toMatchObject({
+      ok: false,
+      status: 409,
+      action: "case.start",
+      data: {
+        code: "WORKFLOW_NOT_EXECUTABLE",
+        lifecycle_state: "validated",
+      },
+    });
+    await expectNoCases(workflowId);
+    await expect(getWorkflow(workflowId)).resolves.toMatchObject({
+      id: workflowId,
+      lifecycle_state: "validated",
+      deploy_version: 0,
+    });
+  });
+
+  test("refuses invalid trigger workflows before deploy side effects or runtime starts", async () => {
+    const workflowId = `${RUN}-invalid-trigger`;
+    const roleId = `${workflowId}-reviewer`;
+    touchedWorkflows.add(workflowId);
+    touchedRoles.add(roleId);
+
+    await act("role.create", {
+      role_id: roleId,
+      name: "Backend invalid trigger reviewer",
+      assignees: [],
+      strategy: "manual",
+    });
+    const created = await act("workflow.create", { ...invalidTriggerWorkflow(workflowId, roleId), draft: true });
+    expect(created).toMatchObject({
+      ok: true,
+      status: 201,
+      data: { lifecycle_state: "draft" },
+    });
+
+    const deployed = await act("workflow.deploy", { id: workflowId, deployed_by: "backend-negative-golden" });
+    expect(deployed).toMatchObject({
+      ok: false,
+      status: 422,
+      action: "workflow.deploy",
+      data: {
+        code: "WORKFLOW_VALIDATION_BLOCKED",
+        process_id: workflowId,
+        lifecycle_state: "validated",
+        validation: { readiness: "blocked" },
+      },
+    });
+    expect((deployed.data as any).validation.errors).toContainEqual(expect.objectContaining({
+      code: "TRIGGER_READINESS_INVALID",
+      class: "trigger",
+    }));
+
+    const blockedStart = await act("case.start", {
+      process_id: workflowId,
+      subject: "Should not start with invalid trigger",
+      payload: {},
+    });
+    expect(blockedStart).toMatchObject({
+      ok: false,
+      status: 409,
+      data: { code: "WORKFLOW_NOT_EXECUTABLE" },
+    });
+    await expectNoCases(workflowId);
+  });
+
+  test("refuses invalid graph workflows without claiming deploy or runtime success", async () => {
+    const workflowId = `${RUN}-invalid-graph`;
+    const roleId = `${workflowId}-reviewer`;
+    touchedWorkflows.add(workflowId);
+    touchedRoles.add(roleId);
+
+    await act("role.create", {
+      role_id: roleId,
+      name: "Backend invalid graph reviewer",
+      assignees: [],
+      strategy: "manual",
+    });
+    const created = await act("workflow.create", { ...invalidGraphWorkflow(workflowId, roleId), draft: true });
+    expect(created).toMatchObject({
+      ok: true,
+      status: 201,
+      data: { lifecycle_state: "draft" },
+    });
+
+    const deployed = await act("workflow.deploy", { id: workflowId, deployed_by: "backend-negative-golden" });
+    expect(deployed).toMatchObject({
+      ok: false,
+      status: 422,
+      action: "workflow.deploy",
+      data: {
+        error: "Validation failed",
+      },
+    });
+    expect((deployed.data as any).details).toContainEqual(expect.objectContaining({
+      code: "GRAPH_INVALID_TERMINAL_STATE",
+      class: "graph",
+    }));
+
+    const blockedStart = await act("case.start", {
+      process_id: workflowId,
+      subject: "Should not start with invalid graph",
+      payload: {},
+    });
+    expect(blockedStart).toMatchObject({
+      ok: false,
+      status: 409,
+      data: { code: "WORKFLOW_NOT_EXECUTABLE" },
+    });
+    await expectNoCases(workflowId);
+  });
+
+  test("failed deploy side effects demote the workflow and do not allow case.start success", async () => {
+    const workflowId = `${RUN}-failed-deploy`;
+    const roleId = `${workflowId}-reviewer`;
+    touchedWorkflows.add(workflowId);
+    touchedRoles.add(roleId);
+
+    await act("role.create", {
+      role_id: roleId,
+      name: "Backend failed deploy reviewer",
+      assignees: [],
+      strategy: "manual",
+    });
+    await act("workflow.create", { ...subscriptionWorkflow(workflowId, roleId), draft: false });
+
+    const restoreDeps = setWorkflowDeploymentSubscriptionDepsForTest({
+      createSubscription: async () => {
+        throw new Error("negative golden subscription backend unavailable");
+      },
+      cancelResources: async () => {},
+    });
+    try {
+      const deployed = await act("workflow.deploy", { id: workflowId, deployed_by: "backend-negative-golden" });
+      expect(deployed).toMatchObject({
+        ok: false,
+        status: 502,
+        action: "workflow.deploy",
+        data: {
+          code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED",
+          process_id: workflowId,
+          lifecycle_state: "validated",
+          deployment: {
+            ok: false,
+            workflow_id: workflowId,
+            deploy_version: 1,
+            transaction: { status: "blocked" },
+            subscriptions: {
+              desired: 1,
+              created: [],
+              failed: [expect.objectContaining({
+                event_id: "start",
+                status: "failed",
+                reason: "create_subscription_failed",
+              })],
+            },
+          },
+        },
+      });
+    } finally {
+      restoreDeps();
+    }
+
+    await expect(getWorkflow(workflowId)).resolves.toMatchObject({
+      lifecycle_state: "validated",
+      deploy_version: 1,
+      last_deploy: { status: "blocked" },
+    });
+    await expect(getWorkflowDeploymentRecord(workflowId, 1)).resolves.toMatchObject({
+      workflow_id: workflowId,
+      deploy_version: 1,
+      status: "blocked",
+      failure: { code: "WORKFLOW_DEPLOY_SIDE_EFFECT_FAILED" },
+    });
+
+    const blockedStart = await act("case.start", {
+      process_id: workflowId,
+      subject: "Should not start after failed deploy",
+      payload: {},
+    });
+    expect(blockedStart).toMatchObject({
+      ok: false,
+      status: 409,
+      data: { code: "WORKFLOW_NOT_EXECUTABLE" },
+    });
+    await expectNoCases(workflowId);
+  });
+
+  test("failed work-item dispatch is recorded as an outbox failure instead of success", async () => {
+    const workflowId = `${RUN}-failed-dispatch`;
+    const roleId = `${workflowId}-reviewer`;
+    touchedWorkflows.add(workflowId);
+    touchedRoles.add(roleId);
+
+    await act("role.create", {
+      role_id: roleId,
+      name: "Backend failed dispatch reviewer",
+      assignees: [],
+      strategy: "manual",
+    });
+    await act("workflow.create", { ...workflowDefinition(workflowId, roleId), draft: false });
+    await act("workflow.deploy", { id: workflowId, deployed_by: "backend-negative-golden" });
+    const started = await act("case.start", {
+      process_id: workflowId,
+      subject: "Dispatch should fail",
+      payload: { source: "backend-negative-golden" },
+    });
+    expect(started).toMatchObject({
+      ok: true,
+      status: 201,
+      data: { process_id: workflowId, position: "review" },
+    });
+
+    const caseId = (started.data as any).case_id as string;
+    const workItems = await listWorkItems({ case_id: caseId, status: "pending", limit: 10 });
+    expect(workItems.items).toHaveLength(1);
+    const workItem = workItems.items[0];
+    const idempotencyKey = workItemDispatchIdempotencyKey({
+      case_id: caseId,
+      work_item_id: workItem.work_item_id,
+    });
+    const dispatchEffect = await getRuntimeEffect(runtimeEffectIdFromIdempotencyKey(idempotencyKey));
+    if (!dispatchEffect) throw new Error("workitem.dispatch effect was not persisted");
+    touchedEffects.set(dispatchEffect.effect_id, dispatchEffect);
+
+    const failed = await failRuntimeEffect(dispatchEffect, {
+      code: "WORKITEM_DISPATCH_FAILED",
+      message: "negative golden dispatch transport unavailable",
+      retryable: false,
+      details: {
+        dispatch: {
+          route: "agent",
+          work_item_id: workItem.work_item_id,
+          role: roleId,
+          dispatch_status: "failed",
+        },
+      },
+      now: "2030-01-01T00:00:00.000Z",
+    });
+
+    expect(failed).toMatchObject({
+      effect_id: dispatchEffect.effect_id,
+      kind: "workitem.dispatch",
+      status: "dead_letter",
+      error: {
+        code: "WORKITEM_DISPATCH_FAILED",
+        retryable: false,
+      },
+    });
+    expect(await redis.get(`workitem:dispatch:delivered:${dispatchEffect.effect_id}`)).toBeNull();
   });
 });
