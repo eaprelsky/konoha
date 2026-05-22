@@ -4,6 +4,10 @@ Issue #752 defines the execution order for the BPMS architecture program under
 epic #672. The machine-readable source of truth is
 `docs/bpms-program-dependency-graph.json`.
 
+Issue #672 closure/consolidation evidence lives in
+`docs/bpms-architecture-closure-report.json` and
+`docs/bpms-architecture-closure-report.md`.
+
 This plan covers #672-#751 and the follow-up reliability/resource gates called
 out during review. It is intentionally ordered to prevent downstream Action
 Spine or workflow runtime refactors from starting before test isolation,

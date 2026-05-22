@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "updated_for_issue": 672,
+  "report_date": "2026-05-22",
+  "status": "ready_for_epic_review_with_explicit_gates",
+  "scope": "Flight-grade BPMS architecture closure evidence for the constructor -> validate -> deploy -> run reliability program.",
+  "target_invariant": {
+    "statement": "No assistant or operator path may claim execution success unless backend durable receipts prove the workflow is validated/executable and the requested runtime transition occurred.",
+    "required_receipts": [
+      "workflow.validate canonical readiness receipt",
+      "workflow.patch durable edit receipt for committed constructor changes",
+      "workflow.deploy transaction/deploy-record receipt before start subscriptions are materialized",
+      "case.start receipt bound to an executable deployed workflow snapshot",
+      "workitem.dispatch/runtime-effect receipt for asynchronous delivery",
+      "audit/timeline receipt for recovery or operator mutation paths"
+    ],
+    "forbidden_success_claims": [
+      "client-only schema_patch treated as saved",
+      "preview assistant edit treated as durable commit",
+      "workflow.deploy success before validation/deployed snapshot/subscription receipt",
+      "case.start success for non-executable workflow",
+      "runtime effect recovery without actor/reason/audit link",
+      "PG_READ or release success when pg-verify onlyInRedis is non-zero"
+    ]
+  },
+  "milestone_evidence": [
+    {
+      "milestone": "M1",
+      "name": "Environment isolation and release controls",
+      "issues": [682, 733, 734, 735, 736, 749, 753, 756],
+      "status": "completed",
+      "evidence": [
+        "docs/staging-environment.json",
+        "docs/workflow-engine-preflight-tiers.json",
+        "docs/konoha-delivery-model.json",
+        "tests/test-storage-guardrails.test.ts",
+        "tests/redis-test-isolation-contract.test.ts",
+        "tests/pg-test-isolation-contract.test.ts"
+      ],
+      "closure_note": "Tests and staging defaults fail fast before production Redis DB0, PostgreSQL public schema, or external production connectors can be used accidentally."
+    },
+    {
+      "milestone": "M2",
+      "name": "Lifecycle and validation",
+      "issues": [673, 674, 687, 688, 689, 690, 691, 692, 693, 694, 695, 696, 697],
+      "status": "completed",
+      "evidence": [
+        "docs/workflow-lifecycle.md",
+        "tests/workflow-lifecycle-gate.test.ts",
+        "tests/workflow-validation-taxonomy.test.ts",
+        "tests/workflow-graph-validation.test.ts",
+        "tests/workflow-gateway-condition-validation.test.ts",
+        "tests/workflow-trigger-readiness.test.ts",
+        "tests/workflow-binding-readiness.test.ts",
+        "tests/workflow-validation-api.test.ts"
+      ],
+      "closure_note": "Workflow lifecycle/readiness is machine-readable, case.start is gated by executable state, and validation blocks graph/gateway/trigger/adapter/document/role failures."
+    },
+    {
+      "milestone": "M3",
+      "name": "Durable constructor edit path",
+      "issues": [675, 676, 698, 699, 700, 701, 702, 705, 706, 708, 709],
+      "status": "completed",
+      "evidence": [
+        "docs/assistant-observable-results.md",
+        "tests/workflow-patch-service.test.ts",
+        "tests/assistant-response.test.ts",
+        "tests/workflow-action-contract.test.ts"
+      ],
+      "closure_note": "Assistant/editor mutations route through durable Action Spine patch/executor boundaries; preview, failed, pending, partial, and committed modes are distinct."
+    },
+    {
+      "milestone": "M4",
+      "name": "Deployment, effects, role readiness, and dispatch",
+      "issues": [677, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723, 724],
+      "status": "completed",
+      "evidence": [
+        "docs/workflow-lifecycle.md",
+        "docs/runtime-effect-outbox.md",
+        "tests/workflow-deployment-service.test.ts",
+        "tests/runtime-effect-outbox.test.ts",
+        "tests/runtime-effect-recovery.test.ts",
+        "tests/workitem-dispatch-outbox.test.ts",
+        "tests/adapter-outbox.test.ts",
+        "tests/scheduled-effects-outbox.test.ts",
+        "tests/workflow-role-readiness.test.ts"
+      ],
+      "closure_note": "Deploy commits executable state and deployed snapshots before side effects; outbox workers provide retry/dead-letter/recovery; role readiness and dispatch receipts prove reachable targets."
+    },
+    {
+      "milestone": "M5",
+      "name": "Runtime correctness, observability, retention, and PG readiness",
+      "issues": [725, 726, 727, 728, 729, 730, 731, 732, 737, 738, 739, 740, 750, 751, 754],
+      "status": "completed",
+      "evidence": [
+        "docs/workflow-runtime-rollback-recovery.json",
+        "docs/workflow-constructor-runtime-release-checklist.json",
+        "docs/retention-lifecycle.md",
+        "docs/runtime-retention-policy.json",
+        "tests/graph-transition-planner.test.ts",
+        "tests/state-machine-transition-fixtures.test.ts",
+        "tests/subprocess-transition-effects.test.ts",
+        "tests/pg-read-readiness-report.test.ts",
+        "tests/runtime-retention-policy.test.ts",
+        "tests/workflow-runtime-rollback-recovery.test.ts",
+        "tests/workflow-constructor-runtime-release-checklist.test.ts"
+      ],
+      "closure_note": "Transition planning is pure/tested, effects and deploy receipts are visible in timeline/monitor/recovery surfaces, and PG_READ remains entity-scoped behind readiness/retention gates."
+    },
+    {
+      "milestone": "M6",
+      "name": "Golden path acceptance and Action Spine extraction readiness",
+      "issues": [741, 742, 743, 744, 745, 746, 747, 748],
+      "status": "completed_with_extraction_still_blocked",
+      "evidence": [
+        "docs/action-spine-boundary.md",
+        "docs/action-spine-package-extraction-spike.md",
+        "docs/adr-005-action-spine-extraction.md",
+        "tests/action-spine-boundary.test.ts",
+        "tests/assistant-create-validate-deploy-run-fixture.test.ts",
+        "tests/backend-golden-path.test.ts",
+        "e2e/AssistantWidgetGoldenPath-747.spec.ts"
+      ],
+      "closure_note": "Golden-path and negative acceptance exist; Action Spine generic/core boundary is documented, but #618 extraction remains a separate P2 package move."
+    }
+  ],
+  "capability_parent_status": [
+    { "issue": 673, "state": "closed", "label": "state:done", "capability": "executable lifecycle" },
+    { "issue": 674, "state": "closed", "label": "state:done", "capability": "validation readiness" },
+    { "issue": 675, "state": "closed", "label": "state:done", "capability": "durable assistant edits" },
+    { "issue": 676, "state": "closed", "label": "state:done", "capability": "mutation executors" },
+    { "issue": 677, "state": "closed", "label": "state:done", "capability": "deployment service" },
+    { "issue": 678, "state": "open", "label": "state:triage", "capability": "runtime side-effect outbox", "resolution": "implemented by #715-#720 plus #717-#719; needs reviewer label/closure reconciliation if treated as parent umbrella" },
+    { "issue": 679, "state": "open", "label": "state:triage", "capability": "role assignment readiness", "resolution": "implemented by #721-#724; needs reviewer label/closure reconciliation if treated as parent umbrella" },
+    { "issue": 680, "state": "open", "label": "state:triage", "capability": "deterministic state-machine core", "resolution": "implemented by #725-#728; needs reviewer label/closure reconciliation if treated as parent umbrella" },
+    { "issue": 681, "state": "open", "label": "state:triage", "capability": "observability and recovery", "resolution": "implemented by #729-#732 plus #720/#731; needs reviewer label/closure reconciliation if treated as parent umbrella" },
+    { "issue": 682, "state": "closed", "label": "state:done", "capability": "test storage isolation" },
+    { "issue": 683, "state": "open", "label": "state:triage", "capability": "Redis/PostgreSQL consistency", "resolution": "implemented by #737-#740 plus #738/#754 retention gates; needs reviewer label/closure reconciliation if treated as parent umbrella" },
+    { "issue": 684, "state": "open", "label": "state:triage", "capability": "Action Spine extraction readiness", "resolution": "implemented by #741-#744 as readiness/spike; #618 remains blocked until separate package extraction" },
+    { "issue": 685, "state": "open", "label": "state:triage", "capability": "golden-path acceptance", "resolution": "implemented by #745-#748; needs reviewer label/closure reconciliation if treated as parent umbrella" },
+    { "issue": 686, "state": "open", "label": "state:triage", "capability": "release gate/runbook", "resolution": "implemented by #749-#751; final production release still requires normal release approval" }
+  ],
+  "known_external_gates": [
+    {
+      "issue": 812,
+      "state": "open",
+      "label": "state:triage",
+      "gate": "terminal-case rule",
+      "impact": "Final production release claims must still prove closed/terminal cases do not receive new work, waits, subscriptions, or runtime effects.",
+      "current_policy": "Checklist/runbook treats #812 as blocker for changes that route work/effects; #812 is paused outside this closure pass."
+    },
+    {
+      "issue": 618,
+      "state": "open",
+      "label": "state:triage",
+      "gate": "Action Spine package extraction",
+      "impact": "Package extraction remains blocked until reviewer accepts #684/#685/#686 closure evidence and future bridge/package tests.",
+      "current_policy": "No package move in #672; keep Konoha host vocabulary and runtime adapters in-repo."
+    }
+  ],
+  "review_commands": [
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/bpms-architecture-closure-report.test.ts tests/workflow-lifecycle-gate.test.ts tests/workflow-validation-taxonomy.test.ts tests/workflow-patch-service.test.ts tests/workflow-deployment-service.test.ts tests/runtime-effect-outbox.test.ts tests/workflow-role-readiness.test.ts tests/backend-golden-path.test.ts tests/runtime-retention-policy.test.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun test --timeout 30000 tests/workflow-constructor-runtime-release-checklist.test.ts tests/workflow-runtime-rollback-recovery.test.ts tests/action-spine-boundary.test.ts tests/pg-read-readiness-report.test.ts",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run scripts/action-surface-report.ts --check",
+    "python3 scripts/check-route-auth-policy.py",
+    "python3 -m pytest tests/test_service_profiles.py tests/test_healthcheck_policy.py",
+    "PATH=/home/ubuntu/.bun/bin:$PATH bun run typecheck"
+  ],
+  "closure_decision": {
+    "epic_672_can_close_after_review": true,
+    "release_claim_unblocked": false,
+    "package_extraction_unblocked": false,
+    "reason": "The constructor-to-runtime architecture evidence is consolidated and detailed child implementation work is closed. Production release and package extraction remain governed by #812, #686 release approval, #618 extraction, and any reviewer reconciliation of umbrella capability parents still labeled state:triage."
+  }
+}

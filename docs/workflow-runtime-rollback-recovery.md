@@ -75,7 +75,7 @@ an unreachable role/agent.
 
 ```bash
 bun run scripts/pg-verify.ts
-curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workflow.validate","category":"inspect","args":{"id":"<workflow_id>"}}'
+curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workflow.validate","category":"act","args":{"id":"<workflow_id>"}}'
 curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"case.get","category":"inspect","args":{"id":"<case_id>"}}'
 curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"case.cancel","category":"act","args":{"id":"<case_id>","reason":"stuck-running-case recovery issue #<incident>"}}'
 curl -sS -X POST "$KONOHA_URL/act" -H "Authorization: Bearer $KONOHA_TOKEN" -H "Content-Type: application/json" -d '{"action":"workitem.cancel","category":"act","args":{"id":"<work_item_id>"}}'
